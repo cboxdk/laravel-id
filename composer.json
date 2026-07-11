@@ -1,0 +1,34 @@
+{
+    "name": "cboxdk/laravel-id",
+    "description": "Cbox ID — self-hostable, Laravel-native identity platform (framework). AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "illuminate/auth": "^12.0",
+        "illuminate/contracts": "^12.0",
+        "illuminate/database": "^12.0",
+        "illuminate/support": "^12.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^3.5"
+    },
+    "autoload": {
+        "psr-4": { "Cbox\\Id\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "Cbox\\Id\\Tests\\": "tests/" }
+    },
+    "extra": {
+        "laravel": { "providers": ["Cbox\\Id\\IdServiceProvider"] }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": { "pestphp/pest-plugin": true }
+    }
+}
