@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id;
 
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
+use Cbox\Id\Kernel\Authorization\AuthorizationServiceProvider;
 use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
@@ -28,6 +29,7 @@ final class IdServiceProvider extends ServiceProvider
         CryptoServiceProvider::class,
         EventsServiceProvider::class,
         AuditServiceProvider::class,
+        AuthorizationServiceProvider::class,
     ];
 
     public function register(): void

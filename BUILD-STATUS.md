@@ -13,7 +13,7 @@ Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dep
 | `Kernel\Crypto` | ✅ | KeyManager (RS256/ES256, JWKS, rotation), TokenSigner (firebase/php-jwt, forced alg-allowlist — rejects `alg=none` / RS↔HS confusion / forgery / expiry), SecretBox (XChaCha20-Poly1305 AEAD envelope, context-bound). 15 tests. composer audit clean. |
 | `Kernel\Audit` | ✅ | Append-only, per-scope hash chain (`SHA256(canonical(entry) ‖ prev_hash)`), deny-nothing tamper/deletion detection via `verifyChain`, Crypto-signed `checkpoint`. Ships `FakeAuditLog` + `InteractsWithAudit`. 11 tests incl. tamper + deletion detection. |
 | `Kernel\Events` | ✅ | Transactional outbox: `emit` persists in the caller's tx (no dual-write, proven by a rollback test), durable `flushPending` relay dispatches `EventDelivered` at-least-once, idempotent. Ships `FakeEventBus` + `InteractsWithEvents`. 6 tests. |
-| `Kernel\Authorization` | 🔨 | PDP (deny-by-default) + owned ReBAC + entitlement projection. Next. |
+| `Kernel\Authorization` | 🔨 | **Entitlements ✅** (billing-fed projection: set/revoke/reconcile, versioned + history, emits event + audit, per-key enforcement mode; 7 tests, dogfoods Events+Audit). ReBAC tuple engine + PDP still to come. |
 
 ## Domain
 | Module | Status | Notes |

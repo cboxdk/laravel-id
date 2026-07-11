@@ -6,6 +6,7 @@ namespace Cbox\Id\Tests;
 
 use Cbox\Id\IdServiceProvider;
 use Cbox\Id\Kernel\Audit\Testing\InteractsWithAudit;
+use Cbox\Id\Kernel\Authorization\Testing\InteractsWithEntitlements;
 use Cbox\Id\Kernel\Events\Testing\InteractsWithEvents;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Illuminate\Foundation\Application;
@@ -14,6 +15,7 @@ use Orchestra\Testbench\TestCase as Orchestra;
 abstract class TestCase extends Orchestra
 {
     use InteractsWithAudit;
+    use InteractsWithEntitlements;
     use InteractsWithEvents;
     use InteractsWithTenancy;
 
