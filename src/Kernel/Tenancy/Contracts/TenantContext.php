@@ -64,6 +64,31 @@ interface TenantContext
     public function withoutScope(Closure $callback): mixed;
 
     /**
+     * Run a callback with reads constrained to an explicit SET of tenant keys.
+     *
+     * The bounded elevation used for authorized cross-tenant *reporting* — e.g.
+     * a parent org rolling up its descendants. The set must be known, finite and
+     * already authorized (typically the descendant keys from the org closure);
+     * never unbounded. Deny-by-default still holds: an empty set matches zero
+     * rows. Writes are NOT governed by this mode — mutate within a single tenant
+     * via {@see runAs()}.
+     *
+     * @template TReturn
+     *
+     * @param  list<string>  $tenantKeys
+     * @param  Closure():TReturn  $callback
+     * @return TReturn
+     */
+    public function scopedTo(array $tenantKeys, Closure $callback): mixed;
+
+    /**
+     * The active roll-up key set, or null when not inside a scopedTo() block.
+     *
+     * @return list<string>|null
+     */
+    public function activeScopeKeys(): ?array;
+
+    /**
      * Whether tenant scoping is currently suspended.
      */
     public function isScopingSuspended(): bool;

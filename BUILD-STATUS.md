@@ -9,7 +9,7 @@ Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dep
 ## Kernels
 | Module | Status | Notes |
 |---|---|---|
-| `Kernel\Tenancy` | ✅ | Deny-by-default scope, cross-tenant write guard, runAs/withoutScope. 9 isolation tests. |
+| `Kernel\Tenancy` | ✅ | Deny-by-default scope, cross-tenant write guard, runAs/withoutScope, **scopedTo(set) roll-up** for hierarchy. Ships `GenericTenant` + `Testing\InteractsWithTenancy`. 14 isolation tests. |
 | `Kernel\Crypto` | 🔨 | KeyManager, TokenSigner (alg-allowlist), SecretBox (AEAD envelope). Next. |
 | `Kernel\Audit` | ⏳ | Hash-chained append-only log; checkpoint signing needs `Crypto`. |
 | `Kernel\Events` | ⬜ | Transactional outbox. |
@@ -27,6 +27,21 @@ Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dep
 | `AuditQuery` | ⬜ | Read/query + SIEM streaming. |
 | `Webhooks` | ⬜ | Signed delivery + retries. |
 | `Api` | ⬜ | REST surface + OpenAPI. |
+
+## DX standard (every module must ship this)
+- **Interface-driven** — public behaviour behind `Contracts/` so it is mockable/swappable.
+- **Shippable test helpers** in a `Testing/` namespace (Laravel `fake()`-style ergonomics), e.g.
+  `InteractsWithTenancy` — consumers testing their own tenant-scoped code get first-class support.
+- **Extension points documented** — overridable methods, container bindings, and simple value
+  objects (e.g. `GenericTenant`) so the package is easy to extend and adopt piecemeal.
+- The package's own tests **dogfood** these helpers, so the DX is proven, not asserted.
+
+## Hierarchy model (arbitrary depth) — where it lives
+- Kernel change (done): `scopedTo([keys])` bounded roll-up scope. Everything else is layered on top:
+- `Organization`: org tree (`parent_id` + `organization_closure`), `type` (customer/reseller); intra-org
+  `org_units` tree (`parent_id` + closure, scoped by `organization_id`); cycle + max-depth guards.
+- `AccessControl`: transitive management via closure ancestor checks; entitlement roll-down via
+  ancestor walk; management grants. Cross-org action is always authorized `runAs` + audit.
 
 ## Tracked integration points (deliberately deferred, not gaps)
 These cannot be built before their dependency exists; wiring them is part of the dependent module.

@@ -22,6 +22,13 @@ final class TenantContextManager implements TenantContext
 
     private int $suspensions = 0;
 
+    /**
+     * Stack of active roll-up key sets, innermost last.
+     *
+     * @var list<list<string>>
+     */
+    private array $scopeSets = [];
+
     public function current(): ?Tenant
     {
         return $this->current;
@@ -63,6 +70,26 @@ final class TenantContextManager implements TenantContext
         } finally {
             $this->suspensions--;
         }
+    }
+
+    public function scopedTo(array $tenantKeys, Closure $callback): mixed
+    {
+        $this->scopeSets[] = $tenantKeys;
+
+        try {
+            return $callback();
+        } finally {
+            array_pop($this->scopeSets);
+        }
+    }
+
+    public function activeScopeKeys(): ?array
+    {
+        if ($this->scopeSets === []) {
+            return null;
+        }
+
+        return $this->scopeSets[array_key_last($this->scopeSets)];
     }
 
     public function isScopingSuspended(): bool

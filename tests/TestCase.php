@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Cbox\Id\Tests;
 
 use Cbox\Id\IdServiceProvider;
+use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
 {
+    use InteractsWithTenancy;
+
     /**
      * @return array<int, class-string>
      */

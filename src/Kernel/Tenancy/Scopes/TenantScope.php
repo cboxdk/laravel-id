@@ -34,6 +34,22 @@ final class TenantScope implements Scope
             return;
         }
 
+        $column = $model->qualifyColumn($model->tenantColumn());
+
+        // Bounded roll-up: reads constrained to an explicit, authorized set.
+        $keys = $this->context->activeScopeKeys();
+
+        if ($keys !== null) {
+            if ($keys === []) {
+                // Deny-by-default: empty set => no rows.
+                $builder->whereRaw('1 = 0');
+            } else {
+                $builder->whereIn($column, $keys);
+            }
+
+            return;
+        }
+
         $tenant = $this->context->current();
 
         if ($tenant === null) {
@@ -43,10 +59,6 @@ final class TenantScope implements Scope
             return;
         }
 
-        $builder->where(
-            $model->qualifyColumn($model->tenantColumn()),
-            '=',
-            $tenant->tenantKey(),
-        );
+        $builder->where($column, '=', $tenant->tenantKey());
     }
 }
