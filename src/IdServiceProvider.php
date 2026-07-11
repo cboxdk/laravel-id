@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id;
 
+use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,7 @@ final class IdServiceProvider extends ServiceProvider
     private const MODULE_PROVIDERS = [
         TenancyServiceProvider::class,
         CryptoServiceProvider::class,
+        AuditServiceProvider::class,
     ];
 
     public function register(): void
@@ -35,6 +37,14 @@ final class IdServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        // Single source for all package migrations (module providers must not
+        // each load the shared directory, or files would run twice).
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__.'/../database/migrations' => database_path('migrations'),
+            ], 'cbox-id-migrations');
+        }
     }
 }

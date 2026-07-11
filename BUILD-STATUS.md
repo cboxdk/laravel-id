@@ -11,8 +11,8 @@ Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dep
 |---|---|---|
 | `Kernel\Tenancy` | ✅ | Deny-by-default scope, cross-tenant write guard, runAs/withoutScope, **scopedTo(set) roll-up** for hierarchy. Ships `GenericTenant` + `Testing\InteractsWithTenancy`. 14 isolation tests. |
 | `Kernel\Crypto` | ✅ | KeyManager (RS256/ES256, JWKS, rotation), TokenSigner (firebase/php-jwt, forced alg-allowlist — rejects `alg=none` / RS↔HS confusion / forgery / expiry), SecretBox (XChaCha20-Poly1305 AEAD envelope, context-bound). 15 tests. composer audit clean. |
-| `Kernel\Audit` | 🔨 | Hash-chained append-only log + signed checkpoints. Next — unblocked by Crypto. |
-| `Kernel\Events` | ⬜ | Transactional outbox. |
+| `Kernel\Audit` | ✅ | Append-only, per-scope hash chain (`SHA256(canonical(entry) ‖ prev_hash)`), deny-nothing tamper/deletion detection via `verifyChain`, Crypto-signed `checkpoint`. Ships `FakeAuditLog` + `InteractsWithAudit`. 11 tests incl. tamper + deletion detection. |
+| `Kernel\Events` | 🔨 | Transactional outbox. Next. |
 | `Kernel\Authorization` | ⬜ | PDP + owned ReBAC + entitlement projection. |
 
 ## Domain
@@ -51,8 +51,9 @@ These cannot be built before their dependency exists; wiring them is part of the
 - **Queue tenant propagation** — captured tenant key restored in the worker (jobs must not run
   tenant-less or the deny-by-default scope silently returns nothing). Needs a `Tenant` resolvable
   from a key → lands with `Organization`.
-- **`withoutScope` audit hook** — the contract requires every scope suspension to be audited.
-  Wire an automatic audit record once `Kernel\Audit` exists.
+- **`withoutScope` auditing** — `Kernel\Audit` now exists. To keep the tenancy kernel dependency-free,
+  this is a **call-site convention**: whoever suspends scoping records an `AuditEvent`. Enforced at the
+  domain call sites (review + tests), not wired into the kernel.
 
 ## Verification commands (per package)
     composer install

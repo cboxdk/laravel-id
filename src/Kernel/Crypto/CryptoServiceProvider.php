@@ -36,16 +36,10 @@ final class CryptoServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->loadMigrationsFrom(__DIR__.'/../../../database/migrations');
-
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__.'/../../../config/cbox-id.php' => config_path('cbox-id.php'),
             ], 'cbox-id-config');
-
-            $this->publishes([
-                __DIR__.'/../../../database/migrations' => database_path('migrations'),
-            ], 'cbox-id-migrations');
         }
     }
 }
