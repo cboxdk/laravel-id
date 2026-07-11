@@ -6,6 +6,7 @@ namespace Cbox\Id;
 
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
+use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -25,6 +26,7 @@ final class IdServiceProvider extends ServiceProvider
     private const MODULE_PROVIDERS = [
         TenancyServiceProvider::class,
         CryptoServiceProvider::class,
+        EventsServiceProvider::class,
         AuditServiceProvider::class,
     ];
 

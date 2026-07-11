@@ -12,8 +12,8 @@ Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dep
 | `Kernel\Tenancy` | ✅ | Deny-by-default scope, cross-tenant write guard, runAs/withoutScope, **scopedTo(set) roll-up** for hierarchy. Ships `GenericTenant` + `Testing\InteractsWithTenancy`. 14 isolation tests. |
 | `Kernel\Crypto` | ✅ | KeyManager (RS256/ES256, JWKS, rotation), TokenSigner (firebase/php-jwt, forced alg-allowlist — rejects `alg=none` / RS↔HS confusion / forgery / expiry), SecretBox (XChaCha20-Poly1305 AEAD envelope, context-bound). 15 tests. composer audit clean. |
 | `Kernel\Audit` | ✅ | Append-only, per-scope hash chain (`SHA256(canonical(entry) ‖ prev_hash)`), deny-nothing tamper/deletion detection via `verifyChain`, Crypto-signed `checkpoint`. Ships `FakeAuditLog` + `InteractsWithAudit`. 11 tests incl. tamper + deletion detection. |
-| `Kernel\Events` | 🔨 | Transactional outbox. Next. |
-| `Kernel\Authorization` | ⬜ | PDP + owned ReBAC + entitlement projection. |
+| `Kernel\Events` | ✅ | Transactional outbox: `emit` persists in the caller's tx (no dual-write, proven by a rollback test), durable `flushPending` relay dispatches `EventDelivered` at-least-once, idempotent. Ships `FakeEventBus` + `InteractsWithEvents`. 6 tests. |
+| `Kernel\Authorization` | 🔨 | PDP (deny-by-default) + owned ReBAC + entitlement projection. Next. |
 
 ## Domain
 | Module | Status | Notes |
