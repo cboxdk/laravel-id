@@ -6,6 +6,10 @@ on inspection alone. This file exists so the build is auditable: no hidden gaps.
 
 Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dependency) · ⬜ not started
 
+**Milestone (2026-07-11 night): the entire kernel layer (5/5) is complete and verified** —
+59 tests green, PHPStan level max clean, Pint clean, `composer audit` clean. Domain modules are
+next; each starts with its step-0 contract PR against `docs/foundation-contracts.md`.
+
 ## Kernels
 | Module | Status | Notes |
 |---|---|---|
