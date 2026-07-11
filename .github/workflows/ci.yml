@@ -22,6 +22,6 @@ jobs:
       - name: Pint (lint)
         run: vendor/bin/pint --test
       - name: PHPStan
-        run: vendor/bin/phpstan analyse --no-progress
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
       - name: Pest
         run: vendor/bin/pest

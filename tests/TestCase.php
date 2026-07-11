@@ -31,5 +31,8 @@ abstract class TestCase extends Orchestra
             'prefix' => '',
             'foreign_key_constraints' => true,
         ]);
+
+        // A throwaway crypto master key for the test run.
+        $app['config']->set('cbox-id.crypto.key', base64_encode(random_bytes(32)));
     }
 }

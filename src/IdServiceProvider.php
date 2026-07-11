@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id;
 
+use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,6 +23,7 @@ final class IdServiceProvider extends ServiceProvider
      */
     private const MODULE_PROVIDERS = [
         TenancyServiceProvider::class,
+        CryptoServiceProvider::class,
     ];
 
     public function register(): void

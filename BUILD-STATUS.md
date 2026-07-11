@@ -10,8 +10,8 @@ Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dep
 | Module | Status | Notes |
 |---|---|---|
 | `Kernel\Tenancy` | ✅ | Deny-by-default scope, cross-tenant write guard, runAs/withoutScope, **scopedTo(set) roll-up** for hierarchy. Ships `GenericTenant` + `Testing\InteractsWithTenancy`. 14 isolation tests. |
-| `Kernel\Crypto` | 🔨 | KeyManager, TokenSigner (alg-allowlist), SecretBox (AEAD envelope). Next. |
-| `Kernel\Audit` | ⏳ | Hash-chained append-only log; checkpoint signing needs `Crypto`. |
+| `Kernel\Crypto` | ✅ | KeyManager (RS256/ES256, JWKS, rotation), TokenSigner (firebase/php-jwt, forced alg-allowlist — rejects `alg=none` / RS↔HS confusion / forgery / expiry), SecretBox (XChaCha20-Poly1305 AEAD envelope, context-bound). 15 tests. composer audit clean. |
+| `Kernel\Audit` | 🔨 | Hash-chained append-only log + signed checkpoints. Next — unblocked by Crypto. |
 | `Kernel\Events` | ⬜ | Transactional outbox. |
 | `Kernel\Authorization` | ⬜ | PDP + owned ReBAC + entitlement projection. |
 

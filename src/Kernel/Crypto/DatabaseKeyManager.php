@@ -1,0 +1,160 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\Kernel\Crypto;
+
+use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
+use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
+use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
+use Cbox\Id\Kernel\Crypto\Models\SigningKey;
+use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Illuminate\Support\Str;
+
+/**
+ * Stores signing keys in the database; private keys sealed via {@see SecretBox}.
+ */
+final class DatabaseKeyManager implements KeyManager
+{
+    public function __construct(private readonly SecretBox $secretBox) {}
+
+    public function activeSigningKey(SigningAlg $alg = SigningAlg::RS256): SigningKey
+    {
+        $existing = SigningKey::query()
+            ->where('alg', $alg->value)
+            ->where('status', KeyStatus::Active->value)
+            ->first();
+
+        return $existing ?? $this->generate($alg);
+    }
+
+    public function rotate(SigningAlg $alg = SigningAlg::RS256): SigningKey
+    {
+        SigningKey::query()
+            ->where('alg', $alg->value)
+            ->where('status', KeyStatus::Active->value)
+            ->update([
+                'status' => KeyStatus::Rotating->value,
+                'retired_at' => null,
+            ]);
+
+        return $this->generate($alg);
+    }
+
+    public function jwks(): array
+    {
+        $keys = SigningKey::query()
+            ->whereIn('status', [KeyStatus::Active->value, KeyStatus::Rotating->value])
+            ->orderByDesc('activated_at')
+            ->get();
+
+        return [
+            'keys' => array_values($keys->map(fn (SigningKey $key): array => $this->jwkFor($key))->all()),
+        ];
+    }
+
+    private function generate(SigningAlg $alg): SigningKey
+    {
+        [$publicPem, $privatePem] = $this->generateKeyPair($alg);
+        $kid = (string) Str::ulid();
+
+        return SigningKey::query()->create([
+            'kid' => $kid,
+            'alg' => $alg,
+            'public_key' => $publicPem,
+            'private_key_encrypted' => $this->secretBox->seal($privatePem, 'cbox-id:signing-key:'.$kid),
+            'status' => KeyStatus::Active,
+            'activated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @return array{0: string, 1: string} [publicPem, privatePem]
+     */
+    private function generateKeyPair(SigningAlg $alg): array
+    {
+        $config = match ($alg) {
+            SigningAlg::RS256 => ['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048],
+            SigningAlg::ES256 => ['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1'],
+        };
+
+        $resource = openssl_pkey_new($config);
+        if ($resource === false) {
+            throw CryptoConfigurationException::keyGenerationFailed((string) openssl_error_string());
+        }
+
+        $privatePem = '';
+        if (! openssl_pkey_export($resource, $privatePem)) {
+            throw CryptoConfigurationException::keyGenerationFailed((string) openssl_error_string());
+        }
+
+        if (! is_string($privatePem) || $privatePem === '') {
+            throw CryptoConfigurationException::keyGenerationFailed('private key export produced no PEM');
+        }
+
+        $details = openssl_pkey_get_details($resource);
+        if ($details === false || ! isset($details['key']) || ! is_string($details['key'])) {
+            throw CryptoConfigurationException::keyGenerationFailed('could not export public key');
+        }
+
+        return [$details['key'], $privatePem];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function jwkFor(SigningKey $key): array
+    {
+        $public = openssl_pkey_get_public($key->public_key);
+        if ($public === false) {
+            throw CryptoConfigurationException::keyGenerationFailed('invalid stored public key');
+        }
+
+        $details = openssl_pkey_get_details($public);
+        if ($details === false) {
+            throw CryptoConfigurationException::keyGenerationFailed('could not read public key details');
+        }
+
+        $jwk = [
+            'kid' => $key->kid,
+            'use' => 'sig',
+            'alg' => $key->alg->value,
+            'kty' => $key->alg->jwkKeyType(),
+        ];
+
+        if ($key->alg === SigningAlg::RS256) {
+            $jwk['n'] = Base64Url::encode($this->material($details, 'rsa', 'n'));
+            $jwk['e'] = Base64Url::encode($this->material($details, 'rsa', 'e'));
+
+            return $jwk;
+        }
+
+        $jwk['crv'] = 'P-256';
+        $jwk['x'] = Base64Url::encode($this->material($details, 'ec', 'x'));
+        $jwk['y'] = Base64Url::encode($this->material($details, 'ec', 'y'));
+
+        return $jwk;
+    }
+
+    /**
+     * Extract a piece of key material from openssl's loosely-typed details array.
+     *
+     * @param  array<array-key, mixed>  $details
+     */
+    private function material(array $details, string $group, string $key): string
+    {
+        $section = $details[$group] ?? null;
+        if (! is_array($section)) {
+            throw CryptoConfigurationException::keyGenerationFailed("missing key material group {$group}");
+        }
+
+        $value = $section[$key] ?? null;
+        if (! is_string($value)) {
+            throw CryptoConfigurationException::keyGenerationFailed("missing key material {$group}.{$key}");
+        }
+
+        return $value;
+    }
+}
