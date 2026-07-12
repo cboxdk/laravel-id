@@ -38,6 +38,21 @@ it('changes a role and removes a member', function (): void {
     expect($memberships->of($org->id, 'user_1'))->toBeNull();
 });
 
+it('lists members of an organization and organizations of a user', function (): void {
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B');
+    $memberships = app(Memberships::class);
+
+    $memberships->add($a->id, 'user_1', 'owner');
+    $memberships->add($a->id, 'user_2', 'member');
+    $memberships->add($b->id, 'user_1', 'admin');
+
+    expect($memberships->forOrganization($a->id)->pluck('user_id')->all())->toEqualCanonicalizing(['user_1', 'user_2'])
+        ->and($memberships->forOrganization($b->id))->toHaveCount(1)
+        ->and($memberships->forUser('user_1')->pluck('organization_id')->all())->toEqualCanonicalizing([$a->id, $b->id])
+        ->and($memberships->forUser('user_2'))->toHaveCount(1);
+});
+
 it('emits an event and records audit on member add', function (): void {
     $org = $this->makeOrganization();
     $events = $this->fakeEvents();

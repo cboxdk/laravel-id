@@ -14,6 +14,7 @@ use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipStatus;
 use Cbox\Id\Organization\Models\Membership;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Membership operations run inside the target org's tenant scope, so the tenant
@@ -78,6 +79,22 @@ final class MembershipService implements Memberships
         return $this->tenant->runAs(
             GenericTenant::of($organizationId),
             fn (): ?Membership => Membership::query()->where('user_id', $userId)->first(),
+        );
+    }
+
+    public function forOrganization(string $organizationId): Collection
+    {
+        return $this->tenant->runAs(
+            GenericTenant::of($organizationId),
+            fn (): Collection => Membership::query()->orderBy('created_at')->get(),
+        );
+    }
+
+    public function forUser(string $userId): Collection
+    {
+        // Cross-tenant by nature — a subject's own list of organizations.
+        return $this->tenant->withoutScope(
+            fn (): Collection => Membership::query()->where('user_id', $userId)->orderBy('created_at')->get(),
         );
     }
 
