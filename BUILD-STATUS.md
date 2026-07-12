@@ -23,7 +23,7 @@ next; each starts with its step-0 contract PR against `docs/foundation-contracts
 | Module | Status | Notes |
 |---|---|---|
 | `Organization` | ✅ | Concrete `Tenant` (key = id) · closure-tree hierarchy (arbitrary depth: ancestors/descendants/isDescendantOf/`manages` for reseller transitive access) · memberships (tenant-scoped via `runAs`, dogfoods isolation) · events + audit. Ships `InteractsWithOrganizations`. 11 tests. |
-| `Identity` | ⬜ | Users, sessions, MFA, passkeys, magic link. |
+| `Identity` | ✅ | Global users, federated identity links (idempotent provisioning), sessions (start/active/revoke/revoke-all, expiry), argon2-capable password auth. Events + audit. Ships `InteractsWithIdentity`. 9 tests. **Follow-up:** TOTP MFA, passkeys/WebAuthn, magic-link (tracked). |
 | `Federation` | ⬜ | SAML/OIDC SP (wraps vetted XML/crypto libs). |
 | `Directory` | ⬜ | SCIM 2.0 server. |
 | `OAuthServer` | ⬜ | OIDC/OAuth provider on league/oauth2-server. |

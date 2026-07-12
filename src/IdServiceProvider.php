@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id;
 
+use Cbox\Id\Identity\IdentityServiceProvider;
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Authorization\AuthorizationServiceProvider;
 use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
@@ -33,6 +34,7 @@ final class IdServiceProvider extends ServiceProvider
         AuthorizationServiceProvider::class,
         // Domain modules
         OrganizationServiceProvider::class,
+        IdentityServiceProvider::class,
     ];
 
     public function register(): void
