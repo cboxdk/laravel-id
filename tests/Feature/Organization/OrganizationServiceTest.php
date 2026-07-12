@@ -42,3 +42,17 @@ it('emits an event and records audit on creation', function (): void {
     $events->assertEmitted('organization.created');
     $audit->assertRecorded('organization.created');
 });
+
+it('merges and persists organization settings', function (): void {
+    $org = $this->makeOrganization();
+    $orgs = app(Organizations::class);
+
+    $orgs->updateSettings($org->id, ['brand_color' => '#0ea5e9']);
+    $orgs->updateSettings($org->id, ['brand_logo_url' => 'https://x/logo.png']);
+
+    $fresh = $orgs->find($org->id);
+    expect($fresh?->settings)->toMatchArray([
+        'brand_color' => '#0ea5e9',
+        'brand_logo_url' => 'https://x/logo.png',
+    ]);
+});

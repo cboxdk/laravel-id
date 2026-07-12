@@ -64,6 +64,24 @@ final class OrganizationService implements Organizations
         });
     }
 
+    public function updateSettings(string $id, array $settings): Organization
+    {
+        $organization = Organization::query()->whereKey($id)->firstOrFail();
+        $organization->settings = array_merge($organization->settings, $settings);
+        $organization->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'organization.settings_updated',
+            actorType: ActorType::System,
+            organizationId: $organization->id,
+            targetType: 'organization',
+            targetId: $organization->id,
+            context: ['keys' => array_keys($settings)],
+        ));
+
+        return $organization;
+    }
+
     public function find(string $id): ?Organization
     {
         return Organization::query()->whereKey($id)->first();
