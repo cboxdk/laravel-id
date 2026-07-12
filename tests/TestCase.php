@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Tests;
 
 use Cbox\Id\AccessControl\Testing\InteractsWithAccessControl;
+use Cbox\Id\Directory\Testing\InteractsWithDirectory;
 use Cbox\Id\Identity\Testing\InteractsWithIdentity;
 use Cbox\Id\IdServiceProvider;
 use Cbox\Id\Kernel\Audit\Testing\InteractsWithAudit;
@@ -22,6 +23,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithAccessControl;
     use InteractsWithAudit;
     use InteractsWithAuthorization;
+    use InteractsWithDirectory;
     use InteractsWithEntitlements;
     use InteractsWithEvents;
     use InteractsWithIdentity;
