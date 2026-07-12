@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id;
 
 use Cbox\Id\AccessControl\AccessControlServiceProvider;
+use Cbox\Id\Api\ApiServiceProvider;
 use Cbox\Id\AuditQuery\AuditQueryServiceProvider;
 use Cbox\Id\Directory\DirectoryServiceProvider;
 use Cbox\Id\Federation\FederationServiceProvider;
@@ -47,6 +48,7 @@ final class IdServiceProvider extends ServiceProvider
         FederationServiceProvider::class,
         OAuthServerServiceProvider::class,
         WebhookServiceProvider::class,
+        ApiServiceProvider::class,
     ];
 
     public function register(): void
