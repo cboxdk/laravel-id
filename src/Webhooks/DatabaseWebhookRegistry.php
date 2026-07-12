@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\EndpointStatus;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
+use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Cbox\Id\Webhooks\ValueObjects\RegisteredEndpoint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -18,6 +19,9 @@ final class DatabaseWebhookRegistry implements WebhookRegistry
 
     public function register(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
     {
+        // SSRF guard: refuse endpoints that point at non-public addresses.
+        SafeWebhookUrl::assert($url);
+
         $secret = bin2hex(random_bytes(32));
 
         $endpoint = new WebhookEndpoint;

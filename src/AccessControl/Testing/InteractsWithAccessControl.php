@@ -19,7 +19,7 @@ trait InteractsWithAccessControl
         $role = $roles->define($organizationId, $roleName);
 
         foreach ($permissions as $permission) {
-            $roles->grantPermission($role->id, $permission);
+            $roles->grantPermission($organizationId, $role->id, $permission);
         }
 
         $roles->assign($organizationId, $userId, $role->id);

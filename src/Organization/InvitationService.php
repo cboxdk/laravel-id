@@ -104,10 +104,11 @@ final class InvitationService implements Invitations
         });
     }
 
-    public function revoke(string $invitationId): void
+    public function revoke(string $organizationId, string $invitationId): void
     {
         Invitation::query()
             ->whereKey($invitationId)
+            ->where('organization_id', $organizationId)
             ->where('status', InvitationStatus::Pending->value)
             ->update(['status' => InvitationStatus::Revoked->value]);
     }

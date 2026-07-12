@@ -16,6 +16,9 @@ return new class extends Migration
             $table->string('type');
             $table->text('secret_encrypted');
             $table->timestamp('confirmed_at')->nullable();
+            // The most recent TOTP time step accepted for this factor. A code at
+            // this step or earlier is rejected as a replay.
+            $table->unsignedBigInteger('last_used_step')->nullable();
             $table->timestamps();
 
             $table->unique(['user_id', 'type']);

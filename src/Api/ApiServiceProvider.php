@@ -19,20 +19,25 @@ final class ApiServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        // Machine-facing endpoints. The interactive OIDC authorize/token flow,
-        // the SCIM HTTP surface, and the SAML ACS routes land here next, each
-        // built against its conformance suite.
-        Route::get('/.well-known/jwks.json', JwksController::class);
-        Route::get('/.well-known/openid-configuration', DiscoveryController::class);
-        Route::post('/oauth/token', TokenController::class);
-        Route::post('/oauth/introspect', IntrospectionController::class);
-        Route::get('/up', HealthController::class);
+        // Public metadata — cheap, cacheable, generously throttled.
+        Route::middleware('throttle:300,1')->group(function (): void {
+            Route::get('/.well-known/jwks.json', JwksController::class);
+            Route::get('/.well-known/openid-configuration', DiscoveryController::class);
+            Route::get('/up', HealthController::class);
+        });
 
-        // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
-        Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);
+        // Credential-bearing endpoints — throttled to blunt secret/token brute
+        // force (secrets are 256-bit, so this is a backstop, not the only guard).
+        Route::middleware('throttle:30,1')->group(function (): void {
+            Route::post('/oauth/token', TokenController::class);
+            Route::post('/oauth/introspect', IntrospectionController::class);
+
+            // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
+            Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);
+        });
 
         // SCIM 2.0 provisioning, authenticated by the directory bearer token.
-        Route::middleware(AuthenticateScim::class)->prefix('scim/v2')->group(function (): void {
+        Route::middleware(['throttle:120,1', AuthenticateScim::class])->prefix('scim/v2')->group(function (): void {
             Route::get('/Users', [UserController::class, 'index']);
             Route::post('/Users', [UserController::class, 'store']);
             Route::get('/Users/{id}', [UserController::class, 'show']);

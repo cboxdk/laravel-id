@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
+// These tests target delivery, not the SSRF guard, and use unresolvable .test
+// hosts — disable URL verification here (the guard has its own test).
+beforeEach(fn () => config(['cbox-id.webhooks.verify_url' => false]));
+
 it('registers an endpoint and reveals the secret exactly once', function (): void {
     $registered = $this->registerWebhook('org_a', 'https://hook.test/x', ['organization.created']);
 

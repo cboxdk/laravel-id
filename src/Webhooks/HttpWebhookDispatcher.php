@@ -10,6 +10,7 @@ use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
 use Cbox\Id\Webhooks\Models\WebhookDelivery;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
+use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -71,13 +72,26 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
             'delivery_id' => $delivery->id,
         ], JSON_THROW_ON_ERROR);
 
+        $delivery->attempt = $delivery->attempt + 1;
+
+        // Re-check the URL immediately before sending (narrows DNS-rebinding) —
+        // never deliver to a non-public address.
+        if (! SafeWebhookUrl::isSafe($endpoint->url)) {
+            $delivery->response_code = null;
+            $this->scheduleRetry($delivery);
+            $delivery->save();
+
+            return;
+        }
+
         $secret = $this->secretBox->open($endpoint->secret_encrypted, $endpoint->secretContext());
         $signature = hash_hmac('sha256', $body, $secret);
 
-        $delivery->attempt = $delivery->attempt + 1;
-
         try {
             $response = Http::withHeaders(['X-Cbox-Signature' => 'sha256='.$signature])
+                ->withoutRedirecting()          // a 30x to an internal host must not be followed
+                ->connectTimeout(5)
+                ->timeout(10)
                 ->withBody($body, 'application/json')
                 ->post($endpoint->url);
 

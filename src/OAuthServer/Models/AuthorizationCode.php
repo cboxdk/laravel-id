@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $scopes
  * @property string $pkce_challenge
  * @property string $pkce_method
+ * @property string|null $nonce
  * @property Carbon $expires_at
  * @property Carbon|null $consumed_at
  */

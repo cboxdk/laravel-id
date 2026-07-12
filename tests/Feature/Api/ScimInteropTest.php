@@ -48,6 +48,29 @@ it('filters users by userName eq (the Okta/Entra existence check)', function ():
         ->assertJsonPath('Resources.0.userName', 'sam');
 });
 
+it('treats LIKE metacharacters in a co filter as literals, not wildcards', function (): void {
+    $headers = $this->scimHeaders;
+    provision($this, $headers, 'dana', 'okta|1', 'dana@corp.com');
+    provision($this, $headers, 'sam', 'okta|2', 'sam@corp.com');
+
+    // `_` is a SQL LIKE single-char wildcard. Unescaped, `d_na` would match
+    // "dana"; escaped, it is a literal underscore and matches nothing.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName co "d_na"'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 0);
+
+    // `%` unescaped would match every user; escaped it matches only a literal %.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName co "%"'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 0);
+
+    // A genuine substring still matches.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName co "an"'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 1)
+        ->assertJsonPath('Resources.0.userName', 'dana');
+});
+
 it('filters users by externalId eq', function (): void {
     $headers = $this->scimHeaders;
     provision($this, $headers, 'dana', 'okta|1', 'dana@corp.com');

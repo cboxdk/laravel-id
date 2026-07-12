@@ -28,7 +28,7 @@ interface Connections
      */
     public function forOrganization(string $organizationId): ?Connection;
 
-    public function activate(string $id): void;
+    public function activate(string $organizationId, string $id): void;
 
     /**
      * The decrypted IdP config for a connection.

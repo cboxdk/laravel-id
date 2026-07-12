@@ -20,6 +20,8 @@ return new class extends Migration
             $table->json('scopes')->default('[]');
             $table->string('pkce_challenge');
             $table->string('pkce_method')->default('S256');
+            // OIDC nonce from the authorize request, echoed into the id_token.
+            $table->string('nonce')->nullable();
             $table->timestamp('expires_at');
             $table->timestamp('consumed_at')->nullable();
             $table->timestamps();

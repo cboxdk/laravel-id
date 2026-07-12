@@ -28,7 +28,7 @@ interface Invitations
      */
     public function accept(string $token, string $subjectId): Membership;
 
-    public function revoke(string $invitationId): void;
+    public function revoke(string $organizationId, string $invitationId): void;
 
     public function byToken(string $token): ?Invitation;
 

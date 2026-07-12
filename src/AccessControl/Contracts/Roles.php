@@ -12,7 +12,7 @@ interface Roles
 {
     public function define(?string $organizationId, string $name, ?string $description = null): Role;
 
-    public function grantPermission(string $roleId, string $permission): void;
+    public function grantPermission(string $organizationId, string $roleId, string $permission): void;
 
     public function assign(
         string $organizationId,

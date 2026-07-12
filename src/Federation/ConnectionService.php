@@ -53,9 +53,13 @@ final class ConnectionService implements Connections
             ->first();
     }
 
-    public function activate(string $id): void
+    public function activate(string $organizationId, string $id): void
     {
-        Connection::query()->whereKey($id)->first()?->update(['status' => ConnectionStatus::Active]);
+        // Scope to the owning org so an admin can't flip another tenant's draft.
+        Connection::query()
+            ->whereKey($id)
+            ->where('organization_id', $organizationId)
+            ->first()?->update(['status' => ConnectionStatus::Active]);
     }
 
     public function config(Connection $connection): array

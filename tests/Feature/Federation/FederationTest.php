@@ -36,7 +36,7 @@ it('returns only the active connection for an organization', function (): void {
 
     expect($connections->forOrganization($org->id))->toBeNull(); // draft is not active
 
-    $connections->activate($draft->id);
+    $connections->activate($org->id, $draft->id);
 
     expect($connections->forOrganization($org->id)?->id)->toBe($draft->id)
         ->and($connections->byId($draft->id)?->isActive())->toBeTrue();
@@ -81,4 +81,16 @@ it('emits a login event and records audit', function (): void {
 
     $events->assertEmitted('user.login');
     $audit->assertRecorded('user.login');
+});
+
+it('refuses to activate a connection from another organization (IDOR)', function (): void {
+    $orgA = $this->makeOrganization('A');
+    $orgB = $this->makeOrganization('B');
+    $connections = app(Connections::class);
+    $draft = $connections->create($orgA->id, ConnectionType::Saml, 'A-draft', []);
+
+    // Attacker (admin of B) tries to activate A's draft.
+    $connections->activate($orgB->id, $draft->id);
+
+    expect($connections->forOrganization($orgA->id))->toBeNull(); // still draft
 });

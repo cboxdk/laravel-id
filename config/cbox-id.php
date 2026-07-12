@@ -52,6 +52,16 @@ return [
         'origin' => env('CBOX_ID_WEBAUTHN_ORIGIN'),
     ],
 
+    /*
+     * Webhook delivery. `verify_url` (SSRF guard) rejects endpoints that resolve
+     * to loopback/private/link-local/reserved addresses; keep it true in any
+     * multi-tenant deployment. A single-tenant/on-prem install that legitimately
+     * delivers to internal hosts may disable it.
+     */
+    'webhooks' => [
+        'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
+    ],
+
     'crypto' => [
 
         /*

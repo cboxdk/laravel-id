@@ -66,7 +66,7 @@ function oidcConnection(array $configOverrides = [], ?string $organizationId = n
         'Entra',
         array_merge(['issuer' => 'https://idp.test', 'client_id' => 'client-123'], $configOverrides),
     );
-    $connections->activate($connection->id);
+    $connections->activate($connection->organization_id, $connection->id);
 
     return $connection->refresh();
 }

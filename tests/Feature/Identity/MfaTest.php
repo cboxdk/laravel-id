@@ -39,8 +39,34 @@ it('enrolls, confirms and then verifies a TOTP factor', function (): void {
         ->and($mfa->verifyTotp('user_1', $totp->codeAt($enrollment->secret, time())))->toBeFalse();
 
     expect($mfa->confirmTotp('user_1', $totp->codeAt($enrollment->secret, time())))->toBeTrue()
-        ->and($mfa->hasConfirmedTotp('user_1'))->toBeTrue()
-        ->and($mfa->verifyTotp('user_1', $totp->codeAt($enrollment->secret, time())))->toBeTrue();
+        ->and($mfa->hasConfirmedTotp('user_1'))->toBeTrue();
+});
+
+it('rejects reuse of a TOTP code within its validity window (replay)', function (): void {
+    $mfa = app(Mfa::class);
+    $totp = app(TotpAuthenticator::class);
+
+    $enrollment = $mfa->enrollTotp('user_replay', 'r@r.test');
+    $code = $totp->codeAt($enrollment->secret, time());
+
+    // First presentation confirms the factor and consumes this time step.
+    expect($mfa->confirmTotp('user_replay', $code))->toBeTrue();
+
+    // The same code — still valid on the clock — must not verify a second time.
+    expect($mfa->verifyTotp('user_replay', $code))->toBeFalse();
+});
+
+it('accepts a fresh TOTP code at a later step after one was consumed', function (): void {
+    $mfa = app(Mfa::class);
+    $totp = app(TotpAuthenticator::class);
+
+    $enrollment = $mfa->enrollTotp('user_step', 's@s.test');
+
+    // Confirm with the previous step's code (within the ±1 skew window), which
+    // seeds last_used_step one step back, then verify with the current code (a
+    // strictly later step) — proving the guard rejects only replays, not new codes.
+    expect($mfa->confirmTotp('user_step', $totp->codeAt($enrollment->secret, time() - 30)))->toBeTrue()
+        ->and($mfa->verifyTotp('user_step', $totp->codeAt($enrollment->secret, time())))->toBeTrue();
 });
 
 it('rejects a wrong code', function (): void {

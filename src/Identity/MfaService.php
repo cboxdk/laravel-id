@@ -43,11 +43,13 @@ final class MfaService implements Mfa
 
         $secret = $this->secretBox->open($factor->secret_encrypted, $this->context($userId));
 
-        if (! $this->totp->verify($secret, $code)) {
+        $step = $this->totp->matchStep($secret, $code);
+
+        if ($step === null) {
             return false;
         }
 
-        $factor->forceFill(['confirmed_at' => now()])->save();
+        $factor->forceFill(['confirmed_at' => now(), 'last_used_step' => $step])->save();
 
         $this->audit->record(new AuditEvent(
             action: 'user.mfa_enrolled',
@@ -71,7 +73,17 @@ final class MfaService implements Mfa
 
         $secret = $this->secretBox->open($factor->secret_encrypted, $this->context($userId));
 
-        return $this->totp->verify($secret, $code);
+        $step = $this->totp->matchStep($secret, $code);
+
+        // Reject a code that matched no step, and one at or before the last step we
+        // already accepted — that is a replay within the still-valid skew window.
+        if ($step === null || ($factor->last_used_step !== null && $step <= $factor->last_used_step)) {
+            return false;
+        }
+
+        $factor->forceFill(['last_used_step' => $step])->save();
+
+        return true;
     }
 
     public function hasConfirmedTotp(string $userId): bool

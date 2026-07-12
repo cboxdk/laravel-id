@@ -16,5 +16,6 @@ final readonly class AuthorizedGrant
         public string $userId,
         public ?string $organizationId,
         public array $scopes,
+        public ?string $nonce = null,
     ) {}
 }

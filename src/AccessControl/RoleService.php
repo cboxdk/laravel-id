@@ -6,6 +6,7 @@ namespace Cbox\Id\AccessControl;
 
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
+use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\Permission;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
@@ -31,8 +32,19 @@ final class RoleService implements Roles
         );
     }
 
-    public function grantPermission(string $roleId, string $permission): void
+    public function grantPermission(string $organizationId, string $roleId, string $permission): void
     {
+        // The role must belong to the caller's org — never grant onto another
+        // tenant's role.
+        $exists = Role::query()
+            ->whereKey($roleId)
+            ->where('organization_id', $organizationId)
+            ->exists();
+
+        if (! $exists) {
+            throw UnknownRole::make($roleId);
+        }
+
         $model = Permission::query()->firstOrCreate(['name' => $permission]);
 
         DB::table('role_permission')->insertOrIgnore([

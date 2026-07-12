@@ -40,17 +40,33 @@ final class TotpAuthenticator
      */
     public function verify(string $base32Secret, string $code, ?int $timestamp = null, int $window = 1): bool
     {
+        return $this->matchStep($base32Secret, $code, $timestamp, $window) !== null;
+    }
+
+    /**
+     * Like verify(), but returns the time step (counter) the code matched, or null
+     * if it matched none. The caller persists the last accepted step so a code —
+     * or any code within the same skew window — can't be replayed until time moves
+     * past it. Every candidate step is checked (no short-circuit) to keep the
+     * comparison time independent of which offset matched.
+     */
+    public function matchStep(string $base32Secret, string $code, ?int $timestamp = null, int $window = 1): ?int
+    {
         $timestamp ??= time();
         $key = $this->base32Decode($base32Secret);
         $counter = intdiv($timestamp, self::PERIOD);
 
+        $matched = null;
+
         for ($offset = -$window; $offset <= $window; $offset++) {
-            if (hash_equals($this->hotp($key, $counter + $offset), $code)) {
-                return true;
+            $step = $counter + $offset;
+
+            if (hash_equals($this->hotp($key, $step), $code)) {
+                $matched = $step;
             }
         }
 
-        return false;
+        return $matched;
     }
 
     /**

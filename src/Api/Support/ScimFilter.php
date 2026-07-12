@@ -58,15 +58,17 @@ final readonly class ScimFilter
     public function apply(Builder $query): Builder
     {
         $value = (string) $this->value;
+        // Escape LIKE metacharacters so a client can't widen the match with % / _.
+        $like = addcslashes($value, '%_\\');
 
         return match ($this->operator) {
             'eq' => $this->column === 'active'
                 ? $query->where('active', filter_var($value, FILTER_VALIDATE_BOOLEAN))
                 : $query->where($this->column, $value),
             'ne' => $query->where($this->column, '!=', $value),
-            'co' => $query->where($this->column, 'like', '%'.$value.'%'),
-            'sw' => $query->where($this->column, 'like', $value.'%'),
-            'ew' => $query->where($this->column, 'like', '%'.$value),
+            'co' => $query->where($this->column, 'like', '%'.$like.'%'),
+            'sw' => $query->where($this->column, 'like', $like.'%'),
+            'ew' => $query->where($this->column, 'like', '%'.$like),
             'pr' => $query->whereNotNull($this->column),
             default => $query,
         };

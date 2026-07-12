@@ -23,6 +23,7 @@ final class AuthorizationCodeService implements AuthorizationCodes
         array $scopes,
         string $codeChallenge,
         string $codeChallengeMethod = 'S256',
+        ?string $nonce = null,
     ): string {
         $code = 'ac_'.bin2hex(random_bytes(32));
 
@@ -35,6 +36,7 @@ final class AuthorizationCodeService implements AuthorizationCodes
             'scopes' => $scopes,
             'pkce_challenge' => $codeChallenge,
             'pkce_method' => $codeChallengeMethod,
+            'nonce' => $nonce,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
@@ -71,6 +73,7 @@ final class AuthorizationCodeService implements AuthorizationCodes
                 $record->user_id,
                 $record->organization_id,
                 array_values($record->scopes),
+                $record->nonce,
             );
         });
     }

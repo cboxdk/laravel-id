@@ -23,6 +23,7 @@ interface AuthorizationCodes
         array $scopes,
         string $codeChallenge,
         string $codeChallengeMethod = 'S256',
+        ?string $nonce = null,
     ): string;
 
     /**

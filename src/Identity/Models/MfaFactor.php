@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $type
  * @property string $secret_encrypted
  * @property Carbon|null $confirmed_at
+ * @property int|null $last_used_step
  */
 final class MfaFactor extends Model
 {
@@ -33,6 +34,7 @@ final class MfaFactor extends Model
     {
         return [
             'confirmed_at' => 'datetime',
+            'last_used_step' => 'integer',
         ];
     }
 }

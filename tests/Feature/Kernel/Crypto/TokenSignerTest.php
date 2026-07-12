@@ -57,6 +57,29 @@ it('rejects an expired token', function (): void {
     expect(fn () => $signer->verify($jwt, [SigningAlg::RS256]))->toThrow(InvalidToken::class);
 });
 
+it('injects default iat and a unique jti when the caller omits them', function (): void {
+    $signer = app(TokenSigner::class);
+
+    $one = $signer->verify($signer->sign(['sub' => 'user_1']), [SigningAlg::RS256]);
+    $two = $signer->verify($signer->sign(['sub' => 'user_1']), [SigningAlg::RS256]);
+
+    expect($one->get('iat'))->toBeInt()
+        ->and($one->get('jti'))->toBeString()
+        ->and($one->get('jti'))->not->toBe($two->get('jti')); // unique per token
+});
+
+it('does not override caller-supplied iat and jti', function (): void {
+    $signer = app(TokenSigner::class);
+
+    $claims = $signer->verify(
+        $signer->sign(['sub' => 'user_1', 'iat' => 1000, 'jti' => 'fixed-id']),
+        [SigningAlg::RS256],
+    );
+
+    expect($claims->get('iat'))->toBe(1000)
+        ->and($claims->get('jti'))->toBe('fixed-id');
+});
+
 it('rejects an empty allow-list', function (): void {
     $signer = app(TokenSigner::class);
     $jwt = $signer->sign(['sub' => 'user_1']);

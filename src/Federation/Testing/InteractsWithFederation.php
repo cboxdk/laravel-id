@@ -24,7 +24,7 @@ trait InteractsWithFederation
         $connection = $connections->create($organizationId, $type, $name, $config);
 
         if ($active) {
-            $connections->activate($connection->id);
+            $connections->activate($organizationId, $connection->id);
         }
 
         return $connection->refresh();

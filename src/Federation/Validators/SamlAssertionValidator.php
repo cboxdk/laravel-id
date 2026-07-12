@@ -8,7 +8,10 @@ use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\Models\ConsumedAssertion;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 use OneLogin\Saml2\Response as SamlResponse;
 use OneLogin\Saml2\Settings;
 use OneLogin\Saml2\Utils as SamlUtils;
@@ -49,6 +52,30 @@ final class SamlAssertionValidator implements AssertionValidator
 
     public function __construct(private readonly Connections $connections) {}
 
+    /**
+     * Reject an assertion id we have already accepted (replay), and remember this
+     * one until it expires. The unique index on `assertion_id` is the real guard.
+     */
+    private function guardReplay(?string $assertionId, ?int $notOnOrAfter): void
+    {
+        if (! is_string($assertionId) || $assertionId === '') {
+            throw InvalidAssertion::make('assertion is missing an id');
+        }
+
+        $expiresAt = is_int($notOnOrAfter)
+            ? Carbon::createFromTimestamp($notOnOrAfter)
+            : now()->addMinutes(10);
+
+        try {
+            ConsumedAssertion::query()->create([
+                'assertion_id' => $assertionId,
+                'expires_at' => $expiresAt,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            throw InvalidAssertion::make('assertion replay detected');
+        }
+    }
+
     public function validate(Connection $connection, string $rawResponse): FederatedPrincipal
     {
         $config = $this->connections->config($connection);
@@ -75,6 +102,9 @@ final class SamlAssertionValidator implements AssertionValidator
 
             throw InvalidAssertion::make($reason instanceof Throwable ? $reason->getMessage() : 'SAML response is not valid');
         }
+
+        // Single-use: a captured, still-valid assertion cannot be replayed.
+        $this->guardReplay($response->getAssertionId(), $response->getAssertionNotOnOrAfter());
 
         $nameId = $response->getNameId();
 

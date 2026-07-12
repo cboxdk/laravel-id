@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
@@ -58,6 +59,14 @@ final class TokenController
             return $this->error('invalid_client', 401);
         }
 
+        // Confidential clients must authenticate with their secret in addition to
+        // PKCE (RFC 6749 §4.1.3). PKCE alone is the guard for public clients, which
+        // hold no secret. Verified in constant time by the registry.
+        if ($client->type === ClientType::Confidential
+            && ! $this->clients->verifySecret($client, $request->string('client_secret')->toString())) {
+            return $this->error('invalid_client', 401);
+        }
+
         try {
             $grant = $this->codes->exchange(
                 $clientId,
@@ -79,14 +88,22 @@ final class TokenController
         $issuer = config('cbox-id.issuer');
         $now = time();
 
-        return $this->signer->sign([
+        $claims = [
             'iss' => is_string($issuer) && $issuer !== '' ? $issuer : 'cbox-id',
             'sub' => $grant->userId,
             'aud' => $clientId,
             'org' => $grant->organizationId,
             'iat' => $now,
             'exp' => $now + 900,
-        ]);
+        ];
+
+        // OIDC Core 3.1.3.6: echo the request nonce so the client can bind the
+        // id_token to its authorization request and detect replay.
+        if ($grant->nonce !== null) {
+            $claims['nonce'] = $grant->nonce;
+        }
+
+        return $this->signer->sign($claims);
     }
 
     private function authenticateClient(Request $request): ?Client

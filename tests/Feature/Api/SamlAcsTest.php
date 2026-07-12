@@ -28,7 +28,7 @@ function samlAcsConnection(SamlIdp $idp, string $organizationId, bool $active = 
     ]);
 
     if ($active) {
-        $connections->activate($connection->id);
+        $connections->activate($connection->organization_id, $connection->id);
     }
 
     return $connection->id;

@@ -61,8 +61,19 @@ it('revokes a pending invitation', function (): void {
     $invitations = app(Invitations::class);
     $pending = $invitations->invite($org->id, 'gone@corp.com', 'member');
 
-    $invitations->revoke($pending->invitation->id);
+    $invitations->revoke($org->id, $pending->invitation->id);
 
     expect($invitations->pending($org->id))->toBeEmpty()
         ->and(fn () => $invitations->accept($pending->token, 's'))->toThrow(InvalidInvitation::class);
+});
+
+it('refuses to revoke an invitation from another organization (IDOR)', function (): void {
+    $orgA = $this->makeOrganization('A');
+    $orgB = $this->makeOrganization('B');
+    $invitations = app(Invitations::class);
+    $pending = $invitations->invite($orgA->id, 'x@corp.com', 'member');
+
+    $invitations->revoke($orgB->id, $pending->invitation->id); // wrong org
+
+    expect($invitations->pending($orgA->id))->toHaveCount(1); // untouched
 });

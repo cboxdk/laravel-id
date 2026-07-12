@@ -134,7 +134,7 @@ function samlConnection(SamlIdp $idp): Connection
         'sp_entity_id' => SP_ENTITY,
         'sp_acs_url' => SP_ACS,
     ]);
-    $connections->activate($connection->id);
+    $connections->activate($connection->organization_id, $connection->id);
 
     return $connection->refresh();
 }
@@ -191,4 +191,13 @@ it('rejects a SAML response signed by an untrusted key', function (): void {
     $attacker = new SamlIdp;
 
     app(AssertionValidator::class)->validate($connection, $attacker->response());
+})->throws(InvalidAssertion::class);
+
+it('rejects a replayed SAML assertion', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+    $response = $idp->response();
+
+    app(AssertionValidator::class)->validate($connection, $response); // first use — ok
+    app(AssertionValidator::class)->validate($connection, $response); // replay — rejected
 })->throws(InvalidAssertion::class);

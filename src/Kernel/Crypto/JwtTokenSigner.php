@@ -37,6 +37,13 @@ final class JwtTokenSigner implements TokenSigner
         $signingKey = $this->keys->activeSigningKey($alg ?? SigningAlg::RS256);
         $privatePem = $this->secretBox->open($signingKey->private_key_encrypted, $signingKey->secretContext());
 
+        // Default anti-replay claims when the caller didn't set them: `iat` anchors
+        // freshness and `jti` gives every token a unique id. We deliberately do NOT
+        // inject `exp` — audit checkpoints are signed with sign() and are meant to
+        // never expire, so an expiry is the caller's decision to make explicitly.
+        $claims['iat'] ??= time();
+        $claims['jti'] ??= bin2hex(random_bytes(16));
+
         return JWT::encode($claims, $privatePem, $signingKey->alg->value, $signingKey->kid);
     }
 

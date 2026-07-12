@@ -21,19 +21,61 @@ it('serves the OIDC discovery document', function (): void {
         ->assertJsonPath('code_challenge_methods_supported.0', 'S256');
 });
 
-it('introspects an active token over HTTP', function (): void {
+it('introspects an active token over HTTP for an authenticated caller', function (): void {
     $registered = $this->makeClient(['api.read']);
     $token = app(TokenIssuer::class)->issueClientCredentials($registered->client);
 
-    $this->postJson('/oauth/introspect', ['token' => $token->token])
+    $this->postJson('/oauth/introspect', [
+        'token' => $token->token,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+    ])
         ->assertOk()
         ->assertJsonPath('active', true)
         ->assertJsonPath('sub', $registered->client->client_id)
         ->assertJsonPath('scope', 'api.read');
 });
 
-it('reports a bad token as inactive over HTTP', function (): void {
-    $this->postJson('/oauth/introspect', ['token' => 'garbage'])
+it('accepts HTTP Basic client authentication on introspection', function (): void {
+    $registered = $this->makeClient(['api.read']);
+    $token = app(TokenIssuer::class)->issueClientCredentials($registered->client);
+
+    $this->postJson('/oauth/introspect', ['token' => $token->token], [
+        'Authorization' => 'Basic '.base64_encode($registered->client->client_id.':'.$registered->secret),
+    ])
+        ->assertOk()
+        ->assertJsonPath('active', true);
+});
+
+it('refuses introspection from an unauthenticated caller', function (): void {
+    $registered = $this->makeClient(['api.read']);
+    $token = app(TokenIssuer::class)->issueClientCredentials($registered->client);
+
+    // No client credentials — the endpoint must not act as an open token oracle.
+    $this->postJson('/oauth/introspect', ['token' => $token->token])
+        ->assertStatus(401)
+        ->assertJsonPath('error', 'invalid_client');
+});
+
+it('refuses introspection with a wrong client secret', function (): void {
+    $registered = $this->makeClient(['api.read']);
+    $token = app(TokenIssuer::class)->issueClientCredentials($registered->client);
+
+    $this->postJson('/oauth/introspect', [
+        'token' => $token->token,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => 'wrong-secret',
+    ])->assertStatus(401);
+});
+
+it('reports a bad token as inactive for an authenticated caller', function (): void {
+    $registered = $this->makeClient(['api.read']);
+
+    $this->postJson('/oauth/introspect', [
+        'token' => 'garbage',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+    ])
         ->assertOk()
         ->assertJsonPath('active', false);
 });
