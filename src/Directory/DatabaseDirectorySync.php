@@ -9,7 +9,7 @@ use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
 final class DatabaseDirectorySync implements DirectorySync
 {
     public function __construct(
-        private readonly UserDirectory $users,
+        private readonly Subjects $subjects,
         private readonly Memberships $memberships,
         private readonly SessionManager $sessions,
         private readonly EventBus $events,
@@ -40,7 +40,7 @@ final class DatabaseDirectorySync implements DirectorySync
         $directory = Directory::query()->whereKey($directoryId)->firstOrFail();
 
         return DB::transaction(function () use ($directory, $user): DirectoryUser {
-            $local = $this->users->provisionFederated(new FederatedPrincipal(
+            $subject = $this->subjects->provisionFederated(new FederatedPrincipal(
                 provider: 'scim',
                 subject: $directory->id.'|'.$user->externalId,
                 email: $user->email,
@@ -51,19 +51,19 @@ final class DatabaseDirectorySync implements DirectorySync
 
             $directoryUser = DirectoryUser::query()->updateOrCreate(
                 ['directory_id' => $directory->id, 'external_id' => $user->externalId],
-                ['resource' => $user->raw, 'user_id' => $local->id, 'active' => $user->active],
+                ['resource' => $user->raw, 'user_id' => $subject->id, 'active' => $user->active],
             );
 
             if ($user->active) {
-                $this->memberships->add($directory->organization_id, $local->id, 'member');
+                $this->memberships->add($directory->organization_id, $subject->id, 'member');
                 $action = 'directory.user.provisioned';
             } else {
-                $this->memberships->remove($directory->organization_id, $local->id);
-                $this->sessions->revokeAllForUser($local->id);
+                $this->memberships->remove($directory->organization_id, $subject->id);
+                $this->sessions->revokeAllForUser($subject->id);
                 $action = 'directory.user.deactivated';
             }
 
-            $this->emitAndAudit($directory, $user->externalId, $action, ['user_id' => $local->id]);
+            $this->emitAndAudit($directory, $user->externalId, $action, ['user_id' => $subject->id]);
 
             return $directoryUser;
         });

@@ -6,7 +6,7 @@ namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\MagicLink;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Exceptions\InvalidMagicLink;
 use Cbox\Id\Identity\Models\MagicLinkToken;
 use Cbox\Id\Identity\Models\Session;
@@ -20,7 +20,7 @@ final class MagicLinkService implements MagicLink
     private const TTL_MINUTES = 15;
 
     public function __construct(
-        private readonly UserDirectory $users,
+        private readonly Subjects $subjects,
         private readonly SessionManager $sessions,
         private readonly AuditLog $audit,
     ) {}
@@ -56,13 +56,13 @@ final class MagicLinkService implements MagicLink
 
             $link->forceFill(['consumed_at' => now()])->save();
 
-            $user = $this->users->findByEmail($link->email) ?? $this->users->create($link->email);
-            $session = $this->sessions->start($user->id, null, ['magic_link']);
+            $subject = $this->subjects->findByEmail($link->email) ?? $this->subjects->create($link->email);
+            $session = $this->sessions->start($subject->id, null, ['magic_link']);
 
             $this->audit->record(new AuditEvent(
                 action: 'user.login',
                 actorType: ActorType::User,
-                actorId: $user->id,
+                actorId: $subject->id,
                 targetType: 'session',
                 targetId: $session->id,
                 context: ['method' => 'magic_link'],

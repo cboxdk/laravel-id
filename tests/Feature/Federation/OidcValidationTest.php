@@ -8,7 +8,7 @@ use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -158,7 +158,7 @@ it('drives an end-to-end OIDC SSO login through the federation flow', function (
     $principal = app(AssertionValidator::class)->validate($connection, idToken($keys['private']));
     $session = app(FederationFlow::class)->completeLogin($connection, $principal);
 
-    $user = app(UserDirectory::class)->findByEmail('alice@corp.com');
+    $user = app(Subjects::class)->findByEmail('alice@corp.com');
 
     expect($user)->not->toBeNull()
         ->and($session->user_id)->toBe($user?->id)

@@ -12,7 +12,9 @@ use Illuminate\Support\Carbon;
 /**
  * A global user identity — one person, one row, independent of organizations.
  * Org linkage is via memberships. The password hash (argon2id recommended) is
- * hidden and only touched through the UserDirectory.
+ * hidden and only touched through the default Subjects resolver. This model is
+ * only the platform's built-in store; a host app can resolve subjects from its
+ * own model(s) instead (see Cbox\Id\Identity\Contracts\Subjects).
  *
  * @property string $id
  * @property string $email

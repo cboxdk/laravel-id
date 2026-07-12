@@ -21,6 +21,18 @@ return [
     ],
 
     /*
+     * How the platform resolves "the user". By default it uses a self-contained
+     * store over its own users table (`models.user`). To integrate with an app
+     * that already has users — including several authenticatable models (users,
+     * admins, resellers) or a single model with role flags — set `resolver` to
+     * your own class implementing Cbox\Id\Identity\Contracts\Subjects. The
+     * platform only ever references a subject by its opaque id.
+     */
+    'subject' => [
+        'resolver' => null,
+    ],
+
+    /*
      * Table names the platform reads/writes. Point `users` at your existing user
      * table to integrate with an app that already has one; the platform does not
      * create this table automatically (see the optional cbox-id-users-migration).

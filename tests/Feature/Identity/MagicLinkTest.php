@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\MagicLink;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Exceptions\InvalidMagicLink;
 use Cbox\Id\Identity\Models\MagicLinkToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,12 +25,12 @@ it('redeems a token into a session, provisioning the user', function (): void {
     $session = $magic->redeem($token);
 
     expect($session->amr)->toBe(['magic_link'])
-        ->and(app(UserDirectory::class)->findByEmail('sam@acme.test'))->not->toBeNull()
+        ->and(app(Subjects::class)->findByEmail('sam@acme.test'))->not->toBeNull()
         ->and(app(SessionManager::class)->active($session->id))->not->toBeNull();
 });
 
 it('reuses an existing user', function (): void {
-    $existing = app(UserDirectory::class)->create('sam@acme.test', 'Sam');
+    $existing = app(Subjects::class)->create('sam@acme.test', 'Sam');
     $magic = app(MagicLink::class);
 
     $session = $magic->redeem($magic->request('sam@acme.test'));

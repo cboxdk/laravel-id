@@ -9,7 +9,7 @@ use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\DB;
 final class FederationLoginService implements FederationFlow
 {
     public function __construct(
-        private readonly UserDirectory $users,
+        private readonly Subjects $subjects,
         private readonly Memberships $memberships,
         private readonly SessionManager $sessions,
         private readonly EventBus $events,
@@ -44,21 +44,21 @@ final class FederationLoginService implements FederationFlow
         }
 
         return DB::transaction(function () use ($connection, $principal): Session {
-            $user = $this->users->provisionFederated($principal);
+            $subject = $this->subjects->provisionFederated($principal);
 
-            $this->memberships->add($connection->organization_id, $user->id, 'member');
+            $this->memberships->add($connection->organization_id, $subject->id, 'member');
 
-            $session = $this->sessions->start($user->id, $connection->organization_id, ['sso']);
+            $session = $this->sessions->start($subject->id, $connection->organization_id, ['sso']);
 
             $this->events->emit(new DomainEvent(
                 'user.login',
-                ['user_id' => $user->id, 'connection_id' => $connection->id],
+                ['user_id' => $subject->id, 'connection_id' => $connection->id],
                 $connection->organization_id,
             ));
             $this->audit->record(new AuditEvent(
                 action: 'user.login',
                 actorType: ActorType::User,
-                actorId: $user->id,
+                actorId: $subject->id,
                 organizationId: $connection->organization_id,
                 targetType: 'connection',
                 targetId: $connection->id,

@@ -8,16 +8,31 @@ use Cbox\Id\Identity\Contracts\MagicLink;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\Passkeys;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Mfa\TotpAuthenticator;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
 final class IdentityServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->singleton(UserDirectory::class, DatabaseUserDirectory::class);
+        // A host app binds its own subject resolver to integrate with an existing
+        // user store (or several); otherwise the self-contained default is used.
+        $this->app->singleton(Subjects::class, function (Application $app): Subjects {
+            $resolver = config('cbox-id.subject.resolver');
+
+            if (is_string($resolver) && is_a($resolver, Subjects::class, true)) {
+                $instance = $app->make($resolver);
+
+                if ($instance instanceof Subjects) {
+                    return $instance;
+                }
+            }
+
+            return $app->make(DatabaseSubjects::class);
+        });
         $this->app->singleton(SessionManager::class, DatabaseSessionManager::class);
         $this->app->singleton(TotpAuthenticator::class);
         $this->app->singleton(Mfa::class, MfaService::class);

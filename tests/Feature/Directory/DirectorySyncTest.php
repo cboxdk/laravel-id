@@ -7,7 +7,7 @@ use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -34,7 +34,7 @@ it('provisions a SCIM user into a local user + membership', function (): void {
 
     expect($directoryUser->user_id)->not->toBeNull()
         ->and($directoryUser->active)->toBeTrue()
-        ->and(app(UserDirectory::class)->findByEmail('dana@corp.com'))->not->toBeNull()
+        ->and(app(Subjects::class)->findByEmail('dana@corp.com'))->not->toBeNull()
         ->and(app(Memberships::class)->of($org->id, (string) $directoryUser->user_id))->not->toBeNull();
 });
 

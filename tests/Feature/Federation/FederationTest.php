@@ -7,7 +7,7 @@ use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,7 +49,7 @@ it('completes an SSO login: provisions user, membership and session', function (
     $principal = new FederatedPrincipal('saml', 'okta|dana', 'dana@corp.com', 'Dana', $connection->id);
     $session = app(FederationFlow::class)->completeLogin($connection, $principal);
 
-    $user = app(UserDirectory::class)->findByEmail('dana@corp.com');
+    $user = app(Subjects::class)->findByEmail('dana@corp.com');
 
     expect($user)->not->toBeNull()
         ->and($session->user_id)->toBe($user?->id)
