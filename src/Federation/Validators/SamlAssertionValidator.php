@@ -11,6 +11,7 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use OneLogin\Saml2\Response as SamlResponse;
 use OneLogin\Saml2\Settings;
+use OneLogin\Saml2\Utils as SamlUtils;
 use Throwable;
 
 /**
@@ -54,8 +55,17 @@ final class SamlAssertionValidator implements AssertionValidator
 
         try {
             $settings = new Settings($this->settings($config), true);
-            $response = new SamlResponse($settings, $rawResponse);
-            $valid = $response->isValid();
+
+            // onelogin derives the "current URL" it validates Destination/Recipient
+            // against from $_SERVER, which is wrong behind proxies and absent on CLI.
+            // Pin it to the connection's configured ACS URL instead — the single
+            // source of truth for where this SP receives assertions. Both the
+            // Response construction and isValid() read $_SERVER, so both run pinned.
+            [$response, $valid] = $this->withAcsUrl($this->require($config, 'sp_acs_url'), static function () use ($settings, $rawResponse): array {
+                $response = new SamlResponse($settings, $rawResponse);
+
+                return [$response, $response->isValid()];
+            });
         } catch (Throwable $exception) {
             throw InvalidAssertion::make('SAML response could not be processed: '.$exception->getMessage());
         }
@@ -82,6 +92,54 @@ final class SamlAssertionValidator implements AssertionValidator
             connectionId: $connection->id,
             raw: $attributes,
         );
+    }
+
+    /**
+     * Pin onelogin's self-URL resolution to $acsUrl for the duration of
+     * $callback by setting the $_SERVER values it reads, then restore them. This
+     * decouples Destination/Recipient validation from the serving host (correct
+     * behind proxies) and makes it deterministic off a web request.
+     *
+     * @param  callable(): array{0: SamlResponse, 1: bool}  $callback
+     * @return array{0: SamlResponse, 1: bool}
+     */
+    private function withAcsUrl(string $acsUrl, callable $callback): array
+    {
+        $parts = parse_url($acsUrl);
+        $parts = is_array($parts) ? $parts : [];
+
+        $host = is_string($parts['host'] ?? null) ? $parts['host'] : 'localhost';
+        $scheme = ($parts['scheme'] ?? null) === 'http' ? 'http' : 'https';
+        $path = is_string($parts['path'] ?? null) ? $parts['path'] : '/';
+
+        if (isset($parts['port'])) {
+            $host .= ':'.$parts['port'];
+        }
+
+        $keys = ['HTTP_HOST', 'HTTPS', 'SCRIPT_NAME', 'PATH_INFO', 'REQUEST_URI', 'SERVER_PORT'];
+        $saved = [];
+        foreach ($keys as $key) {
+            $saved[$key] = $_SERVER[$key] ?? null;
+        }
+
+        SamlUtils::setBaseURL(''); // clears any static host/path overrides
+        $_SERVER['HTTP_HOST'] = $host;
+        $_SERVER['HTTPS'] = $scheme === 'https' ? 'on' : 'off';
+        $_SERVER['SCRIPT_NAME'] = $path;
+        $_SERVER['REQUEST_URI'] = $path;
+        unset($_SERVER['PATH_INFO'], $_SERVER['SERVER_PORT']);
+
+        try {
+            return $callback();
+        } finally {
+            foreach ($saved as $key => $value) {
+                if ($value === null) {
+                    unset($_SERVER[$key]);
+                } else {
+                    $_SERVER[$key] = $value;
+                }
+            }
+        }
     }
 
     /**
