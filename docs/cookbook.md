@@ -76,6 +76,9 @@ app(EntitlementWriter::class)->reconcile($org->id, [
 Pick `EnforcementMode::Claims` for coarse, slow-changing entitlements (embedded in tokens),
 and `EnforcementMode::DecisionApi` for anything that must revoke immediately.
 
+> Keeping your own billing engine and want the full flow — reconcile, enforcement
+> modes, provenance and events? See [Entitlements & billing](entitlements-and-billing.md).
+
 ## Provision users over SCIM
 
 ```php

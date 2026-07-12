@@ -9,7 +9,7 @@ weight: 1
 ## Requirements
 
 - PHP `^8.4` (developed on 8.5)
-- Laravel 12
+- Laravel 12 or 13
 - PostgreSQL 16 (SQLite works for tests)
 - `ext-openssl`, `ext-sodium`
 

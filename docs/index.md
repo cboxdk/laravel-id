@@ -46,6 +46,10 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 
 ## Sections
 
+### New to this?
+
+- [Start here — the mental model](start-here.md) — what a central IdP is, the five things you actually decide, and why, in one page
+
 ### Getting started
 
 - [Installation](getting-started/installation.md)
@@ -62,6 +66,7 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 ### Do things
 
 - [Cookbook](cookbook.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
+- [Entitlements & billing](entitlements-and-billing.md) — keep your own billing engine, push entitlements so every product enforces the same plan
 
 ### Make it yours
 
