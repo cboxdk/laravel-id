@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:fd1b8994-d1cb-4783-a4ab-3a3ddcbfa68e",
+    "serialNumber": "urn:uuid:c7b72844-9879-43cf-9f89-8853e3b17ac9",
     "version": 1,
     "metadata": {
         "tools": [
@@ -21,11 +21,11 @@
     "components": [
         {
             "type": "library",
-            "bom-ref": "pkg:composer/brick/math@0.14.8",
+            "bom-ref": "pkg:composer/brick/math@0.17.2",
             "group": "brick",
             "name": "math",
-            "version": "0.14.8",
-            "purl": "pkg:composer/brick/math@0.14.8",
+            "version": "0.17.2",
+            "purl": "pkg:composer/brick/math@0.17.2",
             "description": "Arbitrary-precision arithmetic library",
             "licenses": [
                 {
@@ -53,11 +53,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.0.0",
+            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.0.1",
             "group": "cboxdk",
             "name": "laravel-ssrf",
-            "version": "v1.0.0",
-            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.0.0",
+            "version": "v1.0.1",
+            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.0.1",
             "description": "Cbox SSRF \u2014 a hardened, config-driven guard against server-side request forgery for outbound URLs in Laravel. Blocks private/reserved/cloud-metadata targets, pins DNS, and refuses redirects.",
             "licenses": [
                 {
@@ -261,11 +261,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/framework@v12.63.0",
+            "bom-ref": "pkg:composer/laravel/framework@v13.19.0",
             "group": "laravel",
             "name": "framework",
-            "version": "v12.63.0",
-            "purl": "pkg:composer/laravel/framework@v12.63.0",
+            "version": "v13.19.0",
+            "purl": "pkg:composer/laravel/framework@v13.19.0",
             "description": "The Laravel Framework.",
             "licenses": [
                 {
@@ -309,11 +309,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/league/commonmark@2.8.2",
+            "bom-ref": "pkg:composer/league/commonmark@2.8.3",
             "group": "league",
             "name": "commonmark",
-            "version": "2.8.2",
-            "purl": "pkg:composer/league/commonmark@2.8.2",
+            "version": "2.8.3",
+            "purl": "pkg:composer/league/commonmark@2.8.3",
             "description": "Highly-extensible PHP Markdown parser which fully supports the CommonMark spec and GitHub-Flavored Markdown (GFM)",
             "licenses": [
                 {
@@ -753,11 +753,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/console@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/console@v8.1.1",
             "group": "symfony",
             "name": "console",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/console@v7.4.14",
+            "version": "v8.1.1",
+            "purl": "pkg:composer/symfony/console@v8.1.1",
             "description": "Eases the creation of beautiful and testable command line interfaces",
             "licenses": [
                 {
@@ -801,11 +801,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/error-handler@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/error-handler@v8.1.0",
             "group": "symfony",
             "name": "error-handler",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/error-handler@v7.4.14",
+            "version": "v8.1.0",
+            "purl": "pkg:composer/symfony/error-handler@v8.1.0",
             "description": "Provides tools to manage errors and ease debugging PHP code",
             "licenses": [
                 {
@@ -849,11 +849,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/finder@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/finder@v8.1.1",
             "group": "symfony",
             "name": "finder",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/finder@v7.4.14",
+            "version": "v8.1.1",
+            "purl": "pkg:composer/symfony/finder@v8.1.1",
             "description": "Finds files and directories via an intuitive fluent interface",
             "licenses": [
                 {
@@ -865,11 +865,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/http-foundation@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/http-foundation@v8.1.1",
             "group": "symfony",
             "name": "http-foundation",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/http-foundation@v7.4.14",
+            "version": "v8.1.1",
+            "purl": "pkg:composer/symfony/http-foundation@v8.1.1",
             "description": "Defines an object-oriented layer for the HTTP specification",
             "licenses": [
                 {
@@ -881,11 +881,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/http-kernel@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/http-kernel@v8.1.1",
             "group": "symfony",
             "name": "http-kernel",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/http-kernel@v7.4.14",
+            "version": "v8.1.1",
+            "purl": "pkg:composer/symfony/http-kernel@v8.1.1",
             "description": "Provides a structured process for converting a Request into a Response",
             "licenses": [
                 {
@@ -897,11 +897,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/mailer@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/mailer@v8.1.1",
             "group": "symfony",
             "name": "mailer",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/mailer@v7.4.14",
+            "version": "v8.1.1",
+            "purl": "pkg:composer/symfony/mailer@v8.1.1",
             "description": "Helps sending emails",
             "licenses": [
                 {
@@ -913,11 +913,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/mime@v7.4.13",
+            "bom-ref": "pkg:composer/symfony/mime@v8.1.0",
             "group": "symfony",
             "name": "mime",
-            "version": "v7.4.13",
-            "purl": "pkg:composer/symfony/mime@v7.4.13",
+            "version": "v8.1.0",
+            "purl": "pkg:composer/symfony/mime@v8.1.0",
             "description": "Allows manipulating MIME messages",
             "licenses": [
                 {
@@ -1025,22 +1025,6 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/polyfill-php83@v1.38.2",
-            "group": "symfony",
-            "name": "polyfill-php83",
-            "version": "v1.38.2",
-            "purl": "pkg:composer/symfony/polyfill-php83@v1.38.2",
-            "description": "Symfony polyfill backporting some PHP 8.3+ features to lower PHP versions",
-            "licenses": [
-                {
-                    "license": {
-                        "id": "MIT"
-                    }
-                }
-            ]
-        },
-        {
-            "type": "library",
             "bom-ref": "pkg:composer/symfony/polyfill-php84@v1.38.1",
             "group": "symfony",
             "name": "polyfill-php84",
@@ -1073,6 +1057,22 @@
         },
         {
             "type": "library",
+            "bom-ref": "pkg:composer/symfony/polyfill-php86@v1.38.0",
+            "group": "symfony",
+            "name": "polyfill-php86",
+            "version": "v1.38.0",
+            "purl": "pkg:composer/symfony/polyfill-php86@v1.38.0",
+            "description": "Symfony polyfill backporting some PHP 8.6+ features to lower PHP versions",
+            "licenses": [
+                {
+                    "license": {
+                        "id": "MIT"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "library",
             "bom-ref": "pkg:composer/symfony/polyfill-uuid@v1.37.0",
             "group": "symfony",
             "name": "polyfill-uuid",
@@ -1089,11 +1089,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/process@v7.4.13",
+            "bom-ref": "pkg:composer/symfony/process@v8.1.0",
             "group": "symfony",
             "name": "process",
-            "version": "v7.4.13",
-            "purl": "pkg:composer/symfony/process@v7.4.13",
+            "version": "v8.1.0",
+            "purl": "pkg:composer/symfony/process@v8.1.0",
             "description": "Executes commands in sub-processes",
             "licenses": [
                 {
@@ -1105,11 +1105,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/routing@v7.4.13",
+            "bom-ref": "pkg:composer/symfony/routing@v8.1.0",
             "group": "symfony",
             "name": "routing",
-            "version": "v7.4.13",
-            "purl": "pkg:composer/symfony/routing@v7.4.13",
+            "version": "v8.1.0",
+            "purl": "pkg:composer/symfony/routing@v8.1.0",
             "description": "Maps an HTTP request to a set of configuration variables",
             "licenses": [
                 {
@@ -1185,11 +1185,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/uid@v7.4.9",
+            "bom-ref": "pkg:composer/symfony/uid@v8.1.0",
             "group": "symfony",
             "name": "uid",
-            "version": "v7.4.9",
-            "purl": "pkg:composer/symfony/uid@v7.4.9",
+            "version": "v8.1.0",
+            "purl": "pkg:composer/symfony/uid@v8.1.0",
             "description": "Provides an object-oriented API to generate and represent UIDs",
             "licenses": [
                 {
@@ -1201,11 +1201,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/var-dumper@v7.4.14",
+            "bom-ref": "pkg:composer/symfony/var-dumper@v8.1.1",
             "group": "symfony",
             "name": "var-dumper",
-            "version": "v7.4.14",
-            "purl": "pkg:composer/symfony/var-dumper@v7.4.14",
+            "version": "v8.1.1",
+            "purl": "pkg:composer/symfony/var-dumper@v8.1.1",
             "description": "Provides mechanisms for walking through any arbitrary PHP variable",
             "licenses": [
                 {

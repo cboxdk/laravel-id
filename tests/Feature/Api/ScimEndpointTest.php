@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -82,7 +83,7 @@ it('deprovision over SCIM revokes the user session end-to-end', function (): voi
 it('returns 409 when the SCIM email already belongs to an account', function (): void {
     $org = $this->makeOrganization();
     $headers = scimHeaders($this->makeDirectory($org->id)->token);
-    app(\Cbox\Id\Identity\Contracts\Subjects::class)->create('taken@corp.com', 'Taken', 'pw12345678');
+    app(Subjects::class)->create('taken@corp.com', 'Taken', 'pw12345678');
 
     $this->postJson('/scim/v2/Users', [
         'userName' => 'taken', 'externalId' => 'ext|9', 'emails' => [['value' => 'taken@corp.com']],

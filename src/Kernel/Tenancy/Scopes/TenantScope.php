@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Scope;
  * must never leak another tenant's data. Cross-tenant reads are therefore
  * impossible unless scoping is explicitly suspended via
  * {@see TenantContext::withoutScope()}.
+ *
+ * @implements Scope<Model>
  */
 final class TenantScope implements Scope
 {
