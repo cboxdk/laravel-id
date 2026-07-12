@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -49,6 +50,8 @@ final class SamlAcsController
             $session = $this->flow->completeLogin($model, $principal);
         } catch (InvalidAssertion|ConnectionInactive $exception) {
             return $this->error(401, 'SSO assertion rejected.');
+        } catch (AccountExistsForEmail $exception) {
+            return $this->error(409, 'An account already exists for this email; link SSO from your account settings instead of signing in with it.');
         }
 
         return new JsonResponse([
