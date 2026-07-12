@@ -30,7 +30,7 @@ next; each starts with its step-0 contract PR against `docs/foundation-contracts
 | `AccessControl` | ✅ | RBAC: roles + permissions + assignments; hierarchy-aware `can()`/`permissionsFor()` — roles roll DOWN from ancestor orgs (reseller management), never up/sideways. Events + audit. Ships `InteractsWithAccessControl`. 6 tests. (Entitlements live in the Authorization kernel.) |
 | `AuditQuery` | ✅ | Authorized read surface over the audit trail: filter by action/actor, cursor (sequence) pagination, scope isolation (org vs system), and `since()` pull-stream for SIEM. 5 tests. (Setup reuses the Audit kernel's `InteractsWithAudit`.) |
 | `Webhooks` | ✅ | Endpoint registry (secrets sealed via Crypto SecretBox) · HMAC-SHA256 signed HTTP delivery · failure recording + exponential-backoff retries · listens to `EventDelivered` (full Events→webhook fan-out proven end-to-end). Ships `InteractsWithWebhooks`. 6 tests. |
-| `Api` | 🔨 | ✅ Machine endpoints (HTTP-tested): `/.well-known/jwks.json`, OIDC discovery, `POST /oauth/introspect`, `/up`. 5 tests. **Follow-up:** REST CRUD + OpenAPI, interactive OIDC authorize/token (league), SCIM HTTP endpoint (PATCH/filter parsing), SAML ACS routes. |
+| `Api` | 🔨 | ✅ Machine endpoints (HTTP-tested): `/.well-known/jwks.json`, OIDC discovery, `POST /oauth/introspect`, `/up`. 5 tests. **SCIM HTTP endpoint ✅** (bearer-authed `/scim/v2/Users`: create/read/deactivate-via-PATCH/delete; deprovision revokes sessions end-to-end). **Follow-up:** REST CRUD + OpenAPI, interactive OIDC authorize/token (league), fuller SCIM PATCH/filter, SAML ACS routes. |
 
 ## DX standard (every module must ship this)
 - **Interface-driven** — public behaviour behind `Contracts/` so it is mockable/swappable.

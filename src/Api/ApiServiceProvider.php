@@ -8,6 +8,8 @@ use Cbox\Id\Api\Http\Controllers\DiscoveryController;
 use Cbox\Id\Api\Http\Controllers\HealthController;
 use Cbox\Id\Api\Http\Controllers\IntrospectionController;
 use Cbox\Id\Api\Http\Controllers\JwksController;
+use Cbox\Id\Api\Http\Controllers\Scim\UserController;
+use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,5 +24,13 @@ final class ApiServiceProvider extends ServiceProvider
         Route::get('/.well-known/openid-configuration', DiscoveryController::class);
         Route::post('/oauth/introspect', IntrospectionController::class);
         Route::get('/up', HealthController::class);
+
+        // SCIM 2.0 provisioning, authenticated by the directory bearer token.
+        Route::middleware(AuthenticateScim::class)->prefix('scim/v2')->group(function (): void {
+            Route::post('/Users', [UserController::class, 'store']);
+            Route::get('/Users/{id}', [UserController::class, 'show']);
+            Route::patch('/Users/{id}', [UserController::class, 'patch']);
+            Route::delete('/Users/{id}', [UserController::class, 'destroy']);
+        });
     }
 }
