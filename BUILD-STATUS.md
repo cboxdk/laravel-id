@@ -29,7 +29,7 @@ next; each starts with its step-0 contract PR against `docs/foundation-contracts
 | `OAuthServer` | ⬜ | OIDC/OAuth provider on league/oauth2-server. |
 | `AccessControl` | ⬜ | RBAC + Cashier-fed entitlements + decision surface. |
 | `AuditQuery` | ⬜ | Read/query + SIEM streaming. |
-| `Webhooks` | ⬜ | Signed delivery + retries. |
+| `Webhooks` | ✅ | Endpoint registry (secrets sealed via Crypto SecretBox) · HMAC-SHA256 signed HTTP delivery · failure recording + exponential-backoff retries · listens to `EventDelivered` (full Events→webhook fan-out proven end-to-end). Ships `InteractsWithWebhooks`. 6 tests. |
 | `Api` | ⬜ | REST surface + OpenAPI. |
 
 ## DX standard (every module must ship this)

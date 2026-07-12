@@ -12,6 +12,7 @@ use Cbox\Id\Kernel\Authorization\Testing\InteractsWithEntitlements;
 use Cbox\Id\Kernel\Events\Testing\InteractsWithEvents;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
+use Cbox\Id\Webhooks\Testing\InteractsWithWebhooks;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -24,6 +25,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithIdentity;
     use InteractsWithOrganizations;
     use InteractsWithTenancy;
+    use InteractsWithWebhooks;
 
     /**
      * @return array<int, class-string>

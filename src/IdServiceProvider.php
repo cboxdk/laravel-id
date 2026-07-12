@@ -11,6 +11,7 @@ use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
+use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -35,6 +36,7 @@ final class IdServiceProvider extends ServiceProvider
         // Domain modules
         OrganizationServiceProvider::class,
         IdentityServiceProvider::class,
+        WebhookServiceProvider::class,
     ];
 
     public function register(): void
