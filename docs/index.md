@@ -27,6 +27,12 @@ The package is one Composer package with clean internal module boundaries. Two l
 Products don't embed this package — they authenticate against the running instance over OIDC
 and call it via the SDK. The framework is embedded only in the hosted app.
 
+> **Don't want to build the app layer yourself?** There's a full, deployable
+> application built on this framework — the **Cbox ID app** — with the admin console,
+> hosted login, onboarding and app-layer add-ons already implemented. See its
+> [operator docs](../../../host/docs/index.md). This documentation covers the
+> framework you'd build on directly; the app is the batteries-included path.
+
 ## Module reference
 
 | Module | Primary contracts | What it does |

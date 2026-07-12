@@ -31,6 +31,22 @@ That central service is the **Identity Provider (IdP)**. Your apps become
    drifting apart                        └────────────┘     users, entitlements
 ```
 
+## Two ways to run it — you don't have to build everything
+
+This package (`cboxdk/laravel-id`) is the **framework**: the identity engine you
+compose into your own Laravel app, wiring the UI, onboarding and admin console
+yourself. That's the right choice if you want full control of the surface.
+
+**If you'd rather not build the app layer at all, there's a full, deployable
+application** — the **Cbox ID app** — built on this framework, with the admin
+console, hosted login, onboarding and app-layer add-ons (like risk-scoring) already
+implemented. Install it, configure it, run it. See its
+[operator documentation](../../../host/docs/index.md) (deployment, configuration,
+operations, compliance).
+
+The rest of this page is the mental model either way — the framework is what the app
+is made of, so the concepts are identical.
+
 ## Why bother
 
 You reach for this the moment any of these is true:
