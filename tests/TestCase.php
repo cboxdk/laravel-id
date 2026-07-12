@@ -69,5 +69,9 @@ abstract class TestCase extends Orchestra
 
         // A throwaway crypto master key for the test run.
         $app['config']->set('cbox-id.crypto.key', base64_encode(random_bytes(32)));
+
+        // App key for the encryption/session stack (web middleware, e.g. the OIDC
+        // redirect flow, needs it).
+        $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
     }
 }

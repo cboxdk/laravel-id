@@ -16,6 +16,8 @@ use Cbox\Id\Api\Http\Controllers\RevocationController;
 use Cbox\Id\Api\Http\Controllers\Scim\DiscoveryController as ScimDiscoveryController;
 use Cbox\Id\Api\Http\Controllers\Scim\GroupController;
 use Cbox\Id\Api\Http\Controllers\Scim\UserController;
+use Cbox\Id\Api\Http\Controllers\Sso\OidcCallbackController;
+use Cbox\Id\Api\Http\Controllers\Sso\OidcRedirectController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlAcsController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Controllers\UserInfoController;
@@ -49,6 +51,13 @@ final class ApiServiceProvider extends ServiceProvider
 
             // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
             Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);
+        });
+
+        // OIDC (RP-initiated) login — browser redirect flow, so it needs a session
+        // for the state/nonce. The id_token signature + nonce are the auth.
+        Route::middleware(['web', 'throttle:30,1'])->group(function (): void {
+            Route::get('/sso/oidc/{connection}/redirect', OidcRedirectController::class);
+            Route::get('/sso/oidc/{connection}/callback', OidcCallbackController::class);
 
             // Dynamic Client Registration (RFC 7591) + management (RFC 7592). The
             // controller enforces the configured mode (disabled/protected/open).
