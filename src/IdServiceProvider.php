@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id;
 
 use Cbox\Id\AccessControl\AccessControlServiceProvider;
+use Cbox\Id\AuditQuery\AuditQueryServiceProvider;
 use Cbox\Id\Identity\IdentityServiceProvider;
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Authorization\AuthorizationServiceProvider;
@@ -38,6 +39,7 @@ final class IdServiceProvider extends ServiceProvider
         OrganizationServiceProvider::class,
         IdentityServiceProvider::class,
         AccessControlServiceProvider::class,
+        AuditQueryServiceProvider::class,
         WebhookServiceProvider::class,
     ];
 

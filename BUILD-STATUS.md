@@ -28,7 +28,7 @@ next; each starts with its step-0 contract PR against `docs/foundation-contracts
 | `Directory` | ⬜ | SCIM 2.0 server. |
 | `OAuthServer` | ⬜ | OIDC/OAuth provider on league/oauth2-server. |
 | `AccessControl` | ✅ | RBAC: roles + permissions + assignments; hierarchy-aware `can()`/`permissionsFor()` — roles roll DOWN from ancestor orgs (reseller management), never up/sideways. Events + audit. Ships `InteractsWithAccessControl`. 6 tests. (Entitlements live in the Authorization kernel.) |
-| `AuditQuery` | ⬜ | Read/query + SIEM streaming. |
+| `AuditQuery` | ✅ | Authorized read surface over the audit trail: filter by action/actor, cursor (sequence) pagination, scope isolation (org vs system), and `since()` pull-stream for SIEM. 5 tests. (Setup reuses the Audit kernel's `InteractsWithAudit`.) |
 | `Webhooks` | ✅ | Endpoint registry (secrets sealed via Crypto SecretBox) · HMAC-SHA256 signed HTTP delivery · failure recording + exponential-backoff retries · listens to `EventDelivered` (full Events→webhook fan-out proven end-to-end). Ships `InteractsWithWebhooks`. 6 tests. |
 | `Api` | ⬜ | REST surface + OpenAPI. |
 
