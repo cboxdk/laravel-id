@@ -14,6 +14,7 @@ use Cbox\Id\Api\Http\Controllers\RegisteredClientController;
 use Cbox\Id\Api\Http\Controllers\RegistrationController;
 use Cbox\Id\Api\Http\Controllers\RevocationController;
 use Cbox\Id\Api\Http\Controllers\Scim\DiscoveryController as ScimDiscoveryController;
+use Cbox\Id\Api\Http\Controllers\Scim\GroupController;
 use Cbox\Id\Api\Http\Controllers\Scim\UserController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlAcsController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
@@ -70,6 +71,13 @@ final class ApiServiceProvider extends ServiceProvider
             Route::put('/Users/{id}', [UserController::class, 'replace']);
             Route::patch('/Users/{id}', [UserController::class, 'patch']);
             Route::delete('/Users/{id}', [UserController::class, 'destroy']);
+
+            Route::get('/Groups', [GroupController::class, 'index']);
+            Route::post('/Groups', [GroupController::class, 'store']);
+            Route::get('/Groups/{id}', [GroupController::class, 'show']);
+            Route::put('/Groups/{id}', [GroupController::class, 'replace']);
+            Route::patch('/Groups/{id}', [GroupController::class, 'patch']);
+            Route::delete('/Groups/{id}', [GroupController::class, 'destroy']);
         });
     }
 }

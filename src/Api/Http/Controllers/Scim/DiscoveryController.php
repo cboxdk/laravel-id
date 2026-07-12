@@ -47,12 +47,47 @@ final class DiscoveryController
             'meta' => ['resourceType' => 'ResourceType'],
         ];
 
-        return $this->listResponse([$user]);
+        $group = [
+            'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:ResourceType'],
+            'id' => 'Group',
+            'name' => 'Group',
+            'endpoint' => '/Groups',
+            'description' => 'Group',
+            'schema' => 'urn:ietf:params:scim:schemas:core:2.0:Group',
+            'meta' => ['resourceType' => 'ResourceType'],
+        ];
+
+        return $this->listResponse([$user, $group]);
     }
 
     public function schemas(): JsonResponse
     {
-        return $this->listResponse([$this->userSchema()]);
+        return $this->listResponse([$this->userSchema(), $this->groupSchema()]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function groupSchema(): array
+    {
+        return [
+            'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:Schema'],
+            'id' => 'urn:ietf:params:scim:schemas:core:2.0:Group',
+            'name' => 'Group',
+            'description' => 'Group',
+            'attributes' => [
+                [
+                    'name' => 'displayName', 'type' => 'string', 'multiValued' => false,
+                    'required' => true, 'caseExact' => false, 'mutability' => 'readWrite',
+                    'returned' => 'default', 'uniqueness' => 'none',
+                ],
+                [
+                    'name' => 'members', 'type' => 'complex', 'multiValued' => true,
+                    'required' => false, 'mutability' => 'readWrite', 'returned' => 'default',
+                ],
+            ],
+            'meta' => ['resourceType' => 'Schema'],
+        ];
     }
 
     /**
