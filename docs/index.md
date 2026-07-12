@@ -65,5 +65,6 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 
 ### Make it yours
 
+- [Integrating an existing app](integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
 - [Extending & customizing](extending.md) — swap any contract; implement a SAML/OIDC validator
 - [Testing](testing.md) — the shippable `InteractsWith*` helpers and fakes
