@@ -1,0 +1,33 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('oauth_authorization_codes', function (Blueprint $table): void {
+            $table->ulid('id')->primary();
+            $table->string('code_hash')->unique();
+            $table->string('client_id')->index();
+            $table->ulid('user_id');
+            $table->ulid('organization_id')->nullable();
+            $table->string('redirect_uri');
+            $table->json('scopes')->default('[]');
+            $table->string('pkce_challenge');
+            $table->string('pkce_method')->default('S256');
+            $table->timestamp('expires_at');
+            $table->timestamp('consumed_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('oauth_authorization_codes');
+    }
+};

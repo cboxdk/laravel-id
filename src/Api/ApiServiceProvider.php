@@ -9,6 +9,7 @@ use Cbox\Id\Api\Http\Controllers\HealthController;
 use Cbox\Id\Api\Http\Controllers\IntrospectionController;
 use Cbox\Id\Api\Http\Controllers\JwksController;
 use Cbox\Id\Api\Http\Controllers\Scim\UserController;
+use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +23,7 @@ final class ApiServiceProvider extends ServiceProvider
         // built against its conformance suite.
         Route::get('/.well-known/jwks.json', JwksController::class);
         Route::get('/.well-known/openid-configuration', DiscoveryController::class);
+        Route::post('/oauth/token', TokenController::class);
         Route::post('/oauth/introspect', IntrospectionController::class);
         Route::get('/up', HealthController::class);
 
