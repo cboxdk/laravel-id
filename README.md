@@ -45,6 +45,7 @@ Full docs live in [`docs/`](docs/index.md):
 - [Testing](docs/testing.md)
 - [Security](docs/security.md) · [`SECURITY.md`](SECURITY.md)
 - [Standards & conformance](docs/standards.md) — RFCs implemented (OAuth/OIDC/SCIM/SAML/MCP)
+- [Compliance mapping](docs/compliance.md) — SOC 2 / ISO 27001 / NIS2 / GDPR / HIPAA / PCI-DSS · [Threat model](docs/threat-model.md)
 
 ## License
 
