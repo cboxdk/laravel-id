@@ -23,9 +23,19 @@ final class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(Mfa::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);
 
-        // Passkey orchestration ships; the crypto verifier must be bound to one
-        // wrapping a vetted WebAuthn library.
-        $this->app->singleton(WebAuthnVerifier::class, UnavailableWebAuthnVerifier::class);
+        // Real WebAuthn verifier (OpenSSL signatures + vetted CBOR/COSE decoding)
+        // once rp_id + origin are configured; otherwise it refuses rather than
+        // trusting anything. Passkey orchestration always ships.
+        $this->app->singleton(WebAuthnVerifier::class, function (): WebAuthnVerifier {
+            $rpId = config('cbox-id.webauthn.rp_id');
+            $origin = config('cbox-id.webauthn.origin');
+
+            if (is_string($rpId) && $rpId !== '' && is_string($origin) && $origin !== '') {
+                return new NativeWebAuthnVerifier($rpId, $origin);
+            }
+
+            return new UnavailableWebAuthnVerifier;
+        });
         $this->app->singleton(Passkeys::class, PasskeyService::class);
     }
 }

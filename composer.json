@@ -11,7 +11,8 @@
         "illuminate/auth": "^12.0",
         "illuminate/contracts": "^12.0",
         "illuminate/database": "^12.0",
-        "illuminate/support": "^12.0"
+        "illuminate/support": "^12.0",
+        "spomky-labs/cbor-php": "^3.0"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",

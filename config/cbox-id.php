@@ -20,6 +20,17 @@ return [
         'user' => User::class,
     ],
 
+    /*
+     * WebAuthn / passkey ceremony parameters. `rp_id` is the Relying Party ID
+     * (usually your registrable domain, e.g. "example.com"); `origin` is the
+     * exact origin the browser reports (scheme + host + port). Both are asserted
+     * during verification — a mismatch is rejected.
+     */
+    'webauthn' => [
+        'rp_id' => env('CBOX_ID_WEBAUTHN_RP_ID'),
+        'origin' => env('CBOX_ID_WEBAUTHN_ORIGIN'),
+    ],
+
     'crypto' => [
 
         /*
