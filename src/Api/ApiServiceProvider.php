@@ -29,8 +29,10 @@ final class ApiServiceProvider extends ServiceProvider
 
         // SCIM 2.0 provisioning, authenticated by the directory bearer token.
         Route::middleware(AuthenticateScim::class)->prefix('scim/v2')->group(function (): void {
+            Route::get('/Users', [UserController::class, 'index']);
             Route::post('/Users', [UserController::class, 'store']);
             Route::get('/Users/{id}', [UserController::class, 'show']);
+            Route::put('/Users/{id}', [UserController::class, 'replace']);
             Route::patch('/Users/{id}', [UserController::class, 'patch']);
             Route::delete('/Users/{id}', [UserController::class, 'destroy']);
         });
