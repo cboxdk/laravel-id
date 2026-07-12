@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
+use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
@@ -50,6 +52,47 @@ it('provisions a federated identity idempotently', function (): void {
         ->and($first->email)->toBe('dana@corp.com')
         ->and(User::query()->count())->toBe(1)
         ->and(IdentityLink::query()->count())->toBe(1);
+});
+
+it('refuses to merge a federated identity into an existing account by email', function (): void {
+    $subjects = app(Subjects::class);
+    // An account already exists (e.g. created with a password).
+    $subjects->create('dana@corp.com', 'Dana', 'secret-password');
+
+    // A *different* provider identity shows up with the same email.
+    $subjects->provisionFederated(new FederatedPrincipal('social:google', 'google|999', 'dana@corp.com', 'Dana'));
+})->throws(AccountExistsForEmail::class);
+
+it('links a provider identity explicitly to an authenticated subject', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('dana@corp.com', 'Dana');
+
+    $subjects->link($subject->id, new FederatedPrincipal('social:github', 'gh|1', 'dana@corp.com'));
+
+    // The linked identity now resolves back to the same subject.
+    $resolved = $subjects->provisionFederated(new FederatedPrincipal('social:github', 'gh|1', 'dana@corp.com'));
+    expect($resolved->id)->toBe($subject->id)
+        ->and($subjects->linkedIdentities($subject->id))->toContain(['provider' => 'social:github', 'subject' => 'gh|1']);
+});
+
+it('refuses to link an identity already owned by another account', function (): void {
+    $subjects = app(Subjects::class);
+    $a = $subjects->create('a@corp.com');
+    $b = $subjects->create('b@corp.com');
+
+    $subjects->link($a->id, new FederatedPrincipal('social:google', 'google|1', 'a@corp.com'));
+
+    $subjects->link($b->id, new FederatedPrincipal('social:google', 'google|1', 'a@corp.com'));
+})->throws(IdentityAlreadyLinked::class);
+
+it('unlinks a provider identity', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('dana@corp.com');
+    $subjects->link($subject->id, new FederatedPrincipal('social:google', 'google|1'));
+
+    $subjects->unlink($subject->id, 'social:google');
+
+    expect($subjects->linkedIdentities($subject->id))->toBeEmpty();
 });
 
 it('emits an event and records audit on subject creation', function (): void {

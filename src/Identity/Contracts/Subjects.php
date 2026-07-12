@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Contracts;
 
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
+use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Identity\ValueObjects\Subject;
 
@@ -29,10 +31,34 @@ interface Subjects
     public function create(string $email, ?string $name = null, ?string $password = null): Subject;
 
     /**
-     * Resolve the subject behind a federated identity, creating the subject
-     * and/or link on first sight. Idempotent per (provider, subject).
+     * Resolve the subject behind a federated identity. On first sight it creates
+     * a new subject — but it NEVER merges into an existing account by email;
+     * if the email already belongs to an account it throws
+     * {@see AccountExistsForEmail}. Idempotent per
+     * (provider, subject). Linking to an existing account is explicit — see
+     * {@see link()}.
      */
     public function provisionFederated(FederatedPrincipal $principal): Subject;
+
+    /**
+     * Explicitly link a provider identity to an ALREADY-authenticated subject —
+     * the safe way to connect a second sign-in method, because the caller has
+     * proven control of both sides (signed in as the subject, and just completed
+     * the provider's auth). Throws
+     * {@see IdentityAlreadyLinked} if the identity
+     * belongs to a different subject.
+     */
+    public function link(string $subjectId, FederatedPrincipal $principal): void;
+
+    /**
+     * The external identities linked to a subject, as (provider, subject id)
+     * pairs — for a "connected accounts" screen.
+     *
+     * @return array<int, array{provider: string, subject: string}>
+     */
+    public function linkedIdentities(string $subjectId): array;
+
+    public function unlink(string $subjectId, string $provider): void;
 
     public function verifyPassword(string $subjectId, string $password): bool;
 

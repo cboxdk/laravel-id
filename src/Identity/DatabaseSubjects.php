@@ -6,6 +6,8 @@ namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
+use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
@@ -77,6 +79,7 @@ final class DatabaseSubjects implements Subjects
     public function provisionFederated(FederatedPrincipal $principal): Subject
     {
         return DB::transaction(function () use ($principal): Subject {
+            // Returning identity — the exact (provider, subject) is already ours.
             $link = IdentityLink::query()
                 ->where('provider', $principal->provider)
                 ->where('subject', $principal->subject)
@@ -90,31 +93,81 @@ final class DatabaseSubjects implements Subjects
                 }
             }
 
-            $email = $principal->email ?? $principal->subject.'@'.$principal->provider.'.federated';
-            $subject = $this->findByEmail($email) ?? $this->create($email, $principal->name);
+            // NEVER merge a new identity into an existing account by email — that
+            // is the account-takeover vector. Linking must be explicit (link()).
+            if ($principal->email !== null && $this->findByEmail($principal->email) !== null) {
+                throw AccountExistsForEmail::make($principal->email);
+            }
 
-            IdentityLink::query()->create([
-                'user_id' => $subject->id,
-                'provider' => $principal->provider,
-                'subject' => $principal->subject,
-                'connection_id' => $principal->connectionId,
-                'raw' => $principal->raw,
-            ]);
+            // First sight, no conflict: a fresh account owned by this identity.
+            $subject = $this->create(
+                $principal->email ?? $principal->subject.'@'.$principal->provider.'.federated',
+                $principal->name,
+            );
 
-            $this->events->emit(new DomainEvent('identity.linked', [
-                'user_id' => $subject->id,
-                'provider' => $principal->provider,
-            ]));
-            $this->audit->record(new AuditEvent(
-                action: 'identity.linked',
-                actorType: ActorType::System,
-                targetType: 'user',
-                targetId: $subject->id,
-                context: ['provider' => $principal->provider, 'subject' => $principal->subject],
-            ));
+            $this->writeLink($subject->id, $principal);
 
             return $subject;
         });
+    }
+
+    public function link(string $subjectId, FederatedPrincipal $principal): void
+    {
+        $existing = IdentityLink::query()
+            ->where('provider', $principal->provider)
+            ->where('subject', $principal->subject)
+            ->first();
+
+        if ($existing !== null) {
+            if ($existing->user_id !== $subjectId) {
+                throw IdentityAlreadyLinked::make($principal->provider);
+            }
+
+            return; // already linked to this subject
+        }
+
+        $this->writeLink($subjectId, $principal);
+    }
+
+    public function linkedIdentities(string $subjectId): array
+    {
+        return IdentityLink::query()
+            ->where('user_id', $subjectId)
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (IdentityLink $link): array => ['provider' => $link->provider, 'subject' => $link->subject])
+            ->all();
+    }
+
+    public function unlink(string $subjectId, string $provider): void
+    {
+        IdentityLink::query()
+            ->where('user_id', $subjectId)
+            ->where('provider', $provider)
+            ->delete();
+    }
+
+    private function writeLink(string $subjectId, FederatedPrincipal $principal): void
+    {
+        IdentityLink::query()->create([
+            'user_id' => $subjectId,
+            'provider' => $principal->provider,
+            'subject' => $principal->subject,
+            'connection_id' => $principal->connectionId,
+            'raw' => $principal->raw,
+        ]);
+
+        $this->events->emit(new DomainEvent('identity.linked', [
+            'user_id' => $subjectId,
+            'provider' => $principal->provider,
+        ]));
+        $this->audit->record(new AuditEvent(
+            action: 'identity.linked',
+            actorType: ActorType::System,
+            targetType: 'user',
+            targetId: $subjectId,
+            context: ['provider' => $principal->provider, 'subject' => $principal->subject],
+        ));
     }
 
     public function verifyPassword(string $subjectId, string $password): bool

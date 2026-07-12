@@ -54,6 +54,18 @@ final class ArraySubjects implements Subjects
         return $this->findByEmail($email) ?? $this->create($email, $principal->name);
     }
 
+    public function link(string $subjectId, FederatedPrincipal $principal): void {}
+
+    /**
+     * @return array<int, array{provider: string, subject: string}>
+     */
+    public function linkedIdentities(string $subjectId): array
+    {
+        return [];
+    }
+
+    public function unlink(string $subjectId, string $provider): void {}
+
     public function verifyPassword(string $subjectId, string $password): bool
     {
         return false;
