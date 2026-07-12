@@ -36,7 +36,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 | CC6.6 | Authentication (MFA) | Passwords (breach-screened), TOTP (replay-safe), WebAuthn/passkeys (UV-enforced), step-up |
 | CC6.7 | Transmission protection | Bearer over TLS; HSTS; SSRF-guarded webhooks; SAML/OIDC signature verification |
 | CC6.8 | Prevent unauthorized software | SBOM, dependency audit, license gate in CI |
-| CC7.1–7.2 | Monitoring / anomaly detection | Hash-chained audit log; request risk-scoring (via `cboxdk/laravel-risk`) |
+| CC7.1–7.2 | Monitoring / anomaly detection | Hash-chained audit log (framework); request risk-scoring is an **app-layer add-on** (e.g. `cboxdk/laravel-risk`, shipped by the host app — not this package) |
 | CC7.2 | Security event logging | Audit trail of auth, provisioning, key, and admin events |
 | CC8.1 | Change management | Signed commits, CI gates, conventional commits, CHANGELOG |
 
@@ -49,7 +49,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 | A.8.5 | Secure authentication | Passkeys (phishing-resistant), TOTP, breach-screened passwords |
 | A.8.24 | Use of cryptography | Crypto kernel: alg allow-list (RFC 8725), AEAD at rest, key rotation |
 | A.8.15 | Logging | Tamper-evident, hash-chained audit log with signed checkpoints |
-| A.8.16 | Monitoring activities | Risk-scoring pipeline; auditable security events |
+| A.8.16 | Monitoring activities | Auditable security events (framework); risk-scoring pipeline at the app layer (add-on) |
 | A.5.23 | Cloud service security | Self-hostable; no data leaves your infrastructure |
 | A.8.8 | Management of technical vulnerabilities | `composer audit`, Dependabot, SAST, SBOM in CI |
 | A.8.28 | Secure coding | PHPStan max, Pint, tests against real vectors, honest-crypto stance |
@@ -73,8 +73,8 @@ requirements to the feature that addresses it, and end with what remains yours.
 | Art. 25 | Data protection by design & default | deny-by-default tenancy, minimal token claims, self-hosted |
 | Art. 32 | Security of processing | AEAD at rest, MFA, alg allow-list, audit log, SSRF/rate-limit defenses |
 | Art. 30 | Records of processing | audit trail of identity/access events |
-| Art. 33 | Breach detection & notification | tamper-evident log + risk-scoring surface anomalies for your 72h clock |
-| Art. 22 | Automated decisions | risk-scoring is **explainable** (reasons breakdown) and ships in monitor mode — see the `laravel-risk` security docs |
+| Art. 33 | Breach detection & notification | tamper-evident log surfaces anomalies for your 72h clock (plus app-layer risk-scoring, if added) |
+| Art. 22 | Automated decisions | **applies at the app layer, not this framework** — if the host adds risk-scoring (e.g. `cboxdk/laravel-risk`) it is explainable (reasons breakdown) and ships in monitor mode; see that package's docs |
 | Art. 17 | Right to erasure | opaque subject model — the platform holds no PII it can't delete via your resolver |
 
 ## HIPAA Security Rule (§164.312 technical safeguards)
@@ -106,7 +106,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 The package cannot supply these — they are process, not code:
 
 - **Policies & governance**: infosec policy, access-review cadence, onboarding/offboarding, vendor management.
-- **Data retention & DPIA**: define retention for audit logs and risk data; run a Legitimate Interest Assessment / DPIA (GDPR).
+- **Data retention & DPIA**: define retention for audit logs (and risk data, if you add app-layer risk-scoring); run a Legitimate Interest Assessment / DPIA (GDPR).
 - **Incident response**: a documented plan, breach-notification workflow, and the NIS2/GDPR reporting timelines.
 - **Independent assurance**: a SOC 2 audit, ISO 27001 certification, HIPAA risk assessment, or PCI ROC/SAQ — performed by an assessor against *your* running system.
 - **Penetration testing**: schedule and act on a recurring third-party test.
@@ -118,4 +118,4 @@ The package cannot supply these — they are process, not code:
 - The [security model](security.md) and threat model.
 - A machine-readable **CycloneDX SBOM** and a passing dependency/license/vuln gate.
 - A **tamper-evident audit trail** exportable as forensic evidence.
-- Config that is **secure by default** (MFA available, breach screen on, deny-by-default, monitor-mode risk scoring).
+- Config that is **secure by default** (MFA available, breach screen on, deny-by-default).

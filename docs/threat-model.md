@@ -23,7 +23,7 @@ A STRIDE pass over the platform's trust boundaries. It is the evidence an ISO 27
 
 | Threat | Mitigation |
 |--------|-----------|
-| Credential theft / stuffing | MFA (TOTP replay-safe, passkeys UV-enforced), breach screen, rate limits, risk-scoring |
+| Credential theft / stuffing | MFA (TOTP replay-safe, passkeys UV-enforced), breach screen, rate limits |
 | `alg=none` / algorithm confusion | explicit alg allow-list, per-key alg binding (RFC 8725) |
 | Forged SAML/OIDC assertions | XML-DSig / JWS verification, RS256-pinned, `iss`/`aud` checks, replay guard |
 | Session fixation | session id regenerated on login |
@@ -59,7 +59,7 @@ A STRIDE pass over the platform's trust boundaries. It is the evidence an ISO 27
 
 | Threat | Mitigation |
 |--------|-----------|
-| Brute force / automated abuse | per-endpoint rate limits, login/MFA/signup throttles, risk-scoring |
+| Brute force / automated abuse | per-endpoint rate limits, login/MFA/signup throttles |
 | Algorithmic-complexity DoS (auth graph) | visited-set cycle guard in relationship checks |
 | Flooded webhook retries | bounded retry schedule |
 
@@ -75,6 +75,10 @@ A STRIDE pass over the platform's trust boundaries. It is the evidence an ISO 27
 ## Residual risk (honest scope)
 
 - **Audit is tamper-evident, not tamper-proof** — anchor checkpoints externally.
+- **Risk-scoring is an app-layer add-on, not shipped by this package.** The host app
+  can add bot/abuse scoring on top (e.g. `cboxdk/laravel-risk`) to feed CAPTCHA /
+  step-up / reject decisions; this framework provides the rate limits, throttles and
+  MFA it composes with.
 - **App-layer SSRF is defense in depth** — a network egress allow-list is the
   complete fix.
 - **Revocation is effective at the introspection endpoint**; resource servers that
