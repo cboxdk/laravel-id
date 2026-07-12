@@ -8,6 +8,8 @@ use Cbox\Id\Api\Http\Controllers\DiscoveryController;
 use Cbox\Id\Api\Http\Controllers\HealthController;
 use Cbox\Id\Api\Http\Controllers\IntrospectionController;
 use Cbox\Id\Api\Http\Controllers\JwksController;
+use Cbox\Id\Api\Http\Controllers\RegisteredClientController;
+use Cbox\Id\Api\Http\Controllers\RegistrationController;
 use Cbox\Id\Api\Http\Controllers\Scim\UserController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlAcsController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
@@ -34,6 +36,13 @@ final class ApiServiceProvider extends ServiceProvider
 
             // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
             Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);
+
+            // Dynamic Client Registration (RFC 7591) + management (RFC 7592). The
+            // controller enforces the configured mode (disabled/protected/open).
+            Route::post('/oauth/register', RegistrationController::class);
+            Route::get('/oauth/register/{client}', [RegisteredClientController::class, 'show']);
+            Route::put('/oauth/register/{client}', [RegisteredClientController::class, 'update']);
+            Route::delete('/oauth/register/{client}', [RegisteredClientController::class, 'destroy']);
         });
 
         // SCIM 2.0 provisioning, authenticated by the directory bearer token.

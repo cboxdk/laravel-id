@@ -62,6 +62,31 @@ return [
         'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
     ],
 
+    /*
+     * OAuth 2.0 Dynamic Client Registration (RFC 7591) and client management
+     * (RFC 7592). MCP clients rely on DCR to self-register.
+     *
+     * mode:
+     *   'disabled'  — /oauth/register returns 403 and is not advertised (default,
+     *                 secure-by-default: open registration is an abuse surface).
+     *   'protected' — registration requires an initial access token (bearer)
+     *                 matching `initial_access_token`.
+     *   'open'      — anyone may register (rate-limited). Suitable for public MCP
+     *                 deployments that expect unknown clients.
+     *
+     * allowed_scopes limits what a dynamically registered client may request; a
+     * requested scope outside this list is dropped. grant_types listed here are
+     * the only ones a dynamic client may be granted.
+     */
+    'oauth' => [
+        'dynamic_registration' => [
+            'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),
+            'initial_access_token' => env('CBOX_ID_DCR_INITIAL_ACCESS_TOKEN'),
+            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access'],
+            'allowed_grant_types' => ['authorization_code', 'refresh_token', 'client_credentials'],
+        ],
+    ],
+
     'crypto' => [
 
         /*

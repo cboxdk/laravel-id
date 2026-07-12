@@ -21,6 +21,9 @@ return new class extends Migration
             $table->json('grant_types')->default('[]');
             $table->json('scopes')->default('[]');
             $table->boolean('first_party')->default(false);
+            // RFC 7592: SHA-256 of the registration access token for dynamically
+            // registered clients (null for clients created through the console).
+            $table->string('registration_access_token_hash')->nullable();
             $table->timestamps();
         });
 

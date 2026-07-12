@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer\Models;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * An OAuth client (relying party). `organization_id` null = a first-party client.
@@ -22,6 +23,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
  * @property bool $first_party
+ * @property string|null $registration_access_token_hash
+ * @property Carbon|null $created_at
  */
 final class Client extends Model
 {
