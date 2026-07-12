@@ -53,6 +53,10 @@ final class IdServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        // Merge package defaults so config('cbox-id.*') resolves in a host app
+        // even before the config is published.
+        $this->mergeConfigFrom(__DIR__.'/../config/cbox-id.php', 'cbox-id');
+
         foreach (self::MODULE_PROVIDERS as $provider) {
             $this->app->register($provider);
         }
@@ -65,6 +69,10 @@ final class IdServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
         if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__.'/../config/cbox-id.php' => config_path('cbox-id.php'),
+            ], 'cbox-id-config');
+
             $this->publishes([
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'cbox-id-migrations');
