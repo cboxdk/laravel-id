@@ -14,6 +14,7 @@ interface AuthorizationCodes
      * challenge. Returns the raw code (only its hash is stored).
      *
      * @param  list<string>  $scopes
+     * @param  list<string>  $amr  authentication methods used at login
      */
     public function issue(
         string $clientId,
@@ -24,6 +25,8 @@ interface AuthorizationCodes
         string $codeChallenge,
         string $codeChallengeMethod = 'S256',
         ?string $nonce = null,
+        ?int $authTime = null,
+        array $amr = [],
     ): string;
 
     /**

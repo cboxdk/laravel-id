@@ -44,6 +44,7 @@ Full docs live in [`docs/`](docs/index.md):
 - [Extending & customizing](docs/extending.md)
 - [Testing](docs/testing.md)
 - [Security](docs/security.md) · [`SECURITY.md`](SECURITY.md)
+- [Standards & conformance](docs/standards.md) — RFCs implemented (OAuth/OIDC/SCIM/SAML/MCP)
 
 ## License
 

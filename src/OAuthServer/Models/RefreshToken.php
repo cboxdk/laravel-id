@@ -9,29 +9,27 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * A short-lived, single-use authorization code bound to a client, user, redirect
- * URI and PKCE challenge. Only the SHA-256 hash of the code is stored.
+ * A refresh token, stored only as a SHA-256 hash. Rotation is single-use:
+ * presenting a token consumes it and mints a successor in the same `family_id`.
+ * Re-presenting a consumed token is treated as theft and revokes the family.
  *
  * @property string $id
- * @property string $code_hash
+ * @property string $token_hash
+ * @property string $family_id
  * @property string $client_id
- * @property string $user_id
+ * @property string|null $user_id
  * @property string|null $organization_id
- * @property string $redirect_uri
  * @property array<int, string> $scopes
- * @property string $pkce_challenge
- * @property string $pkce_method
- * @property string|null $nonce
- * @property int|null $auth_time
- * @property array<int, string>|null $amr
- * @property Carbon $expires_at
+ * @property string|null $audience
  * @property Carbon|null $consumed_at
+ * @property Carbon|null $revoked_at
+ * @property Carbon $expires_at
  */
-final class AuthorizationCode extends Model
+final class RefreshToken extends Model
 {
     use HasUlids;
 
-    protected $table = 'oauth_authorization_codes';
+    protected $table = 'oauth_refresh_tokens';
 
     protected $guarded = [];
 
@@ -42,9 +40,9 @@ final class AuthorizationCode extends Model
     {
         return [
             'scopes' => 'array',
-            'amr' => 'array',
-            'expires_at' => 'datetime',
             'consumed_at' => 'datetime',
+            'revoked_at' => 'datetime',
+            'expires_at' => 'datetime',
         ];
     }
 }

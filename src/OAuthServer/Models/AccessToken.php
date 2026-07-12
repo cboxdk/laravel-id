@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $user_id
  * @property string|null $organization_id
  * @property array<int, string> $scopes
+ * @property string|null $audience
  * @property Carbon $expires_at
  * @property Carbon|null $revoked_at
  */

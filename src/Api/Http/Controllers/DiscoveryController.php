@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\Api\Support\ServerMetadata;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -13,33 +14,6 @@ final class DiscoveryController
 {
     public function __invoke(): JsonResponse
     {
-        $configured = config('cbox-id.issuer');
-        $issuer = is_string($configured) && $configured !== ''
-            ? rtrim($configured, '/')
-            : rtrim(url('/'), '/');
-
-        $document = [
-            'issuer' => $issuer,
-            'jwks_uri' => $issuer.'/.well-known/jwks.json',
-            'authorization_endpoint' => $issuer.'/oauth/authorize',
-            'token_endpoint' => $issuer.'/oauth/token',
-            'introspection_endpoint' => $issuer.'/oauth/introspect',
-            'userinfo_endpoint' => $issuer.'/oauth/userinfo',
-            'response_types_supported' => ['code'],
-            'grant_types_supported' => ['authorization_code', 'client_credentials'],
-            'id_token_signing_alg_values_supported' => ['RS256', 'ES256'],
-            'code_challenge_methods_supported' => ['S256'],
-            'scopes_supported' => ['openid', 'profile', 'email'],
-            'subject_types_supported' => ['public'],
-            'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'none'],
-        ];
-
-        // Advertise the registration endpoint only when DCR is actually enabled,
-        // so clients don't attempt registration against a disabled server.
-        if (config('cbox-id.oauth.dynamic_registration.mode', 'disabled') !== 'disabled') {
-            $document['registration_endpoint'] = $issuer.'/oauth/register';
-        }
-
-        return response()->json($document);
+        return response()->json(ServerMetadata::document());
     }
 }

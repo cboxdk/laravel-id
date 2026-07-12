@@ -11,11 +11,14 @@ final readonly class AuthorizedGrant
 {
     /**
      * @param  list<string>  $scopes
+     * @param  list<string>  $amr  authentication methods used at login (OIDC amr)
      */
     public function __construct(
         public string $userId,
         public ?string $organizationId,
         public array $scopes,
         public ?string $nonce = null,
+        public ?int $authTime = null,
+        public array $amr = [],
     ) {}
 }

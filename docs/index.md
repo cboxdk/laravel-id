@@ -55,6 +55,7 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 
 - [Architecture & patterns](architecture.md) — kernels vs domain, contracts-first DI, dogfooding
 - [Security](security.md) — the invariants, tenant isolation, tamper-evident audit
+- [Standards & conformance](standards.md) — every RFC/spec implemented, and to what extent
 
 ### Do things
 

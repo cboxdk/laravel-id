@@ -22,6 +22,10 @@ return new class extends Migration
             $table->string('pkce_method')->default('S256');
             // OIDC nonce from the authorize request, echoed into the id_token.
             $table->string('nonce')->nullable();
+            // Authentication context captured at login, surfaced as id_token
+            // auth_time / amr claims for the client's step-up decisions.
+            $table->unsignedInteger('auth_time')->nullable();
+            $table->json('amr')->nullable();
             $table->timestamp('expires_at');
             $table->timestamp('consumed_at')->nullable();
             $table->timestamps();

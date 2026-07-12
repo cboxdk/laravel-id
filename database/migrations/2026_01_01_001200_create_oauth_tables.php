@@ -43,6 +43,8 @@ return new class extends Migration
             $table->ulid('user_id')->nullable();
             $table->ulid('organization_id')->nullable();
             $table->json('scopes')->default('[]');
+            // RFC 8707 resource indicator this token is bound to (aud), if any.
+            $table->string('audience')->nullable();
             $table->timestamp('expires_at');
             $table->timestamp('revoked_at')->nullable();
             $table->timestamps();

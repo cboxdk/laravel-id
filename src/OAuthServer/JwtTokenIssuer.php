@@ -21,14 +21,14 @@ final class JwtTokenIssuer implements TokenIssuer
 
     public function __construct(private readonly TokenSigner $signer) {}
 
-    public function issueClientCredentials(Client $client, array $scopes = []): IssuedToken
+    public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null): IssuedToken
     {
-        return $this->issue($client, $client->client_id, null, $client->organization_id, $this->grantScopes($client, $scopes));
+        return $this->issue($client, $client->client_id, null, $client->organization_id, $this->grantScopes($client, $scopes), $resource);
     }
 
-    public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = []): IssuedToken
+    public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null): IssuedToken
     {
-        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes));
+        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource);
     }
 
     /**
@@ -47,12 +47,12 @@ final class JwtTokenIssuer implements TokenIssuer
     /**
      * @param  list<string>  $scopes
      */
-    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes): IssuedToken
+    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null): IssuedToken
     {
         $jti = (string) Str::ulid();
         $issuedAt = time();
 
-        $token = $this->signer->sign([
+        $claims = [
             'iss' => 'cbox-id',
             'sub' => $subject,
             'client_id' => $client->client_id,
@@ -61,7 +61,16 @@ final class JwtTokenIssuer implements TokenIssuer
             'org' => $organizationId,
             'iat' => $issuedAt,
             'exp' => $issuedAt + self::TTL_SECONDS,
-        ]);
+        ];
+
+        // RFC 8707 / 9068: bind the token to the requested resource server so it
+        // can verify the token was minted for it (confused-deputy defense, which
+        // the MCP authorization model depends on).
+        if ($resource !== null) {
+            $claims['aud'] = $resource;
+        }
+
+        $token = $this->signer->sign($claims);
 
         AccessToken::query()->create([
             'jti' => $jti,
@@ -69,6 +78,7 @@ final class JwtTokenIssuer implements TokenIssuer
             'user_id' => $userId,
             'organization_id' => $organizationId,
             'scopes' => $scopes,
+            'audience' => $resource,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
