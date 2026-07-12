@@ -1,14 +1,50 @@
-# cboxdk/laravel-id
+# Cbox ID
 
-**Cbox ID** — the self-hostable, Laravel-native identity platform (framework layer).
+**`cboxdk/laravel-id`** — a self-hostable, Laravel-native identity platform. Central login,
+enterprise SSO, directory sync, RBAC, billing-driven entitlements and a tamper-evident audit
+trail — all interface-driven, deny-by-default, and verified (tests + PHPStan level max +
+`composer audit`) before it ships.
 
-One package, clean internal module boundaries under `Cbox\Id\*`:
-`Kernel\{Tenancy,Crypto,Audit,Events,Authorization}` · `Organization` · `Identity` ·
-`Federation` (SAML/OIDC SP) · `Directory` (SCIM) · `OAuthServer` · `AccessControl`
-(RBAC + billing-fed entitlements) · `AuditQuery` · `Webhooks` · `Api`.
+UI-free and domain-free: every capability sits behind a contract you bind, mock, extend or
+replace.
 
-Owned logic, MIT-licensed. UI/admin is a separate (later, likely closed) layer.
-Built against the locked foundation contracts. Split a module into its own package only
-when a boundary earns it.
+## Install
 
-> Private during internal dogfooding.
+```bash
+composer require cboxdk/laravel-id
+php -r "echo base64_encode(random_bytes(32)).PHP_EOL;"   # set as CBOX_ID_CRYPTO_KEY
+php artisan migrate
+```
+
+## A taste
+
+```php
+use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\ValueObjects\NewOrganization;
+use Cbox\Id\Identity\Contracts\UserDirectory;
+
+$org  = app(Organizations::class)->create(new NewOrganization('Northwind', 'northwind'));
+$user = app(UserDirectory::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
+```
+
+## Modules
+
+| Layer | Modules |
+|---|---|
+| Kernels | `Tenancy` · `Crypto` · `Audit` · `Events` · `Authorization` |
+| Domain | `Organization` · `Identity` · `AccessControl` · `Directory` (SCIM) · `Federation` (SSO) · `Webhooks` · `AuditQuery` |
+
+## Documentation
+
+Full docs live in [`docs/`](docs/index.md):
+
+- [Installation](docs/getting-started/installation.md) · [Quickstart](docs/getting-started/quickstart.md)
+- [Architecture & patterns](docs/architecture.md)
+- [Cookbook](docs/cookbook.md)
+- [Extending & customizing](docs/extending.md)
+- [Testing](docs/testing.md)
+- [Security](docs/security.md) · [`SECURITY.md`](SECURITY.md)
+
+## License
+
+MIT. Private during internal dogfooding; public release when ready.
