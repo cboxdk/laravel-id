@@ -63,7 +63,7 @@ MCP server it intends to call.
 | **RFC 7643** | Core User schema | ✅ |
 | **RFC 7644** | Filtering — `eq/ne/co/sw/ew/pr` (LIKE metacharacters escaped) | ◐ |
 | **RFC 7643** | `/Groups` + membership sync | ▢ |
-| **RFC 7644** | ServiceProviderConfig / ResourceTypes / Schemas discovery | ▢ |
+| **RFC 7644** | ServiceProviderConfig / ResourceTypes / Schemas discovery | ✅ |
 | **RFC 7643** | Enterprise User extension | ▢ |
 
 Deprovision / deactivation drops membership **and revokes sessions immediately**.

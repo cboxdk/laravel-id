@@ -13,6 +13,7 @@ use Cbox\Id\Api\Http\Controllers\ProtectedResourceMetadataController;
 use Cbox\Id\Api\Http\Controllers\RegisteredClientController;
 use Cbox\Id\Api\Http\Controllers\RegistrationController;
 use Cbox\Id\Api\Http\Controllers\RevocationController;
+use Cbox\Id\Api\Http\Controllers\Scim\DiscoveryController as ScimDiscoveryController;
 use Cbox\Id\Api\Http\Controllers\Scim\UserController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlAcsController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
@@ -58,6 +59,11 @@ final class ApiServiceProvider extends ServiceProvider
 
         // SCIM 2.0 provisioning, authenticated by the directory bearer token.
         Route::middleware(['throttle:120,1', AuthenticateScim::class])->prefix('scim/v2')->group(function (): void {
+            // Discovery (RFC 7644 §4) — connectors probe these during setup.
+            Route::get('/ServiceProviderConfig', [ScimDiscoveryController::class, 'serviceProviderConfig']);
+            Route::get('/ResourceTypes', [ScimDiscoveryController::class, 'resourceTypes']);
+            Route::get('/Schemas', [ScimDiscoveryController::class, 'schemas']);
+
             Route::get('/Users', [UserController::class, 'index']);
             Route::post('/Users', [UserController::class, 'store']);
             Route::get('/Users/{id}', [UserController::class, 'show']);
