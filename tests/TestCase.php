@@ -14,6 +14,7 @@ use Cbox\Id\Kernel\Authorization\Testing\InteractsWithAuthorization;
 use Cbox\Id\Kernel\Authorization\Testing\InteractsWithEntitlements;
 use Cbox\Id\Kernel\Events\Testing\InteractsWithEvents;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
+use Cbox\Id\OAuthServer\Testing\InteractsWithOAuth;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Cbox\Id\Webhooks\Testing\InteractsWithWebhooks;
 use Illuminate\Foundation\Application;
@@ -29,6 +30,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithEvents;
     use InteractsWithFederation;
     use InteractsWithIdentity;
+    use InteractsWithOAuth;
     use InteractsWithOrganizations;
     use InteractsWithTenancy;
     use InteractsWithWebhooks;
