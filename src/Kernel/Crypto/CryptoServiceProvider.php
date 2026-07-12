@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Crypto;
 
+use Cbox\Id\Kernel\Crypto\Console\RotateKeysCommand;
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
@@ -40,6 +41,8 @@ final class CryptoServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../../../config/cbox-id.php' => config_path('cbox-id.php'),
             ], 'cbox-id-config');
+
+            $this->commands([RotateKeysCommand::class]);
         }
     }
 }

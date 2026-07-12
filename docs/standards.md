@@ -17,7 +17,8 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | **RFC 6749** | Authorization Code (mandatory PKCE) + Client Credentials + Refresh Token grants | ✅ |
 | **RFC 7636** | PKCE — `S256` required, `plain` refused | ✅ |
 | **RFC 6750** | Bearer token usage | ✅ |
-| **RFC 7519 / 9068** | JWT access tokens (RS256), `jti`-tracked for revocation; `aud` when resource-bound | ✅ |
+| **RFC 7519 / 9068** | JWT access tokens (RS256, `typ: at+jwt`), `jti`-tracked for revocation; `aud` when resource-bound | ✅ |
+| **RFC 8725 (JWT BCP)** | Explicit alg allow-list, per-key alg binding, scheduled key rotation (`cbox-id:keys:rotate`) | ✅ |
 | **RFC 7662** | Token introspection — caller must authenticate as a client | ✅ |
 | **RFC 7009** | Token revocation (`/oauth/revoke`) — access **and** refresh tokens | ✅ |
 | **RFC 8414** | Authorization Server Metadata (`/.well-known/oauth-authorization-server`) | ✅ |

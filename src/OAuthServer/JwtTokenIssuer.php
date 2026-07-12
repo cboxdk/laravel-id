@@ -70,7 +70,8 @@ final class JwtTokenIssuer implements TokenIssuer
             $claims['aud'] = $resource;
         }
 
-        $token = $this->signer->sign($claims);
+        // RFC 9068: OAuth access tokens carry the `at+jwt` media type.
+        $token = $this->signer->sign($claims, type: 'at+jwt');
 
         AccessToken::query()->create([
             'jti' => $jti,

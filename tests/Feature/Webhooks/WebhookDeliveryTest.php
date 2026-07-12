@@ -32,7 +32,9 @@ it('delivers an HMAC-signed request to matching endpoints', function (): void {
     app(WebhookDispatcher::class)->dispatch('organization.created', ['id' => 'org_a'], 'org_a');
 
     Http::assertSent(function (Request $request) use ($registered): bool {
-        $expected = 'sha256='.hash_hmac('sha256', $request->body(), $registered->secret);
+        // Signature covers `timestamp.body` (Stripe-style, replay-resistant).
+        $timestamp = $request->header('X-Cbox-Timestamp')[0];
+        $expected = 't='.$timestamp.',v1='.hash_hmac('sha256', $timestamp.'.'.$request->body(), $registered->secret);
 
         return $request->url() === 'https://hook.test/x'
             && $request->header('X-Cbox-Signature')[0] === $expected;

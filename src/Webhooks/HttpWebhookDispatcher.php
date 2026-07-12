@@ -85,10 +85,17 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
         }
 
         $secret = $this->secretBox->open($endpoint->secret_encrypted, $endpoint->secretContext());
-        $signature = hash_hmac('sha256', $body, $secret);
+
+        // Sign `timestamp.body` (Stripe-style) so a receiver can bind the signature
+        // to a moment and reject a replayed delivery outside its tolerance window.
+        $timestamp = time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
 
         try {
-            $response = Http::withHeaders(['X-Cbox-Signature' => 'sha256='.$signature])
+            $response = Http::withHeaders([
+                'X-Cbox-Timestamp' => (string) $timestamp,
+                'X-Cbox-Signature' => 't='.$timestamp.',v1='.$signature,
+            ])
                 ->withoutRedirecting()          // a 30x to an internal host must not be followed
                 ->connectTimeout(5)
                 ->timeout(10)

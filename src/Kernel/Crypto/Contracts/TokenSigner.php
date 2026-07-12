@@ -15,8 +15,10 @@ interface TokenSigner
 {
     /**
      * @param  array<string, mixed>  $claims
+     * @param  string|null  $type  the JWT `typ` header (e.g. `at+jwt` for an OAuth
+     *                             access token, RFC 9068); omit for a plain JWT
      */
-    public function sign(array $claims, ?SigningAlg $alg = null): string;
+    public function sign(array $claims, ?SigningAlg $alg = null, ?string $type = null): string;
 
     /**
      * Verify signature, expiry and — critically — that the token's algorithm is

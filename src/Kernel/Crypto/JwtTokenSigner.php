@@ -32,7 +32,7 @@ final class JwtTokenSigner implements TokenSigner
         private readonly SecretBox $secretBox,
     ) {}
 
-    public function sign(array $claims, ?SigningAlg $alg = null): string
+    public function sign(array $claims, ?SigningAlg $alg = null, ?string $type = null): string
     {
         $signingKey = $this->keys->activeSigningKey($alg ?? SigningAlg::RS256);
         $privatePem = $this->secretBox->open($signingKey->private_key_encrypted, $signingKey->secretContext());
@@ -44,7 +44,11 @@ final class JwtTokenSigner implements TokenSigner
         $claims['iat'] ??= time();
         $claims['jti'] ??= bin2hex(random_bytes(16));
 
-        return JWT::encode($claims, $privatePem, $signingKey->alg->value, $signingKey->kid);
+        // An explicit `typ` (e.g. `at+jwt`, RFC 9068) lets a resource server reject
+        // a token of the wrong type — defeating token-type confusion.
+        $head = $type !== null ? ['typ' => $type] : [];
+
+        return JWT::encode($claims, $privatePem, $signingKey->alg->value, $signingKey->kid, $head);
     }
 
     public function verify(string $jwt, array $allowed): TokenClaims
