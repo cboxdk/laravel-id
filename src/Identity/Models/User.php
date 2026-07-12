@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property UserStatus $status
  * @property Carbon|null $email_verified_at
  */
-final class User extends Model
+class User extends Model
 {
     use HasUlids;
 

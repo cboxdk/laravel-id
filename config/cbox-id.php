@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Cbox\Id\Identity\Models\User;
 
 return [
 
@@ -9,6 +10,15 @@ return [
      * endpoint URLs. Falls back to the app URL when unset.
      */
     'issuer' => env('CBOX_ID_ISSUER'),
+
+    /*
+     * Override a package model with your own subclass to add relations, casts or
+     * behaviour. Your class must extend the package model; the platform still owns
+     * the schema. Extend the pattern to other models as you need them.
+     */
+    'models' => [
+        'user' => User::class,
+    ],
 
     'crypto' => [
 

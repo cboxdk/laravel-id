@@ -27,17 +27,23 @@ final class DatabaseUserDirectory implements UserDirectory
 
     public function find(string $id): ?User
     {
-        return User::query()->whereKey($id)->first();
+        $model = $this->userModel();
+
+        return $model::query()->whereKey($id)->first();
     }
 
     public function findByEmail(string $email): ?User
     {
-        return User::query()->where('email', $email)->first();
+        $model = $this->userModel();
+
+        return $model::query()->where('email', $email)->first();
     }
 
     public function create(string $email, ?string $name = null, ?string $password = null): User
     {
-        $user = new User;
+        $model = $this->userModel();
+
+        $user = new $model;
         $user->fill(['email' => $email, 'name' => $name, 'status' => UserStatus::Active]);
 
         if ($password !== null) {
@@ -117,5 +123,19 @@ final class DatabaseUserDirectory implements UserDirectory
             targetType: 'user',
             targetId: $user->id,
         ));
+    }
+
+    /**
+     * The configured user model (your subclass, or the package default).
+     *
+     * @return class-string<User>
+     */
+    private function userModel(): string
+    {
+        $configured = config('cbox-id.models.user');
+
+        return is_string($configured) && is_a($configured, User::class, true)
+            ? $configured
+            : User::class;
     }
 }
