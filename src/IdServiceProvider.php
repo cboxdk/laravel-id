@@ -7,6 +7,7 @@ namespace Cbox\Id;
 use Cbox\Id\AccessControl\AccessControlServiceProvider;
 use Cbox\Id\AuditQuery\AuditQueryServiceProvider;
 use Cbox\Id\Directory\DirectoryServiceProvider;
+use Cbox\Id\Federation\FederationServiceProvider;
 use Cbox\Id\Identity\IdentityServiceProvider;
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Authorization\AuthorizationServiceProvider;
@@ -42,6 +43,7 @@ final class IdServiceProvider extends ServiceProvider
         AccessControlServiceProvider::class,
         AuditQueryServiceProvider::class,
         DirectoryServiceProvider::class,
+        FederationServiceProvider::class,
         WebhookServiceProvider::class,
     ];
 
