@@ -25,9 +25,18 @@ class User extends Model
 {
     use HasUlids;
 
-    protected $table = 'users';
-
     protected $guarded = [];
+
+    /**
+     * The table is configurable so the platform can map onto a host's existing
+     * user table instead of imposing its own.
+     */
+    public function getTable(): string
+    {
+        $configured = config('cbox-id.tables.users');
+
+        return is_string($configured) && $configured !== '' ? $configured : 'users';
+    }
 
     /**
      * @var list<string>

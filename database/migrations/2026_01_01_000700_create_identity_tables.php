@@ -10,16 +10,13 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->string('email')->unique();
-            $table->string('name')->nullable();
-            $table->string('password')->nullable();
-            $table->string('status')->default('active');
-            $table->timestamp('email_verified_at')->nullable();
-            $table->timestamps();
-        });
-
+        // NOTE: the platform intentionally does NOT create the `users` table here.
+        // A host app almost always already owns its users, so imposing one would
+        // collide. Greenfield apps publish the optional users migration
+        // (`vendor:publish --tag=cbox-id-users-migration`); apps with existing
+        // users point `cbox-id.models.user` / `cbox-id.tables.users` at their own.
+        // These tables only reference `user_id` by value (indexed, no FK), so they
+        // integrate with whatever user store the host provides.
         Schema::create('identities', function (Blueprint $table): void {
             $table->ulid('id')->primary();
             $table->ulid('user_id')->index();
@@ -50,6 +47,5 @@ return new class extends Migration
     {
         Schema::dropIfExists('auth_sessions');
         Schema::dropIfExists('identities');
-        Schema::dropIfExists('users');
     }
 };

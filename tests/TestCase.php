@@ -43,6 +43,16 @@ abstract class TestCase extends Orchestra
         return [IdServiceProvider::class];
     }
 
+    /**
+     * The platform does not auto-create a `users` table (it integrates with the
+     * host's). Its own suite is a greenfield host, so it loads the optional
+     * users migration — exactly what a greenfield app publishes.
+     */
+    protected function defineDatabaseMigrations(): void
+    {
+        $this->loadMigrationsFrom(dirname(__DIR__).'/database/publishable');
+    }
+
     protected function defineEnvironment($app): void
     {
         /** @var Application $app */

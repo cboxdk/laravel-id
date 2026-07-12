@@ -76,6 +76,12 @@ final class IdServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'cbox-id-migrations');
+
+            // Optional: the canonical users table for greenfield installs only.
+            // Apps with existing users never publish this.
+            $this->publishes([
+                __DIR__.'/../database/publishable/2026_01_01_000000_create_cbox_id_users_table.php' => database_path('migrations/2026_01_01_000000_create_cbox_id_users_table.php'),
+            ], 'cbox-id-users-migration');
         }
     }
 }

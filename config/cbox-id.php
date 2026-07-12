@@ -21,6 +21,15 @@ return [
     ],
 
     /*
+     * Table names the platform reads/writes. Point `users` at your existing user
+     * table to integrate with an app that already has one; the platform does not
+     * create this table automatically (see the optional cbox-id-users-migration).
+     */
+    'tables' => [
+        'users' => 'users',
+    ],
+
+    /*
      * WebAuthn / passkey ceremony parameters. `rp_id` is the Relying Party ID
      * (usually your registrable domain, e.g. "example.com"); `origin` is the
      * exact origin the browser reports (scheme + host + port). Both are asserted
