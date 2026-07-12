@@ -28,6 +28,35 @@ it('treats an expired session as inactive', function (): void {
     expect($sessions->active($expired->id))->toBeNull();
 });
 
+it('treats an idle session as inactive once the idle window passes', function (): void {
+    $sessions = app(SessionManager::class); // idle_minutes defaults to 30
+
+    $stale = Session::query()->create([
+        'user_id' => 'user_1',
+        'amr' => [],
+        'last_active_at' => now()->subMinutes(31),
+        'expires_at' => now()->addHours(8), // absolute ttl not yet reached
+    ]);
+
+    expect($sessions->active($stale->id))->toBeNull();
+});
+
+it('slides the idle window forward on activity', function (): void {
+    $sessions = app(SessionManager::class);
+
+    $session = Session::query()->create([
+        'user_id' => 'user_1',
+        'amr' => [],
+        'last_active_at' => now()->subMinutes(5), // past the touch throttle
+        'expires_at' => now()->addHours(8),
+    ]);
+
+    expect($sessions->active($session->id)?->id)->toBe($session->id);
+
+    // Accessing it refreshed last_active_at, so the idle clock restarts.
+    expect($session->fresh()?->last_active_at?->diffInSeconds(now()))->toBeLessThan(5);
+});
+
 it('revokes a single session', function (): void {
     $sessions = app(SessionManager::class);
     $session = $sessions->start('user_1', null, ['pwd']);

@@ -11,6 +11,8 @@ use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Mfa\TotpAuthenticator;
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -33,7 +35,17 @@ final class IdentityServiceProvider extends ServiceProvider
 
             return $app->make(DatabaseSubjects::class);
         });
-        $this->app->singleton(SessionManager::class, DatabaseSessionManager::class);
+        $this->app->singleton(SessionManager::class, function (Application $app): SessionManager {
+            $ttl = config('cbox-id.sessions.ttl_minutes', 60 * 24);
+            $idle = config('cbox-id.sessions.idle_minutes', 0);
+
+            return new DatabaseSessionManager(
+                $app->make(EventBus::class),
+                $app->make(AuditLog::class),
+                is_numeric($ttl) ? (int) $ttl : 60 * 24,
+                is_numeric($idle) ? (int) $idle : 0,
+            );
+        });
         $this->app->singleton(TotpAuthenticator::class);
         $this->app->singleton(Mfa::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);

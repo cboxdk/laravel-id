@@ -16,10 +16,16 @@ final class DatabaseSessionManager implements SessionManager
 {
     private const DEFAULT_TTL_MINUTES = 60 * 24;
 
+    /** Only rewrite last_active_at once per this many seconds (write-amortization). */
+    private const TOUCH_THROTTLE_SECONDS = 60;
+
     public function __construct(
         private readonly EventBus $events,
         private readonly AuditLog $audit,
         private readonly int $ttlMinutes = self::DEFAULT_TTL_MINUTES,
+        // Idle (inactivity) timeout in minutes; 0 disables it and only the
+        // absolute ttl applies.
+        private readonly int $idleMinutes = 0,
     ) {}
 
     public function start(
@@ -63,7 +69,31 @@ final class DatabaseSessionManager implements SessionManager
             return null;
         }
 
+        // Idle timeout: a session untouched for longer than the idle window is
+        // treated as expired, independent of the absolute ttl.
+        if ($this->idleMinutes > 0 && $session->last_active_at !== null
+            && $session->last_active_at->copy()->addMinutes($this->idleMinutes)->isPast()) {
+            return null;
+        }
+
+        $this->touch($session);
+
         return $session;
+    }
+
+    /**
+     * Slide the idle window forward, but write at most once per throttle interval
+     * so an active session doesn't cause a DB write on every request.
+     */
+    private function touch(Session $session): void
+    {
+        $lastActive = $session->last_active_at;
+
+        if ($lastActive !== null && $lastActive->copy()->addSeconds(self::TOUCH_THROTTLE_SECONDS)->isFuture()) {
+            return;
+        }
+
+        $session->forceFill(['last_active_at' => now()])->save();
     }
 
     public function revoke(string $sessionId): void

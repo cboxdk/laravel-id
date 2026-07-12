@@ -102,7 +102,9 @@ final class MfaService implements Mfa
         $codes = [];
 
         for ($i = 0; $i < max(1, $count); $i++) {
-            $code = $this->formatRecoveryCode(bin2hex(random_bytes(5)));
+            // 8 bytes = 64 bits of entropy, so a fast-hash offline attack on a
+            // leaked hash is infeasible even though the code is single-use.
+            $code = $this->formatRecoveryCode(bin2hex(random_bytes(8)));
             $codes[] = $code;
 
             MfaRecoveryCode::query()->create([
@@ -157,11 +159,11 @@ final class MfaService implements Mfa
     }
 
     /**
-     * Group the raw hex into a readable "xxxxx-xxxxx" code.
+     * Group the raw hex into a readable "xxxx-xxxx-xxxx-xxxx" code.
      */
     private function formatRecoveryCode(string $raw): string
     {
-        return implode('-', str_split($raw, 5));
+        return implode('-', str_split($raw, 4));
     }
 
     /**

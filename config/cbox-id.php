@@ -47,6 +47,16 @@ return [
      * exact origin the browser reports (scheme + host + port). Both are asserted
      * during verification — a mismatch is rejected.
      */
+    /*
+     * Session lifetimes. `ttl_minutes` is the absolute cap; `idle_minutes` (0 to
+     * disable) expires a session after inactivity, with a sliding window that is
+     * refreshed on use. Secure defaults for an admin console lean short.
+     */
+    'sessions' => [
+        'ttl_minutes' => env('CBOX_ID_SESSION_TTL_MINUTES', 60 * 8),
+        'idle_minutes' => env('CBOX_ID_SESSION_IDLE_MINUTES', 30),
+    ],
+
     'webauthn' => [
         'rp_id' => env('CBOX_ID_WEBAUTHN_RP_ID'),
         'origin' => env('CBOX_ID_WEBAUTHN_ORIGIN'),
