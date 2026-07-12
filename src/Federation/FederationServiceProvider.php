@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation;
 
+use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\FederationFlow;
+use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Validators\DispatchingAssertionValidator;
+use Cbox\Id\Federation\Validators\OidcAssertionValidator;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
 final class FederationServiceProvider extends ServiceProvider
@@ -15,7 +20,14 @@ final class FederationServiceProvider extends ServiceProvider
         $this->app->singleton(Connections::class, ConnectionService::class);
         $this->app->singleton(FederationFlow::class, FederationLoginService::class);
 
-        // AssertionValidator (SAML/OIDC signature validation, wrapping a vetted
-        // library) is bound by the app once the per-type validators land.
+        // Per-type signature validation, each wrapping a vetted library. OIDC
+        // (id_token / JWS via firebase/php-jwt, RS256-pinned) is live; the SAML
+        // validator (onelogin/php-saml) registers here once it lands. A type
+        // with no validator is rejected, never silently trusted.
+        $this->app->singleton(AssertionValidator::class, function (Application $app): DispatchingAssertionValidator {
+            return new DispatchingAssertionValidator([
+                ConnectionType::Oidc->value => $app->make(OidcAssertionValidator::class),
+            ]);
+        });
     }
 }
