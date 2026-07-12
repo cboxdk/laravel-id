@@ -10,6 +10,7 @@ use Cbox\Id\Kernel\Authorization\Testing\InteractsWithAuthorization;
 use Cbox\Id\Kernel\Authorization\Testing\InteractsWithEntitlements;
 use Cbox\Id\Kernel\Events\Testing\InteractsWithEvents;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
+use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -19,6 +20,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithAuthorization;
     use InteractsWithEntitlements;
     use InteractsWithEvents;
+    use InteractsWithOrganizations;
     use InteractsWithTenancy;
 
     /**

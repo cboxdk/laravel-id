@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\Organization;
+
+use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
+use Cbox\Id\Organization\Contracts\Organizations;
+use Illuminate\Support\ServiceProvider;
+
+final class OrganizationServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->singleton(OrganizationHierarchy::class, ClosureOrganizationHierarchy::class);
+        $this->app->singleton(Organizations::class, OrganizationService::class);
+        $this->app->singleton(Memberships::class, MembershipService::class);
+    }
+}

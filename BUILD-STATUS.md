@@ -22,7 +22,7 @@ next; each starts with its step-0 contract PR against `docs/foundation-contracts
 ## Domain
 | Module | Status | Notes |
 |---|---|---|
-| `Organization` | ⬜ | Concrete `Tenant`; unblocks queue tenant-propagation. |
+| `Organization` | ✅ | Concrete `Tenant` (key = id) · closure-tree hierarchy (arbitrary depth: ancestors/descendants/isDescendantOf/`manages` for reseller transitive access) · memberships (tenant-scoped via `runAs`, dogfoods isolation) · events + audit. Ships `InteractsWithOrganizations`. 11 tests. |
 | `Identity` | ⬜ | Users, sessions, MFA, passkeys, magic link. |
 | `Federation` | ⬜ | SAML/OIDC SP (wraps vetted XML/crypto libs). |
 | `Directory` | ⬜ | SCIM 2.0 server. |
