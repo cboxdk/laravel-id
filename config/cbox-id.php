@@ -50,6 +50,9 @@ return [
     'webauthn' => [
         'rp_id' => env('CBOX_ID_WEBAUTHN_RP_ID'),
         'origin' => env('CBOX_ID_WEBAUTHN_ORIGIN'),
+        // Require the user-verification flag on passkey ceremonies (PIN/biometric).
+        // Keep true for passwordless (primary-factor) passkeys.
+        'user_verification' => env('CBOX_ID_WEBAUTHN_USER_VERIFICATION', true),
     ],
 
     /*

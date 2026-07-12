@@ -91,9 +91,10 @@ final class SoftwareAuthenticator
         ], id: Base64Url::encode($this->credentialId));
     }
 
-    public function assertionResponse(string $challenge, int $signCount = 1, string $origin = ORIGIN, string $rpId = RP_ID, bool $tamper = false): string
+    public function assertionResponse(string $challenge, int $signCount = 1, string $origin = ORIGIN, string $rpId = RP_ID, bool $tamper = false, bool $userVerified = true): string
     {
-        $authData = $this->authData($rpId, 0x05, $signCount); // UP | UV
+        // 0x05 = UP | UV; 0x01 = UP only (user present but not verified).
+        $authData = $this->authData($rpId, $userVerified ? 0x05 : 0x01, $signCount);
         $clientData = $this->clientData('webauthn.get', $challenge, $origin);
 
         openssl_sign($authData.hash('sha256', $clientData, true), $signature, $this->key, OPENSSL_ALGO_SHA256);
@@ -184,6 +185,16 @@ it('rejects a tampered assertion signature', function (): void {
     $credential = new WebAuthnCredential(['public_key' => $registration->publicKey, 'sign_count' => 0]);
 
     $verifier->verifyAssertion($credential, 'login', $authenticator->assertionResponse('login', tamper: true));
+})->throws(InvalidAssertionResponse::class);
+
+it('rejects a passwordless assertion that lacks user verification', function (): void {
+    $authenticator = SoftwareAuthenticator::es256();
+    $verifier = verifier(); // requires UV by default
+    $registration = $verifier->verifyRegistration('reg', $authenticator->registrationResponse('reg'));
+    $credential = new WebAuthnCredential(['public_key' => $registration->publicKey, 'sign_count' => 0]);
+
+    // User present but NOT verified (no PIN/biometric) — rejected for a primary factor.
+    $verifier->verifyAssertion($credential, 'login', $authenticator->assertionResponse('login', userVerified: false));
 })->throws(InvalidAssertionResponse::class);
 
 it('rejects an assertion whose challenge does not match', function (): void {

@@ -77,6 +77,40 @@ it('rejects a wrong code', function (): void {
         ->and($mfa->hasConfirmedTotp('user_2'))->toBeFalse();
 });
 
+it('generates one-time recovery codes and consumes each once', function (): void {
+    $mfa = app(Mfa::class);
+
+    $codes = $mfa->generateRecoveryCodes('user_rc', 8);
+
+    expect($codes)->toHaveCount(8)
+        ->and($mfa->remainingRecoveryCodes('user_rc'))->toBe(8);
+
+    // A valid code works exactly once.
+    expect($mfa->verifyRecoveryCode('user_rc', $codes[0]))->toBeTrue()
+        ->and($mfa->verifyRecoveryCode('user_rc', $codes[0]))->toBeFalse() // reuse rejected
+        ->and($mfa->remainingRecoveryCodes('user_rc'))->toBe(7);
+
+    // Formatting/casing is cosmetic — a code still matches without its hyphen.
+    expect($mfa->verifyRecoveryCode('user_rc', strtoupper(str_replace('-', '', $codes[1]))))->toBeTrue();
+});
+
+it('regenerating recovery codes invalidates the previous set', function (): void {
+    $mfa = app(Mfa::class);
+
+    $old = $mfa->generateRecoveryCodes('user_rg', 5);
+    $mfa->generateRecoveryCodes('user_rg', 5); // replaces
+
+    expect($mfa->verifyRecoveryCode('user_rg', $old[0]))->toBeFalse()
+        ->and($mfa->remainingRecoveryCodes('user_rg'))->toBe(5);
+});
+
+it('rejects an unknown recovery code', function (): void {
+    $mfa = app(Mfa::class);
+    $mfa->generateRecoveryCodes('user_x', 3);
+
+    expect($mfa->verifyRecoveryCode('user_x', 'not-a-real-code'))->toBeFalse();
+});
+
 it('records an audit entry on enrolment', function (): void {
     $audit = $this->fakeAudit();
     $mfa = app(Mfa::class);

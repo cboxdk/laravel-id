@@ -83,9 +83,9 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 | Passwords — bcrypt, breached-password check (HIBP k-anonymity) | ✅ |
 | TOTP (RFC 6238) — replay-protected (last-used step), rate-limited | ✅ |
 | WebAuthn / passkeys (FIDO2) — registration + assertion, sign-count clone detection | ✅ |
+| Passkey User-Verification enforced (primary-factor), server-side challenge TTL | ✅ |
+| MFA recovery / backup codes — single-use, regenerable | ✅ |
 | Magic-link email sign-in | ✅ |
 | Social sign-in (Google, GitHub, Microsoft) with explicit account linking | ✅ |
-| MFA recovery / backup codes | ▢ |
-| Passkey User-Verification enforcement (step-up) | ▢ |
 
 *This table is updated as each tier lands; ▢ items are tracked and in progress.*

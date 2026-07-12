@@ -46,7 +46,7 @@ final class IdentityServiceProvider extends ServiceProvider
             $origin = config('cbox-id.webauthn.origin');
 
             if (is_string($rpId) && $rpId !== '' && is_string($origin) && $origin !== '') {
-                return new NativeWebAuthnVerifier($rpId, $origin);
+                return new NativeWebAuthnVerifier($rpId, $origin, config('cbox-id.webauthn.user_verification', true) !== false);
             }
 
             return new UnavailableWebAuthnVerifier;

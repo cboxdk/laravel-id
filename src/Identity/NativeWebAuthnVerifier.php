@@ -34,6 +34,11 @@ final class NativeWebAuthnVerifier implements WebAuthnVerifier
     public function __construct(
         private readonly string $rpId,
         private readonly string $origin,
+        // Passwordless passkeys are a primary factor, so user verification (a PIN
+        // or biometric — "something you know/are") is required by default; without
+        // it a passkey proves only possession. Deployments using passkeys strictly
+        // as a second factor can relax this.
+        private readonly bool $requireUserVerification = true,
     ) {}
 
     public function verifyRegistration(string $challenge, string $clientResponseJson): VerifiedRegistration
@@ -133,6 +138,10 @@ final class NativeWebAuthnVerifier implements WebAuthnVerifier
 
         if (! $authData->userPresent()) {
             throw InvalidAssertionResponse::make('user-presence flag not set');
+        }
+
+        if ($this->requireUserVerification && ! $authData->userVerified()) {
+            throw InvalidAssertionResponse::make('user-verification flag not set');
         }
     }
 

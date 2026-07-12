@@ -25,4 +25,24 @@ interface Mfa
     public function verifyTotp(string $userId, string $code): bool;
 
     public function hasConfirmedTotp(string $userId): bool;
+
+    /**
+     * (Re)generate the user's one-time recovery codes, replacing any existing
+     * ones. Returns the plaintext codes exactly once — only hashes are stored.
+     * Recovery codes are the escape hatch when the authenticator is lost.
+     *
+     * @return list<string>
+     */
+    public function generateRecoveryCodes(string $userId, int $count = 10): array;
+
+    /**
+     * Consume a recovery code as a second factor. Each code works once; returns
+     * false for an unknown or already-used code. Constant-time per candidate.
+     */
+    public function verifyRecoveryCode(string $userId, string $code): bool;
+
+    /**
+     * How many unused recovery codes remain — for a "regenerate" nudge in the UI.
+     */
+    public function remainingRecoveryCodes(string $userId): int;
 }

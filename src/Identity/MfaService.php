@@ -7,6 +7,7 @@ namespace Cbox\Id\Identity;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Mfa\TotpAuthenticator;
 use Cbox\Id\Identity\Models\MfaFactor;
+use Cbox\Id\Identity\Models\MfaRecoveryCode;
 use Cbox\Id\Identity\ValueObjects\TotpEnrollment;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
@@ -91,6 +92,85 @@ final class MfaService implements Mfa
         $factor = $this->totpFactor($userId);
 
         return $factor !== null && $factor->confirmed_at !== null;
+    }
+
+    public function generateRecoveryCodes(string $userId, int $count = 10): array
+    {
+        // Replace any existing codes: regenerating invalidates the old set.
+        MfaRecoveryCode::query()->where('user_id', $userId)->delete();
+
+        $codes = [];
+
+        for ($i = 0; $i < max(1, $count); $i++) {
+            $code = $this->formatRecoveryCode(bin2hex(random_bytes(5)));
+            $codes[] = $code;
+
+            MfaRecoveryCode::query()->create([
+                'user_id' => $userId,
+                'code_hash' => hash('sha256', $this->normalizeRecoveryCode($code)),
+            ]);
+        }
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.mfa_recovery_generated',
+            actorType: ActorType::User,
+            actorId: $userId,
+            targetType: 'user',
+            targetId: $userId,
+            context: ['count' => count($codes)],
+        ));
+
+        return $codes;
+    }
+
+    public function verifyRecoveryCode(string $userId, string $code): bool
+    {
+        $hash = hash('sha256', $this->normalizeRecoveryCode($code));
+
+        $match = MfaRecoveryCode::query()
+            ->where('user_id', $userId)
+            ->whereNull('used_at')
+            ->get()
+            ->first(fn (MfaRecoveryCode $candidate): bool => hash_equals($candidate->code_hash, $hash));
+
+        if ($match === null) {
+            return false;
+        }
+
+        $match->forceFill(['used_at' => now()])->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.mfa_recovery_used',
+            actorType: ActorType::User,
+            actorId: $userId,
+            targetType: 'user',
+            targetId: $userId,
+            context: ['remaining' => $this->remainingRecoveryCodes($userId)],
+        ));
+
+        return true;
+    }
+
+    public function remainingRecoveryCodes(string $userId): int
+    {
+        return MfaRecoveryCode::query()->where('user_id', $userId)->whereNull('used_at')->count();
+    }
+
+    /**
+     * Group the raw hex into a readable "xxxxx-xxxxx" code.
+     */
+    private function formatRecoveryCode(string $raw): string
+    {
+        return implode('-', str_split($raw, 5));
+    }
+
+    /**
+     * Canonicalize user input before hashing: hyphens/spaces are cosmetic and the
+     * comparison is case-insensitive.
+     */
+    private function normalizeRecoveryCode(string $code): string
+    {
+        return strtolower((string) preg_replace('/[^a-zA-Z0-9]/', '', $code));
     }
 
     private function totpFactor(string $userId): ?MfaFactor
