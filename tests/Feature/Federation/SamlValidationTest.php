@@ -1,0 +1,194 @@
+<?php
+
+declare(strict_types=1);
+
+use Cbox\Id\Federation\Contracts\AssertionValidator;
+use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Federation\Models\Connection;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use RobRichards\XMLSecLibs\XMLSecurityDSig;
+use RobRichards\XMLSecLibs\XMLSecurityKey;
+
+uses(RefreshDatabase::class);
+
+const SP_ENTITY = 'https://sp.example.test/metadata';
+const SP_ACS = 'https://sp.example.test/saml/acs';
+const IDP_ENTITY = 'https://idp.example.test/metadata';
+
+/**
+ * A minimal SAML IdP: self-signed cert + a genuinely XML-DSig-signed Response.
+ */
+final class SamlIdp
+{
+    public string $certPem;
+
+    public string $privatePem;
+
+    public function __construct()
+    {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        $csr = openssl_csr_new(['commonName' => 'idp.example.test'], $key, ['digest_alg' => 'sha256']);
+        $x509 = openssl_csr_sign($csr, null, $key, 3650, ['digest_alg' => 'sha256']);
+        openssl_x509_export($x509, $certPem);
+        openssl_pkey_export($key, $privatePem);
+        $this->certPem = (string) $certPem;
+        $this->privatePem = (string) $privatePem;
+    }
+
+    public function response(
+        string $nameId = 'alice@corp.com',
+        string $audience = SP_ENTITY,
+        bool $sign = true,
+        bool $tamper = false,
+    ): string {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
+        $after = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
+        $assertionId = '_'.bin2hex(random_bytes(16));
+        $responseId = '_'.bin2hex(random_bytes(16));
+        $issuer = IDP_ENTITY;
+        $recipient = SP_ACS;
+
+        $xml = <<<XML
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}">
+  <saml:Issuer>{$issuer}</saml:Issuer>
+  <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
+  <saml:Assertion ID="{$assertionId}" Version="2.0" IssueInstant="{$now}">
+    <saml:Issuer>{$issuer}</saml:Issuer>
+    <saml:Subject>
+      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{$nameId}</saml:NameID>
+      <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+        <saml:SubjectConfirmationData NotOnOrAfter="{$after}" Recipient="{$recipient}"/>
+      </saml:SubjectConfirmation>
+    </saml:Subject>
+    <saml:Conditions NotBefore="{$before}" NotOnOrAfter="{$after}">
+      <saml:AudienceRestriction><saml:Audience>{$audience}</saml:Audience></saml:AudienceRestriction>
+    </saml:Conditions>
+    <saml:AuthnStatement AuthnInstant="{$now}" SessionIndex="{$assertionId}">
+      <saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext>
+    </saml:AuthnStatement>
+    <saml:AttributeStatement>
+      <saml:Attribute Name="email"><saml:AttributeValue>{$nameId}</saml:AttributeValue></saml:Attribute>
+      <saml:Attribute Name="name"><saml:AttributeValue>Alice Example</saml:AttributeValue></saml:Attribute>
+    </saml:AttributeStatement>
+  </saml:Assertion>
+</samlp:Response>
+XML;
+
+        $doc = new DOMDocument;
+        $doc->loadXML($xml);
+
+        if ($sign) {
+            $this->signAssertion($doc);
+        }
+
+        $signedXml = (string) $doc->saveXML();
+
+        if ($tamper) {
+            // Corrupt one character of the SignatureValue to break verification.
+            $signedXml = preg_replace_callback(
+                '/(<ds:SignatureValue[^>]*>)([A-Za-z0-9+\/=]{10})/',
+                fn (array $m): string => $m[1].strrev($m[2]),
+                $signedXml,
+                1,
+            ) ?? $signedXml;
+        }
+
+        return base64_encode($signedXml);
+    }
+
+    private function signAssertion(DOMDocument $doc): void
+    {
+        $assertion = $doc->getElementsByTagName('Assertion')->item(0);
+
+        $dsig = new XMLSecurityDSig;
+        $dsig->setCanonicalMethod(XMLSecurityDSig::EXC_C14N);
+        $dsig->addReference(
+            $assertion,
+            XMLSecurityDSig::SHA256,
+            ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', XMLSecurityDSig::EXC_C14N],
+            ['id_name' => 'ID', 'overwrite' => false],
+        );
+
+        $key = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
+        $key->loadKey($this->privatePem, false);
+        $dsig->sign($key);
+        $dsig->add509Cert($this->certPem, true);
+
+        $subject = $assertion->getElementsByTagName('Subject')->item(0);
+        $dsig->insertSignature($assertion, $subject);
+    }
+}
+
+function samlConnection(SamlIdp $idp): Connection
+{
+    $connections = app(Connections::class);
+
+    $connection = $connections->create((string) Str::ulid(), ConnectionType::Saml, 'Okta', [
+        'idp_entity_id' => IDP_ENTITY,
+        'idp_sso_url' => 'https://idp.example.test/sso',
+        'idp_x509cert' => $idp->certPem,
+        'sp_entity_id' => SP_ENTITY,
+        'sp_acs_url' => SP_ACS,
+    ]);
+    $connections->activate($connection->id);
+
+    return $connection->refresh();
+}
+
+beforeEach(function (): void {
+    // onelogin/php-saml validates Recipient against the SP's own URL, derived
+    // from the server environment — line it up with the ACS URL.
+    $_SERVER['HTTP_HOST'] = 'sp.example.test';
+    $_SERVER['SERVER_PORT'] = '443';
+    $_SERVER['HTTPS'] = 'on';
+    $_SERVER['REQUEST_URI'] = '/saml/acs';
+    $_SERVER['SCRIPT_NAME'] = '/saml/acs';
+});
+
+it('validates a genuinely signed SAML response into a principal', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    $principal = app(AssertionValidator::class)->validate($connection, $idp->response());
+
+    expect($principal->subject)->toBe('alice@corp.com')
+        ->and($principal->email)->toBe('alice@corp.com')
+        ->and($principal->name)->toBe('Alice Example')
+        ->and($principal->provider)->toBe('saml')
+        ->and($principal->connectionId)->toBe($connection->id);
+});
+
+it('rejects a SAML response with a tampered signature', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    app(AssertionValidator::class)->validate($connection, $idp->response(tamper: true));
+})->throws(InvalidAssertion::class);
+
+it('rejects an unsigned SAML response (wantAssertionsSigned)', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    app(AssertionValidator::class)->validate($connection, $idp->response(sign: false));
+})->throws(InvalidAssertion::class);
+
+it('rejects a SAML response for the wrong audience', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    app(AssertionValidator::class)->validate($connection, $idp->response(audience: 'https://attacker.test/metadata'));
+})->throws(InvalidAssertion::class);
+
+it('rejects a SAML response signed by an untrusted key', function (): void {
+    $trustedIdp = new SamlIdp;
+    $connection = samlConnection($trustedIdp);
+
+    // A different IdP signs the response; the connection trusts only $trustedIdp.
+    $attacker = new SamlIdp;
+
+    app(AssertionValidator::class)->validate($connection, $attacker->response());
+})->throws(InvalidAssertion::class);

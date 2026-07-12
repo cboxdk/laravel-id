@@ -39,9 +39,31 @@ gates, OWASP ASVS L3 target) lives in `SECURITY.md`; the load-bearing invariants
 
 ## Federation
 
-- SAML/OIDC assertion validation is isolated behind `AssertionValidator` and MUST wrap a
-  vetted library: verify signatures, reject unsigned/tampered/expired/mis-audienced assertions,
-  parse XML with external entities disabled (XXE), and guard against signature wrapping (XSW).
+Assertion validation is isolated behind `AssertionValidator` and dispatched per connection
+type. A type with no registered validator is **rejected**, never trusted.
+
+- **OIDC** — the `id_token` (a JWS) is verified via `firebase/php-jwt` with the verification
+  key **pinned to RS256**, closing algorithm-confusion / `alg: none`. `exp`/`nbf` are enforced;
+  `iss` and `aud` are asserted in constant time.
+- **SAML** — the Response is validated by `onelogin/php-saml` (XML-DSig signature verification,
+  XSW defense, XML parsed with external entities disabled for XXE). On top of it we run strict
+  mode with `wantAssertionsSigned`, so an unsigned assertion is refused.
+- **WebAuthn / passkeys** — registration and assertion signatures are verified with **OpenSSL**
+  (ES256/P-256 and RS256); COSE/CBOR is decoded by the vetted `spomky-labs/cbor-php`. Challenge,
+  origin, RP-id hash and user-presence are all enforced, and the sign-count guard flags cloned
+  authenticators. No hand-rolled cryptography anywhere.
+
+## Supply chain: licenses & SBOM
+
+- **Own the code.** Security-critical logic lives in this package; third-party libraries are
+  used only for well-trodden primitives (JWT, XML-DSig, CBOR, sodium) — each vetted and pinned.
+- `composer license-check` fails the build if any dependency is not offered under a permissive
+  license (MIT/BSD/Apache/ISC and friends). Dual-licensed packages pass on their permissive
+  option; genuine exceptions are listed with a reason in `bin/check-licenses.php`.
+- `composer sbom` produces a deterministic **CycloneDX 1.5** SBOM (`sbom.json`) straight from
+  `composer.lock`. CI regenerates it and fails if the committed copy is stale, so the SBOM
+  never drifts from what actually ships.
+- `composer audit` (also in CI, `--no-dev`) blocks known-vulnerable dependencies.
 
 ## Offboarding
 
