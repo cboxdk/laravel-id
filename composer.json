@@ -7,6 +7,7 @@
         "php": "^8.4",
         "ext-openssl": "*",
         "ext-sodium": "*",
+        "cboxdk/laravel-ssrf": "^1.0",
         "firebase/php-jwt": "^7.0",
         "illuminate/auth": "^12.0",
         "illuminate/contracts": "^12.0",

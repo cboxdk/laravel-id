@@ -17,6 +17,7 @@ use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\OAuthServer\Testing\InteractsWithOAuth;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Cbox\Id\Webhooks\Testing\InteractsWithWebhooks;
+use Cbox\Ssrf\SsrfServiceProvider;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -40,7 +41,9 @@ abstract class TestCase extends Orchestra
      */
     protected function getPackageProviders($app): array
     {
-        return [IdServiceProvider::class];
+        // The SSRF guard package auto-registers via Laravel discovery in a real
+        // app; Testbench needs it named explicitly.
+        return [SsrfServiceProvider::class, IdServiceProvider::class];
     }
 
     /**

@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:edf8151e-022a-42cb-833c-01895ff1037a",
+    "serialNumber": "urn:uuid:fd1b8994-d1cb-4783-a4ab-3a3ddcbfa68e",
     "version": 1,
     "metadata": {
         "tools": [
@@ -43,6 +43,22 @@
             "version": "3.2.0",
             "purl": "pkg:composer/carbonphp/carbon-doctrine-types@3.2.0",
             "description": "Types to use Carbon in Doctrine",
+            "licenses": [
+                {
+                    "license": {
+                        "id": "MIT"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "library",
+            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.0.0",
+            "group": "cboxdk",
+            "name": "laravel-ssrf",
+            "version": "v1.0.0",
+            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.0.0",
+            "description": "Cbox SSRF \u2014 a hardened, config-driven guard against server-side request forgery for outbound URLs in Laravel. Blocks private/reserved/cloud-metadata targets, pins DNS, and refuses redirects.",
             "licenses": [
                 {
                     "license": {
