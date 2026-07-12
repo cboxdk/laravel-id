@@ -11,7 +11,9 @@ use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Audit\ValueObjects\ChainVerification;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final class DatabaseAuditLog implements AuditLog
 {
@@ -25,6 +27,9 @@ final class DatabaseAuditLog implements AuditLog
     {
         $scope = $this->scopeFor($event->organizationId);
 
+        // Retry on a raced append: the unique(scope, sequence) constraint rejects
+        // a duplicate position, and re-running re-reads the head and takes the
+        // next sequence — so a concurrent write is never silently lost.
         return DB::transaction(function () use ($event, $scope): AuditEntry {
             $last = $this->headEntry($scope, lock: true);
 
@@ -55,7 +60,7 @@ final class DatabaseAuditLog implements AuditLog
             $entry->save();
 
             return $entry;
-        });
+        }, attempts: 3);
     }
 
     public function verifyChain(?string $organizationId = null, int $fromSequence = 1, ?int $toSequence = null): ChainVerification
@@ -99,7 +104,59 @@ final class DatabaseAuditLog implements AuditLog
             $expectedSequence++;
         }
 
+        // Per-row/link integrity holds for the rows present — but that alone
+        // can't detect entries deleted off the tail (or a wiped scope). Cross-
+        // check the last signed checkpoint: the entry it anchored must still be
+        // present with the same hash.
+        $anchorBreak = $this->verifyCheckpointAnchor($scope);
+
+        if ($anchorBreak !== null) {
+            return $anchorBreak;
+        }
+
         return ChainVerification::valid($entries->count());
+    }
+
+    /**
+     * Detect deletion/truncation at or below the last checkpoint by re-verifying
+     * its signature and confirming the anchored entry is unchanged. Returns a
+     * broken verification if violated, or null if there is nothing to contradict.
+     */
+    private function verifyCheckpointAnchor(string $scope): ?ChainVerification
+    {
+        $checkpoint = AuditCheckpoint::query()
+            ->where('scope', $scope)
+            ->orderByDesc('up_to_sequence')
+            ->first();
+
+        if ($checkpoint === null) {
+            return null;
+        }
+
+        try {
+            $claims = $this->signer->verify($checkpoint->signature, [SigningAlg::RS256, SigningAlg::ES256]);
+        } catch (Throwable) {
+            return ChainVerification::broken($checkpoint->up_to_sequence, 'checkpoint signature failed to verify');
+        }
+
+        $rootHash = $claims->get('root_hash');
+        $upToSequence = $claims->get('up_to_sequence');
+
+        if ($claims->get('scope') !== $scope
+            || ! (is_int($upToSequence) || is_float($upToSequence))
+            || (int) $upToSequence !== $checkpoint->up_to_sequence
+            || ! is_string($rootHash)
+            || ! hash_equals($rootHash, $checkpoint->root_hash)) {
+            return ChainVerification::broken($checkpoint->up_to_sequence, 'checkpoint payload does not match its signature');
+        }
+
+        $anchor = $this->entryAt($scope, $checkpoint->up_to_sequence);
+
+        if ($anchor === null || ! hash_equals($checkpoint->root_hash, $anchor->hash)) {
+            return ChainVerification::broken($checkpoint->up_to_sequence, 'entries at or below the last checkpoint were removed or altered');
+        }
+
+        return null;
     }
 
     public function checkpoint(?string $organizationId = null): AuditCheckpoint

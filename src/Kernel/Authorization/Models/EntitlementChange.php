@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Authorization\Models;
 
 use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToTenant;
+use Cbox\Id\Kernel\Tenancy\Contracts\TenantOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -22,8 +24,9 @@ use Illuminate\Support\Carbon;
  * @property string $change
  * @property Carbon $recorded_at
  */
-final class EntitlementChange extends Model
+final class EntitlementChange extends Model implements TenantOwned
 {
+    use BelongsToTenant;
     use HasUlids;
 
     public $timestamps = false;

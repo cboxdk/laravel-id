@@ -35,12 +35,19 @@ final class DatabaseKeyManager implements KeyManager
         SigningKey::query()
             ->where('alg', $alg->value)
             ->where('status', KeyStatus::Active->value)
-            ->update([
-                'status' => KeyStatus::Rotating->value,
-                'retired_at' => null,
-            ]);
+            ->update(['status' => KeyStatus::Rotating->value]);
 
         return $this->generate($alg);
+    }
+
+    public function retire(string $kid): void
+    {
+        SigningKey::query()
+            ->where('kid', $kid)
+            ->update([
+                'status' => KeyStatus::Retired->value,
+                'retired_at' => now(),
+            ]);
     }
 
     public function jwks(): array

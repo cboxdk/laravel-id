@@ -6,6 +6,8 @@ namespace Cbox\Id\Kernel\Authorization\Models;
 
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToTenant;
+use Cbox\Id\Kernel\Tenancy\Contracts\TenantOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -24,8 +26,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $effective_at
  * @property Carbon|null $expires_at
  */
-final class Entitlement extends Model
+final class Entitlement extends Model implements TenantOwned
 {
+    use BelongsToTenant;
     use HasUlids;
 
     protected $table = 'entitlements';

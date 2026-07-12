@@ -35,10 +35,11 @@ it('increments version on update and appends history', function (): void {
     $writer->set('org_a', new EntitlementInput('seats', ['limit' => 10]), EntitlementSource::Billing);
     $updated = $writer->set('org_a', new EntitlementInput('seats', ['limit' => 50]), EntitlementSource::Billing);
 
+    // Entitlement models are tenant-owned, so count within the org's scope.
     expect($updated->version)->toBe(2)
         ->and($updated->int('limit'))->toBe(50)
-        ->and(Entitlement::query()->count())->toBe(1)
-        ->and(EntitlementChange::query()->where('key', 'seats')->count())->toBe(2);
+        ->and($this->runAsTenant('org_a', fn () => Entitlement::query()->count()))->toBe(1)
+        ->and($this->runAsTenant('org_a', fn () => EntitlementChange::query()->where('key', 'seats')->count()))->toBe(2);
 });
 
 it('revokes an entitlement and records the change', function (): void {
@@ -47,8 +48,8 @@ it('revokes an entitlement and records the change', function (): void {
     $writer->revoke('org_a', 'feature.sso', EntitlementSource::Manual);
 
     expect(app(EntitlementReader::class)->get('org_a', 'feature.sso'))->toBeNull()
-        ->and(Entitlement::query()->count())->toBe(0)
-        ->and(EntitlementChange::query()->where('change', 'revoke')->count())->toBe(1);
+        ->and($this->runAsTenant('org_a', fn () => Entitlement::query()->count()))->toBe(0)
+        ->and($this->runAsTenant('org_a', fn () => EntitlementChange::query()->where('change', 'revoke')->count()))->toBe(1);
 });
 
 it('reconciles against the authoritative set: upserts present, revokes absent', function (): void {
@@ -90,4 +91,14 @@ it('does not return an expired entitlement', function (): void {
     ]);
 
     expect(app(EntitlementReader::class)->get('org_a', 'trial'))->toBeNull();
+});
+
+it('binds entitlement models to the tenant (deny-by-default on a forgotten filter)', function (): void {
+    app(EntitlementWriter::class)->set('org_a', new EntitlementInput('x', ['v' => 1]), EntitlementSource::Manual);
+
+    // A raw query with NO tenant context returns nothing — a forgotten
+    // organization_id filter can no longer leak another tenant's entitlements.
+    expect(Entitlement::query()->count())->toBe(0)
+        ->and($this->runAsTenant('org_a', fn () => Entitlement::query()->count()))->toBe(1)
+        ->and($this->runAsTenant('org_b', fn () => Entitlement::query()->count()))->toBe(0);
 });

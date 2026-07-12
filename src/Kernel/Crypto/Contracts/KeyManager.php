@@ -27,6 +27,13 @@ interface KeyManager
     public function rotate(SigningAlg $alg = SigningAlg::RS256): SigningKey;
 
     /**
+     * Permanently retire a key by `kid`: it leaves the JWKS and is no longer
+     * trusted for verification — the compromise-response revoke. After this,
+     * tokens signed by that key are rejected. Idempotent.
+     */
+    public function retire(string $kid): void;
+
+    /**
      * The public JWK Set (active + rotating keys), for `/.well-known/jwks.json`.
      *
      * @return array{keys: list<array<string, string>>}

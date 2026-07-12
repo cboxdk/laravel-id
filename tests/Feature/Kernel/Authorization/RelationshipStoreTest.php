@@ -73,3 +73,24 @@ it('exposes decisions and entitlements through the PDP', function (): void {
         ->and($pdp->decide('org', Subject::user('bob'), 'editor', ResourceRef::of('document', '42'))->allowed)->toBeFalse()
         ->and($pdp->entitlement('org', 'feature.sso'))->not->toBeNull();
 });
+
+it('resolves a dense cyclic userset graph without combinatorial blowup', function (): void {
+    $store = app(RelationshipStore::class);
+
+    // 10 groups, each a member-userset of every other — a dense cycle that,
+    // without a visited set, would fan out to ~10^depth paths.
+    foreach (range(0, 9) as $i) {
+        foreach (range(0, 9) as $j) {
+            if ($i !== $j) {
+                $store->write(new Relationship('org', 'group', "g{$i}", 'member', 'group', "g{$j}", 'member'));
+            }
+        }
+    }
+
+    // Nobody is a member — must deny, and must return quickly (guards the fix).
+    expect($store->check('org', 'group', 'g0', 'member', 'user', 'nobody'))->toBeFalse();
+
+    // Add alice to one group; g0 reaches her through the graph.
+    $store->write(new Relationship('org', 'group', 'g9', 'member', 'user', 'alice'));
+    expect($store->check('org', 'group', 'g0', 'member', 'user', 'alice'))->toBeTrue();
+});

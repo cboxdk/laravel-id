@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
+use Cbox\Id\Kernel\Crypto\Exceptions\InvalidToken;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -61,4 +63,23 @@ it('supports ES256 keys', function (): void {
     expect($key->alg)->toBe(SigningAlg::ES256)
         ->and($jwks['keys'][0])->toHaveKeys(['crv', 'x', 'y'])
         ->and($jwks['keys'][0]['crv'])->toBe('P-256');
+});
+
+it('retires a key so it leaves the JWKS and no longer verifies tokens', function (): void {
+    $keys = app(KeyManager::class);
+    $signer = app(TokenSigner::class);
+
+    $active = $keys->activeSigningKey();
+    $token = $signer->sign(['sub' => 'u1', 'exp' => time() + 60]);
+    // Sanity: it verifies while the key is trusted.
+    expect($signer->verify($token, [SigningAlg::RS256])->get('sub'))->toBe('u1');
+
+    $keys->retire($active->kid);
+
+    expect($active->fresh()?->status)->toBe(KeyStatus::Retired)
+        ->and($keys->jwks()['keys'])->toBeEmpty();
+
+    // A token signed by the retired key is now rejected.
+    expect(fn () => $signer->verify($token, [SigningAlg::RS256]))
+        ->toThrow(InvalidToken::class);
 });
