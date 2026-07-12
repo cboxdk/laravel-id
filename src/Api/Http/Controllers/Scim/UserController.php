@@ -9,6 +9,8 @@ use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryUser;
+use Cbox\Id\Directory\ValueObjects\ScimUser;
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -57,11 +59,11 @@ final class UserController
     public function store(Request $request): JsonResponse
     {
         $directory = $this->directory($request);
-        $scim = ScimMapper::fromRequest($request);
+        $result = $this->provision($directory->id, ScimMapper::fromRequest($request));
 
-        $directoryUser = $this->sync->provisionUser($directory->id, $scim);
-
-        return new JsonResponse(ScimMapper::toResource($directoryUser), 201);
+        return $result instanceof JsonResponse
+            ? $result
+            : new JsonResponse(ScimMapper::toResource($result), 201);
     }
 
     public function replace(Request $request, string $id): JsonResponse
@@ -75,10 +77,11 @@ final class UserController
 
         // Full replace (PUT): re-provision from the submitted resource, keeping
         // the record identified by its stored externalId.
-        $scim = ScimMapper::fromRequest($request);
-        $updated = $this->sync->provisionUser($directory->id, $scim);
+        $result = $this->provision($directory->id, ScimMapper::fromRequest($request));
 
-        return new JsonResponse(ScimMapper::toResource($updated));
+        return $result instanceof JsonResponse
+            ? $result
+            : new JsonResponse(ScimMapper::toResource($result));
     }
 
     public function show(Request $request, string $id): JsonResponse
@@ -102,10 +105,24 @@ final class UserController
         // Apply the PATCH operations onto the current resource and re-provision.
         // Re-provisioning with active=false deactivates: drops membership and
         // revokes sessions immediately.
-        $scim = ScimMapper::applyPatch($directoryUser, $request);
-        $updated = $this->sync->provisionUser($directory->id, $scim);
+        $result = $this->provision($directory->id, ScimMapper::applyPatch($directoryUser, $request));
 
-        return new JsonResponse(ScimMapper::toResource($updated));
+        return $result instanceof JsonResponse
+            ? $result
+            : new JsonResponse(ScimMapper::toResource($result));
+    }
+
+    /**
+     * Provision a user, translating the platform's no-silent-merge policy into a
+     * SCIM 409 uniqueness error instead of a 500.
+     */
+    private function provision(string $directoryId, ScimUser $scim): DirectoryUser|JsonResponse
+    {
+        try {
+            return $this->sync->provisionUser($directoryId, $scim);
+        } catch (AccountExistsForEmail) {
+            return $this->error('409', 'A user with this email already exists on the platform.', 'uniqueness');
+        }
     }
 
     public function destroy(Request $request, string $id): Response
