@@ -9,8 +9,10 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
-No release has been tagged yet. Everything below ships in the first tagged
-release; entries move under a dated version heading when it is cut.
+## [0.1.0] - 2026-07-13
+
+First tagged release. Pre-1.0: the public API may still change between `0.x`
+releases, and only the latest `0.x` tag is supported.
 
 ### Added
 
