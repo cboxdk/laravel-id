@@ -19,6 +19,9 @@ use Cbox\Id\Api\Http\Controllers\Scim\UserController;
 use Cbox\Id\Api\Http\Controllers\Sso\OidcCallbackController;
 use Cbox\Id\Api\Http\Controllers\Sso\OidcRedirectController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlAcsController;
+use Cbox\Id\Api\Http\Controllers\Sso\SamlLoginController;
+use Cbox\Id\Api\Http\Controllers\Sso\SamlLogoutController;
+use Cbox\Id\Api\Http\Controllers\Sso\SamlMetadataController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Controllers\UserInfoController;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
@@ -37,6 +40,10 @@ final class ApiServiceProvider extends ServiceProvider
             Route::get('/.well-known/oauth-authorization-server', AuthorizationServerMetadataController::class);
             Route::get('/.well-known/oauth-protected-resource', ProtectedResourceMetadataController::class);
             Route::get('/up', HealthController::class);
+
+            // SP SAML metadata for a connection — public, no secrets, imported by
+            // the IdP admin during connector setup.
+            Route::get('/sso/saml/{connection}/metadata', SamlMetadataController::class);
         });
 
         // UserInfo (OIDC §5.3) — bearer-authenticated, called per session.
@@ -58,6 +65,12 @@ final class ApiServiceProvider extends ServiceProvider
         Route::middleware(['web', 'throttle:30,1'])->group(function (): void {
             Route::get('/sso/oidc/{connection}/redirect', OidcRedirectController::class);
             Route::get('/sso/oidc/{connection}/callback', OidcCallbackController::class);
+
+            // SP-initiated SAML login (AuthnRequest) — needs a session for the
+            // InResponseTo request id. Single Logout accepts the IdP's redirect
+            // (GET) and, for some IdPs, POST.
+            Route::get('/sso/saml/{connection}/login', SamlLoginController::class);
+            Route::match(['get', 'post'], '/sso/saml/{connection}/slo', SamlLogoutController::class);
 
             // Dynamic Client Registration (RFC 7591) + management (RFC 7592). The
             // controller enforces the configured mode (disabled/protected/open).

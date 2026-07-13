@@ -74,7 +74,9 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 |------------|--------|
 | SAML ACS — signature (XML-DSig), XSW defense, XXE-safe, strict mode, `wantAssertionsSigned` | ✅ |
 | SAML assertion replay protection (single-use assertion ids) | ✅ |
-| SAML SP-initiated `AuthnRequest`, Single Logout, SP metadata endpoint | ▢ |
+| SAML SP metadata endpoint (importable EntityDescriptor: ACS + SLO) | ✅ |
+| SAML SP-initiated login (`AuthnRequest`, HTTP-Redirect, `InResponseTo` state, RelayState) | ✅ |
+| SAML Single Logout — IdP-initiated `LogoutRequest`, **signed-message enforced**, revokes the subject's sessions, returns a `LogoutResponse` | ✅ |
 | OIDC login (RP-initiated) — redirect + callback, code exchange, `id_token` verified (RS256-pinned), `state` CSRF + `nonce` replay defense | ✅ |
 
 ## Authentication & MFA

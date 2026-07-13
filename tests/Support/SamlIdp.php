@@ -106,4 +106,38 @@ XML;
         $subject = $assertion->getElementsByTagName('Subject')->item(0);
         $dsig->insertSignature($assertion, $subject);
     }
+
+    /**
+     * Build a signed IdP-initiated `LogoutRequest` for the HTTP-Redirect binding:
+     * a deflated+base64 SAMLRequest plus the query-string signature onelogin
+     * verifies (`SAMLRequest=…&SigAlg=…` signed with the IdP key).
+     *
+     * @return array{SAMLRequest: string, SigAlg: string, Signature: string}
+     */
+    public function signedLogoutRequest(string $nameId, string $destination): array
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $id = '_'.bin2hex(random_bytes(16));
+
+        $xml = <<<XML
+<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$id}" Version="2.0" IssueInstant="{$now}" Destination="{$destination}">
+  <saml:Issuer>{$this->entityId}</saml:Issuer>
+  <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{$nameId}</saml:NameID>
+</samlp:LogoutRequest>
+XML;
+
+        $samlRequest = base64_encode((string) gzdeflate($xml));
+        $sigAlg = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+
+        // The redirect binding signs the url-encoded query octet-string, in the
+        // exact order onelogin reconstructs it for verification.
+        $signedQuery = 'SAMLRequest='.urlencode($samlRequest).'&SigAlg='.urlencode($sigAlg);
+        openssl_sign($signedQuery, $signature, $this->privatePem, OPENSSL_ALGO_SHA256);
+
+        return [
+            'SAMLRequest' => $samlRequest,
+            'SigAlg' => $sigAlg,
+            'Signature' => base64_encode((string) $signature),
+        ];
+    }
 }

@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\ConsumedAssertion;
+use Cbox\Id\Federation\Saml\SamlSettings;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -81,7 +82,7 @@ final class SamlAssertionValidator implements AssertionValidator
         $config = $this->connections->config($connection);
 
         try {
-            $settings = new Settings($this->settings($config), true);
+            $settings = new Settings(SamlSettings::toArray($config), true);
 
             // onelogin derives the "current URL" it validates Destination/Recipient
             // against from $_SERVER, which is wrong behind proxies and absent on CLI.
@@ -170,30 +171,6 @@ final class SamlAssertionValidator implements AssertionValidator
                 }
             }
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     * @return array<string, mixed>
-     */
-    private function settings(array $config): array
-    {
-        return [
-            'strict' => true,
-            'sp' => [
-                'entityId' => $this->require($config, 'sp_entity_id'),
-                'assertionConsumerService' => ['url' => $this->require($config, 'sp_acs_url')],
-            ],
-            'idp' => [
-                'entityId' => $this->require($config, 'idp_entity_id'),
-                'singleSignOnService' => ['url' => $this->require($config, 'idp_sso_url')],
-                'x509cert' => $this->require($config, 'idp_x509cert'),
-            ],
-            'security' => [
-                'wantAssertionsSigned' => true,
-                'requestedAuthnContext' => false,
-            ],
-        ];
     }
 
     /**
