@@ -36,6 +36,9 @@ final class ServerMetadata
             'introspection_endpoint' => $issuer.'/oauth/introspect',
             'revocation_endpoint' => $issuer.'/oauth/revoke',
             'userinfo_endpoint' => $issuer.'/oauth/userinfo',
+            // RFC 9126: pushed authorization requests.
+            'pushed_authorization_request_endpoint' => $issuer.'/oauth/par',
+            'require_pushed_authorization_requests' => (bool) config('cbox-id.oauth.require_par', false),
             'response_types_supported' => ['code'],
             'grant_types_supported' => self::grantTypes(),
             'id_token_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],

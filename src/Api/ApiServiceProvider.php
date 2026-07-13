@@ -10,6 +10,7 @@ use Cbox\Id\Api\Http\Controllers\HealthController;
 use Cbox\Id\Api\Http\Controllers\IntrospectionController;
 use Cbox\Id\Api\Http\Controllers\JwksController;
 use Cbox\Id\Api\Http\Controllers\ProtectedResourceMetadataController;
+use Cbox\Id\Api\Http\Controllers\PushedAuthorizationController;
 use Cbox\Id\Api\Http\Controllers\RegisteredClientController;
 use Cbox\Id\Api\Http\Controllers\RegistrationController;
 use Cbox\Id\Api\Http\Controllers\RevocationController;
@@ -55,6 +56,9 @@ final class ApiServiceProvider extends ServiceProvider
             Route::post('/oauth/token', TokenController::class);
             Route::post('/oauth/introspect', IntrospectionController::class);
             Route::post('/oauth/revoke', RevocationController::class);
+
+            // RFC 9126: back-channel pushed authorization requests.
+            Route::post('/oauth/par', PushedAuthorizationController::class);
 
             // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
             Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);
