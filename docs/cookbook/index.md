@@ -78,7 +78,7 @@ Pick `EnforcementMode::Claims` for coarse, slow-changing gates (embedded in toke
 and `EnforcementMode::DecisionApi` (the default) for anything that must revoke immediately.
 
 > Keeping your own billing engine and want the full flow — reconcile, enforcement
-> modes, provenance and events? See [Entitlements & billing](entitlements-and-billing.md).
+> modes, provenance and events? See [Entitlements & billing](../core-concepts/entitlements-and-billing.md).
 
 ## Provision users over SCIM
 

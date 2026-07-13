@@ -41,7 +41,7 @@ yourself. That's the right choice if you want full control of the surface.
 application** — the **Cbox ID app** — built on this framework, with the admin
 console, hosted login, onboarding and app-layer add-ons (like risk-scoring) already
 implemented. Install it, configure it, run it. See its
-[operator documentation](../../../host/docs/index.md) (deployment, configuration,
+[operator documentation](../../../../host/docs/index.md) (deployment, configuration,
 operations, compliance).
 
 The rest of this page is the mental model either way — the framework is what the app
@@ -71,33 +71,33 @@ decisions; each is **one integration point**, not a rewrite.
 Cbox ID **never forces its own `users` table**. It refers to a person by an
 opaque id through one contract (`Subjects`). Greenfield? Use the built-in store.
 Already have users (even in Passport)? Bind your table and you're done.
-→ [Integrating an existing app](integrating-existing-apps.md)
+→ [Integrating an existing app](../cookbook/integrating-existing-apps.md)
 
 ### 2. How do apps log in against it?
 
 Over **OpenID Connect (OIDC)** — the standard "log in with…" protocol. Each app is
 an OIDC client pointed at Cbox ID's discovery URL. One sign-in, one session, the
-same canonical `sub` everywhere. → [Standards](standards.md),
-[Quickstart](getting-started/quickstart.md)
+same canonical `sub` everywhere. → [Standards](../security/standards.md),
+[Quickstart](../quickstart.md)
 
 ### 3. What's a "customer" — your tenancy model?
 
 Cbox ID ships **Organizations + memberships** (users belong to orgs, with roles),
 isolated **deny-by-default**. Adopt it, or bridge it to a tenant model you already
-have. → [Integrating an existing app](integrating-existing-apps.md#4-unifying-tenancy)
+have. → [Integrating an existing app](../cookbook/integrating-existing-apps.md#4-unifying-tenancy)
 
 ### 4. Who's allowed what — and what did they pay for?
 
 Two layers, kept separate on purpose:
 - **Roles/permissions (RBAC/ReBAC):** what a member can *do*.
 - **Entitlements:** what their *plan* includes — pushed from **your** billing, so
-  every product enforces the same thing. → [Entitlements & billing](entitlements-and-billing.md)
+  every product enforces the same thing. → [Entitlements & billing](../core-concepts/entitlements-and-billing.md)
 
 ### 5. What do enterprise buyers need — SSO & SCIM?
 
 - **SSO:** their employees log in with *their* IdP (Okta, Entra, Google).
 - **SCIM:** their IT system provisions/deprovisions users into yours automatically.
-Both are per-organization connections. → [Cookbook](cookbook.md), [Standards](standards.md)
+Both are per-organization connections. → [Cookbook](../cookbook/index.md), [Standards](../security/standards.md)
 
 ## How to approach it (the order that works)
 
@@ -114,21 +114,21 @@ Both are per-organization connections. → [Cookbook](cookbook.md), [Standards](
 ## The principles behind the design (so nothing surprises you later)
 
 - **Security is the product, not a feature.** Deny-by-default tenancy, a
-  tamper-evident audit trail, alg-pinned tokens, key rotation. → [Security](security.md),
-  [Threat model](threat-model.md)
+  tamper-evident audit trail, alg-pinned tokens, key rotation. → [Security](../security/index.md),
+  [Threat model](../security/threat-model.md)
 - **Everything is a contract you can swap.** Users, validators, stores, policies —
-  nothing is welded shut. → [Extending](extending.md)
+  nothing is welded shut. → [Extending](../extension-points/index.md)
 - **It's not the system of record for things it shouldn't own.** Not your users
   (your table is), not your money (your billing is) — it stores identity and the
   *decisions*, with provenance.
 - **Standards over bespoke.** OIDC, SCIM, SAML, the relevant RFCs — so any client,
-  in any language, integrates without custom glue. → [Standards](standards.md)
+  in any language, integrates without custom glue. → [Standards](../security/standards.md)
 - **Compliance is designed in, not bolted on.** The controls map to SOC 2, ISO
-  27001, NIS2, GDPR, HIPAA, PCI-DSS. → [Compliance mapping](compliance.md)
+  27001, NIS2, GDPR, HIPAA, PCI-DSS. → [Compliance mapping](../security/compliance.md)
 
 ## Where to go next
 
-- Ready to build → [Installation](getting-started/installation.md) then
-  [Quickstart](getting-started/quickstart.md).
-- Already have an app → [Integrating an existing app](integrating-existing-apps.md).
-- Want the shape of the system → [Architecture & patterns](architecture.md).
+- Ready to build → [Installation](installation.md) then
+  [Quickstart](../quickstart.md).
+- Already have an app → [Integrating an existing app](../cookbook/integrating-existing-apps.md).
+- Want the shape of the system → [Architecture & patterns](../core-concepts/architecture.md).

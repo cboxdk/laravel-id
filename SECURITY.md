@@ -52,8 +52,8 @@ period, only the latest tagged release is supported.
 
 ## What we do to keep this safe
 
-The engineering posture is documented in [`docs/security.md`](docs/security.md) and
-the RFC/standard conformance in [`docs/standards.md`](docs/standards.md). In short:
+The engineering posture is documented in [`docs/security.md`](docs/security/index.md) and
+the RFC/standard conformance in [`docs/standards.md`](docs/security/standards.md). In short:
 
 - **Deny-by-default tenant isolation**, verified by tests.
 - **All crypto through one kernel** — explicit JWT algorithm allow-list (no `alg`
@@ -62,7 +62,7 @@ the RFC/standard conformance in [`docs/standards.md`](docs/standards.md). In sho
 - **Tamper-evident, hash-chained audit log** with signed checkpoints.
 - **CI gates on every push**: PHPStan (max), Pest, `composer audit`, license
   compliance, a CycloneDX SBOM freshness check, secret scanning, and SAST.
-- **A published conformance matrix** ([`docs/standards.md`](docs/standards.md))
+- **A published conformance matrix** ([`docs/standards.md`](docs/security/standards.md))
   mapping the code to the RFCs and specs it implements.
 
 ## Disclosure history

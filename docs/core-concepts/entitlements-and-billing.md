@@ -209,6 +209,6 @@ Event::listen('entitlement.updated', function ($e) {
 ## Where to go next
 
 - [Authorization & the decision plane](authorization.md) — how gates and permissions are resolved live.
-- [Cookbook](cookbook.md) — the reconcile snippet in context, plus RBAC and SSO.
-- [Integrating an existing app](integrating-existing-apps.md) — adopt over an app that already has users and billing.
-- [Security](security.md) — how entitlement writes are tenant-scoped and audited.
+- [Cookbook](../cookbook/index.md) — the reconcile snippet in context, plus RBAC and SSO.
+- [Integrating an existing app](../cookbook/integrating-existing-apps.md) — adopt over an app that already has users and billing.
+- [Security](../security/index.md) — how entitlement writes are tenant-scoped and audited.

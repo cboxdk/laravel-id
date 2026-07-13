@@ -114,5 +114,5 @@ platform already emits.
 ## Where to go next
 
 - [Entitlements & billing](entitlements-and-billing.md) — the billing side and the hybrid in detail.
-- [Security](security.md) — tenant isolation and the invariants underneath.
-- [Extending](extending.md) — swap the relationship store or entitlement source.
+- [Security](../security/index.md) — tenant isolation and the invariants underneath.
+- [Extending](../extension-points/index.md) — swap the relationship store or entitlement source.

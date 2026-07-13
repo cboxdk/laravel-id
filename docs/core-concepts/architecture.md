@@ -33,7 +33,7 @@ $this->app->singleton(UserDirectory::class, DatabaseUserDirectory::class);
 ```
 
 So you always depend on the contract, and you can swap the implementation, decorate it, or
-mock it without touching callers. See [Extending](extending.md).
+mock it without touching callers. See [Extending](../extension-points/index.md).
 
 ```php
 public function __construct(private readonly UserDirectory $users) {}

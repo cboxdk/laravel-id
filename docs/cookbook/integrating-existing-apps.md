@@ -85,7 +85,7 @@ never need a big-bang cutover.
 1. **Keep your `users` table.** Bind it via `Subjects` (step 1). No user migration.
 2. **Register your existing OAuth clients** in Cbox ID — one `oauth_clients` row per
    Passport client (same `redirect_uri`s), or let them self-register via
-   [Dynamic Client Registration](standards.md) (`cbox-id.oauth.dynamic_registration`).
+   [Dynamic Client Registration](../security/standards.md) (`cbox-id.oauth.dynamic_registration`).
 3. **Repoint your apps** from Passport's `/oauth/authorize` + `/oauth/token` to
    Cbox ID's — the endpoints are standard OAuth2/OIDC, so most clients only need the
    base URL changed. Cbox ID adds PKCE, `at+jwt` access tokens, refresh-token
@@ -145,8 +145,8 @@ Either way the tenancy decision is one integration point, not a rewrite.
 
 ## Where to go next
 
-- [Extending](extending.md) — swap any contract (Subjects, validators, stores).
-- [Standards](standards.md) — the OAuth/OIDC/SCIM endpoints your apps integrate against.
-- [Security](security.md) — the isolation and crypto invariants you inherit.
+- [Extending](../extension-points/index.md) — swap any contract (Subjects, validators, stores).
+- [Standards](../security/standards.md) — the OAuth/OIDC/SCIM endpoints your apps integrate against.
+- [Security](../security/index.md) — the isolation and crypto invariants you inherit.
 - Run `php artisan cbox-id:install` then `php artisan cbox-id:doctor` to bootstrap
   and verify the setup.

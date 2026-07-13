@@ -61,4 +61,4 @@ php artisan tinker
 ```
 
 A `kid` string means the platform booted, generated its first signing key, and sealed the
-private half. Next: the [Quickstart](quickstart.md).
+private half. Next: the [Quickstart](../quickstart.md).

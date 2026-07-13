@@ -38,14 +38,14 @@ $user = app(UserDirectory::class)->create('ida@northwind.test', 'Ida', password:
 
 Full docs live in [`docs/`](docs/index.md):
 
-- [Installation](docs/getting-started/installation.md) · [Quickstart](docs/getting-started/quickstart.md)
-- [Architecture & patterns](docs/architecture.md)
-- [Cookbook](docs/cookbook.md)
-- [Extending & customizing](docs/extending.md)
-- [Testing](docs/testing.md)
-- [Security](docs/security.md) · [`SECURITY.md`](SECURITY.md)
-- [Standards & conformance](docs/standards.md) — RFCs implemented (OAuth/OIDC/SCIM/SAML/MCP)
-- [Compliance mapping](docs/compliance.md) — SOC 2 / ISO 27001 / NIS2 / GDPR / HIPAA / PCI-DSS · [Threat model](docs/threat-model.md)
+- [Requirements](docs/requirements.md) · [Installation](docs/getting-started/installation.md) · [Quickstart](docs/quickstart.md)
+- [Architecture & patterns](docs/core-concepts/architecture.md)
+- [Cookbook](docs/cookbook/index.md)
+- [Extending & customizing](docs/extension-points/index.md)
+- [Testing](docs/getting-started/testing.md)
+- [Security](docs/security/index.md) · [`SECURITY.md`](SECURITY.md)
+- [Standards & conformance](docs/security/standards.md) — RFCs implemented (OAuth/OIDC/SCIM/SAML/MCP)
+- [Compliance mapping](docs/security/compliance.md) — SOC 2 / ISO 27001 / NIS2 / GDPR / HIPAA / PCI-DSS · [Threat model](docs/security/threat-model.md)
 
 ## License
 

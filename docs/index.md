@@ -52,32 +52,33 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 
 ## Sections
 
-### New to this?
-
-- [Start here — the mental model](start-here.md) — what a central IdP is, the five things you actually decide, and why, in one page
-
 ### Getting started
 
+- [Requirements](requirements.md) — PHP, Laravel and PHP-extension versions
 - [Installation](getting-started/installation.md)
-- [Quickstart](getting-started/quickstart.md) — from empty app to a federated login in a few calls
+- [Quickstart](quickstart.md) — from empty app to a federated login in a few calls
+- [Start here — the mental model](getting-started/start-here.md) — what a central IdP is, and the five things you actually decide, in one page
+- [Testing](getting-started/testing.md) — the shippable `InteractsWith*` helpers and fakes
 
-### Understand it
+### Core concepts
 
-- [Architecture & patterns](architecture.md) — kernels vs domain, contracts-first DI, dogfooding
-- [Security](security.md) — the invariants, tenant isolation, tamper-evident audit
-- [Standards & conformance](standards.md) — every RFC/spec implemented, and to what extent
-- [FAPI hardening](fapi.md) — the enforceable FAPI 2.0 baseline for high-assurance clients
-- [Compliance mapping](compliance.md) — how controls map to SOC 2, ISO 27001, NIS2, GDPR, HIPAA, PCI-DSS
-- [Threat model](threat-model.md) — STRIDE analysis and mitigations
+- [Architecture & patterns](core-concepts/architecture.md) — kernels vs domain, contracts-first DI, dogfooding
+- [Authorization & the decision plane](core-concepts/authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
+- [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
 
-### Do things
+### Cookbook
 
-- [Cookbook](cookbook.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
-- [Authorization & the decision plane](authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
-- [Entitlements & billing](entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
+- [Cookbook](cookbook/index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
+- [Integrating an existing app](cookbook/integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
 
-### Make it yours
+### Extension points
 
-- [Integrating an existing app](integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
-- [Extending & customizing](extending.md) — swap any contract; implement a SAML/OIDC validator
-- [Testing](testing.md) — the shippable `InteractsWith*` helpers and fakes
+- [Extending & customizing](extension-points/index.md) — swap any contract; implement a SAML/OIDC validator
+
+### Security
+
+- [Security](security/index.md) — the invariants, tenant isolation, tamper-evident audit
+- [Standards & conformance](security/standards.md) — every RFC/spec implemented, and to what extent
+- [FAPI hardening](security/fapi.md) — the enforceable FAPI 2.0 baseline for high-assurance clients
+- [Compliance mapping](security/compliance.md) — how controls map to SOC 2, ISO 27001, NIS2, GDPR, HIPAA, PCI-DSS
+- [Threat model](security/threat-model.md) — STRIDE analysis and mitigations
