@@ -115,32 +115,48 @@ $writer->revoke($organizationId, 'feature.audit_export', EntitlementSource::Bill
 > **Prefer `reconcile()` for webhook-driven billing.** `set`/`revoke` are for
 > deltas you're certain about; `reconcile` is self-healing against drift.
 
-## Enforcing entitlements
+## Enforcing entitlements — the hot path
 
-Read side is `EntitlementReader` — but most products never call it directly;
-they read the **token**. Pick the mode per key:
+Entitlements are **not baked into the access token**. That is deliberate: a plan
+downgrade, a cancellation or an abuse kill-switch must take effect *now*, not after
+a token expires. Instead they are resolved **live** against the decision plane, so
+the token stays a thin identity bearer and the change is visible on the very next
+request — no refresh, no session disruption.
 
-| Mode | Where it's enforced | Revocation | Use for |
-|---|---|---|---|
-| `EnforcementMode::Claims` | embedded in the token at mint | bounded by token TTL | coarse, slow-changing — `plan`, `feature.sso` |
-| `EnforcementMode::DecisionApi` | checked live via the decision API / edge cache | **immediate** | fast-changing or high-stakes — `seats`, kill-switches |
+Two ways to read them, both live:
+
+**1. In-process (a product that embeds the framework):** call the reader / PDP
+directly. Reads are served from a per-org, version-invalidated cache, so a check on
+every request is cheap; a write bumps the version and the next read is instantly
+fresh.
 
 ```php
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 
-$reader = app(EntitlementReader::class);
-
-$plan = $reader->get($organizationId, 'plan');
-$isPro = $plan?->string('tier') === 'pro';          // typed accessors: ->bool() ->int() ->string()
-
-$seats = $reader->get($organizationId, 'seats')?->int('limit') ?? 0;
-
-$all = $reader->all($organizationId);                // array<string, EntitlementValue>
+$reader = app(EntitlementReader::class);              // cache-backed, instant on change
+$isPro  = $reader->get($orgId, 'plan')?->string('tier') === 'pro';
+$seats  = $reader->get($orgId, 'seats')?->int('limit') ?? 0;
 ```
 
-Rule of thumb: **`Claims` for gates you can tolerate being a few minutes stale;
-`DecisionApi` for anything you must be able to switch off instantly** (an org that
-churned mid-cycle, a seat downgrade, an abuse kill-switch).
+**2. Over HTTP (an external resource server):** `POST /oauth/decisions` with the
+caller's access token asks for permissions *and* entitlements in one round trip —
+the same decision plane that answers "may this subject do X?" also answers "does
+the org have entitlement Z?".
+
+```http
+POST /oauth/decisions              Authorization: Bearer <access token>
+{ "permissions": [{"relation": "manage", "resource": "ticket:42"}],
+  "entitlements": ["plan", "seats"] }
+
+→ { "subject": {...}, "organization": "org_x",
+    "permissions": [{"relation":"manage","resource":"ticket:42","allowed":true}],
+    "entitlements": {"plan": {"value":{"tier":"pro"},"version":3}, "seats": null} }
+```
+
+> `EnforcementMode` on an entitlement is an intent marker (`Claims` = coarse and
+> slow-changing, could be embedded in a token by a host that wants it; `DecisionApi`
+> = check live). The platform's default and recommended path is **live** — the hot
+> path above — because that is what gives instant billing/permission changes.
 
 ## Reacting to changes
 

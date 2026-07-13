@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api;
 
 use Cbox\Id\Api\Http\Controllers\AuthorizationServerMetadataController;
+use Cbox\Id\Api\Http\Controllers\DecisionController;
 use Cbox\Id\Api\Http\Controllers\DeviceAuthorizationController;
 use Cbox\Id\Api\Http\Controllers\DiscoveryController;
 use Cbox\Id\Api\Http\Controllers\HealthController;
@@ -50,6 +51,11 @@ final class ApiServiceProvider extends ServiceProvider
 
         // UserInfo (OIDC §5.3) — bearer-authenticated, called per session.
         Route::middleware('throttle:120,1')->match(['get', 'post'], '/oauth/userinfo', UserInfoController::class);
+
+        // Authorization decision endpoint (hot path): permission + entitlement
+        // checks resolved live. Generously throttled — resource servers call it per
+        // request and it is cache-backed.
+        Route::middleware('throttle:600,1')->post('/oauth/decisions', DecisionController::class);
 
         // Credential-bearing endpoints — throttled to blunt secret/token brute
         // force (secrets are 256-bit, so this is a backstop, not the only guard).
