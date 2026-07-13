@@ -88,8 +88,8 @@ never need a big-bang cutover.
    [Dynamic Client Registration](standards.md) (`cbox-id.oauth.dynamic_registration`).
 3. **Repoint your apps** from Passport's `/oauth/authorize` + `/oauth/token` to
    Cbox ID's — the endpoints are standard OAuth2/OIDC, so most clients only need the
-   base URL changed. Cbox ID adds PKCE, `at+jwt`, refresh-token rotation, and DPoP
-   you didn't have before.
+   base URL changed. Cbox ID adds PKCE, `at+jwt` access tokens and refresh-token
+   rotation with reuse detection you didn't have before.
 4. **Drain, don't cut.** Passport access tokens are short-lived; let them expire.
    Refresh tokens re-issue against Cbox ID on next refresh (users re-consent once).
 5. **Retire Passport** once traffic has moved. Remove `Passport::routes()` and the
