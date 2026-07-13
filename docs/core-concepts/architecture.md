@@ -29,14 +29,14 @@ internals. A module's public surface is exactly its `Contracts/` namespace.
 Every capability is an interface bound to an implementation in a module service provider:
 
 ```php
-$this->app->singleton(UserDirectory::class, DatabaseUserDirectory::class);
+$this->app->singleton(Subjects::class, DatabaseSubjects::class);
 ```
 
 So you always depend on the contract, and you can swap the implementation, decorate it, or
 mock it without touching callers. See [Extending](../extension-points/_index.md).
 
 ```php
-public function __construct(private readonly UserDirectory $users) {}
+public function __construct(private readonly Subjects $users) {}
 ```
 
 ## Deny-by-default everywhere

@@ -37,6 +37,8 @@ interface Subjects
      * {@see AccountExistsForEmail}. Idempotent per
      * (provider, subject). Linking to an existing account is explicit — see
      * {@see link()}.
+     *
+     * @throws AccountExistsForEmail when the email already belongs to an account
      */
     public function provisionFederated(FederatedPrincipal $principal): Subject;
 
@@ -47,6 +49,8 @@ interface Subjects
      * the provider's auth). Throws
      * {@see IdentityAlreadyLinked} if the identity
      * belongs to a different subject.
+     *
+     * @throws IdentityAlreadyLinked when the identity is already linked to a different subject
      */
     public function link(string $subjectId, FederatedPrincipal $principal): void;
 

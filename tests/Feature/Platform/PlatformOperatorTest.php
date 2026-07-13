@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
+use Cbox\Id\Platform\Testing\InteractsWithPlatform;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 
-uses(RefreshDatabase::class, InteractsWithTenancy::class);
+uses(RefreshDatabase::class, InteractsWithTenancy::class, InteractsWithPlatform::class);
 
 it('provisions, finds and authenticates a platform operator', function (): void {
     $ops = app(PlatformOperators::class);
 
-    $op = $ops->create('root@platform.test', 'a-strong-passphrase', 'Root Operator');
+    $op = $this->makeOperator('root@platform.test', 'a-strong-passphrase', 'Root Operator');
 
     expect($ops->findByEmail('root@platform.test')?->id)->toBe($op->id)
         ->and($ops->find($op->id)?->email)->toBe('root@platform.test')

@@ -319,7 +319,7 @@ final class DatabaseSubjects implements Subjects
     }
 
     /**
-     * @return Builder<Model>
+     * @return Builder<User>
      */
     private function query(): Builder
     {
@@ -336,16 +336,19 @@ final class DatabaseSubjects implements Subjects
     }
 
     /**
-     * The model backing the default store — a configured class (need only be an
-     * Eloquent model, not a subclass of the package User) or the package default.
+     * The model backing the default store. A host may override it via
+     * `cbox-id.models.user`, but it MUST extend the package {@see User} — that is
+     * what carries `BelongsToEnvironment` and the `(environment_id, email)` unique
+     * key, so a plain Eloquent model would silently lose per-environment scoping
+     * on the users table. Anything else falls back to the package default.
      *
-     * @return class-string<Model>
+     * @return class-string<User>
      */
     private function modelClass(): string
     {
         $configured = config('cbox-id.models.user');
 
-        return is_string($configured) && is_a($configured, Model::class, true)
+        return is_string($configured) && is_a($configured, User::class, true)
             ? $configured
             : User::class;
     }

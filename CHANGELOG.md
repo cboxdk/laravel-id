@@ -9,6 +9,53 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-13
+
+A security-hardening pass from a full review. Isolation is now enforced by the
+deny-by-default global scope across every tenant table rather than by per-query
+discipline. Breaking: adds `environment_id` to several tables (schema change).
+
+### Security
+
+- **Environment isolation is now defense-in-depth.** `WebhookEndpoint` +
+  `WebhookDelivery` were not environment-owned — a platform-wide (null-org)
+  endpoint received *every* environment's events (cross-environment payload
+  leak). Both are now environment-owned, and 13 more tenant-relevant tables
+  gained the global scope (`DirectoryUser/Group`, `WebAuthnCredential`,
+  `MfaFactor`, `MfaRecoveryCode`, `MagicLinkToken`, `PasswordResetToken`,
+  `EmailVerificationToken`, `AccessToken`, `ServiceAccount`,
+  `PushedAuthorizationRequest`, `Role`, `RoleAssignment`, `SamlAuthRequest`), so
+  a query that forgets its filter can no longer cross environments. Replay tables
+  (`DpopProof`, consumed SAML assertions) and the shared permission catalog stay
+  global by design.
+- **Device-grant redemption** flips `approved → redeemed` under `lockForUpdate`
+  in a transaction, closing a single-use TOCTOU for a shared/logged `device_code`.
+- **SAML Single Logout** scopes its identity lookup by `connection_id` (as login
+  does), so a signed `LogoutRequest` from one connection can't force-logout a user
+  belonging to another.
+- **Magic-link redemption** locks the token row.
+- **Credential checks** run a constant-cost dummy verify on the miss path
+  (`Subjects`, `PlatformOperators`) — no username-enumeration timing oracle.
+- **Host-based environment resolution** only trusts a leading subdomain label
+  under a configured `cbox-id.environments.base_domains`; a spoofed `Host` can no
+  longer select a plane.
+- **Tenancy context managers** are `scoped`, not `singleton`, so a killed
+  Octane worker can't leak a suspension counter across requests and collapse
+  scoping.
+- The configured `cbox-id.models.user` **must extend the package `User`** (which
+  carries `BelongsToEnvironment`), so a host override can't silently unscope the
+  users table.
+
+### DX
+
+- Docs: the flagship examples referenced a non-existent `UserDirectory` contract
+  — renamed to `Subjects`/`DatabaseSubjects` across the README and docs so they
+  run as written.
+- Added `Platform/Testing/InteractsWithPlatform` (`makeOperator()`), dogfooded in
+  the Platform tests, and a `Kernel/Crypto/Testing/FakeSecretBox` so hosts can
+  test secret-sealing without libsodium.
+- `@throws` tags on `Subjects` and `DeviceAuthorization`.
+
 ## [0.3.2] - 2026-07-13
 
 ### Fixed

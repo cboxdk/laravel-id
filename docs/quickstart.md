@@ -27,10 +27,10 @@ scoped to it automatically.
 ## 2. Create a user and add them to the org
 
 ```php
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Organization\Contracts\Memberships;
 
-$user = app(UserDirectory::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
+$user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
 
 app(Memberships::class)->add($org->id, $user->id, role: 'admin');
 ```

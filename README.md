@@ -21,10 +21,10 @@ php artisan migrate
 ```php
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 
 $org  = app(Organizations::class)->create(new NewOrganization('Northwind', 'northwind'));
-$user = app(UserDirectory::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
+$user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
 ```
 
 ## Modules

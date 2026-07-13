@@ -62,7 +62,7 @@ $events->assertNotEmitted('organization.deleted');
 Every contract is an interface, so mock it directly when you want full control:
 
 ```php
-$this->mock(UserDirectory::class)
+$this->mock(Subjects::class)
     ->shouldReceive('findByEmail')
     ->andReturn(null);
 ```

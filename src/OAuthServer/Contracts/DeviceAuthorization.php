@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Contracts;
 
+use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
+use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
+use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
+use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
+use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
@@ -30,9 +35,13 @@ interface DeviceAuthorization
     public function deny(string $userCode): bool;
 
     /**
-     * Poll for the token (RFC 8628 §3.4). Returns the approved grant, or throws:
-     * DeviceAuthorizationPending, DeviceSlowDown, DeviceAccessDenied,
-     * DeviceExpired, or InvalidGrant (unknown device_code).
+     * Poll for the token (RFC 8628 §3.4). Returns the approved grant, or throws.
+     *
+     * @throws DeviceAuthorizationPending while the user has not yet approved
+     * @throws DeviceSlowDown when polling faster than the interval
+     * @throws DeviceAccessDenied when the user denied the request
+     * @throws DeviceExpired when the device_code has expired
+     * @throws InvalidGrant for an unknown or already-redeemed device_code
      */
     public function redeem(string $clientId, string $deviceCode): DeviceGrant;
 }

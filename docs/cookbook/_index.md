@@ -14,10 +14,10 @@ Your products don't embed the package — they log in against the running instan
 identity. Server-side, provisioning a federated login is one call:
 
 ```php
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 
-$user = app(UserDirectory::class)->provisionFederated(
+$user = app(Subjects::class)->provisionFederated(
     new FederatedPrincipal('oidc', 'google|123', 'sam@acme.test', 'Sam'),
 );
 ```

@@ -43,7 +43,7 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 | `Kernel\Events` | `EventBus` | Transactional outbox; at-least-once relay. |
 | `Kernel\Authorization` | `PolicyDecisionPoint`, `RelationshipStore`, `EntitlementReader`/`EntitlementWriter` | Owned ReBAC engine, deny-by-default PDP, billing-fed entitlement projection. |
 | `Organization` | `Organizations`, `OrganizationHierarchy`, `Memberships` | Tenants, closure-tree hierarchy (reseller/parent), memberships. |
-| `Identity` | `UserDirectory`, `SessionManager` | Global users, federated identities, sessions, password auth. |
+| `Identity` | `Subjects`, `SessionManager` | Global users, federated identities, sessions, password auth. |
 | `AccessControl` | `Roles`, `AccessChecker` | RBAC with hierarchy-aware roll-down. |
 | `Directory` | `Directories`, `DirectorySync` | SCIM provisioning; deprovision revokes sessions immediately. |
 | `Federation` | `Connections`, `FederationFlow`, `AssertionValidator` | Per-org SSO connections + login orchestration. |

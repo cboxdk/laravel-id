@@ -13,9 +13,9 @@ Because every capability is a contract bound in the container, extension is just
 Rebind any contract in a service provider — yours wins over the package default:
 
 ```php
-use Cbox\Id\Identity\Contracts\UserDirectory;
+use Cbox\Id\Identity\Contracts\Subjects;
 
-$this->app->singleton(UserDirectory::class, MyUserDirectory::class);
+$this->app->singleton(Subjects::class, MySubjects::class);
 ```
 
 Your class implements the same interface. Callers are untouched because they depend on the
@@ -27,8 +27,8 @@ Wrap the package implementation to add cross-cutting behaviour (metrics, extra v
 notifications) without forking it:
 
 ```php
-$this->app->extend(UserDirectory::class, function (UserDirectory $inner, $app) {
-    return new NotifyingUserDirectory($inner, $app->make(Notifier::class));
+$this->app->extend(Subjects::class, function (Subjects $inner, $app) {
+    return new NotifyingSubjects($inner, $app->make(Notifier::class));
 });
 ```
 
