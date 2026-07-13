@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
+use Cbox\Id\Organization\Exceptions\CannotReparent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -42,3 +43,43 @@ it('answers transitive management queries for resellers', function (): void {
         ->and($hierarchy->manages($customer->id, $reseller->id))->toBeFalse()
         ->and($hierarchy->manages($unrelated->id, $customer->id))->toBeFalse();
 });
+
+it('moves a node with its whole subtree under a new parent', function (): void {
+    $hierarchy = app(OrganizationHierarchy::class);
+
+    // a -> b -> c, and a separate root d.
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B', parentId: $a->id);
+    $c = $this->makeOrganization('C', parentId: $b->id);
+    $d = $this->makeOrganization('D');
+
+    // Move b (carrying c) under d.
+    $hierarchy->move($b->id, $d->id);
+
+    // b and c now sit under d, no longer under a.
+    expect($hierarchy->ancestors($b->id))->toBe([$d->id])
+        ->and($hierarchy->ancestors($c->id))->toContain($d->id, $b->id)
+        ->and($hierarchy->ancestors($c->id))->not->toContain($a->id)
+        ->and($hierarchy->descendants($a->id))->toBe([])
+        ->and($hierarchy->descendants($d->id))->toContain($b->id, $c->id)
+        ->and($hierarchy->isDescendantOf($c->id, $d->id))->toBeTrue();
+});
+
+it('promotes a node to a root when moved with a null parent', function (): void {
+    $hierarchy = app(OrganizationHierarchy::class);
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B', parentId: $a->id);
+
+    $hierarchy->move($b->id, null);
+
+    expect($hierarchy->ancestors($b->id))->toBe([])
+        ->and($hierarchy->descendants($a->id))->toBe([]);
+});
+
+it('refuses to move a node under its own descendant', function (): void {
+    $hierarchy = app(OrganizationHierarchy::class);
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B', parentId: $a->id);
+
+    $hierarchy->move($a->id, $b->id);
+})->throws(CannotReparent::class);

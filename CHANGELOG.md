@@ -9,6 +9,17 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-13
+
+### Added
+
+- **`OrganizationHierarchy::move()`** — reparent an existing organization, with
+  its whole subtree, under a new parent (or promote to root). Rewrites the
+  closure table correctly at any depth and throws `CannotReparent` if the target
+  is the node itself or one of its descendants (cycle guard). Fills the gap that
+  `attach()` — create-time only — left for tenant hierarchy management (moving a
+  customer between resellers, restructuring OUs).
+
 ## [0.3.0] - 2026-07-13
 
 Adds **platform operators** — the identity above every environment (the WorkOS
