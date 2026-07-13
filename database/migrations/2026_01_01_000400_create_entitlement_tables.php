@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('entitlements', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id');
             $table->string('key');
             $table->json('value');
@@ -28,6 +29,7 @@ return new class extends Migration
 
         Schema::create('entitlement_history', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id');
             $table->string('key');
             $table->json('value')->nullable();

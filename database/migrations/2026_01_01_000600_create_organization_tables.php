@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('organizations', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('name');
             $table->string('slug')->unique();
             $table->ulid('parent_id')->nullable()->index();
@@ -23,6 +24,7 @@ return new class extends Migration
 
         Schema::create('organization_closure', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('ancestor_id');
             $table->ulid('descendant_id');
             $table->unsignedInteger('depth');
@@ -33,6 +35,7 @@ return new class extends Migration
 
         Schema::create('memberships', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id')->index();
             $table->ulid('user_id');
             $table->string('role');

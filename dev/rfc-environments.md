@@ -178,8 +178,7 @@ wiring ~1–2 days.
   registration, and `actingAsEnvironment*` test helpers. Proven by
   `EnvironmentIsolationTest` (8 invariants) — incl. the load-bearing one: the
   org-level `withoutScope`/roll-up NEVER crosses an environment.
-- [ ] Phase 2 — Environment entity + model, `environment_id` on organizations &
-  all tenant-owned models, environment-scoped org closure.
+- [x] **Phase 2 — Environment entity + `environment_id` on the anchors.** Environment model+migration; `environment_id` on organizations, organization_closure, memberships, entitlements, entitlement_changes, relationship_tuples; BelongsToEnvironment on all of them + the Organization (Tenant) and closure; a default test environment. Proven by OrganizationEnvironmentTest.
 - [ ] Phase 3 — Crypto: per-environment signing keys, issuer, JWKS, discovery.
 - [ ] Phase 4 — Identity: environment-scoped users, email uniqueness, federated linking.
 - [ ] Phase 5 — OAuth surface + environment resolution (host/API-key).

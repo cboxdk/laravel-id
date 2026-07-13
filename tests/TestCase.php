@@ -36,6 +36,16 @@ abstract class TestCase extends Orchestra
     use InteractsWithTenancy;
     use InteractsWithWebhooks;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Every test runs inside a default environment — the hard outer scope is
+        // deny-by-default, so without this the environment-owned models would
+        // return nothing. Isolation tests override it with actingAsEnvironment().
+        $this->actingAsEnvironment('env_test');
+    }
+
     /**
      * @return array<int, class-string>
      */

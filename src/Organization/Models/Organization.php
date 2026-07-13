@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Kernel\Tenancy\Contracts\Tenant;
 use Cbox\Id\Organization\Enums\OrganizationStatus;
 use Cbox\Id\Organization\Enums\OrganizationType;
@@ -25,8 +27,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property OrganizationStatus $status
  * @property array<string, mixed> $settings
  */
-final class Organization extends Model implements Tenant
+final class Organization extends Model implements EnvironmentOwned, Tenant
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'organizations';

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToTenant;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantOwned;
 use Cbox\Id\Organization\Enums\MembershipStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -21,8 +23,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property MembershipStatus $status
  * @property string|null $invited_by
  */
-final class Membership extends Model implements TenantOwned
+final class Membership extends Model implements EnvironmentOwned, TenantOwned
 {
+    use BelongsToEnvironment;
     use BelongsToTenant;
     use HasUlids;
 

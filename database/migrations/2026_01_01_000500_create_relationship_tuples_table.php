@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('relationship_tuples', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id');
             $table->string('object_type');
             $table->string('object_id');

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -17,8 +19,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $descendant_id
  * @property int $depth
  */
-final class OrganizationClosure extends Model
+final class OrganizationClosure extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     public $timestamps = false;
