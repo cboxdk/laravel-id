@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -218,6 +221,74 @@ it('still serves a plain (unbound) bearer token at the resource', function (): v
     // No cnf.jkt → ordinary Bearer access is unaffected.
     $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
         ->assertOk()->assertJsonStructure(['sub']);
+});
+
+/**
+ * Mint a DPoP-bound refresh token for a public client via the authorization_code
+ * grant (offline_access), returning the raw refresh token.
+ *
+ * @param  array{pem: string, jwk: array<string, string>}  $key
+ */
+function boundRefreshToken(object $test, string $clientId, array $key): string
+{
+    $verifier = 'a-sufficiently-long-code-verifier-1234567890';
+    $code = app(AuthorizationCodes::class)->issue(
+        $clientId, 'user_42', 'org_a', 'https://app.test/cb',
+        ['openid', 'offline_access'],
+        Base64Url::encode(hash('sha256', $verifier, true)), 'S256', null, 1_700_000_000, ['pwd'],
+    );
+
+    return (string) $test->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => $verifier,
+    ], ['DPoP' => dpopProof($key, 'POST', 'http://localhost/oauth/token')])
+        ->assertOk()->json('refresh_token');
+}
+
+it('binds a refresh token to the DPoP key and rotates it only with a matching proof', function (): void {
+    $key = dpopKey();
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $refresh = boundRefreshToken($this, $clientId, $key);
+    $tokenUrl = 'http://localhost/oauth/token';
+
+    // Rotating with a proof of the SAME key succeeds and returns a fresh token.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $clientId,
+        'refresh_token' => $refresh,
+    ], ['DPoP' => dpopProof($key, 'POST', $tokenUrl)])
+        ->assertOk()->assertJsonStructure(['access_token', 'refresh_token']);
+});
+
+it('refuses to rotate a DPoP-bound refresh token without a proof', function (): void {
+    $key = dpopKey();
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $refresh = boundRefreshToken($this, $clientId, $key);
+
+    // A stolen bound token, replayed with no DPoP header at all.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $clientId,
+        'refresh_token' => $refresh,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
+it('refuses to rotate a DPoP-bound refresh token with a different key', function (): void {
+    $key = dpopKey();
+    $attacker = dpopKey();
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $refresh = boundRefreshToken($this, $clientId, $key);
+
+    // Attacker holds the stolen token but can only prove their OWN key.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $clientId,
+        'refresh_token' => $refresh,
+    ], ['DPoP' => dpopProof($attacker, 'POST', 'http://localhost/oauth/token')])
+        ->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
 });
 
 it('advertises DPoP signing algs in the authorization-server metadata', function (): void {

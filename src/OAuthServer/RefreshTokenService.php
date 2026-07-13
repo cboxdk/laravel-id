@@ -24,15 +24,15 @@ final class RefreshTokenService implements RefreshTokens
 {
     private const TTL_DAYS = 30;
 
-    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null): string
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null): string
     {
-        return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience);
+        return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt);
     }
 
-    public function rotate(string $clientId, string $rawToken): RefreshGrant
+    public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null): RefreshGrant
     {
         try {
-            return DB::transaction(function () use ($clientId, $rawToken): RefreshGrant {
+            return DB::transaction(function () use ($clientId, $rawToken, $presentedJkt): RefreshGrant {
                 $token = RefreshToken::query()
                     ->where('token_hash', hash('sha256', $rawToken))
                     ->lockForUpdate()
@@ -53,6 +53,13 @@ final class RefreshTokenService implements RefreshTokens
                     throw InvalidGrant::make('client mismatch');
                 }
 
+                // RFC 9449 §5: a DPoP-bound refresh token may only be rotated by a
+                // holder proving the same key. A stolen bound token presented with
+                // the attacker's own (or no) key is refused.
+                if ($token->jkt !== null && ($presentedJkt === null || ! hash_equals($token->jkt, $presentedJkt))) {
+                    throw InvalidGrant::make('DPoP key does not match the refresh token binding');
+                }
+
                 $token->forceFill(['consumed_at' => now()])->save();
 
                 $raw = $this->mint(
@@ -62,6 +69,7 @@ final class RefreshTokenService implements RefreshTokens
                     $token->organization_id,
                     array_values($token->scopes),
                     $token->audience,
+                    $token->jkt,
                 );
 
                 return new RefreshGrant(
@@ -93,7 +101,7 @@ final class RefreshTokenService implements RefreshTokens
     /**
      * @param  list<string>  $scopes
      */
-    private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience): string
+    private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience, ?string $dpopJkt = null): string
     {
         $raw = 'rt_'.bin2hex(random_bytes(32));
 
@@ -105,6 +113,7 @@ final class RefreshTokenService implements RefreshTokens
             'organization_id' => $organizationId,
             'scopes' => $scopes,
             'audience' => $audience,
+            'jkt' => $dpopJkt,
             'expires_at' => now()->addDays(self::TTL_DAYS),
         ]);
 

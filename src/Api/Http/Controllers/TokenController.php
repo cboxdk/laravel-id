@@ -122,8 +122,10 @@ final class TokenController
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt);
 
         // A refresh token is issued only when the client asked for offline access.
+        // If this token exchange was DPoP-bound, bind the refresh token to the same
+        // key (RFC 9449 §5) so rotation demands proof of possession.
         $refresh = in_array('offline_access', $grant->scopes, true)
-            ? $this->refreshTokens->issue($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource)
+            ? $this->refreshTokens->issue($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt)
             : null;
 
         return $this->tokenResponse($access, $this->idToken($clientId, $grant, $access), $refresh);
@@ -178,7 +180,7 @@ final class TokenController
         }
 
         try {
-            $rotated = $this->refreshTokens->rotate($clientId, $request->string('refresh_token')->toString());
+            $rotated = $this->refreshTokens->rotate($clientId, $request->string('refresh_token')->toString(), $dpopJkt);
         } catch (InvalidGrant) {
             return $this->error('invalid_grant', 400);
         }

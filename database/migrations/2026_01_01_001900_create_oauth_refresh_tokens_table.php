@@ -22,6 +22,10 @@ return new class extends Migration
             $table->ulid('organization_id')->nullable();
             $table->json('scopes')->default('[]');
             $table->string('audience')->nullable();
+            // RFC 9449 §5: when the token was issued under DPoP, the client's key
+            // thumbprint is bound here so rotation must present the same key — a
+            // stolen public-client refresh token can't be redeemed with another key.
+            $table->string('jkt')->nullable();
             $table->timestamp('consumed_at')->nullable();
             $table->timestamp('revoked_at')->nullable();
             $table->timestamp('expires_at');
