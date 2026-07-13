@@ -142,6 +142,84 @@ it('rejects a bad DPoP proof at the token endpoint', function (): void {
         ->assertJsonPath('error', 'invalid_dpop_proof');
 });
 
+/**
+ * Mint a DPoP-bound, openid-scoped access token via the token endpoint.
+ *
+ * @param  object{client: object{client_id: string}, secret: string}  $registered
+ * @param  array{pem: string, jwk: array<string, string>}  $key
+ */
+function mintBoundToken(object $test, object $registered, array $key): string
+{
+    return (string) $test->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid',
+    ], ['DPoP' => dpopProof($key, 'POST', 'http://localhost/oauth/token')])
+        ->assertOk()->json('access_token');
+}
+
+it('rejects a sender-constrained token presented as a plain bearer at the resource', function (): void {
+    $key = dpopKey();
+    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+
+    // A stolen bound token, replayed as a bearer with no proof of possession.
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertStatus(401);
+});
+
+it('accepts a sender-constrained token with a matching DPoP proof at the resource', function (): void {
+    $key = dpopKey();
+    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $url = 'http://localhost/oauth/userinfo';
+
+    $proof = dpopProof($key, 'GET', $url, ['ath' => base64url(hash('sha256', $token, true))]);
+
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'DPoP '.$token, 'DPoP' => $proof])
+        ->assertOk()->assertJsonStructure(['sub']);
+});
+
+it('rejects a resource proof that omits the ath token binding', function (): void {
+    $key = dpopKey();
+    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $url = 'http://localhost/oauth/userinfo';
+
+    // Correct key + request, but no ath — a proof captured for a different call
+    // must not authorize this token (RFC 9449 §4.3).
+    $proof = dpopProof($key, 'GET', $url);
+
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'DPoP '.$token, 'DPoP' => $proof])
+        ->assertStatus(401);
+});
+
+it('rejects a resource proof signed by a key other than the token binding', function (): void {
+    $key = dpopKey();
+    $attacker = dpopKey();
+    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $url = 'http://localhost/oauth/userinfo';
+
+    // Attacker holds the stolen token and forges a fresh proof with THEIR key —
+    // the thumbprint won't match cnf.jkt.
+    $proof = dpopProof($attacker, 'GET', $url, ['ath' => base64url(hash('sha256', $token, true))]);
+
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'DPoP '.$token, 'DPoP' => $proof])
+        ->assertStatus(401);
+});
+
+it('still serves a plain (unbound) bearer token at the resource', function (): void {
+    $registered = $this->makeClient(['openid']);
+    $token = $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid',
+    ])->assertOk()->json('access_token');
+
+    // No cnf.jkt → ordinary Bearer access is unaffected.
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertOk()->assertJsonStructure(['sub']);
+});
+
 it('advertises DPoP signing algs in the authorization-server metadata', function (): void {
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()

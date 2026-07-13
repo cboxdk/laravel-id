@@ -9,6 +9,8 @@ use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Kernel\Authorization\ValueObjects\ResourceRef;
 use Cbox\Id\Kernel\Authorization\ValueObjects\Subject;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
+use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,11 +32,12 @@ final class DecisionController
     public function __construct(
         private readonly TokenIntrospector $introspector,
         private readonly PolicyDecisionPoint $pdp,
+        private readonly DpopResourceGuard $dpop,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
-        $token = $request->bearerToken();
+        $token = $this->dpop->bearer($request);
 
         if (! is_string($token) || $token === '') {
             return new JsonResponse(['error' => 'invalid_token'], 401);
@@ -44,6 +47,13 @@ final class DecisionController
 
         if (! $introspection->active) {
             return new JsonResponse(['error' => 'invalid_token'], 401);
+        }
+
+        // Sender-constrained tokens must arrive with a matching DPoP proof.
+        try {
+            $this->dpop->enforce($request, $token, $introspection);
+        } catch (InvalidDpopProof) {
+            return new JsonResponse(['error' => 'invalid_token'], 401, ['WWW-Authenticate' => 'DPoP error="invalid_token"']);
         }
 
         $sub = (string) $introspection->subject;

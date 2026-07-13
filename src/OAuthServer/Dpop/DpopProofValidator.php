@@ -33,11 +33,13 @@ final class DpopProofValidator
     private const MAX_AGE_SECONDS = 60;
 
     /**
-     * @return string the base64url JWK thumbprint (jkt) to place in `cnf`
+     * @param  string|null  $accessToken  when set (resource surface, RFC 9449 §4.3),
+     *                                    the proof must carry `ath` = the token's SHA-256
+     * @return string the base64url JWK thumbprint (jkt) to place in / match against `cnf`
      *
      * @throws InvalidDpopProof
      */
-    public function verify(string $proof, string $htm, string $htu): string
+    public function verify(string $proof, string $htm, string $htu, ?string $accessToken = null): string
     {
         $header = $this->decodeSegment($proof, 0);
         $jwk = $header['jwk'] ?? null;
@@ -70,7 +72,7 @@ final class DpopProofValidator
             throw InvalidDpopProof::make('signature verification failed');
         }
 
-        $this->assertBinding($claims, $htm, $htu);
+        $this->assertBinding($claims, $htm, $htu, $accessToken);
         $this->guardReplay($claims);
 
         return $this->thumbprint($jwk);
@@ -79,7 +81,7 @@ final class DpopProofValidator
     /**
      * @param  array<array-key, mixed>  $claims
      */
-    private function assertBinding(array $claims, string $htm, string $htu): void
+    private function assertBinding(array $claims, string $htm, string $htu, ?string $accessToken = null): void
     {
         if (($claims['htm'] ?? null) !== strtoupper($htm)) {
             throw InvalidDpopProof::make('htm does not match the request method');
@@ -87,6 +89,17 @@ final class DpopProofValidator
 
         if (! is_string($claims['htu'] ?? null) || $this->normalizeUrl($claims['htu']) !== $this->normalizeUrl($htu)) {
             throw InvalidDpopProof::make('htu does not match the request URL');
+        }
+
+        // At a resource, the proof must be bound to the exact access token it
+        // accompanies (RFC 9449 §4.3) — this stops a proof captured for one token
+        // being replayed to authorize a different one.
+        if ($accessToken !== null) {
+            $expectedAth = $this->base64url(hash('sha256', $accessToken, true));
+
+            if (! is_string($claims['ath'] ?? null) || ! hash_equals($expectedAth, $claims['ath'])) {
+                throw InvalidDpopProof::make('ath does not match the access token');
+            }
         }
 
         $iat = $claims['iat'] ?? null;

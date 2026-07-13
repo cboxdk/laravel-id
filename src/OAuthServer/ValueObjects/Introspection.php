@@ -39,4 +39,27 @@ final readonly class Introspection
     {
         return in_array($scope, $this->scopes, true);
     }
+
+    /**
+     * The DPoP confirmation thumbprint (`cnf.jkt`, RFC 9449) this token is
+     * sender-constrained to, or null for a plain bearer token.
+     */
+    public function confirmationThumbprint(): ?string
+    {
+        // `cnf` may arrive as an array or, from a JWT decode, a stdClass — cast so
+        // both shapes resolve.
+        $cnf = $this->claims['cnf'] ?? null;
+
+        if (is_object($cnf)) {
+            $cnf = (array) $cnf;
+        }
+
+        if (! is_array($cnf)) {
+            return null;
+        }
+
+        $jkt = $cnf['jkt'] ?? null;
+
+        return is_string($jkt) && $jkt !== '' ? $jkt : null;
+    }
 }
