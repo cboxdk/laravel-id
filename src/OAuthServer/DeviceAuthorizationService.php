@@ -88,17 +88,33 @@ final class DeviceAuthorizationService implements DeviceAuthorization
             && $record->last_polled_at->copy()->addSeconds($record->interval)->isFuture()) {
             throw new DeviceSlowDown;
         }
-        $record->forceFill(['last_polled_at' => now()])->save();
+        if ($record->status === 'denied') {
+            throw new DeviceAccessDenied;
+        }
 
-        return match ($record->status) {
-            'approved' => new DeviceGrant(
-                (string) $record->user_id,
-                $record->organization_id,
-                array_values($record->scopes),
-            ),
-            'denied' => throw new DeviceAccessDenied,
-            default => throw new DeviceAuthorizationPending,
-        };
+        // A code already exchanged for a token is spent — never mint again.
+        if ($record->status === 'redeemed') {
+            throw new InvalidGrant('device_code already used');
+        }
+
+        if ($record->status !== 'approved') {
+            $record->forceFill(['last_polled_at' => now()])->save();
+
+            throw new DeviceAuthorizationPending;
+        }
+
+        // Single-use (RFC 8628 §3.4): a device_code mints a token exactly once.
+        // Mark it redeemed so a subsequent poll (a shared/logged code) cannot mint
+        // another token for the victim.
+        $grant = new DeviceGrant(
+            (string) $record->user_id,
+            $record->organization_id,
+            array_values($record->scopes),
+        );
+
+        $record->forceFill(['status' => 'redeemed', 'last_polled_at' => now()])->save();
+
+        return $grant;
     }
 
     /**

@@ -93,6 +93,27 @@ it('reports denial and expiry', function (): void {
     ])->assertJsonPath('error', 'expired_token');
 });
 
+it('mints a token only once per device_code (single-use)', function (): void {
+    $registered = $this->makeClient(['openid']);
+    $device = app(DeviceAuthorization::class);
+    $result = $device->request($registered->client, ['openid']);
+    $device->approve($result->userCode, 'user-1', null);
+
+    $poll = fn () => $this->postJson('/oauth/token', [
+        'grant_type' => DEVICE_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'device_code' => $result->deviceCode,
+    ]);
+
+    $poll()->assertOk(); // first exchange succeeds
+
+    DeviceCode::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    // A second exchange with the same (leaked/observed) code is refused.
+    $poll()->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
 it('rejects an unknown device_code', function (): void {
     $registered = $this->makeClient(['openid']);
 
