@@ -20,13 +20,18 @@ final class IntrospectionController
 
     public function __invoke(Request $request, TokenIntrospector $introspector): JsonResponse
     {
-        if (! $this->callerAuthenticated($request)) {
+        $callerId = $this->authenticatedClientId($request);
+
+        if ($callerId === null) {
             return response()->json(['error' => 'invalid_client'], 401, ['WWW-Authenticate' => 'Basic realm="introspection"']);
         }
 
         $result = $introspector->introspect($request->string('token')->toString());
 
-        if (! $result->active) {
+        // Ownership (RFC 7662 §2.1): a client may only introspect its own tokens.
+        // Anything else answers `active: false` so the endpoint isn't an oracle
+        // for probing other clients' tokens.
+        if (! $result->active || $result->clientId !== $callerId) {
             return response()->json(['active' => false]);
         }
 
@@ -39,20 +44,20 @@ final class IntrospectionController
     }
 
     /**
-     * Authenticate the calling client via HTTP Basic (preferred) or form body
-     * credentials, verifying the secret in constant time through the registry.
+     * The authenticated client's id via HTTP Basic (preferred) or form body
+     * credentials, verified in constant time — or null when missing/invalid.
      */
-    private function callerAuthenticated(Request $request): bool
+    private function authenticatedClientId(Request $request): ?string
     {
         $clientId = $request->getUser() ?? $request->string('client_id')->toString();
         $secret = $request->getPassword() ?? $request->string('client_secret')->toString();
 
         if ($clientId === '') {
-            return false;
+            return null;
         }
 
         $client = $this->clients->byClientId($clientId);
 
-        return $client !== null && $this->clients->verifySecret($client, $secret);
+        return $client !== null && $this->clients->verifySecret($client, $secret) ? $client->client_id : null;
     }
 }

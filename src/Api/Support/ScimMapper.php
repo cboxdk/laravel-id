@@ -70,12 +70,23 @@ final class ScimMapper
         $operations = $request->input('Operations');
 
         foreach (is_array($operations) ? $operations : [] as $operation) {
-            if (! is_array($operation) || strtolower(self::str($operation['op'] ?? 'replace')) === 'remove') {
+            if (! is_array($operation)) {
                 continue;
             }
 
+            $op = strtolower(self::str($operation['op'] ?? 'replace'));
             $path = $operation['path'] ?? null;
             $value = $operation['value'] ?? null;
+
+            // `remove` clears the targeted attribute (RFC 7644 §3.5.2.2) rather
+            // than being ignored — e.g. an IdP removing a user's display name.
+            if ($op === 'remove') {
+                if (is_string($path)) {
+                    self::removeAttribute($attributes, $path);
+                }
+
+                continue;
+            }
 
             if (is_string($path)) {
                 self::setAttribute($attributes, $path, $value);
@@ -111,6 +122,22 @@ final class ScimMapper
             'itemsPerPage' => $itemsPerPage,
             'Resources' => $resources,
         ];
+    }
+
+    /**
+     * Clear a nullable attribute for a SCIM `remove` op. Required identifiers
+     * (userName/externalId) and the `active` flag are not clearable this way — a
+     * deactivation is a `replace active:false`, not a remove.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private static function removeAttribute(array &$attributes, string $path): void
+    {
+        match (strtolower($path)) {
+            'displayname', 'name.formatted' => $attributes['displayName'] = null,
+            'emails', 'emails[type eq "work"].value' => $attributes['email'] = null,
+            default => null,
+        };
     }
 
     /**

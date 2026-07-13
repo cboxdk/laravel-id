@@ -50,6 +50,27 @@ it('binds the access token audience to the RFC 8707 resource', function (): void
     expect($claims->get('aud'))->toBe('https://mcp.example.com');
 });
 
+it('rejects a malformed RFC 8707 resource with invalid_target', function (): void {
+    $registered = $this->makeClient(['api.read']);
+
+    // A relative/opaque value is not an absolute URI — the token must not be
+    // issued unbound (which would over-scope it to every audience).
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'resource' => 'not-a-uri',
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_target');
+
+    // A fragment is likewise forbidden by RFC 8707.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'resource' => 'https://mcp.example.com/#frag',
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_target');
+});
+
 it('omits aud when no resource is requested', function (): void {
     $registered = $this->makeClient(['api.read']);
 
@@ -228,4 +249,64 @@ it('revokes an access token via RFC 7009 for an authenticated client', function 
 
 it('refuses revocation from an unauthenticated caller', function (): void {
     $this->postJson('/oauth/revoke', ['token' => 'whatever'])->assertStatus(401);
+});
+
+it('does not let one client introspect or revoke another client\'s token', function (): void {
+    $owner = $this->makeClient(['api.read']);
+    $other = $this->makeClient(['api.read']);
+
+    $token = $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $owner->client->client_id,
+        'client_secret' => $owner->secret,
+    ])->json('access_token');
+
+    // A different client only ever sees active:false — no introspection oracle.
+    $this->postJson('/oauth/introspect', [
+        'token' => $token,
+        'client_id' => $other->client->client_id,
+        'client_secret' => $other->secret,
+    ])->assertJsonPath('active', false);
+
+    // And its revocation attempt is a no-op (still 200, no oracle).
+    $this->postJson('/oauth/revoke', [
+        'token' => $token,
+        'client_id' => $other->client->client_id,
+        'client_secret' => $other->secret,
+    ])->assertOk();
+
+    // The owner's token is untouched.
+    $this->postJson('/oauth/introspect', [
+        'token' => $token,
+        'client_id' => $owner->client->client_id,
+        'client_secret' => $owner->secret,
+    ])->assertJsonPath('active', true);
+});
+
+it('does not let one client revoke another client\'s refresh-token family', function (): void {
+    $owner = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $other = $this->makeClient(['api.read']);
+    $code = issueCode($owner, ['openid', 'offline_access']);
+
+    $refresh = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $owner,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->json('refresh_token');
+
+    // Another client can't revoke a family it doesn't own.
+    $this->postJson('/oauth/revoke', [
+        'token' => $refresh,
+        'client_id' => $other->client->client_id,
+        'client_secret' => $other->secret,
+    ])->assertOk();
+
+    // So the refresh token still rotates for its real owner.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $owner,
+        'refresh_token' => $refresh,
+    ])->assertOk()->assertJsonStructure(['access_token', 'refresh_token']);
 });

@@ -139,3 +139,23 @@ it('patches core attributes (displayName + userName) via path operations', funct
         ->assertJsonPath('displayName', 'Dana R.')
         ->assertJsonPath('active', true);
 });
+
+it('applies a remove operation by clearing the targeted attribute', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana', 'okta|1', 'dana@corp.com');
+
+    // Set a display name, then remove it — the remove must actually take effect,
+    // not be silently ignored.
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'path' => 'displayName', 'value' => 'Dana R.']],
+    ], $headers)->assertOk()->assertJsonPath('displayName', 'Dana R.');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'remove', 'path' => 'displayName']],
+    ], $headers)
+        ->assertOk()
+        ->assertJsonPath('displayName', null)
+        ->assertJsonPath('userName', 'dana'); // required attribute untouched
+});

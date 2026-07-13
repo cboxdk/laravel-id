@@ -26,7 +26,9 @@ final class RevocationController
 
     public function __invoke(Request $request): JsonResponse
     {
-        if (! $this->callerAuthenticated($request)) {
+        $callerId = $this->authenticatedClientId($request);
+
+        if ($callerId === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401, ['WWW-Authenticate' => 'Basic realm="revocation"']);
         }
 
@@ -34,13 +36,15 @@ final class RevocationController
 
         if ($token !== '') {
             // A refresh token revokes its whole rotation family; an access token
-            // is revoked by its jti. We try both — unknown tokens are a no-op.
-            $this->refreshTokens->revoke($token);
+            // is revoked by its jti. Both are scoped to the caller (RFC 7009 §2.1):
+            // a client can only revoke tokens issued to itself. Unknown or
+            // other-owned tokens are a silent no-op (still 200, no oracle).
+            $this->refreshTokens->revoke($token, $callerId);
 
             $introspected = $this->introspector->introspect($token);
             $jti = $introspected->claims['jti'] ?? null;
 
-            if ($introspected->active && is_string($jti)) {
+            if ($introspected->active && $introspected->clientId === $callerId && is_string($jti)) {
                 $this->introspector->revoke($jti);
             }
         }
@@ -48,17 +52,21 @@ final class RevocationController
         return new JsonResponse([]);
     }
 
-    private function callerAuthenticated(Request $request): bool
+    /**
+     * The authenticated client's id (HTTP Basic preferred, else form body), or
+     * null when the credentials are missing or invalid.
+     */
+    private function authenticatedClientId(Request $request): ?string
     {
         $clientId = $request->getUser() ?? $request->string('client_id')->toString();
         $secret = $request->getPassword() ?? $request->string('client_secret')->toString();
 
         if ($clientId === '') {
-            return false;
+            return null;
         }
 
         $client = $this->clients->byClientId($clientId);
 
-        return $client !== null && $this->clients->verifySecret($client, $secret);
+        return $client !== null && $this->clients->verifySecret($client, $secret) ? $client->client_id : null;
     }
 }

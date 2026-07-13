@@ -56,6 +56,12 @@ final class TokenController
             return $this->error('invalid_dpop_proof', 400);
         }
 
+        // RFC 8707 §2: a present-but-malformed `resource` is an error, not a token
+        // silently issued unbound (which would over-scope it to every audience).
+        if ($this->resourceIsMalformed($request)) {
+            return $this->error('invalid_target', 400);
+        }
+
         return match ($request->string('grant_type')->toString()) {
             'client_credentials' => $this->clientCredentials($request, $jkt),
             'authorization_code' => $this->authorizationCode($request, $jkt),
@@ -253,19 +259,31 @@ final class TokenController
 
     /**
      * RFC 8707 resource indicator. Returns a well-formed absolute URI, or null
-     * when none was requested (or it was malformed — the token is then unbound).
+     * when none was requested. A malformed value is rejected upfront in
+     * {@see resourceIsMalformed()}, so by here a non-null value is well-formed.
      */
     private function resource(Request $request): ?string
     {
         $resource = trim($request->string('resource')->toString());
 
+        return $resource === '' ? null : $resource;
+    }
+
+    /**
+     * A `resource` was supplied but is not an absolute URI (RFC 8707 requires an
+     * absolute URI, and forbids a fragment). Absent `resource` is not malformed.
+     */
+    private function resourceIsMalformed(Request $request): bool
+    {
+        $resource = trim($request->string('resource')->toString());
+
         if ($resource === '') {
-            return null;
+            return false;
         }
 
         $parts = parse_url($resource);
 
-        return is_array($parts) && isset($parts['scheme'], $parts['host']) ? $resource : null;
+        return ! is_array($parts) || ! isset($parts['scheme'], $parts['host']) || isset($parts['fragment']);
     }
 
     /**

@@ -34,7 +34,9 @@ interface RefreshTokens
 
     /**
      * Revoke every refresh token in the family a given raw token belongs to
-     * (e.g. on logout). No-op if the token is unknown.
+     * (e.g. on logout). No-op if the token is unknown. When `$clientId` is given
+     * (RFC 7009 §2.1), the family is revoked only if the token was issued to that
+     * client — a client can't revoke another client's tokens.
      */
-    public function revoke(string $rawToken): void;
+    public function revoke(string $rawToken, ?string $clientId = null): void;
 }

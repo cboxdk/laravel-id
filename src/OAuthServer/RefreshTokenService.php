@@ -89,13 +89,20 @@ final class RefreshTokenService implements RefreshTokens
         }
     }
 
-    public function revoke(string $rawToken): void
+    public function revoke(string $rawToken, ?string $clientId = null): void
     {
         $token = RefreshToken::query()->where('token_hash', hash('sha256', $rawToken))->first();
 
-        if ($token !== null) {
-            $this->revokeFamily($token->family_id);
+        if ($token === null) {
+            return;
         }
+
+        // Ownership (RFC 7009 §2.1): only the issuing client may revoke the family.
+        if ($clientId !== null && ! hash_equals($token->client_id, $clientId)) {
+            return;
+        }
+
+        $this->revokeFamily($token->family_id);
     }
 
     /**
