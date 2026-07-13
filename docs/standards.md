@@ -34,6 +34,8 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | **RFC 9207** | Issuer identification in the authorization response (`iss`) — IdP mix-up defense, always on | ✅ |
 | **FAPI 2.0 baseline** | Enforceable profile: mandatory PAR + PKCE + DPoP sender-constraining + exact redirect matching + `iss` — see [FAPI hardening](fapi.md) | ✅ |
 | M2M service accounts (client_credentials) — **overlap credential rotation**: mint a successor with the same privileges, cut over with zero downtime, then retire the predecessor (revoking its tokens) | ✅ |
+| Authorization decision endpoint (`POST /oauth/decisions`) — live, deny-by-default permission (ReBAC) + entitlement checks in one round trip; version-invalidated hot-path cache; see [Authorization](authorization.md) | ✅ |
+| Hybrid entitlement claims — coarse `EnforcementMode::Claims` entitlements embedded as the `ent` claim (`ent_ver` staleness signal); instant-critical ones stay live | ✅ |
 | **RFC 8628** | Device Authorization Grant | ▢ |
 | **RFC 9126** | Pushed Authorization Requests (PAR) | ▢ |
 

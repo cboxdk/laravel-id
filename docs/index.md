@@ -73,6 +73,7 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 ### Do things
 
 - [Cookbook](cookbook.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
+- [Authorization & the decision plane](authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
 - [Entitlements & billing](entitlements-and-billing.md) — keep your own billing engine, push entitlements so every product enforces the same plan
 
 ### Make it yours
