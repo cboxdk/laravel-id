@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -14,12 +16,14 @@ use Illuminate\Support\Carbon;
  * batch.
  *
  * @property string $id
+ * @property string $environment_id
  * @property string $user_id
  * @property string $code_hash
  * @property Carbon|null $used_at
  */
-final class MfaRecoveryCode extends Model
+final class MfaRecoveryCode extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'mfa_recovery_codes';

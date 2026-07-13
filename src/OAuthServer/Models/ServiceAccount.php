@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -12,6 +14,7 @@ use Illuminate\Support\Carbon;
  * A machine identity (M2M), backed by a confidential client.
  *
  * @property string $id
+ * @property string $environment_id
  * @property string $organization_id
  * @property string $name
  * @property string $client_id
@@ -19,8 +22,9 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property Carbon|null $retired_at
  */
-final class ServiceAccount extends Model
+final class ServiceAccount extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'oauth_service_accounts';

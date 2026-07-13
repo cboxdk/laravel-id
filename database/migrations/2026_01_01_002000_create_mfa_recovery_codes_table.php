@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('mfa_recovery_codes', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('user_id')->index();
             // Only the hash is stored; the plaintext is shown once at generation.
             $table->string('code_hash');

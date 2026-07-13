@@ -14,6 +14,7 @@ return new class extends Migration
         // later by an opaque, single-use, short-lived request_uri.
         Schema::create('pushed_authorization_requests', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('request_uri')->unique();
             $table->string('client_id')->index();
             $table->json('params');

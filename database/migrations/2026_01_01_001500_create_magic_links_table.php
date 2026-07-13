@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('magic_links', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('email')->index();
             $table->string('token_hash')->unique();
             $table->timestamp('expires_at');

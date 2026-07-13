@@ -23,6 +23,7 @@ return new class extends Migration
 
         Schema::create('directory_users', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('directory_id')->index();
             $table->string('external_id');
             $table->json('resource');

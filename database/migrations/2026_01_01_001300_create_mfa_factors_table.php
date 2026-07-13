@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('mfa_factors', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('user_id')->index();
             $table->string('type');
             $table->text('secret_encrypted');

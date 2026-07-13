@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Models\MfaFactor;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,3 +50,21 @@ it('resolves a federated identity within its environment only', function (): voi
     // Same provider subject, two environments → two separate accounts.
     expect($a->id)->not->toBe($b->id);
 });
+
+it('scopes MFA factors to their environment', function (): void {
+    $factor = $this->runAsEnvironment('env_a', fn () => MfaFactor::create([
+        'user_id' => 'user-1', 'type' => 'totp', 'secret_encrypted' => 'sealed',
+    ]));
+
+    // Auto-stamped on create.
+    expect($factor->environment_id)->toBe('env_a');
+
+    // Invisible from env_b — even by primary key.
+    $this->runAsEnvironment('env_b', function () use ($factor): void {
+        expect(MfaFactor::count())->toBe(0)
+            ->and(MfaFactor::find($factor->id))->toBeNull();
+    });
+
+    // Still reachable from its own environment.
+    $this->runAsEnvironment('env_a', fn () => expect(MfaFactor::find($factor->id))->not->toBeNull());
+})->group('isolation');

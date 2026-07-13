@@ -14,6 +14,7 @@ return new class extends Migration
         // stored; the raw token is emailed once.
         Schema::create('password_reset_tokens', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('email')->index();
             $table->string('token_hash')->unique();
             $table->timestamp('expires_at');
@@ -25,6 +26,7 @@ return new class extends Migration
         // confirmed. Hash-only, single-use.
         Schema::create('email_verification_tokens', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('user_id')->index();
             $table->string('email');
             $table->string('token_hash')->unique();

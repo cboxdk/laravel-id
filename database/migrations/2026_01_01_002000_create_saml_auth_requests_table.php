@@ -15,6 +15,7 @@ return new class extends Migration
         // ACS is a cross-site POST where the session cookie (SameSite=Lax) is absent.
         Schema::create('saml_auth_requests', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('request_id')->unique();
             $table->string('connection_id')->index();
             $table->timestamp('expires_at');

@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('directory_groups', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('directory_id')->index();
             $table->string('external_id')->nullable();
             $table->string('display_name');

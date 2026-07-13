@@ -30,6 +30,7 @@ return new class extends Migration
 
         Schema::create('oauth_service_accounts', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id')->index();
             $table->string('name');
             $table->string('client_id')->index();
@@ -39,6 +40,7 @@ return new class extends Migration
 
         Schema::create('oauth_access_tokens', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('jti')->unique();
             $table->string('client_id')->index();
             $table->ulid('user_id')->nullable();
