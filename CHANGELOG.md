@@ -9,6 +9,62 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-13
+
+Adds **environments** — the hard identity boundary above organizations
+(staging/prod, per-product and white-label isolation), WorkOS-style. This is a
+breaking change: the schema and query scoping change platform-wide.
+
+### Added
+
+- **Environments.** A first-class isolation layer above the organization tenant:
+  its own user pool, signing keys, issuer and organization tree. Resolved per
+  request from the host (`ResolveEnvironment` middleware + `EnvironmentResolver`;
+  custom-domain or leading-subdomain-as-slug). See
+  [Environments & the isolation model](core-concepts/environments.md).
+- `Environment` model + `environments` table; `EnvironmentContext`,
+  `EnvironmentScope`, `BelongsToEnvironment`, `EnvironmentOwned`,
+  `GenericEnvironment`; `actingAsEnvironment*` test helpers.
+- A dedicated cross-layer isolation suite (`--group=isolation`) proving the
+  boundary across tenancy, crypto, identity and the OAuth surface.
+
+### Changed (breaking)
+
+- Every environment-owned model now carries `environment_id` and is scoped by a
+  **deny-by-default** environment scope, independent of (and harder than) the
+  organization scope: `withoutScope`/roll-up on the org dimension never crosses an
+  environment.
+- **User email uniqueness is now per environment** (`(environment_id, email)`),
+  and federated-link uniqueness includes the environment — the same email is a
+  distinct user across environments.
+- **Signing keys, JWKS and the issuer are per environment** — a token signed in
+  one environment never verifies in another.
+- API requests must resolve an environment from the host. Set
+  `cbox-id.environments.default` for single-tenant/on-prem; a multi-tenant
+  deployment refuses an unknown host.
+
+## [0.1.2] - 2026-07-13
+
+### Fixed
+
+- Accept the canonical single-slash private-use redirect URI form
+  (`com.example.app:/cb`) at registration, so native mobile apps (RFC 8252 /
+  AppAuth) register cleanly.
+
+## [0.1.1] - 2026-07-13
+
+### Security
+
+- Hardening pass: SAML `InResponseTo` enforcement, DPoP enforced at the resource
+  surface and bound to refresh tokens, account-status gating across all login
+  paths, step-up on MFA enrollment / provider unlink, webhook DNS pinning +
+  dead-lettering, admin-only console reads, and per-client token ownership on
+  introspection/revocation.
+
+### Changed
+
+- Documentation restructured into the topic-folder layout.
+
 ## [0.1.0] - 2026-07-13
 
 First tagged release. Pre-1.0: the public API may still change between `0.x`

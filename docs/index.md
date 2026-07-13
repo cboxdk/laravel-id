@@ -63,6 +63,7 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 ### Core concepts
 
 - [Architecture & patterns](core-concepts/architecture.md) — kernels vs domain, contracts-first DI, dogfooding
+- [Environments & the isolation model](core-concepts/environments.md) — the hard identity boundary above organizations; staging/prod and white-label
 - [Authorization & the decision plane](core-concepts/authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
 - [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
 
