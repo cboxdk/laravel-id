@@ -10,6 +10,8 @@ How the platform is put together and the ideas you build against:
 
 - **[Architecture & patterns](architecture.md)** — kernels vs. domain modules,
   contracts-first DI, and dogfooding.
+- **[Platform operators](platform-operators.md)** — the identity above every
+  environment: who provisions planes and can step into any one of them.
 - **[Environments & the isolation model](environments.md)** — the hard boundary
   above organizations (staging/prod, white-label).
 - **[Authorization & the decision plane](authorization.md)** — live permission and

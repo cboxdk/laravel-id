@@ -57,6 +57,10 @@ class User extends Model implements EnvironmentOwned
         return [
             'status' => UserStatus::class,
             'email_verified_at' => 'datetime',
+            // Hash with the configured driver (argon2id) whenever a raw password
+            // is assigned. The cast skips values that are already hashed, so the
+            // Subjects API — which hashes up front — passes through untouched.
+            'password' => 'hashed',
         ];
     }
 }

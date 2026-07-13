@@ -9,6 +9,32 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-13
+
+Adds **platform operators** — the identity above every environment (the WorkOS
+"team member" / developer account). Operators authenticate once at the platform
+level and can then assume any environment's console, without needing an account
+inside each plane.
+
+### Added
+
+- **Platform operators.** A new `platform_operators` table and
+  `Cbox\Id\Platform\Contracts\PlatformOperators` repository. Operators are *not*
+  environment-owned — no `environment_id`, globally unique email — so they resolve
+  identically from any environment (asserted in the `@group isolation` suite).
+  Password verification is gated on active status. `PlatformServiceProvider` binds
+  the repository; a new migration ships the table.
+- **Docs.** `core-concepts/platform-operators.md` — the model, the WorkOS/Auth0/
+  Okta mapping, provisioning, and the isolation guarantee.
+
+### Fixed
+
+- **`User` now hashes assigned passwords.** The model gained a `password => hashed`
+  cast, so a raw `User::create(['password' => ...])` (seeders, factories) hashes
+  with the configured driver instead of storing plaintext — which previously threw
+  `This password does not use the Argon2id algorithm` at sign-in. The `Subjects`
+  API, which hashes up front, is unaffected (the cast skips already-hashed values).
+
 ## [0.2.0] - 2026-07-13
 
 Adds **environments** — the hard identity boundary above organizations

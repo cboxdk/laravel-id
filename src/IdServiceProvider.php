@@ -19,6 +19,7 @@ use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
+use Cbox\Id\Platform\PlatformServiceProvider;
 use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -43,6 +44,7 @@ final class IdServiceProvider extends ServiceProvider
         AuthorizationServiceProvider::class,
         // Domain modules
         OrganizationServiceProvider::class,
+        PlatformServiceProvider::class,
         IdentityServiceProvider::class,
         AccessControlServiceProvider::class,
         AuditQueryServiceProvider::class,
