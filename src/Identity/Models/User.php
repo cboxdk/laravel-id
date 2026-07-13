@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity\Models;
 
 use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -17,14 +19,16 @@ use Illuminate\Support\Carbon;
  * own model(s) instead (see Cbox\Id\Identity\Contracts\Subjects).
  *
  * @property string $id
+ * @property string $environment_id
  * @property string $email
  * @property string|null $name
  * @property string|null $password
  * @property UserStatus $status
  * @property Carbon|null $email_verified_at
  */
-class User extends Model
+class User extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $guarded = [];

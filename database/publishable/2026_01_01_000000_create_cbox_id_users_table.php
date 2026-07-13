@@ -31,7 +31,9 @@ return new class extends Migration
 
         Schema::create($table, function (Blueprint $table): void {
             $table->ulid('id')->primary();
-            $table->string('email')->unique();
+            $table->ulid('environment_id')->index();
+            $table->string('email');
+            $table->unique(['environment_id', 'email']);
             $table->string('name')->nullable();
             $table->string('password')->nullable();
             $table->string('status')->default('active');

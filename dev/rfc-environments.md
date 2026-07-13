@@ -180,7 +180,7 @@ wiring ~1–2 days.
   org-level `withoutScope`/roll-up NEVER crosses an environment.
 - [x] **Phase 2 — Environment entity + `environment_id` on the anchors.** Environment model+migration; `environment_id` on organizations, organization_closure, memberships, entitlements, entitlement_changes, relationship_tuples; BelongsToEnvironment on all of them + the Organization (Tenant) and closure; a default test environment. Proven by OrganizationEnvironmentTest.
 - [x] **Phase 3 — Crypto per environment.** signing_keys gains environment_id; SigningKey is environment-owned, so the KeyManager (active key, rotation, JWKS) and the signer/verifier are automatically per-environment. Proven by CryptoEnvironmentIsolationTest: a token signed in env_a never verifies in env_b, and each environment exposes a distinct JWKS. (Per-environment issuer/discovery lands with resolution in Phase 5.)
-- [ ] Phase 4 — Identity: environment-scoped users, email uniqueness, federated linking.
+- [x] **Phase 4 — Identity per environment.** users, identities (federated links) and auth_sessions gain environment_id; User, IdentityLink and Session are environment-owned; email uniqueness is now (environment_id, email) and the federated-link unique includes the environment. Same email = distinct users across environments, sessions never cross, federated identities resolve within their environment. Credential tables stay protected transitively via the User scope. Proven by IdentityEnvironmentTest.
 - [ ] Phase 5 — OAuth surface + environment resolution (host/API-key).
 - [ ] Phase 6 — Signup lockdown (`signup.mode`).
 - [ ] Phase 7 — Host: environment admin UI + entitlement/billing wiring per env.

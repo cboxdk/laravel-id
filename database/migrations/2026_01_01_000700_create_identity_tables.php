@@ -19,6 +19,7 @@ return new class extends Migration
         // integrate with whatever user store the host provides.
         Schema::create('identities', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('user_id')->index();
             $table->string('provider');
             $table->string('subject');
@@ -28,11 +29,12 @@ return new class extends Migration
 
             // Scoped by connection: the same subject asserted through two different
             // SSO connections is two distinct identities (cross-tenant isolation).
-            $table->unique(['provider', 'subject', 'connection_id']);
+            $table->unique(['environment_id', 'provider', 'subject', 'connection_id']);
         });
 
         Schema::create('auth_sessions', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('user_id')->index();
             $table->ulid('organization_id')->nullable();
             $table->string('ip')->nullable();
