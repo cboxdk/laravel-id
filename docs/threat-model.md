@@ -6,8 +6,9 @@ weight: 10
 
 # Threat model
 
-A STRIDE pass over the platform's trust boundaries. It is the evidence an ISO 27001
-/ SOC 2 / OWASP ASVS L3 reviewer expects, and the map we hold new features against.
+A STRIDE pass over the platform's trust boundaries — structured the way an ISO 27001,
+SOC 2, or OWASP ASVS reviewer approaches one, and the map we hold new features against.
+It is an engineering artifact, not a certification or audit result.
 
 ## Assets & trust boundaries
 

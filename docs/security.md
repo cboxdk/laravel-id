@@ -7,8 +7,10 @@ weight: 7
 # Security
 
 An identity platform is crown-jewels infrastructure: one breach exposes every customer at once.
-Security is treated as the product, not a layer on top. The full posture (threat model, CI
-gates, OWASP ASVS L3 target) lives in `SECURITY.md`; the load-bearing invariants are here.
+Security is treated as the product, not a layer on top. The reporting policy and CI gates
+live in `SECURITY.md` and the STRIDE analysis in [`threat-model.md`](threat-model.md); the
+load-bearing invariants are here. The design draws on OWASP ASVS as a reference checklist —
+not an audited or certified conformance claim.
 
 ## Tenant isolation (deny-by-default)
 
