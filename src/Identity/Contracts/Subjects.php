@@ -63,4 +63,10 @@ interface Subjects
     public function verifyPassword(string $subjectId, string $password): bool;
 
     public function setPassword(string $subjectId, string $password): void;
+
+    /**
+     * Mark the subject's email address as verified (no-op if the current address
+     * no longer matches $email — the confirmation is stale).
+     */
+    public function markEmailVerified(string $subjectId, string $email): void;
 }

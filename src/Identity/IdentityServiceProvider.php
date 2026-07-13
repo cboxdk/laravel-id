@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity;
 
+use Cbox\Id\Identity\Contracts\EmailVerification;
 use Cbox\Id\Identity\Contracts\MagicLink;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\Passkeys;
+use Cbox\Id\Identity\Contracts\PasswordReset;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
@@ -49,6 +51,8 @@ final class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(TotpAuthenticator::class);
         $this->app->singleton(Mfa::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);
+        $this->app->singleton(PasswordReset::class, PasswordResetService::class);
+        $this->app->singleton(EmailVerification::class, EmailVerificationService::class);
 
         // Real WebAuthn verifier (OpenSSL signatures + vetted CBOR/COSE decoding)
         // once rp_id + origin are configured; otherwise it refuses rather than

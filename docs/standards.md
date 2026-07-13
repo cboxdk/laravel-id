@@ -89,6 +89,8 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 | Passkey User-Verification enforced (primary-factor), server-side challenge TTL | ✅ |
 | MFA recovery / backup codes — single-use, regenerable | ✅ |
 | Magic-link email sign-in | ✅ |
+| Password reset — hash-only single-use token, TTL, anti-enumeration, revokes all sessions on reset | ✅ |
+| Email verification — hash-only single-use token, TTL, stale-address guard | ✅ |
 | Social sign-in (Google, GitHub, Microsoft) with explicit account linking | ✅ |
 
 *This table is updated as each tier lands; ▢ items are tracked and in progress.*

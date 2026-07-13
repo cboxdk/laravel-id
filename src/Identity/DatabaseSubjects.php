@@ -197,6 +197,32 @@ final class DatabaseSubjects implements Subjects
         ));
     }
 
+    public function markEmailVerified(string $subjectId, string $email): void
+    {
+        $model = $this->query()->whereKey($subjectId)->first();
+
+        // Ignore a stale confirmation: if the address changed since the token was
+        // issued, the old link must not verify the new address.
+        if ($model === null || $this->stringAttribute($model, 'email') !== $email) {
+            return;
+        }
+
+        if ($model->getAttribute('email_verified_at') !== null) {
+            return;
+        }
+
+        $model->setAttribute('email_verified_at', now());
+        $model->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.email_verified',
+            actorType: ActorType::User,
+            actorId: $this->keyOf($model),
+            targetType: 'user',
+            targetId: $this->keyOf($model),
+        ));
+    }
+
     private function toSubject(Model $model): Subject
     {
         return new Subject(

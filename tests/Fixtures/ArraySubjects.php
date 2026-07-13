@@ -75,4 +75,9 @@ final class ArraySubjects implements Subjects
     {
         // No-op: this host delegates credentials elsewhere.
     }
+
+    public function markEmailVerified(string $subjectId, string $email): void
+    {
+        // No-op: this host tracks verification elsewhere.
+    }
 }
