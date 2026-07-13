@@ -10,15 +10,19 @@ use Illuminate\Contracts\Support\DeferrableProvider;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Registers the tenancy kernel. The {@see TenantContext} is a singleton so the
- * current tenant is stable for the lifetime of a request or queued job.
+ * Registers the tenancy kernel. The context managers are `scoped`, not
+ * `singleton`: the current tenant/environment (and its suspension counter) is
+ * stable for one request or queued job, but is reset between them. Under a
+ * long-lived runtime (Octane/RoadRunner) this is load-bearing — a worker killed
+ * inside a `withoutScope()` block must not carry a leaked suspension into the
+ * next request, which would collapse deny-by-default scoping platform-wide.
  */
 final class TenancyServiceProvider extends ServiceProvider implements DeferrableProvider
 {
     public function register(): void
     {
-        $this->app->singleton(TenantContext::class, TenantContextManager::class);
-        $this->app->singleton(EnvironmentContext::class, EnvironmentContextManager::class);
+        $this->app->scoped(TenantContext::class, TenantContextManager::class);
+        $this->app->scoped(EnvironmentContext::class, EnvironmentContextManager::class);
     }
 
     /**

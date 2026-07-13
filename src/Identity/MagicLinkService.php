@@ -48,7 +48,7 @@ final class MagicLinkService implements MagicLink
     public function redeem(string $token): Session
     {
         return DB::transaction(function () use ($token): Session {
-            $link = MagicLinkToken::query()->where('token_hash', hash('sha256', $token))->first();
+            $link = MagicLinkToken::query()->where('token_hash', hash('sha256', $token))->lockForUpdate()->first();
 
             if ($link === null || $link->consumed_at !== null || $link->expires_at->isPast()) {
                 throw InvalidMagicLink::make();

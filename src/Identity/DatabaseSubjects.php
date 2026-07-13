@@ -192,12 +192,24 @@ final class DatabaseSubjects implements Subjects
         // A deactivated/locked account never authenticates, even with the right
         // password — the status gate travels with the credential check.
         if ($model === null || $model->getAttribute('status') !== UserStatus::Active) {
+            // Constant-cost dummy verify so a missing/inactive account takes the
+            // same time as a real one — no username-enumeration timing oracle.
+            $this->hasher->check($password, $this->dummyHash());
+
             return false;
         }
 
         $hash = $model->getAttribute('password');
 
         return is_string($hash) && $this->hasher->check($password, $hash);
+    }
+
+    private ?string $dummyHash = null;
+
+    /** A valid hash of an unguessable value, used to equalize miss-path timing. */
+    private function dummyHash(): string
+    {
+        return $this->dummyHash ??= $this->hasher->make('cbox-id::no-such-account');
     }
 
     public function isActive(string $subjectId): bool

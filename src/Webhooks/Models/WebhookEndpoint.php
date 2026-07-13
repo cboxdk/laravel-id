@@ -4,24 +4,30 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Webhooks\Enums\EndpointStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A subscriber endpoint. `organization_id` null = a platform-wide endpoint.
- * The signing secret is stored sealed (Crypto SecretBox) and only opened at
- * delivery time to compute the HMAC signature.
+ * A subscriber endpoint. `organization_id` null = a platform-wide endpoint —
+ * platform-wide is scoped to ONE environment (the model is environment-owned),
+ * so a null-org endpoint never receives another environment's events. The
+ * signing secret is stored sealed (Crypto SecretBox) and only opened at delivery
+ * time to compute the HMAC signature.
  *
  * @property string $id
+ * @property string $environment_id
  * @property string|null $organization_id
  * @property string $url
  * @property string $secret_encrypted
  * @property array<int, string> $event_types
  * @property EndpointStatus $status
  */
-final class WebhookEndpoint extends Model
+final class WebhookEndpoint extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'webhook_endpoints';

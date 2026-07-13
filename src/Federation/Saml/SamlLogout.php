@@ -100,8 +100,14 @@ final class SamlLogout
             return 0;
         }
 
+        // Scope the lookup to THIS connection, exactly as login does
+        // (DatabaseSubjects::linkQuery matches connection_id). Without it, a
+        // signature-valid LogoutRequest from connection A's IdP could revoke a
+        // user belonging to connection B in the same environment when the two
+        // IdPs happen to use the same NameID string.
         $userId = IdentityLink::query()
             ->where('provider', $connection->type->value)
+            ->where('connection_id', $connection->id)
             ->where('subject', $nameId)
             ->value('user_id');
 

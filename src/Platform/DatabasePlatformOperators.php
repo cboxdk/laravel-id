@@ -45,10 +45,22 @@ final class DatabasePlatformOperators implements PlatformOperators
         // Status gate travels with the credential check: a suspended operator
         // never authenticates, even with the correct password.
         if ($operator === null || ! $operator->isActive()) {
+            // Constant-cost dummy verify so a missing/suspended operator takes the
+            // same time as a real one — no enumeration timing oracle.
+            $this->hasher->check($password, $this->dummyHash());
+
             return false;
         }
 
         return $this->hasher->check($password, $operator->password);
+    }
+
+    private ?string $dummyHash = null;
+
+    /** A valid hash of an unguessable value, used to equalize miss-path timing. */
+    private function dummyHash(): string
+    {
+        return $this->dummyHash ??= $this->hasher->make('cbox-id::no-such-operator');
     }
 
     public function exists(): bool

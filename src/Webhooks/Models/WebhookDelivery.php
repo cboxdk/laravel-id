@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +13,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
+ * @property string $environment_id
  * @property string $endpoint_id
  * @property string $event_type
  * @property array<string, mixed> $payload
@@ -20,8 +23,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $next_retry_at
  * @property Carbon|null $delivered_at
  */
-final class WebhookDelivery extends Model
+final class WebhookDelivery extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'webhook_deliveries';

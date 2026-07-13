@@ -89,6 +89,19 @@ return [
      */
     'environments' => [
         'default' => env('CBOX_ID_ENVIRONMENT_DEFAULT'),
+
+        /*
+         * Base domains under which a subdomain resolves to an environment by its
+         * leading label (e.g. `staging.auth.example.com` → the `staging` plane).
+         * A host is only trusted for slug resolution when it sits under one of
+         * these — so a spoofed Host like `staging.attacker.com` can never select a
+         * plane. Leave empty to require an exact custom-domain match. Comma list
+         * via env, or an array here.
+         */
+        'base_domains' => array_filter(array_map(
+            'trim',
+            explode(',', (string) env('CBOX_ID_ENVIRONMENT_BASE_DOMAINS', '')),
+        )),
     ],
 
     /*

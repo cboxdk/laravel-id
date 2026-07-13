@@ -14,6 +14,7 @@ use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
+use Illuminate\Support\Facades\DB;
 
 final class DeviceAuthorizationService implements DeviceAuthorization
 {
@@ -104,17 +105,27 @@ final class DeviceAuthorizationService implements DeviceAuthorization
         }
 
         // Single-use (RFC 8628 §3.4): a device_code mints a token exactly once.
-        // Mark it redeemed so a subsequent poll (a shared/logged code) cannot mint
-        // another token for the victim.
-        $grant = new DeviceGrant(
-            (string) $record->user_id,
-            $record->organization_id,
-            array_values($record->scopes),
-        );
+        // Flip approved -> redeemed under a row lock inside a transaction so two
+        // concurrent polls (a shared/logged code) can't both observe 'approved'
+        // and each mint a token. The polling/pending saves above stay outside the
+        // transaction so they commit even when this path throws.
+        return DB::transaction(function () use ($record): DeviceGrant {
+            $locked = DeviceCode::query()->whereKey($record->id)->lockForUpdate()->first();
 
-        $record->forceFill(['status' => 'redeemed', 'last_polled_at' => now()])->save();
+            if ($locked === null || $locked->status !== 'approved') {
+                throw new InvalidGrant('device_code already used');
+            }
 
-        return $grant;
+            $grant = new DeviceGrant(
+                (string) $locked->user_id,
+                $locked->organization_id,
+                array_values($locked->scopes),
+            );
+
+            $locked->forceFill(['status' => 'redeemed', 'last_polled_at' => now()])->save();
+
+            return $grant;
+        });
     }
 
     /**
