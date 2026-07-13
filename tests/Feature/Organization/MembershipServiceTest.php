@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Exceptions\LastOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -72,9 +73,9 @@ it('refuses to demote or remove the sole owner', function (): void {
 
     // The lone owner cannot be demoted or removed — it would orphan the org.
     expect(fn () => $memberships->changeRole($org->id, 'owner_1', 'member'))
-        ->toThrow(\Cbox\Id\Organization\Exceptions\LastOwner::class)
+        ->toThrow(LastOwner::class)
         ->and(fn () => $memberships->remove($org->id, 'owner_1'))
-        ->toThrow(\Cbox\Id\Organization\Exceptions\LastOwner::class);
+        ->toThrow(LastOwner::class);
 
     // With a second owner present, either is allowed.
     $memberships->add($org->id, 'owner_2', 'owner');
