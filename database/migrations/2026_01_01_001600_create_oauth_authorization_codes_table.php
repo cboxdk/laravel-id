@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('oauth_authorization_codes', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('code_hash')->unique();
             $table->string('client_id')->index();
             $table->ulid('user_id');

@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('directories', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id')->index();
             $table->string('name');
             $table->string('bearer_token_hash')->unique();

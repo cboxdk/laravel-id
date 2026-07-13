@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -26,8 +28,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $registration_access_token_hash
  * @property Carbon|null $created_at
  */
-final class Client extends Model
+final class Client extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'oauth_clients';

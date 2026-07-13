@@ -6,6 +6,8 @@ namespace Cbox\Id\Federation\Models;
 
 use Cbox\Id\Federation\Enums\ConnectionStatus;
 use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -24,8 +26,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $config_encrypted
  * @property array<string, mixed> $mappings
  */
-final class Connection extends Model
+final class Connection extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'connections';

@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('connections', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id')->index();
             $table->string('type');
             $table->string('name');

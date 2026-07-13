@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('oauth_refresh_tokens', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->string('token_hash')->unique();
             // A rotation lineage: every refresh derived from the same original
             // login shares a family_id, so detecting reuse of a rotated token lets

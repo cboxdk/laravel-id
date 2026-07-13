@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Directory\Models;
 
 use Cbox\Id\Directory\Enums\DirectoryStatus;
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -19,8 +21,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property DirectoryStatus $status
  * @property array<string, mixed> $mappings
  */
-final class Directory extends Model
+final class Directory extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'directories';

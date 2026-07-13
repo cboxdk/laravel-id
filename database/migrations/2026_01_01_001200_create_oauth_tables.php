@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::create('oauth_clients', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            $table->ulid('environment_id')->index();
             $table->ulid('organization_id')->nullable()->index();
             $table->string('client_id')->unique();
             $table->string('secret_hash')->nullable();
