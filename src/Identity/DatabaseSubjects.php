@@ -188,9 +188,54 @@ final class DatabaseSubjects implements Subjects
     public function verifyPassword(string $subjectId, string $password): bool
     {
         $model = $this->query()->whereKey($subjectId)->first();
-        $hash = $model?->getAttribute('password');
+
+        // A deactivated/locked account never authenticates, even with the right
+        // password — the status gate travels with the credential check.
+        if ($model === null || $model->getAttribute('status') !== UserStatus::Active) {
+            return false;
+        }
+
+        $hash = $model->getAttribute('password');
 
         return is_string($hash) && $this->hasher->check($password, $hash);
+    }
+
+    public function isActive(string $subjectId): bool
+    {
+        $model = $this->query()->whereKey($subjectId)->first();
+
+        return $model !== null && $model->getAttribute('status') === UserStatus::Active;
+    }
+
+    public function deactivate(string $subjectId): void
+    {
+        $this->transitionStatus($subjectId, UserStatus::Disabled, 'user.deactivated');
+    }
+
+    public function reactivate(string $subjectId): void
+    {
+        $this->transitionStatus($subjectId, UserStatus::Active, 'user.reactivated');
+    }
+
+    private function transitionStatus(string $subjectId, UserStatus $status, string $action): void
+    {
+        $model = $this->query()->whereKey($subjectId)->first();
+
+        if ($model === null || $model->getAttribute('status') === $status) {
+            return;
+        }
+
+        $model->setAttribute('status', $status);
+        $model->save();
+
+        $this->events->emit(new DomainEvent($action, ['user_id' => $this->keyOf($model)]));
+        $this->audit->record(new AuditEvent(
+            action: $action,
+            actorType: ActorType::System,
+            targetType: 'user',
+            targetId: $this->keyOf($model),
+            context: ['status' => $status->value],
+        ));
     }
 
     public function setPassword(string $subjectId, string $password): void

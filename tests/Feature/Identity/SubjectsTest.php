@@ -129,3 +129,31 @@ it('emits an event and records audit on subject creation', function (): void {
     $events->assertEmitted('user.created');
     $audit->assertRecorded('user.created');
 });
+
+it('treats a fresh subject as active', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('active@example.com');
+
+    expect($subjects->isActive($subject->id))->toBeTrue();
+});
+
+it('deactivating a subject blocks password auth and marks it inactive', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('gone@example.com', null, 'correct-horse-battery');
+    expect($subjects->verifyPassword($subject->id, 'correct-horse-battery'))->toBeTrue();
+
+    $subjects->deactivate($subject->id);
+
+    // The right password no longer authenticates a disabled account.
+    expect($subjects->isActive($subject->id))->toBeFalse()
+        ->and($subjects->verifyPassword($subject->id, 'correct-horse-battery'))->toBeFalse();
+
+    // Reactivation restores it.
+    $subjects->reactivate($subject->id);
+    expect($subjects->isActive($subject->id))->toBeTrue()
+        ->and($subjects->verifyPassword($subject->id, 'correct-horse-battery'))->toBeTrue();
+});
+
+it('reports an unknown subject as inactive', function (): void {
+    expect(app(Subjects::class)->isActive('nope'))->toBeFalse();
+});

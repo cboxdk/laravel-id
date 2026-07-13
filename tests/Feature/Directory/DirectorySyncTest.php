@@ -62,7 +62,24 @@ it('revokes sessions and membership when a user is deprovisioned', function (): 
 
     expect(app(SessionManager::class)->active($session->id))->toBeNull()          // sessions killed
         ->and(app(Memberships::class)->of($org->id, $userId))->toBeNull()          // membership dropped
-        ->and(DirectoryUser::query()->firstOrFail()->active)->toBeFalse();
+        ->and(DirectoryUser::query()->firstOrFail()->active)->toBeFalse()
+        ->and(app(Subjects::class)->isActive($userId))->toBeFalse();               // account disabled — can't log back in
+});
+
+it('reactivates the account when a deprovisioned user is re-provisioned active', function (): void {
+    $org = $this->makeOrganization();
+    $directory = $this->makeDirectory($org->id)->directory;
+    $sync = app(DirectorySync::class);
+
+    $userId = (string) $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com'))->user_id;
+    $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com', active: false));
+    expect(app(Subjects::class)->isActive($userId))->toBeFalse();
+
+    // The IdP re-enables the user — the account comes back to life.
+    $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com', active: true));
+
+    expect(app(Subjects::class)->isActive($userId))->toBeTrue()
+        ->and(app(Memberships::class)->of($org->id, $userId))->not->toBeNull();
 });
 
 it('deactivation (active=false) also revokes access', function (): void {

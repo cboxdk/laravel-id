@@ -76,6 +76,22 @@ final class ArraySubjects implements Subjects
         // No-op: this host delegates credentials elsewhere.
     }
 
+    public function isActive(string $subjectId): bool
+    {
+        // This host tracks account state elsewhere; everything it resolves is live.
+        return isset($this->byId[$subjectId]);
+    }
+
+    public function deactivate(string $subjectId): void
+    {
+        // No-op: this host manages account lifecycle in its own store.
+    }
+
+    public function reactivate(string $subjectId): void
+    {
+        // No-op: this host manages account lifecycle in its own store.
+    }
+
     public function markEmailVerified(string $subjectId, string $email): void
     {
         // No-op: this host tracks verification elsewhere.

@@ -10,6 +10,7 @@ use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Exceptions\AccountInactive;
 use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -45,6 +46,13 @@ final class FederationLoginService implements FederationFlow
 
         return DB::transaction(function () use ($connection, $principal): Session {
             $subject = $this->subjects->provisionFederated($principal);
+
+            // A returning identity whose account was deactivated (e.g. SCIM
+            // deprovision, admin disable) must not be handed a fresh session —
+            // revoking old sessions alone wouldn't stop a new SSO login.
+            if (! $this->subjects->isActive($subject->id)) {
+                throw AccountInactive::make($subject->id);
+            }
 
             $this->memberships->add($connection->organization_id, $subject->id, 'member');
 

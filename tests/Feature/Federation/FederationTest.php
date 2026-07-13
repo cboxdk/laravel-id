@@ -8,6 +8,7 @@ use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Exceptions\AccountInactive;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -66,6 +67,20 @@ it('refuses to complete login on an inactive connection', function (): void {
 
     expect(fn () => app(FederationFlow::class)->completeLogin($connection, $principal))
         ->toThrow(ConnectionInactive::class);
+});
+
+it('refuses to complete SSO login for a deactivated account', function (): void {
+    $org = $this->makeOrganization();
+    $connection = $this->makeConnection($org->id, ConnectionType::Saml);
+    $principal = new FederatedPrincipal('saml', 'okta|dana', 'dana@corp.com', 'Dana', $connection->id);
+
+    // First login provisions the account; then an admin/directory disables it.
+    $first = app(FederationFlow::class)->completeLogin($connection, $principal);
+    app(Subjects::class)->deactivate($first->user_id);
+
+    // The same IdP asserting the same identity must not get a fresh session.
+    expect(fn () => app(FederationFlow::class)->completeLogin($connection, $principal))
+        ->toThrow(AccountInactive::class);
 });
 
 it('emits a login event and records audit', function (): void {

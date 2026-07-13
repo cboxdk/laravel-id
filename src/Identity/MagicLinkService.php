@@ -57,6 +57,12 @@ final class MagicLinkService implements MagicLink
             $link->forceFill(['consumed_at' => now()])->save();
 
             $subject = $this->subjects->findByEmail($link->email) ?? $this->subjects->create($link->email);
+
+            // A deactivated account can't be logged in via a magic link either.
+            if (! $this->subjects->isActive($subject->id)) {
+                throw InvalidMagicLink::make();
+            }
+
             $session = $this->sessions->start($subject->id, null, ['magic_link']);
 
             $this->audit->record(new AuditEvent(

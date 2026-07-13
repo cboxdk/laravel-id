@@ -65,6 +65,28 @@ interface Subjects
     public function setPassword(string $subjectId, string $password): void;
 
     /**
+     * Whether the subject may authenticate right now. A resolver returns false
+     * for accounts it considers disabled, deprovisioned, or locked. The platform
+     * calls this at every login path to refuse a deactivated account a new
+     * session (an unknown subject is treated as inactive). A host resolver maps
+     * this to its own account-state model.
+     */
+    public function isActive(string $subjectId): bool;
+
+    /**
+     * Deactivate a subject: it can no longer authenticate. Existing sessions must
+     * be revoked by the caller (or the resolver) separately. Idempotent; a no-op
+     * for hosts that manage account state elsewhere.
+     */
+    public function deactivate(string $subjectId): void;
+
+    /**
+     * Re-enable a previously deactivated subject. Idempotent; a no-op for hosts
+     * that manage account state elsewhere.
+     */
+    public function reactivate(string $subjectId): void;
+
+    /**
      * Mark the subject's email address as verified (no-op if the current address
      * no longer matches $email — the confirmation is stale).
      */

@@ -55,9 +55,13 @@ final class DatabaseDirectorySync implements DirectorySync
             );
 
             if ($user->active) {
+                $this->subjects->reactivate($subject->id);
                 $this->memberships->add($directory->organization_id, $subject->id, 'member');
                 $action = 'directory.user.provisioned';
             } else {
+                // Deactivate the account itself, not just its sessions — otherwise
+                // the deprovisioned user could simply log back in via SSO/password.
+                $this->subjects->deactivate($subject->id);
                 $this->memberships->remove($directory->organization_id, $subject->id);
                 $this->sessions->revokeAllForUser($subject->id);
                 $action = 'directory.user.deactivated';
@@ -86,6 +90,7 @@ final class DatabaseDirectorySync implements DirectorySync
             $directoryUser->update(['active' => false]);
 
             if ($directoryUser->user_id !== null) {
+                $this->subjects->deactivate($directoryUser->user_id);
                 $this->memberships->remove($directory->organization_id, $directoryUser->user_id);
                 $this->sessions->revokeAllForUser($directoryUser->user_id);
             }
