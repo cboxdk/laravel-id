@@ -3,9 +3,12 @@
 declare(strict_types=1);
 
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Exceptions\UnknownServiceAccount;
+use Cbox\Id\OAuthServer\Models\ServiceAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -86,4 +89,58 @@ it('issues a user token whose subject is the user', function (): void {
 
     expect($result->subject)->toBe('user_1')
         ->and($result->hasScope('profile'))->toBeTrue();
+});
+
+it('overlap-rotates a service account: the successor works while the old still does', function (): void {
+    // Fake the bus before anything resolves the service, so it captures its events.
+    $events = $this->fakeEvents();
+    $org = $this->makeOrganization();
+    $accounts = app(ServiceAccounts::class);
+    $issuer = app(TokenIssuer::class);
+    $introspect = app(TokenIntrospector::class);
+
+    $original = $this->makeServiceAccount($org->id, ['api.read', 'api.write']);
+    $oldToken = $issuer->issueClientCredentials($original->client);
+
+    $successor = $accounts->rotate($original->client->client_id);
+
+    // A distinct credential with the same privileges, linked to its predecessor.
+    expect($successor->client->client_id)->not->toBe($original->client->client_id)
+        ->and($successor->secret)->toStartWith('csec_')
+        ->and($successor->client->scopes)->toBe(['api.read', 'api.write'])
+        ->and(ServiceAccount::query()->where('client_id', $successor->client->client_id)->value('rotated_from'))
+        ->toBe($original->client->client_id);
+    $events->assertEmitted('service_account.rotated');
+
+    // Overlap: BOTH credentials mint valid tokens until the old one is retired.
+    $newToken = $issuer->issueClientCredentials($successor->client);
+    expect($introspect->introspect($oldToken->token)->active)->toBeTrue()
+        ->and($introspect->introspect($newToken->token)->active)->toBeTrue();
+});
+
+it('retires the old account after cutover: it cannot mint tokens and its tokens are revoked', function (): void {
+    $org = $this->makeOrganization();
+    $accounts = app(ServiceAccounts::class);
+    $issuer = app(TokenIssuer::class);
+    $introspect = app(TokenIntrospector::class);
+
+    $original = $this->makeServiceAccount($org->id, ['api.read']);
+    $oldToken = $issuer->issueClientCredentials($original->client);
+    $successor = $accounts->rotate($original->client->client_id);
+    $newToken = $issuer->issueClientCredentials($successor->client);
+
+    $accounts->retire($original->client->client_id);
+
+    expect(app(ClientRegistry::class)->byClientId($original->client->client_id))->toBeNull() // no new tokens
+        ->and($introspect->introspect($oldToken->token)->active)->toBeFalse()               // existing revoked
+        ->and($introspect->introspect($newToken->token)->active)->toBeTrue()                // successor untouched
+        ->and(ServiceAccount::query()->where('client_id', $original->client->client_id)->value('status'))->toBe('retired');
+
+    // Retiring again is a no-op, not an error.
+    $accounts->retire($original->client->client_id);
+});
+
+it('rejects rotating or retiring an unknown service account', function (): void {
+    expect(fn () => app(ServiceAccounts::class)->rotate('unknown'))->toThrow(UnknownServiceAccount::class)
+        ->and(fn () => app(ServiceAccounts::class)->retire('unknown'))->toThrow(UnknownServiceAccount::class);
 });

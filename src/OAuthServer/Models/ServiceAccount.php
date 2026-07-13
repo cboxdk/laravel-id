@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * A machine identity (M2M), backed by a confidential client.
@@ -14,7 +15,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $organization_id
  * @property string $name
  * @property string $client_id
+ * @property string|null $rotated_from
  * @property string $status
+ * @property Carbon|null $retired_at
  */
 final class ServiceAccount extends Model
 {
