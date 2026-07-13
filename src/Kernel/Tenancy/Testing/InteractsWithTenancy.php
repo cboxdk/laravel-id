@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Tenancy\Testing;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\Environment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Contracts\Tenant;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
+use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Closure;
 
@@ -94,5 +97,55 @@ trait InteractsWithTenancy
     private function tenantContext(): TenantContext
     {
         return app(TenantContext::class);
+    }
+
+    /**
+     * Act as the given environment (the hard outer boundary) for the rest of the test.
+     */
+    protected function actingAsEnvironment(Environment|string $environment): Environment
+    {
+        $environment = is_string($environment) ? GenericEnvironment::of($environment) : $environment;
+
+        $this->environmentContext()->set($environment);
+
+        return $environment;
+    }
+
+    /**
+     * Run a callback as the given environment, restoring the previous one after.
+     *
+     * @template TReturn
+     *
+     * @param  Closure():TReturn  $callback
+     * @return TReturn
+     */
+    protected function runAsEnvironment(Environment|string $environment, Closure $callback): mixed
+    {
+        $environment = is_string($environment) ? GenericEnvironment::of($environment) : $environment;
+
+        return $this->environmentContext()->runAs($environment, $callback);
+    }
+
+    /**
+     * Run a callback with environment scoping suspended (provisioning-only).
+     *
+     * @template TReturn
+     *
+     * @param  Closure():TReturn  $callback
+     * @return TReturn
+     */
+    protected function withoutEnvironmentScope(Closure $callback): mixed
+    {
+        return $this->environmentContext()->withoutScope($callback);
+    }
+
+    protected function forgetEnvironment(): void
+    {
+        $this->environmentContext()->set(null);
+    }
+
+    private function environmentContext(): EnvironmentContext
+    {
+        return app(EnvironmentContext::class);
     }
 }

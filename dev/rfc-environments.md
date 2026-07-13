@@ -166,3 +166,22 @@ wiring ~1–2 days.
 - Per-environment branding/theming scope and precedence vs. per-org branding.
 - Migration: existing single-plane data → a default environment (backfill
   `environment_id`), keeping the current deployment working.
+
+---
+
+## Build progress
+
+- [x] **Phase 1 — Environment foundation (Tenancy kernel).** `Environment` /
+  `EnvironmentOwned` contracts, `EnvironmentContext` (+manager, provisioning-only
+  `withoutScope`), hard deny-by-default `EnvironmentScope` (independent of the org
+  scope), `BelongsToEnvironment` trait, `GenericEnvironment`, exceptions, DI
+  registration, and `actingAsEnvironment*` test helpers. Proven by
+  `EnvironmentIsolationTest` (8 invariants) — incl. the load-bearing one: the
+  org-level `withoutScope`/roll-up NEVER crosses an environment.
+- [ ] Phase 2 — Environment entity + model, `environment_id` on organizations &
+  all tenant-owned models, environment-scoped org closure.
+- [ ] Phase 3 — Crypto: per-environment signing keys, issuer, JWKS, discovery.
+- [ ] Phase 4 — Identity: environment-scoped users, email uniqueness, federated linking.
+- [ ] Phase 5 — OAuth surface + environment resolution (host/API-key).
+- [ ] Phase 6 — Signup lockdown (`signup.mode`).
+- [ ] Phase 7 — Host: environment admin UI + entitlement/billing wiring per env.

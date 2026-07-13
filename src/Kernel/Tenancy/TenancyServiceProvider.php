@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Tenancy;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
 use Illuminate\Contracts\Support\DeferrableProvider;
 use Illuminate\Support\ServiceProvider;
@@ -17,6 +18,7 @@ final class TenancyServiceProvider extends ServiceProvider implements Deferrable
     public function register(): void
     {
         $this->app->singleton(TenantContext::class, TenantContextManager::class);
+        $this->app->singleton(EnvironmentContext::class, EnvironmentContextManager::class);
     }
 
     /**
@@ -24,6 +26,6 @@ final class TenancyServiceProvider extends ServiceProvider implements Deferrable
      */
     public function provides(): array
     {
-        return [TenantContext::class];
+        return [TenantContext::class, EnvironmentContext::class];
     }
 }
