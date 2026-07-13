@@ -13,6 +13,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipStatus;
+use Cbox\Id\Organization\Exceptions\LastOwner;
 use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -57,6 +58,12 @@ final class MembershipService implements Memberships
     {
         return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $userId, $role): Membership {
             $membership = Membership::query()->where('user_id', $userId)->firstOrFail();
+
+            // Demoting the sole owner would orphan the org — never allow it.
+            if ($membership->role === 'owner' && $role !== 'owner' && $this->ownerCount() <= 1) {
+                throw LastOwner::make($organizationId);
+            }
+
             $membership->update(['role' => $role]);
 
             $this->emitAndAudit($organizationId, $userId, 'organization.member_role_changed', ['role' => $role]);
@@ -68,10 +75,22 @@ final class MembershipService implements Memberships
     public function remove(string $organizationId, string $userId): void
     {
         $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $userId): void {
+            $membership = Membership::query()->where('user_id', $userId)->first();
+
+            if ($membership !== null && $membership->role === 'owner' && $this->ownerCount() <= 1) {
+                throw LastOwner::make($organizationId);
+            }
+
             Membership::query()->where('user_id', $userId)->delete();
 
             $this->emitAndAudit($organizationId, $userId, 'organization.member_removed', []);
         });
+    }
+
+    /** Owners in the current tenant scope. */
+    private function ownerCount(): int
+    {
+        return Membership::query()->where('role', 'owner')->count();
     }
 
     public function of(string $organizationId, string $userId): ?Membership

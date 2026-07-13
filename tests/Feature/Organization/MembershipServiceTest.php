@@ -63,3 +63,21 @@ it('emits an event and records audit on member add', function (): void {
     $events->assertEmitted('organization.member_added');
     $audit->assertRecorded('organization.member_added');
 });
+
+it('refuses to demote or remove the sole owner', function (): void {
+    $org = $this->makeOrganization();
+    $memberships = app(Memberships::class);
+    $memberships->add($org->id, 'owner_1', 'owner');
+    $memberships->add($org->id, 'admin_1', 'admin');
+
+    // The lone owner cannot be demoted or removed — it would orphan the org.
+    expect(fn () => $memberships->changeRole($org->id, 'owner_1', 'member'))
+        ->toThrow(\Cbox\Id\Organization\Exceptions\LastOwner::class)
+        ->and(fn () => $memberships->remove($org->id, 'owner_1'))
+        ->toThrow(\Cbox\Id\Organization\Exceptions\LastOwner::class);
+
+    // With a second owner present, either is allowed.
+    $memberships->add($org->id, 'owner_2', 'owner');
+    $memberships->changeRole($org->id, 'owner_1', 'member');
+    expect($memberships->of($org->id, 'owner_1')?->role)->toBe('member');
+});
