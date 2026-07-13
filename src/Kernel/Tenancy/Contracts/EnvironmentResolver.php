@@ -1,0 +1,19 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\Kernel\Tenancy\Contracts;
+
+/**
+ * Resolves the {@see Environment} for an inbound request from its host — the
+ * runtime entry point that engages the hard environment scope. Bound to a
+ * database-backed default; a host app can swap it (e.g. header- or key-based).
+ */
+interface EnvironmentResolver
+{
+    /**
+     * The environment served at the given host (custom domain or subdomain), or
+     * null when the host maps to no environment.
+     */
+    public function resolveForHost(string $host): ?Environment;
+}

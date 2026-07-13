@@ -82,6 +82,16 @@ return [
     ],
 
     /*
+     * Environments — the hard identity boundary resolved per request from the host
+     * (own users, signing keys, issuer). `default` is the fallback environment key
+     * used when the host maps to none: set it for single-tenant / on-prem, or leave
+     * null for a multi-tenant deployment (an unknown host is then refused).
+     */
+    'environments' => [
+        'default' => env('CBOX_ID_ENVIRONMENT_DEFAULT'),
+    ],
+
+    /*
      * OAuth 2.0 Dynamic Client Registration (RFC 7591) and client management
      * (RFC 7592). MCP clients rely on DCR to self-register.
      *

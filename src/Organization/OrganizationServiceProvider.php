@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Organization\Contracts\Invitations;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
@@ -18,5 +19,9 @@ final class OrganizationServiceProvider extends ServiceProvider
         $this->app->singleton(Organizations::class, OrganizationService::class);
         $this->app->singleton(Memberships::class, MembershipService::class);
         $this->app->singleton(Invitations::class, InvitationService::class);
+        $this->app->singleton(
+            EnvironmentResolver::class,
+            DatabaseEnvironmentResolver::class,
+        );
     }
 }
