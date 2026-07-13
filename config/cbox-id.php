@@ -105,6 +105,14 @@ return [
          * one of the switches in the FAPI hardening profile — see docs/fapi.md.
          */
         'require_par' => env('CBOX_ID_REQUIRE_PAR', false),
+
+        /*
+         * Hybrid entitlements: embed the coarse, Claims-mode entitlements in the
+         * access token (`ent` claim) so resource servers can gate statelessly.
+         * Instant-critical entitlements stay DecisionApi (live via /oauth/decisions)
+         * regardless. Turn off to keep tokens free of entitlement claims entirely.
+         */
+        'embed_entitlements' => env('CBOX_ID_EMBED_ENTITLEMENTS', true),
     ],
 
     'crypto' => [

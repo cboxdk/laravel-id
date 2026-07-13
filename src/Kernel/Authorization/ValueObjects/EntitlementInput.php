@@ -17,6 +17,8 @@ final readonly class EntitlementInput
     public function __construct(
         public string $key,
         public array $value,
-        public EnforcementMode $mode = EnforcementMode::Claims,
+        // Live by default — instant on change, no token staleness. Opt into
+        // `Claims` for coarse, slow-changing keys you want embedded in the token.
+        public EnforcementMode $mode = EnforcementMode::DecisionApi,
     ) {}
 }

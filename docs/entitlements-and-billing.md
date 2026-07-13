@@ -153,10 +153,32 @@ POST /oauth/decisions              Authorization: Bearer <access token>
     "entitlements": {"plan": {"value":{"tier":"pro"},"version":3}, "seats": null} }
 ```
 
-> `EnforcementMode` on an entitlement is an intent marker (`Claims` = coarse and
-> slow-changing, could be embedded in a token by a host that wants it; `DecisionApi`
-> = check live). The platform's default and recommended path is **live** — the hot
-> path above — because that is what gives instant billing/permission changes.
+### The hybrid: live by default, coarse in the token by choice
+
+`EnforcementMode` picks how each entitlement propagates — and the platform, like
+WorkOS, supports both:
+
+| Mode | Propagation | Where it lives | Use for |
+|---|---|---|---|
+| `DecisionApi` **(default)** | **instant** | resolved live (reader / `/oauth/decisions`) | anything you must switch off now — seats, kill-switches, most billing |
+| `Claims` | bounded by access-token TTL (~15 min), on the next silent refresh | **embedded in the token** as the `ent` claim | coarse, slow-changing gates — `plan`, `feature.sso` — where you want a stateless check with zero round trip |
+
+A token issued for an org carries its `Claims`-mode entitlements plus an `ent_ver`
+(the highest version among them, so a resource server can spot a stale token and
+re-check live if it cares):
+
+```json
+{ "sub": "user_1", "org": "org_x",
+  "ent": { "plan": {"tier": "pro"}, "feature.sso": {"enabled": true} },
+  "ent_ver": 7 }
+```
+
+`DecisionApi`-mode entitlements are **never** baked into a token — they stay live.
+Set `CBOX_ID_EMBED_ENTITLEMENTS=false` to keep `ent` out of tokens entirely.
+
+**Opinion:** default to `DecisionApi` (instant, no staleness surprise) and reach for
+`Claims` deliberately, only for the handful of gates where a stateless per-request
+check matters more than instant revocation. That is the safe half of the hybrid.
 
 ## Reacting to changes
 

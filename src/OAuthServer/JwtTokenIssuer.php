@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
+use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
@@ -19,7 +21,10 @@ final class JwtTokenIssuer implements TokenIssuer
 {
     private const TTL_SECONDS = 900;
 
-    public function __construct(private readonly TokenSigner $signer) {}
+    public function __construct(
+        private readonly TokenSigner $signer,
+        private readonly EntitlementReader $entitlements,
+    ) {}
 
     public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
@@ -29,6 +34,34 @@ final class JwtTokenIssuer implements TokenIssuer
     public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
         return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt);
+    }
+
+    /**
+     * The org's Claims-mode entitlements to embed in a token, plus the highest
+     * version among them (a staleness signal). Returns `[[], 0]` when disabled or
+     * when the org has no Claims-mode entitlements.
+     *
+     * @return array{0: array<string, array<string, mixed>>, 1: int}
+     */
+    private function claimsEntitlements(string $organizationId): array
+    {
+        if (config('cbox-id.oauth.embed_entitlements', true) !== true) {
+            return [[], 0];
+        }
+
+        $embedded = [];
+        $version = 0;
+
+        foreach ($this->entitlements->all($organizationId) as $key => $value) {
+            if ($value->mode !== EnforcementMode::Claims) {
+                continue; // instant-critical keys stay live, never baked into a token
+            }
+
+            $embedded[$key] = $value->value;
+            $version = max($version, $value->version);
+        }
+
+        return [$embedded, $version];
     }
 
     /**
@@ -75,6 +108,18 @@ final class JwtTokenIssuer implements TokenIssuer
         // token, so a stolen bearer alone is useless.
         if ($dpopJkt !== null) {
             $claims['cnf'] = ['jkt' => $dpopJkt];
+        }
+
+        // Hybrid entitlements (WorkOS-style): the coarse, Claims-mode entitlements
+        // are embedded so a resource server can gate statelessly with no round trip.
+        // Only Claims-mode keys are included; instant-critical ones stay DecisionApi
+        // (live via /oauth/decisions). `ent_ver` lets a consumer detect staleness.
+        if ($organizationId !== null) {
+            [$entitlements, $version] = $this->claimsEntitlements($organizationId);
+            if ($entitlements !== []) {
+                $claims['ent'] = $entitlements;
+                $claims['ent_ver'] = $version;
+            }
         }
 
         // RFC 9068: OAuth access tokens carry the `at+jwt` media type.
