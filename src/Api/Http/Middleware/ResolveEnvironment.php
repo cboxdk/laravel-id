@@ -25,6 +25,9 @@ final class ResolveEnvironment
         private readonly EnvironmentContext $context,
     ) {}
 
+    /**
+     * @param  Closure(Request): Response  $next
+     */
     public function handle(Request $request, Closure $next): Response
     {
         $environment = $this->resolver->resolveForHost($request->getHost());
