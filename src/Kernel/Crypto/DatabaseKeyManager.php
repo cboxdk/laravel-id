@@ -78,14 +78,26 @@ final class DatabaseKeyManager implements KeyManager
     }
 
     /**
-     * @return array{0: string, 1: string} [publicPem, privatePem]
+     * @return array{0: string, 1: string} [public, private] — PEM for RSA/EC,
+     *                                     base64 raw sodium keys for Ed25519
      */
     private function generateKeyPair(SigningAlg $alg): array
     {
-        $config = match ($alg) {
-            SigningAlg::RS256 => ['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048],
-            SigningAlg::ES256 => ['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1'],
-        };
+        // Ed25519 isn't an OpenSSL keygen type; use libsodium. firebase/php-jwt
+        // signs/verifies EdDSA with base64-encoded raw sodium keys, so store those.
+        if ($alg === SigningAlg::EdDSA) {
+            $pair = sodium_crypto_sign_keypair();
+
+            return [
+                base64_encode(sodium_crypto_sign_publickey($pair)),
+                base64_encode(sodium_crypto_sign_secretkey($pair)),
+            ];
+        }
+
+        // Only RS256/ES256 reach here (EdDSA returned above).
+        $config = $alg === SigningAlg::RS256
+            ? ['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]
+            : ['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1'];
 
         $resource = openssl_pkey_new($config);
         if ($resource === false) {
@@ -114,6 +126,18 @@ final class DatabaseKeyManager implements KeyManager
      */
     private function jwkFor(SigningKey $key): array
     {
+        // Ed25519 public keys are raw sodium bytes (base64-stored), not PEM.
+        if ($key->alg === SigningAlg::EdDSA) {
+            return [
+                'kid' => $key->kid,
+                'use' => 'sig',
+                'alg' => 'EdDSA',
+                'kty' => 'OKP',
+                'crv' => 'Ed25519',
+                'x' => Base64Url::encode((string) base64_decode($key->public_key, true)),
+            ];
+        }
+
         $public = openssl_pkey_get_public($key->public_key);
         if ($public === false) {
             throw CryptoConfigurationException::keyGenerationFailed('invalid stored public key');

@@ -18,18 +18,21 @@ use Illuminate\Console\Command;
  */
 final class RotateKeysCommand extends Command
 {
-    protected $signature = 'cbox-id:keys:rotate {--alg=RS256 : Signing algorithm (RS256|ES256)} {--retire-after= : Retire Rotating keys older than this many hours}';
+    protected $signature = 'cbox-id:keys:rotate {--alg=RS256 : Signing algorithm (RS256|ES256|EdDSA)} {--retire-after= : Retire Rotating keys older than this many hours}';
 
     protected $description = 'Rotate the active signing key and optionally retire stale rotating keys';
 
     public function handle(KeyManager $keys): int
     {
         $algOption = $this->option('alg');
-        $algOption = is_string($algOption) ? strtoupper($algOption) : 'RS256';
-        $alg = SigningAlg::tryFrom($algOption);
+        $algOption = is_string($algOption) ? $algOption : 'RS256';
 
-        if ($alg === null) {
-            $this->error("Unknown algorithm [{$algOption}]. Use RS256 or ES256.");
+        // Match case-insensitively so "eddsa"/"EDDSA" resolve to the EdDSA case.
+        $alg = collect(SigningAlg::cases())
+            ->first(fn (SigningAlg $a): bool => strcasecmp($a->value, $algOption) === 0);
+
+        if (! $alg instanceof SigningAlg) {
+            $this->error("Unknown algorithm [{$algOption}]. Use RS256, ES256 or EdDSA.");
 
             return self::FAILURE;
         }

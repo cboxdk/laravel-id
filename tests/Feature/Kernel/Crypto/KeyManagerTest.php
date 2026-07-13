@@ -65,6 +65,29 @@ it('supports ES256 keys', function (): void {
         ->and($jwks['keys'][0]['crv'])->toBe('P-256');
 });
 
+it('supports EdDSA (Ed25519) keys published as an OKP JWK', function (): void {
+    $key = app(KeyManager::class)->activeSigningKey(SigningAlg::EdDSA);
+    $jwks = app(KeyManager::class)->jwks();
+
+    expect($key->alg)->toBe(SigningAlg::EdDSA)
+        ->and($jwks['keys'][0]['kty'])->toBe('OKP')
+        ->and($jwks['keys'][0]['crv'])->toBe('Ed25519')
+        ->and($jwks['keys'][0])->toHaveKeys(['kid', 'use', 'alg', 'x'])
+        ->and($jwks['keys'][0])->not->toHaveKey('d'); // never publish the private key
+});
+
+it('signs and verifies a token with EdDSA end to end', function (): void {
+    $keys = app(KeyManager::class);
+    $signer = app(TokenSigner::class);
+
+    $keys->activeSigningKey(SigningAlg::EdDSA);
+    $token = $signer->sign(['sub' => 'u-ed', 'exp' => time() + 60], SigningAlg::EdDSA);
+
+    expect($signer->verify($token, [SigningAlg::EdDSA])->get('sub'))->toBe('u-ed')
+        // An EdDSA token is not accepted when only RSA is allowed (alg is pinned).
+        ->and(fn () => $signer->verify($token, [SigningAlg::RS256]))->toThrow(InvalidToken::class);
+});
+
 it('retires a key so it leaves the JWKS and no longer verifies tokens', function (): void {
     $keys = app(KeyManager::class);
     $signer = app(TokenSigner::class);

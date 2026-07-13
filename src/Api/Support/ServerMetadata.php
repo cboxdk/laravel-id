@@ -38,7 +38,7 @@ final class ServerMetadata
             'userinfo_endpoint' => $issuer.'/oauth/userinfo',
             'response_types_supported' => ['code'],
             'grant_types_supported' => self::grantTypes(),
-            'id_token_signing_alg_values_supported' => ['RS256', 'ES256'],
+            'id_token_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
             'code_challenge_methods_supported' => ['S256'],
             // RFC 9449: sender-constrained (DPoP) access tokens.
             'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
