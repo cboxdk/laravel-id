@@ -28,6 +28,7 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | **RFC 7592** | Registration management (GET/PUT/DELETE by registration access token) | ✅ |
 | **OIDC Core** | `id_token` with `nonce`, `at_hash`, `auth_time`, `amr`, `acr`; UserInfo endpoint | ✅ |
 | **OAuth 2.0 Security BCP** | Refresh-token rotation with reuse detection (family revocation) | ✅ |
+| **RFC 9449** | DPoP — sender-constrained tokens (`cnf.jkt`, `token_type: DPoP`); proof validated for typ/alg/signature/htm/htu/iat with single-use `jti` replay guard; advertised in metadata | ✅ |
 | M2M service accounts (client_credentials) — **overlap credential rotation**: mint a successor with the same privileges, cut over with zero downtime, then retire the predecessor (revoking its tokens) | ✅ |
 | **RFC 8628** | Device Authorization Grant | ▢ |
 | **RFC 9126** | Pushed Authorization Requests (PAR) | ▢ |

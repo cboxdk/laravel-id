@@ -10,7 +10,9 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
@@ -34,19 +36,40 @@ final class TokenController
         private readonly TokenIssuer $issuer,
         private readonly TokenSigner $signer,
         private readonly RefreshTokens $refreshTokens,
+        private readonly DpopProofValidator $dpop,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
+        // RFC 9449: a DPoP header sender-constrains the issued token to the client's
+        // key. Validate it once (against this method+URL) and thread the thumbprint
+        // into whichever grant runs.
+        try {
+            $jkt = $this->dpopBinding($request);
+        } catch (InvalidDpopProof) {
+            return $this->error('invalid_dpop_proof', 400);
+        }
+
         return match ($request->string('grant_type')->toString()) {
-            'client_credentials' => $this->clientCredentials($request),
-            'authorization_code' => $this->authorizationCode($request),
-            'refresh_token' => $this->refreshToken($request),
+            'client_credentials' => $this->clientCredentials($request, $jkt),
+            'authorization_code' => $this->authorizationCode($request, $jkt),
+            'refresh_token' => $this->refreshToken($request, $jkt),
             default => $this->error('unsupported_grant_type', 400),
         };
     }
 
-    private function clientCredentials(Request $request): JsonResponse
+    private function dpopBinding(Request $request): ?string
+    {
+        $proof = $request->header('DPoP');
+
+        if (! is_string($proof) || $proof === '') {
+            return null;
+        }
+
+        return $this->dpop->verify($proof, $request->method(), $request->url());
+    }
+
+    private function clientCredentials(Request $request, ?string $dpopJkt): JsonResponse
     {
         $client = $this->authenticateClient($request);
 
@@ -55,12 +78,12 @@ final class TokenController
         }
 
         return $this->tokenResponse(
-            $this->issuer->issueClientCredentials($client, $this->scopes($request), $this->resource($request)),
+            $this->issuer->issueClientCredentials($client, $this->scopes($request), $this->resource($request), $dpopJkt),
             null,
         );
     }
 
-    private function authorizationCode(Request $request): JsonResponse
+    private function authorizationCode(Request $request, ?string $dpopJkt): JsonResponse
     {
         $clientId = $request->string('client_id')->toString();
         $client = $this->clients->byClientId($clientId);
@@ -89,7 +112,7 @@ final class TokenController
         }
 
         $resource = $this->resource($request);
-        $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource);
+        $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt);
 
         // A refresh token is issued only when the client asked for offline access.
         $refresh = in_array('offline_access', $grant->scopes, true)
@@ -99,7 +122,7 @@ final class TokenController
         return $this->tokenResponse($access, $this->idToken($clientId, $grant, $access), $refresh);
     }
 
-    private function refreshToken(Request $request): JsonResponse
+    private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
     {
         $clientId = $request->string('client_id')->toString();
         $client = $this->clients->byClientId($clientId);
@@ -119,14 +142,14 @@ final class TokenController
             return $this->error('invalid_grant', 400);
         }
 
-        return $this->tokenResponse($this->accessFromRefresh($client, $rotated), null, $rotated->refreshToken);
+        return $this->tokenResponse($this->accessFromRefresh($client, $rotated, $dpopJkt), null, $rotated->refreshToken);
     }
 
-    private function accessFromRefresh(Client $client, RefreshGrant $grant): IssuedToken
+    private function accessFromRefresh(Client $client, RefreshGrant $grant, ?string $dpopJkt): IssuedToken
     {
         return $grant->userId !== null
-            ? $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $grant->audience)
-            : $this->issuer->issueClientCredentials($client, $grant->scopes, $grant->audience);
+            ? $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $grant->audience, $dpopJkt)
+            : $this->issuer->issueClientCredentials($client, $grant->scopes, $grant->audience, $dpopJkt);
     }
 
     private function idToken(string $clientId, AuthorizedGrant $grant, IssuedToken $access): string
@@ -216,7 +239,7 @@ final class TokenController
     {
         $body = [
             'access_token' => $token->token,
-            'token_type' => 'Bearer',
+            'token_type' => $token->tokenType,
             'expires_in' => $token->expiresIn,
         ];
 

@@ -40,6 +40,8 @@ final class ServerMetadata
             'grant_types_supported' => self::grantTypes(),
             'id_token_signing_alg_values_supported' => ['RS256', 'ES256'],
             'code_challenge_methods_supported' => ['S256'],
+            // RFC 9449: sender-constrained (DPoP) access tokens.
+            'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
             'scopes_supported' => ['openid', 'profile', 'email', 'offline_access'],
             'subject_types_supported' => ['public'],
             'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'none'],

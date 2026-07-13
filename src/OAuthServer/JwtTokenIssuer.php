@@ -21,14 +21,14 @@ final class JwtTokenIssuer implements TokenIssuer
 
     public function __construct(private readonly TokenSigner $signer) {}
 
-    public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null): IssuedToken
+    public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
-        return $this->issue($client, $client->client_id, null, $client->organization_id, $this->grantScopes($client, $scopes), $resource);
+        return $this->issue($client, $client->client_id, null, $client->organization_id, $this->grantScopes($client, $scopes), $resource, $dpopJkt);
     }
 
-    public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null): IssuedToken
+    public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
-        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource);
+        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt);
     }
 
     /**
@@ -47,7 +47,7 @@ final class JwtTokenIssuer implements TokenIssuer
     /**
      * @param  list<string>  $scopes
      */
-    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null): IssuedToken
+    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
         $jti = (string) Str::ulid();
         $issuedAt = time();
@@ -70,6 +70,13 @@ final class JwtTokenIssuer implements TokenIssuer
             $claims['aud'] = $resource;
         }
 
+        // RFC 9449: sender-constrain the token to the client's DPoP key. A resource
+        // server compares this jkt to the thumbprint of the proof presented with the
+        // token, so a stolen bearer alone is useless.
+        if ($dpopJkt !== null) {
+            $claims['cnf'] = ['jkt' => $dpopJkt];
+        }
+
         // RFC 9068: OAuth access tokens carry the `at+jwt` media type.
         $token = $this->signer->sign($claims, type: 'at+jwt');
 
@@ -83,6 +90,6 @@ final class JwtTokenIssuer implements TokenIssuer
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
-        return new IssuedToken($token, $jti, self::TTL_SECONDS);
+        return new IssuedToken($token, $jti, self::TTL_SECONDS, $dpopJkt !== null ? 'DPoP' : 'Bearer');
     }
 }

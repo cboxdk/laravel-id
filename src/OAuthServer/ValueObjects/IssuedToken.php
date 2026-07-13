@@ -10,5 +10,7 @@ final readonly class IssuedToken
         public string $token,
         public string $jti,
         public int $expiresIn,
+        // "Bearer", or "DPoP" when sender-constrained to a client key (RFC 9449).
+        public string $tokenType = 'Bearer',
     ) {}
 }
