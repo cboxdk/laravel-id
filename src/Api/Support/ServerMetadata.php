@@ -39,6 +39,8 @@ final class ServerMetadata
             // RFC 9126: pushed authorization requests.
             'pushed_authorization_request_endpoint' => $issuer.'/oauth/par',
             'require_pushed_authorization_requests' => (bool) config('cbox-id.oauth.require_par', false),
+            // RFC 8628: device authorization grant.
+            'device_authorization_endpoint' => $issuer.'/oauth/device_authorization',
             'response_types_supported' => ['code'],
             'grant_types_supported' => self::grantTypes(),
             'id_token_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
@@ -63,6 +65,6 @@ final class ServerMetadata
      */
     private static function grantTypes(): array
     {
-        return ['authorization_code', 'client_credentials', 'refresh_token'];
+        return ['authorization_code', 'client_credentials', 'refresh_token', 'urn:ietf:params:oauth:grant-type:device_code'];
     }
 }

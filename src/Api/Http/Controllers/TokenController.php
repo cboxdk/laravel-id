@@ -8,10 +8,15 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
+use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
+use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
+use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -37,6 +42,7 @@ final class TokenController
         private readonly TokenSigner $signer,
         private readonly RefreshTokens $refreshTokens,
         private readonly DpopProofValidator $dpop,
+        private readonly DeviceAuthorization $device,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -54,6 +60,7 @@ final class TokenController
             'client_credentials' => $this->clientCredentials($request, $jkt),
             'authorization_code' => $this->authorizationCode($request, $jkt),
             'refresh_token' => $this->refreshToken($request, $jkt),
+            'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt),
             default => $this->error('unsupported_grant_type', 400),
         };
     }
@@ -120,6 +127,40 @@ final class TokenController
             : null;
 
         return $this->tokenResponse($access, $this->idToken($clientId, $grant, $access), $refresh);
+    }
+
+    private function deviceCode(Request $request, ?string $dpopJkt): JsonResponse
+    {
+        $clientId = $request->string('client_id')->toString();
+        $client = $this->clients->byClientId($clientId);
+
+        if ($client === null) {
+            return $this->error('invalid_client', 401);
+        }
+
+        if ($client->secret_hash !== null
+            && ! $this->clients->verifySecret($client, $request->string('client_secret')->toString())) {
+            return $this->error('invalid_client', 401);
+        }
+
+        try {
+            $grant = $this->device->redeem($clientId, $request->string('device_code')->toString());
+        } catch (DeviceAuthorizationPending) {
+            return $this->error('authorization_pending', 400);
+        } catch (DeviceSlowDown) {
+            return $this->error('slow_down', 400);
+        } catch (DeviceAccessDenied) {
+            return $this->error('access_denied', 400);
+        } catch (DeviceExpired) {
+            return $this->error('expired_token', 400);
+        } catch (InvalidGrant) {
+            return $this->error('invalid_grant', 400);
+        }
+
+        return $this->tokenResponse(
+            $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt),
+            null,
+        );
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse

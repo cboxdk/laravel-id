@@ -30,6 +30,7 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | **OAuth 2.0 Security BCP** | Refresh-token rotation with reuse detection (family revocation) | ✅ |
 | **RFC 9449** | DPoP — sender-constrained tokens (`cnf.jkt`, `token_type: DPoP`); proof validated for typ/alg/signature/htm/htu/iat with single-use `jti` replay guard; advertised in metadata | ✅ |
 | **RFC 9126** | Pushed Authorization Requests (`/oauth/par`) — client-authenticated, single-use short-lived `request_uri` consumed by `/authorize`; `require_pushed_authorization_requests` advertised | ✅ |
+| **RFC 8628** | Device Authorization Grant (`/oauth/device_authorization`) — `user_code` (unambiguous alphabet) + `verification_uri`; token polling with `authorization_pending` / `slow_down` / `access_denied` / `expired_token`; device_code stored hashed | ✅ |
 | M2M service accounts (client_credentials) — **overlap credential rotation**: mint a successor with the same privileges, cut over with zero downtime, then retire the predecessor (revoking its tokens) | ✅ |
 | **RFC 8628** | Device Authorization Grant | ▢ |
 | **RFC 9126** | Pushed Authorization Requests (PAR) | ▢ |

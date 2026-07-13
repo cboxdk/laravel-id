@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api;
 
 use Cbox\Id\Api\Http\Controllers\AuthorizationServerMetadataController;
+use Cbox\Id\Api\Http\Controllers\DeviceAuthorizationController;
 use Cbox\Id\Api\Http\Controllers\DiscoveryController;
 use Cbox\Id\Api\Http\Controllers\HealthController;
 use Cbox\Id\Api\Http\Controllers\IntrospectionController;
@@ -59,6 +60,9 @@ final class ApiServiceProvider extends ServiceProvider
 
             // RFC 9126: back-channel pushed authorization requests.
             Route::post('/oauth/par', PushedAuthorizationController::class);
+
+            // RFC 8628: device authorization grant (TVs, CLIs, IoT).
+            Route::post('/oauth/device_authorization', DeviceAuthorizationController::class);
 
             // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
             Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);
