@@ -9,8 +9,10 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\ConsumedAssertion;
+use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Cbox\Id\Federation\Saml\SamlSettings;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use DOMDocument;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use OneLogin\Saml2\Response as SamlResponse;
@@ -77,9 +79,74 @@ final class SamlAssertionValidator implements AssertionValidator
         }
     }
 
+    /**
+     * Resolve the outstanding AuthnRequest a response answers, or null when the
+     * response carries no InResponseTo (IdP-initiated). Throws when an InResponseTo
+     * is present but matches no request we issued for this connection (unsolicited
+     * injection, replay, or expiry).
+     */
+    private function matchOutstandingRequest(Connection $connection, string $rawResponse): ?SamlAuthRequest
+    {
+        $inResponseTo = $this->extractInResponseTo($rawResponse);
+
+        if ($inResponseTo === null) {
+            return null;
+        }
+
+        $request = SamlAuthRequest::query()
+            ->where('request_id', $inResponseTo)
+            ->where('connection_id', $connection->id)
+            ->whereNull('consumed_at')
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if ($request === null) {
+            throw InvalidAssertion::make('SAML response InResponseTo does not match an outstanding request');
+        }
+
+        return $request;
+    }
+
+    /**
+     * Read the root element's InResponseTo attribute via onelogin's XXE-safe XML
+     * loader. This is a pre-signature peek used only to locate our stored request;
+     * the value is re-checked against onelogin's canonical parse inside isValid().
+     */
+    private function extractInResponseTo(string $rawResponse): ?string
+    {
+        $decoded = base64_decode($rawResponse, true);
+
+        if (! is_string($decoded) || $decoded === '') {
+            return null;
+        }
+
+        try {
+            $dom = SamlUtils::loadXML(new DOMDocument, $decoded);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! $dom instanceof DOMDocument || $dom->documentElement === null) {
+            return null;
+        }
+
+        $value = $dom->documentElement->getAttribute('InResponseTo');
+
+        return $value !== '' ? $value : null;
+    }
+
     public function validate(Connection $connection, string $rawResponse): FederatedPrincipal
     {
         $config = $this->connections->config($connection);
+
+        // InResponseTo enforcement: a response carrying an InResponseTo must
+        // reference an AuthnRequest THIS SP issued for THIS connection, defeating
+        // unsolicited-response injection. No InResponseTo = IdP-initiated SSO,
+        // which we allow. We match (but don't yet consume) here, then pass the id
+        // to onelogin's isValid() as defense-in-depth: onelogin's own canonical
+        // parse must agree, closing any signature-wrapping InResponseTo mismatch.
+        $authRequest = $this->matchOutstandingRequest($connection, $rawResponse);
+        $expectedRequestId = $authRequest?->request_id;
 
         try {
             $settings = new Settings(SamlSettings::toArray($config), true);
@@ -89,10 +156,10 @@ final class SamlAssertionValidator implements AssertionValidator
             // Pin it to the connection's configured ACS URL instead — the single
             // source of truth for where this SP receives assertions. Both the
             // Response construction and isValid() read $_SERVER, so both run pinned.
-            [$response, $valid] = $this->withAcsUrl($this->require($config, 'sp_acs_url'), static function () use ($settings, $rawResponse): array {
+            [$response, $valid] = $this->withAcsUrl($this->require($config, 'sp_acs_url'), static function () use ($settings, $rawResponse, $expectedRequestId): array {
                 $response = new SamlResponse($settings, $rawResponse);
 
-                return [$response, $response->isValid()];
+                return [$response, $response->isValid($expectedRequestId)];
             });
         } catch (Throwable $exception) {
             throw InvalidAssertion::make('SAML response could not be processed: '.$exception->getMessage());
@@ -106,6 +173,9 @@ final class SamlAssertionValidator implements AssertionValidator
 
         // Single-use: a captured, still-valid assertion cannot be replayed.
         $this->guardReplay($response->getAssertionId(), $response->getAssertionNotOnOrAfter());
+
+        // The matched request is now spent — a later response can't reuse this id.
+        $authRequest?->forceFill(['consumed_at' => now()])->save();
 
         $nameId = $response->getNameId();
 

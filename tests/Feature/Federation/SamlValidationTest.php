@@ -7,6 +7,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use RobRichards\XMLSecLibs\XMLSecurityDSig;
@@ -43,6 +44,7 @@ final class SamlIdp
         string $audience = SP_ENTITY,
         bool $sign = true,
         bool $tamper = false,
+        ?string $inResponseTo = null,
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
@@ -51,9 +53,10 @@ final class SamlIdp
         $responseId = '_'.bin2hex(random_bytes(16));
         $issuer = IDP_ENTITY;
         $recipient = SP_ACS;
+        $inResponseToAttr = $inResponseTo !== null ? ' InResponseTo="'.htmlspecialchars($inResponseTo, ENT_QUOTES).'"' : '';
 
         $xml = <<<XML
-<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}">
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}"{$inResponseToAttr}>
   <saml:Issuer>{$issuer}</saml:Issuer>
   <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
   <saml:Assertion ID="{$assertionId}" Version="2.0" IssueInstant="{$now}">
@@ -200,4 +203,78 @@ it('rejects a replayed SAML assertion', function (): void {
 
     app(AssertionValidator::class)->validate($connection, $response); // first use — ok
     app(AssertionValidator::class)->validate($connection, $response); // replay — rejected
+})->throws(InvalidAssertion::class);
+
+it('accepts an IdP-initiated response (no InResponseTo)', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    // Unsolicited SSO is a legitimate mode — absent InResponseTo is allowed.
+    $principal = app(AssertionValidator::class)->validate($connection, $idp->response());
+
+    expect($principal->subject)->toBe('alice@corp.com');
+});
+
+it('rejects a response whose InResponseTo matches no request we issued', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    // The IdP (or an attacker replaying a captured response) asserts an
+    // InResponseTo we never minted — unsolicited-response injection.
+    app(AssertionValidator::class)->validate(
+        $connection,
+        $idp->response(inResponseTo: '_forged_'.bin2hex(random_bytes(8))),
+    );
+})->throws(InvalidAssertion::class);
+
+it('accepts a response answering an outstanding request, then burns it', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    $requestId = '_'.bin2hex(random_bytes(16));
+    SamlAuthRequest::query()->create([
+        'request_id' => $requestId,
+        'connection_id' => $connection->id,
+        'expires_at' => now()->addMinutes(10),
+    ]);
+
+    $principal = app(AssertionValidator::class)->validate(
+        $connection,
+        $idp->response(inResponseTo: $requestId),
+    );
+    expect($principal->subject)->toBe('alice@corp.com');
+
+    // The request is single-use: a second response reusing that id is refused
+    // even though its InResponseTo was, at issue time, legitimate.
+    app(AssertionValidator::class)->validate(
+        $connection,
+        $idp->response(inResponseTo: $requestId),
+    );
+})->throws(InvalidAssertion::class);
+
+it('rejects a request id belonging to a different connection', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    // A valid outstanding request, but bound to some OTHER connection.
+    SamlAuthRequest::query()->create([
+        'request_id' => $requestId = '_'.bin2hex(random_bytes(16)),
+        'connection_id' => 'con_other',
+        'expires_at' => now()->addMinutes(10),
+    ]);
+
+    app(AssertionValidator::class)->validate($connection, $idp->response(inResponseTo: $requestId));
+})->throws(InvalidAssertion::class);
+
+it('rejects a response answering an expired request', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    SamlAuthRequest::query()->create([
+        'request_id' => $requestId = '_'.bin2hex(random_bytes(16)),
+        'connection_id' => $connection->id,
+        'expires_at' => now()->subMinute(),
+    ]);
+
+    app(AssertionValidator::class)->validate($connection, $idp->response(inResponseTo: $requestId));
 })->throws(InvalidAssertion::class);

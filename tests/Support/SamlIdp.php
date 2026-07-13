@@ -37,6 +37,7 @@ final class SamlIdp
         string $recipient,
         string $displayName = 'Alice Example',
         bool $sign = true,
+        ?string $inResponseTo = null,
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
@@ -44,9 +45,10 @@ final class SamlIdp
         $assertionId = '_'.bin2hex(random_bytes(16));
         $responseId = '_'.bin2hex(random_bytes(16));
         $issuer = $this->entityId;
+        $inResponseToAttr = $inResponseTo !== null ? ' InResponseTo="'.htmlspecialchars($inResponseTo, ENT_QUOTES).'"' : '';
 
         $xml = <<<XML
-<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}">
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}"{$inResponseToAttr}>
   <saml:Issuer>{$issuer}</saml:Issuer>
   <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
   <saml:Assertion ID="{$assertionId}" Version="2.0" IssueInstant="{$now}">

@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Cbox\Id\Federation\Saml\SamlSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,14 +19,19 @@ use Throwable;
  * `AuthnRequest` and redirect (HTTP-Redirect binding) to the IdP's SSO service.
  * The IdP authenticates the user and POSTs a `SAMLResponse` back to the ACS.
  *
- * The AuthnRequest id is stashed in the session so the ACS can enforce
- * `InResponseTo` (defeating unsolicited-response injection); `RelayState`
- * carries the post-login destination back through the round-trip.
+ * The AuthnRequest id is persisted in `saml_auth_requests` so the ACS can
+ * enforce `InResponseTo` (defeating unsolicited-response injection). We can't
+ * rely on the session for this: the ACS is a cross-site POST from the IdP where
+ * the SameSite=Lax session cookie is absent. `RelayState` carries the post-login
+ * destination back through the round-trip.
  */
 final class SamlLoginController
 {
-    /** Session key holding the last AuthnRequest id, for InResponseTo checks. */
+    /** Session key mirroring the last AuthnRequest id (best-effort UX only). */
     public const REQUEST_ID_KEY = 'cbox.saml_authn_request_id';
+
+    /** Outstanding SP-initiated AuthnRequests live this long before expiring. */
+    private const REQUEST_TTL_MINUTES = 10;
 
     public function __construct(private readonly Connections $connections) {}
 
@@ -50,7 +56,14 @@ final class SamlLoginController
             return new Response('SAML connection is not fully configured.', 422);
         }
 
-        // Remember the request id so the ACS can reject unsolicited responses.
+        // Record the request id (connection-scoped, short-lived) so the ACS can
+        // reject responses whose InResponseTo we never issued. The store — not the
+        // session — is authoritative: the ACS POST carries no session cookie.
+        SamlAuthRequest::query()->create([
+            'request_id' => $authn->getId(),
+            'connection_id' => $model->id,
+            'expires_at' => now()->addMinutes(self::REQUEST_TTL_MINUTES),
+        ]);
         $request->session()->put(self::REQUEST_ID_KEY, $authn->getId());
 
         $params = ['SAMLRequest' => $authn->getRequest()];
