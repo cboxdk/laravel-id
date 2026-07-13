@@ -77,6 +77,42 @@ it('records a failure, schedules a retry, and succeeds on retry', function (): v
         ->and(WebhookDelivery::query()->firstOrFail()->status)->toBe(DeliveryStatus::Delivered);
 });
 
+it('dead-letters a delivery after the retry cap and never retries it again', function (): void {
+    config(['cbox-id.webhooks.max_attempts' => 2]);
+    Http::fake(['*' => Http::response('', 500)]);
+    $this->registerWebhook('org_a', 'https://hook.test/x', ['e']);
+
+    app(WebhookDispatcher::class)->dispatch('e', [], 'org_a');
+    $delivery = WebhookDelivery::query()->firstOrFail();
+    expect($delivery->status)->toBe(DeliveryStatus::Failed)->and($delivery->attempt)->toBe(1);
+
+    // Second (final) attempt hits the cap → dead-lettered, no further retry window.
+    $delivery->update(['next_retry_at' => now()->subMinute()]);
+    app(WebhookDispatcher::class)->retryPending();
+
+    $delivery->refresh();
+    expect($delivery->status)->toBe(DeliveryStatus::Exhausted)
+        ->and($delivery->attempt)->toBe(2)
+        ->and($delivery->next_retry_at)->toBeNull();
+
+    // Exhausted deliveries are excluded from the retry sweep.
+    expect(app(WebhookDispatcher::class)->retryPending())->toBe(0);
+});
+
+it('refuses delivery to an endpoint that fails the SSRF guard', function (): void {
+    Http::fake();
+    // Register with the guard off (file-wide beforeEach), then enable it for the
+    // delivery: blocked.test resolves to a non-public address, so the guarded
+    // send is refused — nothing goes out and the delivery is retried.
+    $this->registerWebhook('org_a', 'https://blocked.test/x', ['e']);
+    config(['cbox-id.webhooks.verify_url' => true]);
+
+    app(WebhookDispatcher::class)->dispatch('e', [], 'org_a');
+
+    Http::assertNothingSent();
+    expect(WebhookDelivery::query()->firstOrFail()->status)->toBe(DeliveryStatus::Failed);
+});
+
 it('fans a delivered domain event out to webhooks end-to-end', function (): void {
     Http::fake(['*' => Http::response('', 200)]);
     $this->registerWebhook('org_a', 'https://hook.test/x', ['thing.happened']);

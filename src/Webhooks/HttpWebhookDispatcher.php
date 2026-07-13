@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
+use Cbox\Id\Webhooks\Exceptions\UnsafeWebhookUrl;
 use Cbox\Id\Webhooks\Models\WebhookDelivery;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
@@ -74,9 +75,12 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
 
         $delivery->attempt = $delivery->attempt + 1;
 
-        // Re-check the URL immediately before sending (narrows DNS-rebinding) —
-        // never deliver to a non-public address.
-        if (! SafeWebhookUrl::isSafe($endpoint->url)) {
+        // Validate the URL and pin the connection to the exact IPs just resolved,
+        // immediately before sending — so a DNS rebind between check and connect
+        // can't redirect the delivery to an internal address (TOCTOU-closed).
+        try {
+            $pinned = SafeWebhookUrl::pinnedOptions($endpoint->url);
+        } catch (UnsafeWebhookUrl) {
             $delivery->response_code = null;
             $this->scheduleRetry($delivery);
             $delivery->save();
@@ -96,6 +100,7 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
                 'X-Cbox-Timestamp' => (string) $timestamp,
                 'X-Cbox-Signature' => 't='.$timestamp.',v1='.$signature,
             ])
+                ->withOptions($pinned)          // pinned resolution + no redirects
                 ->withoutRedirecting()          // a 30x to an internal host must not be followed
                 ->connectTimeout(5)
                 ->timeout(10)
@@ -121,6 +126,18 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
 
     private function scheduleRetry(WebhookDelivery $delivery): void
     {
+        // Bound the retries: once the cap is hit, dead-letter the delivery so it
+        // stops consuming retry cycles forever (an endpoint that's gone stays gone).
+        $configured = config('cbox-id.webhooks.max_attempts', 12);
+        $maxAttempts = is_numeric($configured) ? (int) $configured : 12;
+
+        if ($delivery->attempt >= $maxAttempts) {
+            $delivery->status = DeliveryStatus::Exhausted;
+            $delivery->next_retry_at = null;
+
+            return;
+        }
+
         $delivery->status = DeliveryStatus::Failed;
         $delivery->next_retry_at = now()->addMinutes(min(60, 2 ** $delivery->attempt));
     }

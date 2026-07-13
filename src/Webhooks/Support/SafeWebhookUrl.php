@@ -43,4 +43,27 @@ final class SafeWebhookUrl
             throw UnsafeWebhookUrl::make($e->getMessage());
         }
     }
+
+    /**
+     * Validate the URL and return Guzzle options that PIN the connection to the
+     * exact IPs just validated — one DNS resolution, so a rebind between the check
+     * and the connect can't redirect the request to an internal address. Returns
+     * an empty array when enforcement is disabled.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws UnsafeWebhookUrl
+     */
+    public static function pinnedOptions(string $url): array
+    {
+        if (config('cbox-id.webhooks.verify_url', true) !== true) {
+            return [];
+        }
+
+        try {
+            return app(UrlGuard::class)->pinnedOptions($url);
+        } catch (BlockedUrl $e) {
+            throw UnsafeWebhookUrl::make($e->getMessage());
+        }
+    }
 }

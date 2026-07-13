@@ -67,12 +67,18 @@ return [
 
     /*
      * Webhook delivery. `verify_url` (SSRF guard) rejects endpoints that resolve
-     * to loopback/private/link-local/reserved addresses; keep it true in any
+     * to loopback/private/link-local/reserved addresses and pins the connection
+     * to the validated IPs (closing DNS-rebinding); keep it true in any
      * multi-tenant deployment. A single-tenant/on-prem install that legitimately
-     * delivers to internal hosts may disable it.
+     * delivers to internal hosts may disable it. `max_attempts` bounds retries
+     * before a delivery is dead-lettered (status `exhausted`). `schedule_retries`
+     * registers a per-minute task that redelivers due failures; disable it if you
+     * drive `retryPending()` yourself.
      */
     'webhooks' => [
         'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
+        'max_attempts' => env('CBOX_ID_WEBHOOKS_MAX_ATTEMPTS', 12),
+        'schedule_retries' => env('CBOX_ID_WEBHOOKS_SCHEDULE_RETRIES', true),
     ],
 
     /*
