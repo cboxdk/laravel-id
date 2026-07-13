@@ -38,7 +38,7 @@ use Cbox\Id\Kernel\Authorization\ValueObjects\{Subject, ResourceRef};
 $pdp = app(PolicyDecisionPoint::class);
 
 $pdp->can('org_x', Subject::user('alice'), 'manage', ResourceRef::of('ticket', '42')); // bool
-$pdp->entitlement('org_x', 'plan')?->string('tier');                                    // 'pro'
+$pdp->entitlement('org_x', 'feature.sso')?->bool();                                     // capability gate
 ```
 
 Relationships are stored as ReBAC tuples (`RelationshipStore`), supporting grants
@@ -50,21 +50,26 @@ is cheap and a change is visible on the next read.
 
 An external resource server presents the caller's access token and gets permissions
 **and** entitlements in one round trip. This is the hot path — resolved live, so a
-revoked role or a cancelled plan takes effect on the very next call.
+revoked role or a flipped capability gate takes effect on the very next call.
+
+> Entitlements here are **capability gates** — *"this org may do X"* — not billing
+> state. Cbox ID never holds a plan name, a price, or a usage count; billing
+> translates those into gates and pushes them in. See
+> [Entitlements & billing](entitlements-and-billing.md).
 
 ```http
 POST /oauth/decisions
 Authorization: Bearer <access token>
 
 { "permissions": [ {"relation": "manage", "resource": "ticket:42"} ],
-  "entitlements": [ "plan", "seats" ] }
+  "entitlements": [ "feature.sso", "seats" ] }
 ```
 
 ```json
 { "subject": {"type": "user", "id": "alice"},
   "organization": "org_x",
   "permissions": [ {"relation": "manage", "resource": "ticket:42", "allowed": true} ],
-  "entitlements": { "plan": {"value": {"tier": "pro"}, "version": 3}, "seats": null } }
+  "entitlements": { "feature.sso": {"value": {"enabled": true}, "version": 3}, "seats": null } }
 ```
 
 The subject and org come from introspecting the presented token (deny-by-default if

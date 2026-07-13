@@ -55,10 +55,11 @@ app(Roles::class)->assign($reseller->id, 'support_1', $role->id);
 app(AccessChecker::class)->can('support_1', 'tickets.manage', $customer->id); // true (rolls down)
 ```
 
-## Push entitlements from Stripe / Cashier
+## Push capability gates from Stripe / Cashier
 
-Wire your billing webhook to the entitlement writer. Use `reconcile()` to guard against dropped
-webhooks — it upserts everything present and revokes anything absent:
+Wire your billing webhook to the entitlement writer. Billing translates the plan
+into **capability gates** (Cbox ID never sees the plan itself). Use `reconcile()` to
+guard against dropped webhooks — it upserts what's present and revokes what's absent:
 
 ```php
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementWriter;
@@ -67,14 +68,14 @@ use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementInput;
 
 app(EntitlementWriter::class)->reconcile($org->id, [
-    new EntitlementInput('plan', ['tier' => 'pro']),
-    new EntitlementInput('seats', ['limit' => 50], EnforcementMode::DecisionApi),
-    new EntitlementInput('feature.sso', ['enabled' => true]),
+    new EntitlementInput('feature.sso', ['enabled' => true]),                   // gate, from the plan
+    new EntitlementInput('feature.export', ['enabled' => true]),
+    new EntitlementInput('seats', ['limit' => 50], EnforcementMode::DecisionApi), // limit, checked live
 ], EntitlementSource::Billing);
 ```
 
-Pick `EnforcementMode::Claims` for coarse, slow-changing entitlements (embedded in tokens),
-and `EnforcementMode::DecisionApi` for anything that must revoke immediately.
+Pick `EnforcementMode::Claims` for coarse, slow-changing gates (embedded in tokens),
+and `EnforcementMode::DecisionApi` (the default) for anything that must revoke immediately.
 
 > Keeping your own billing engine and want the full flow — reconcile, enforcement
 > modes, provenance and events? See [Entitlements & billing](entitlements-and-billing.md).

@@ -56,14 +56,15 @@ use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementInput;
 
+// Entitlements are capability gates — what the org may do — not billing state.
 app(EntitlementWriter::class)->set(
     $org->id,
-    new EntitlementInput('plan', ['tier' => 'pro']),
+    new EntitlementInput('feature.sso', ['enabled' => true]),
     EntitlementSource::Billing,
     sourceRef: 'sub_1Pk9',
 );
 
-app(EntitlementReader::class)->get($org->id, 'plan')?->string('tier'); // 'pro'
+app(EntitlementReader::class)->get($org->id, 'feature.sso')?->bool(); // true
 ```
 
 Every write is versioned, appended to history, emitted as an event and audited.
