@@ -6,6 +6,7 @@ namespace Cbox\Id\Organization;
 
 use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
 use Cbox\Id\Organization\Exceptions\CannotReparent;
+use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\Models\OrganizationClosure;
 
 final class ClosureOrganizationHierarchy implements OrganizationHierarchy
@@ -43,6 +44,10 @@ final class ClosureOrganizationHierarchy implements OrganizationHierarchy
             && ($newParentId === $organizationId || $this->isDescendantOf($newParentId, $organizationId))) {
             throw CannotReparent::intoOwnSubtree($organizationId, $newParentId);
         }
+
+        // Keep the denormalized direct-parent column in step with the closure —
+        // both are views of the same hierarchy and callers read either one.
+        Organization::query()->whereKey($organizationId)->update(['parent_id' => $newParentId]);
 
         // The subtree rooted at this node: (node, descendant, depth-within-subtree),
         // including the node's own depth-0 self-row. These internal links are kept.

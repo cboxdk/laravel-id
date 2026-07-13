@@ -56,6 +56,9 @@ it('moves a node with its whole subtree under a new parent', function (): void {
     // Move b (carrying c) under d.
     $hierarchy->move($b->id, $d->id);
 
+    // The denormalized direct-parent column is kept in step with the closure.
+    expect($b->refresh()->parent_id)->toBe($d->id);
+
     // b and c now sit under d, no longer under a.
     expect($hierarchy->ancestors($b->id))->toBe([$d->id])
         ->and($hierarchy->ancestors($c->id))->toContain($d->id, $b->id)
@@ -72,7 +75,8 @@ it('promotes a node to a root when moved with a null parent', function (): void 
 
     $hierarchy->move($b->id, null);
 
-    expect($hierarchy->ancestors($b->id))->toBe([])
+    expect($b->refresh()->parent_id)->toBeNull()
+        ->and($hierarchy->ancestors($b->id))->toBe([])
         ->and($hierarchy->descendants($a->id))->toBe([]);
 });
 

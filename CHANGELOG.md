@@ -9,6 +9,15 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-13
+
+### Fixed
+
+- **`OrganizationHierarchy::move()` now syncs the `parent_id` column.** 0.3.1
+  rewrote only the closure table, leaving the denormalized direct-parent column
+  stale — so tree views built from `parent_id` didn't reflect a move. `move()`
+  now updates both representations atomically.
+
 ## [0.3.1] - 2026-07-13
 
 ### Added
