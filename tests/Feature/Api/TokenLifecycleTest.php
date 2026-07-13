@@ -169,6 +169,7 @@ it('serves RFC 8414 authorization server metadata', function (): void {
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
         ->assertJsonPath('grant_types_supported', ['authorization_code', 'client_credentials', 'refresh_token', 'urn:ietf:params:oauth:grant-type:device_code'])
+        ->assertJsonPath('authorization_response_iss_parameter_supported', true)
         ->assertJsonStructure(['issuer', 'token_endpoint', 'jwks_uri', 'revocation_endpoint', 'code_challenge_methods_supported']);
 });
 

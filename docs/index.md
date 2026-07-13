@@ -66,6 +66,7 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 - [Architecture & patterns](architecture.md) — kernels vs domain, contracts-first DI, dogfooding
 - [Security](security.md) — the invariants, tenant isolation, tamper-evident audit
 - [Standards & conformance](standards.md) — every RFC/spec implemented, and to what extent
+- [FAPI hardening](fapi.md) — the enforceable FAPI 2.0 baseline for high-assurance clients
 - [Compliance mapping](compliance.md) — how controls map to SOC 2, ISO 27001, NIS2, GDPR, HIPAA, PCI-DSS
 - [Threat model](threat-model.md) — STRIDE analysis and mitigations
 

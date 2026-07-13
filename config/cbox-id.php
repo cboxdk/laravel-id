@@ -98,6 +98,13 @@ return [
             'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access'],
             'allowed_grant_types' => ['authorization_code', 'refresh_token', 'client_credentials'],
         ],
+
+        /*
+         * FAPI baseline: require every authorization request to be pushed
+         * (RFC 9126) so parameters never ride the browser URL. Turning this on is
+         * one of the switches in the FAPI hardening profile — see docs/fapi.md.
+         */
+        'require_par' => env('CBOX_ID_REQUIRE_PAR', false),
     ],
 
     'crypto' => [

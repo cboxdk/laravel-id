@@ -41,6 +41,8 @@ final class ServerMetadata
             'require_pushed_authorization_requests' => (bool) config('cbox-id.oauth.require_par', false),
             // RFC 8628: device authorization grant.
             'device_authorization_endpoint' => $issuer.'/oauth/device_authorization',
+            // RFC 9207: the authorization response carries `iss` (mix-up defense).
+            'authorization_response_iss_parameter_supported' => true,
             'response_types_supported' => ['code'],
             'grant_types_supported' => self::grantTypes(),
             'id_token_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
