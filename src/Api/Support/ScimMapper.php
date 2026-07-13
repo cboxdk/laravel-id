@@ -14,6 +14,12 @@ use Illuminate\Http\Request;
  */
 final class ScimMapper
 {
+    /** RFC 7643 §4.3 Enterprise User extension schema URN. */
+    public const ENTERPRISE_URN = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
+
+    /** Enterprise-extension attributes IdPs actually provision. */
+    private const ENTERPRISE_ATTRIBUTES = ['employeeNumber', 'costCenter', 'organization', 'division', 'department', 'manager'];
+
     public static function fromRequest(Request $request): ScimUser
     {
         $userName = $request->string('userName')->toString();
@@ -28,7 +34,18 @@ final class ScimMapper
             $displayName = is_string($formatted) ? $formatted : $userName;
         }
 
-        return self::build($externalId, $userName, $email, $displayName, $request->boolean('active', true));
+        // NB: read the extension by literal top-level key — the URN contains a
+        // dot ("2.0"), so $request->input() would misparse it as a nested path.
+        $enterprise = $request->all()[self::ENTERPRISE_URN] ?? null;
+
+        return self::build(
+            $externalId,
+            $userName,
+            $email,
+            $displayName,
+            $request->boolean('active', true),
+            self::normalizeEnterprise($enterprise),
+        );
     }
 
     /**
@@ -47,6 +64,7 @@ final class ScimMapper
             'email' => self::nullableStr($resource['email'] ?? null),
             'displayName' => self::nullableStr($resource['displayName'] ?? null),
             'active' => $existing->active,
+            'enterprise' => self::normalizeEnterprise($resource['enterprise'] ?? null),
         ];
 
         $operations = $request->input('Operations');
@@ -74,6 +92,7 @@ final class ScimMapper
             self::nullableStr($attributes['email']),
             self::nullableStr($attributes['displayName']),
             (bool) $attributes['active'],
+            self::normalizeEnterprise($attributes['enterprise']),
         );
     }
 
@@ -99,6 +118,13 @@ final class ScimMapper
      */
     private static function setAttribute(array &$attributes, string $path, mixed $value): void
     {
+        // Enterprise extension: paths arrive fully qualified with the schema URN
+        // (Okta: "urn:...:User:department") or, pathless, as a nested object under
+        // the URN key. Normalize either form onto the enterprise sub-array.
+        if (self::applyEnterprisePatch($attributes, $path, $value)) {
+            return;
+        }
+
         match (strtolower($path)) {
             'active' => $attributes['active'] = filter_var($value, FILTER_VALIDATE_BOOLEAN),
             'username' => $attributes['userName'] = self::str($value),
@@ -107,6 +133,57 @@ final class ScimMapper
             'emails', 'emails[type eq "work"].value' => $attributes['email'] = self::extractEmail($value),
             default => null,
         };
+    }
+
+    /**
+     * Handle an enterprise-extension patch operation. Returns true when the path
+     * belonged to the enterprise schema (and was applied), false otherwise.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private static function applyEnterprisePatch(array &$attributes, string $path, mixed $value): bool
+    {
+        $enterprise = is_array($attributes['enterprise'] ?? null) ? $attributes['enterprise'] : [];
+
+        // Pathless nested object: { "urn:...:User": { "department": "..." } }
+        if ($path === self::ENTERPRISE_URN && is_array($value)) {
+            $attributes['enterprise'] = self::normalizeEnterprise(array_merge($enterprise, $value));
+
+            return true;
+        }
+
+        // Fully-qualified single attribute: "urn:...:User:department"
+        $prefix = self::ENTERPRISE_URN.':';
+        if (str_starts_with($path, $prefix)) {
+            $enterprise[substr($path, strlen($prefix))] = $value;
+            $attributes['enterprise'] = self::normalizeEnterprise($enterprise);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Keep only the recognized enterprise attributes, dropping empties.
+     *
+     * @return array<string, mixed>
+     */
+    private static function normalizeEnterprise(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $out = [];
+        foreach (self::ENTERPRISE_ATTRIBUTES as $key) {
+            if (! array_key_exists($key, $value) || $value[$key] === null || $value[$key] === '') {
+                continue;
+            }
+            $out[$key] = $value[$key];
+        }
+
+        return $out;
     }
 
     private static function extractEmail(mixed $value): ?string
@@ -127,21 +204,30 @@ final class ScimMapper
         return null;
     }
 
-    private static function build(string $externalId, string $userName, ?string $email, ?string $displayName, bool $active): ScimUser
+    /**
+     * @param  array<string, mixed>  $enterprise
+     */
+    private static function build(string $externalId, string $userName, ?string $email, ?string $displayName, bool $active, array $enterprise = []): ScimUser
     {
+        $raw = [
+            'userName' => $userName,
+            'externalId' => $externalId,
+            'email' => $email,
+            'displayName' => $displayName,
+            'active' => $active,
+        ];
+
+        if ($enterprise !== []) {
+            $raw['enterprise'] = $enterprise;
+        }
+
         return new ScimUser(
             externalId: $externalId,
             userName: $userName,
             email: $email,
             displayName: $displayName,
             active: $active,
-            raw: [
-                'userName' => $userName,
-                'externalId' => $externalId,
-                'email' => $email,
-                'displayName' => $displayName,
-                'active' => $active,
-            ],
+            raw: $raw,
         );
     }
 
@@ -183,6 +269,12 @@ final class ScimMapper
 
         if ($email !== null) {
             $out['emails'] = [['value' => $email, 'primary' => true]];
+        }
+
+        $enterprise = self::normalizeEnterprise($resource['enterprise'] ?? null);
+        if ($enterprise !== []) {
+            $out['schemas'][] = self::ENTERPRISE_URN;
+            $out[self::ENTERPRISE_URN] = $enterprise;
         }
 
         return $out;

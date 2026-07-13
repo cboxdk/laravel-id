@@ -14,6 +14,9 @@ use Illuminate\Http\JsonResponse;
  */
 final class DiscoveryController
 {
+    /** RFC 7643 §4.3 Enterprise User extension schema URN. */
+    private const ENTERPRISE_URN = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
+
     public function serviceProviderConfig(): JsonResponse
     {
         return $this->scim([
@@ -44,6 +47,10 @@ final class DiscoveryController
             'endpoint' => '/Users',
             'description' => 'User Account',
             'schema' => 'urn:ietf:params:scim:schemas:core:2.0:User',
+            'schemaExtensions' => [[
+                'schema' => self::ENTERPRISE_URN,
+                'required' => false,
+            ]],
             'meta' => ['resourceType' => 'ResourceType'],
         ];
 
@@ -62,7 +69,50 @@ final class DiscoveryController
 
     public function schemas(): JsonResponse
     {
-        return $this->listResponse([$this->userSchema(), $this->groupSchema()]);
+        return $this->listResponse([$this->userSchema(), $this->enterpriseUserSchema(), $this->groupSchema()]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function enterpriseUserSchema(): array
+    {
+        $attr = static fn (string $name, string $type): array => [
+            'name' => $name,
+            'type' => $type,
+            'multiValued' => false,
+            'required' => false,
+            'caseExact' => false,
+            'mutability' => 'readWrite',
+            'returned' => 'default',
+            'uniqueness' => 'none',
+        ];
+
+        return [
+            'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:Schema'],
+            'id' => self::ENTERPRISE_URN,
+            'name' => 'EnterpriseUser',
+            'description' => 'Enterprise User',
+            'attributes' => [
+                $attr('employeeNumber', 'string'),
+                $attr('costCenter', 'string'),
+                $attr('organization', 'string'),
+                $attr('division', 'string'),
+                $attr('department', 'string'),
+                [
+                    'name' => 'manager', 'type' => 'complex', 'multiValued' => false,
+                    'required' => false, 'mutability' => 'readWrite', 'returned' => 'default',
+                    'subAttributes' => [
+                        $attr('value', 'string'),
+                        $attr('$ref', 'reference'),
+                        ['name' => 'displayName', 'type' => 'string', 'multiValued' => false,
+                            'required' => false, 'caseExact' => false, 'mutability' => 'readOnly',
+                            'returned' => 'default', 'uniqueness' => 'none'],
+                    ],
+                ],
+            ],
+            'meta' => ['resourceType' => 'Schema'],
+        ];
     }
 
     /**

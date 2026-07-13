@@ -34,6 +34,21 @@ it('publishes the User schema with a server-unique userName', function (): void 
         ->assertJsonPath('Resources.0.attributes.0.uniqueness', 'server');
 });
 
+it('advertises the Enterprise User extension on the User resource type', function (): void {
+    $this->getJson('/scim/v2/ResourceTypes', $this->scimHeaders)
+        ->assertOk()
+        ->assertJsonPath('Resources.0.schemaExtensions.0.schema', 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User')
+        ->assertJsonPath('Resources.0.schemaExtensions.0.required', false);
+});
+
+it('publishes the Enterprise User schema', function (): void {
+    $this->getJson('/scim/v2/Schemas', $this->scimHeaders)
+        ->assertOk()
+        ->assertJsonPath('Resources.1.id', 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User')
+        ->assertJsonPath('Resources.1.name', 'EnterpriseUser')
+        ->assertJsonFragment(['name' => 'department']);
+});
+
 it('requires the directory bearer token for discovery', function (): void {
     $this->getJson('/scim/v2/ServiceProviderConfig')->assertStatus(401);
 });

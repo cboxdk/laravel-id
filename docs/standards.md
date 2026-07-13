@@ -64,7 +64,7 @@ MCP server it intends to call.
 | **RFC 7644** | Filtering — `eq/ne/co/sw/ew/pr` (LIKE metacharacters escaped) | ◐ |
 | **RFC 7643** | `/Groups` + membership sync (create/list/PATCH add-remove/PUT/delete) | ✅ |
 | **RFC 7644** | ServiceProviderConfig / ResourceTypes / Schemas discovery | ✅ |
-| **RFC 7643** | Enterprise User extension | ▢ |
+| **RFC 7643** | Enterprise User extension (`employeeNumber`, `costCenter`, `organization`, `division`, `department`, `manager`) — ingested, patched, returned, advertised in discovery | ✅ |
 
 Deprovision / deactivation drops membership **and revokes sessions immediately**.
 
