@@ -26,7 +26,9 @@ return new class extends Migration
             $table->json('raw')->default('{}');
             $table->timestamps();
 
-            $table->unique(['provider', 'subject']);
+            // Scoped by connection: the same subject asserted through two different
+            // SSO connections is two distinct identities (cross-tenant isolation).
+            $table->unique(['provider', 'subject', 'connection_id']);
         });
 
         Schema::create('auth_sessions', function (Blueprint $table): void {

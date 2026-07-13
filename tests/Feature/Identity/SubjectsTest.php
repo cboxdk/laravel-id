@@ -54,6 +54,31 @@ it('provisions a federated identity idempotently', function (): void {
         ->and(IdentityLink::query()->count())->toBe(1);
 });
 
+it('scopes federated identities per SSO connection so one org IdP cannot hijack another', function (): void {
+    $subjects = app(Subjects::class);
+
+    // Org B's trusted SAML connection provisions Alice.
+    $alice = $subjects->provisionFederated(
+        new FederatedPrincipal('saml', 'alice@corp.com', 'alice@corp.com', 'Alice', 'conn_orgB')
+    );
+
+    // A DIFFERENT org's (attacker-controlled) connection asserts the SAME NameID,
+    // with no email so the email-collision guard doesn't even engage.
+    $imposter = $subjects->provisionFederated(
+        new FederatedPrincipal('saml', 'alice@corp.com', null, 'Not Alice', 'conn_orgA')
+    );
+
+    // The subject namespaces are isolated: the impostor gets a fresh account, not Alice's.
+    expect($imposter->id)->not->toBe($alice->id)
+        ->and(User::query()->count())->toBe(2)
+        ->and(IdentityLink::query()->count())->toBe(2);
+
+    // Re-asserting through the SAME connection is still idempotent (returns Alice).
+    expect($subjects->provisionFederated(
+        new FederatedPrincipal('saml', 'alice@corp.com', 'alice@corp.com', 'Alice', 'conn_orgB')
+    )->id)->toBe($alice->id);
+});
+
 it('refuses to merge a federated identity into an existing account by email', function (): void {
     $subjects = app(Subjects::class);
     // An account already exists (e.g. created with a password).

@@ -79,11 +79,8 @@ final class DatabaseSubjects implements Subjects
     public function provisionFederated(FederatedPrincipal $principal): Subject
     {
         return DB::transaction(function () use ($principal): Subject {
-            // Returning identity — the exact (provider, subject) is already ours.
-            $link = IdentityLink::query()
-                ->where('provider', $principal->provider)
-                ->where('subject', $principal->subject)
-                ->first();
+            // Returning identity — the exact (provider, subject, connection) is ours.
+            $link = $this->linkQuery($principal)->first();
 
             if ($link !== null) {
                 $existing = $this->find($link->user_id);
@@ -113,10 +110,7 @@ final class DatabaseSubjects implements Subjects
 
     public function link(string $subjectId, FederatedPrincipal $principal): void
     {
-        $existing = IdentityLink::query()
-            ->where('provider', $principal->provider)
-            ->where('subject', $principal->subject)
-            ->first();
+        $existing = $this->linkQuery($principal)->first();
 
         if ($existing !== null) {
             if ($existing->user_id !== $subjectId) {
@@ -145,6 +139,27 @@ final class DatabaseSubjects implements Subjects
             ->where('user_id', $subjectId)
             ->where('provider', $provider)
             ->delete();
+    }
+
+    /**
+     * Resolve a federated identity within its namespace. An SSO **connection**
+     * (`connection_id` set) is an org-configured — hence untrusted — IdP, so its
+     * subject namespace MUST be scoped to that connection: without this, an admin
+     * who controls one org's IdP could assert another user's NameID/sub and be
+     * handed that user's account (cross-tenant takeover). Social providers
+     * (`connection_id` null) own a globally-unique namespace, so they stay global.
+     *
+     * @return Builder<IdentityLink>
+     */
+    private function linkQuery(FederatedPrincipal $principal): Builder
+    {
+        $query = IdentityLink::query()
+            ->where('provider', $principal->provider)
+            ->where('subject', $principal->subject);
+
+        return $principal->connectionId === null
+            ? $query->whereNull('connection_id')
+            : $query->where('connection_id', $principal->connectionId);
     }
 
     private function writeLink(string $subjectId, FederatedPrincipal $principal): void
