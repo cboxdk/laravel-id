@@ -13,10 +13,6 @@ Report privately through **GitHub Private Vulnerability Reporting**:
 [Report a vulnerability](https://github.com/cboxdk/laravel-id/security/advisories/new)
 (repository → **Security** → **Report a vulnerability**).
 
-If you cannot use GitHub, email **security@cboxdk.com** with the details. Encrypt
-sensitive reports if possible; our key is published at
-`https://cboxdk.com/.well-known/security.txt` (RFC 9116).
-
 Please include:
 
 - the affected version / commit and component (e.g. OAuth token endpoint, SAML ACS),
@@ -24,18 +20,12 @@ Please include:
 - reproduction steps or a proof of concept,
 - any suggested remediation.
 
-## Our commitment (response targets)
+## What to expect
 
-| Stage | Target |
-|-------|--------|
-| Acknowledge receipt | within **2 business days** |
-| Initial assessment & severity | within **5 business days** |
-| Fix or mitigation for High/Critical | within **30 days** of confirmation |
-| Coordinated public disclosure | by mutual agreement, default **90 days** |
-
-We will keep you informed throughout, credit you in the advisory and `CHANGELOG.md`
-(unless you prefer to remain anonymous), and request a CVE for confirmed
-vulnerabilities through GitHub's CNA.
+This is a pre-1.0, open-source project maintained on a best-effort basis. We will
+respond as promptly as we can, keep you informed while we investigate, and (unless
+you prefer to stay anonymous) credit you when a fix ships. We coordinate the timing
+of any public disclosure with you.
 
 ## Safe harbor
 
@@ -47,7 +37,8 @@ We will not pursue or support legal action against anyone who, in good faith:
 - gives us reasonable time to remediate before public disclosure.
 
 Good-faith security research conducted under this policy is authorized. If in doubt
-about whether an action is in scope, ask first at security@cboxdk.com.
+about whether an action is in scope, ask first through the private reporting channel
+above.
 
 ## Supported versions
 
@@ -71,7 +62,8 @@ the RFC/standard conformance in [`docs/standards.md`](docs/standards.md). In sho
 - **Tamper-evident, hash-chained audit log** with signed checkpoints.
 - **CI gates on every push**: PHPStan (max), Pest, `composer audit`, license
   compliance, a CycloneDX SBOM freshness check, secret scanning, and SAST.
-- **A published conformance matrix** mapping the code to the RFCs and to OWASP ASVS.
+- **A published conformance matrix** ([`docs/standards.md`](docs/standards.md))
+  mapping the code to the RFCs and specs it implements.
 
 ## Disclosure history
 
