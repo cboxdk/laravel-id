@@ -85,6 +85,25 @@ it('rejects a redirect_uri that is not https or loopback', function (): void {
         ->assertJsonPath('error', 'invalid_redirect_uri');
 });
 
+it('registers a native app with private-use URI scheme redirects (both forms)', function (): void {
+    openDcr();
+
+    // RFC 8252 §7.1 — a native app registers a custom scheme in either the
+    // authority form (com.example.app://cb) or the canonical path form
+    // (com.example.app:/cb). Both must be accepted (AppAuth defaults to the latter).
+    $uris = ['com.example.app://oauth2redirect', 'com.example.app:/oauth2redirect'];
+
+    $this->postJson('/oauth/register', [
+        'client_name' => 'iOS app',
+        'token_endpoint_auth_method' => 'none',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => $uris,
+    ])
+        ->assertStatus(201)
+        ->assertJsonPath('redirect_uris', $uris)
+        ->assertJsonPath('token_endpoint_auth_method', 'none');
+});
+
 it('rejects a redirect_uri containing a fragment', function (): void {
     openDcr();
 

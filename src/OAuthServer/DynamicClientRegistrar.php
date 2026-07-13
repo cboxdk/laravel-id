@@ -194,7 +194,7 @@ final class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $parts = parse_url($uri);
 
-        if ($parts === false || ! isset($parts['scheme'], $parts['host'])) {
+        if ($parts === false || ! isset($parts['scheme'])) {
             throw InvalidClientMetadata::redirectUri("redirect_uri is not an absolute URI: {$uri}");
         }
 
@@ -204,17 +204,25 @@ final class DynamicClientRegistrar implements DynamicClientRegistration
         }
 
         $scheme = strtolower($parts['scheme']);
-        $host = strtolower($parts['host']);
-        $isLoopback = in_array($host, ['localhost', '127.0.0.1', '::1'], true);
 
-        // https everywhere; plain http only for loopback (native/CLI/MCP clients).
-        if ($scheme === 'https' || ($scheme === 'http' && $isLoopback)) {
+        // A private-use ("custom") URI scheme is allowed for native apps
+        // (RFC 8252 §7.1), in both the authority form (com.example.app://cb) and
+        // the canonical path form (com.example.app:/cb) — the latter has no host,
+        // so it must be accepted before the http(s) host requirement below.
+        if ($scheme !== 'http' && $scheme !== 'https') {
             return;
         }
 
-        // A private-use URI scheme (e.g. com.example.app:/cb) is allowed for
-        // native clients, but not the http(s) reserved schemes on a non-loopback host.
-        if ($scheme !== 'http' && $scheme !== 'https') {
+        // http(s) reserved schemes must carry a host: https everywhere, plain http
+        // only for loopback (native/CLI/MCP clients, RFC 8252 §7.3).
+        $host = isset($parts['host']) ? strtolower($parts['host']) : null;
+        $isLoopback = in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+
+        if ($scheme === 'https' && $host !== null) {
+            return;
+        }
+
+        if ($scheme === 'http' && $isLoopback) {
             return;
         }
 
