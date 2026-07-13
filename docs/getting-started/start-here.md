@@ -97,7 +97,7 @@ Two layers, kept separate on purpose:
 
 - **SSO:** their employees log in with *their* IdP (Okta, Entra, Google).
 - **SCIM:** their IT system provisions/deprovisions users into yours automatically.
-Both are per-organization connections. → [Cookbook](../cookbook/index.md), [Standards](../security/standards.md)
+Both are per-organization connections. → [Cookbook](../cookbook/_index.md), [Standards](../security/standards.md)
 
 ## How to approach it (the order that works)
 
@@ -114,10 +114,10 @@ Both are per-organization connections. → [Cookbook](../cookbook/index.md), [St
 ## The principles behind the design (so nothing surprises you later)
 
 - **Security is the product, not a feature.** Deny-by-default tenancy, a
-  tamper-evident audit trail, alg-pinned tokens, key rotation. → [Security](../security/index.md),
+  tamper-evident audit trail, alg-pinned tokens, key rotation. → [Security](../security/_index.md),
   [Threat model](../security/threat-model.md)
 - **Everything is a contract you can swap.** Users, validators, stores, policies —
-  nothing is welded shut. → [Extending](../extension-points/index.md)
+  nothing is welded shut. → [Extending](../extension-points/_index.md)
 - **It's not the system of record for things it shouldn't own.** Not your users
   (your table is), not your money (your billing is) — it stores identity and the
   *decisions*, with provenance.

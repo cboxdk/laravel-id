@@ -115,7 +115,7 @@ The package cannot supply these — they are process, not code:
 ## Evidence Cbox ID hands your auditor
 
 - This mapping and the [standards conformance matrix](standards.md).
-- The [security model](index.md) and threat model.
+- The [security model](_index.md) and threat model.
 - A machine-readable **CycloneDX SBOM** and a passing dependency/license/vuln gate.
 - A **tamper-evident audit trail** exportable as forensic evidence.
 - Config that is **secure by default** (MFA available, breach screen on, deny-by-default).

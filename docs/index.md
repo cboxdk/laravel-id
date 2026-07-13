@@ -68,16 +68,16 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 
 ### Cookbook
 
-- [Cookbook](cookbook/index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
+- [Cookbook](cookbook/_index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
 - [Integrating an existing app](cookbook/integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
 
 ### Extension points
 
-- [Extending & customizing](extension-points/index.md) — swap any contract; implement a SAML/OIDC validator
+- [Extending & customizing](extension-points/_index.md) — swap any contract; implement a SAML/OIDC validator
 
 ### Security
 
-- [Security](security/index.md) — the invariants, tenant isolation, tamper-evident audit
+- [Security](security/_index.md) — the invariants, tenant isolation, tamper-evident audit
 - [Standards & conformance](security/standards.md) — every RFC/spec implemented, and to what extent
 - [FAPI hardening](security/fapi.md) — the enforceable FAPI 2.0 baseline for high-assurance clients
 - [Compliance mapping](security/compliance.md) — how controls map to SOC 2, ISO 27001, NIS2, GDPR, HIPAA, PCI-DSS

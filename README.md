@@ -40,10 +40,10 @@ Full docs live in [`docs/`](docs/index.md):
 
 - [Requirements](docs/requirements.md) · [Installation](docs/getting-started/installation.md) · [Quickstart](docs/quickstart.md)
 - [Architecture & patterns](docs/core-concepts/architecture.md)
-- [Cookbook](docs/cookbook/index.md)
-- [Extending & customizing](docs/extension-points/index.md)
+- [Cookbook](docs/cookbook/_index.md)
+- [Extending & customizing](docs/extension-points/_index.md)
 - [Testing](docs/getting-started/testing.md)
-- [Security](docs/security/index.md) · [`SECURITY.md`](SECURITY.md)
+- [Security](docs/security/_index.md) · [`SECURITY.md`](SECURITY.md)
 - [Standards & conformance](docs/security/standards.md) — RFCs implemented (OAuth/OIDC/SCIM/SAML/MCP)
 - [Compliance mapping](docs/security/compliance.md) — SOC 2 / ISO 27001 / NIS2 / GDPR / HIPAA / PCI-DSS · [Threat model](docs/security/threat-model.md)
 

@@ -52,7 +52,7 @@ period, only the latest tagged release is supported.
 
 ## What we do to keep this safe
 
-The engineering posture is documented in [`docs/security.md`](docs/security/index.md) and
+The engineering posture is documented in [`docs/security.md`](docs/security/_index.md) and
 the RFC/standard conformance in [`docs/standards.md`](docs/security/standards.md). In short:
 
 - **Deny-by-default tenant isolation**, verified by tests.

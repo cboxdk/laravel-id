@@ -62,5 +62,5 @@ stolen bearer doesn't have.
 ## Where to go next
 
 - [Standards & conformance](standards.md) — the RFC-by-RFC matrix.
-- [Security](index.md) — the crypto and isolation invariants underneath.
+- [Security](_index.md) — the crypto and isolation invariants underneath.
 - [Threat model](threat-model.md) — the STRIDE analysis these controls map to.

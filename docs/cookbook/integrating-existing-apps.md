@@ -145,8 +145,8 @@ Either way the tenancy decision is one integration point, not a rewrite.
 
 ## Where to go next
 
-- [Extending](../extension-points/index.md) — swap any contract (Subjects, validators, stores).
+- [Extending](../extension-points/_index.md) — swap any contract (Subjects, validators, stores).
 - [Standards](../security/standards.md) — the OAuth/OIDC/SCIM endpoints your apps integrate against.
-- [Security](../security/index.md) — the isolation and crypto invariants you inherit.
+- [Security](../security/_index.md) — the isolation and crypto invariants you inherit.
 - Run `php artisan cbox-id:install` then `php artisan cbox-id:doctor` to bootstrap
   and verify the setup.

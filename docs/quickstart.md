@@ -72,7 +72,7 @@ Every write is versioned, appended to history, emitted as an event and audited.
 ## 5. Complete an SSO login
 
 Register a per-org connection, then hand a validated principal to the flow (the
-[AssertionValidator](extension-points/index.md#implementing-an-assertionvalidator) turns a raw SAML/OIDC
+[AssertionValidator](extension-points/_index.md#implementing-an-assertionvalidator) turns a raw SAML/OIDC
 response into that principal):
 
 ```php
