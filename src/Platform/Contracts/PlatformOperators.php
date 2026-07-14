@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\Contracts;
 
+use Cbox\Id\Platform\Exceptions\CannotSuspendLastOperator;
 use Cbox\Id\Platform\Models\PlatformOperator;
 
 /**
@@ -39,4 +40,16 @@ interface PlatformOperators
 
     /** Record a successful sign-in timestamp. */
     public function touchLogin(string $id): void;
+
+    /**
+     * Suspend an operator so they can no longer authenticate. Refuses to suspend
+     * the last active operator (that would lock everyone out of the control
+     * plane). `$actorId` attributes the action to the operator who performed it.
+     *
+     * @throws CannotSuspendLastOperator
+     */
+    public function suspend(string $id, string $actorId): void;
+
+    /** Re-activate a suspended operator. */
+    public function reactivate(string $id, string $actorId): void;
 }

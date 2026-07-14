@@ -9,7 +9,10 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
-A follow-up hardening + DX pass from a deep review. Targets v0.5.0 when tagged.
+## [0.5.0] - 2026-07-14
+
+A follow-up hardening + DX pass from a deep review, plus operator MFA and
+contract-level suspension.
 
 ### Security
 
@@ -50,6 +53,18 @@ A follow-up hardening + DX pass from a deep review. Targets v0.5.0 when tagged.
   strips a leading `base64:` (Laravel's conventional prefix) before decoding, so
   a key copied with the prefix no longer throws at boot.
 - **`cbox-id.oauth.authorization_endpoint` config** (env `CBOX_ID_AUTHORIZATION_ENDPOINT`).
+- **Operator MFA.** New `Platform\Contracts\OperatorMfa` + `DatabaseOperatorMfa`:
+  TOTP enrolment/verification and single-use recovery codes for platform
+  operators, so the control-plane root account can require a second factor. It is
+  a SEPARATE subsystem keyed by operator id on non-environment-owned tables
+  (`operator_mfa_factors`, `operator_mfa_recovery_codes`) — an operator's factor
+  is never a tenant user's. It shares the vetted RFC 6238 `TotpAuthenticator`,
+  the `SecretBox` at-rest sealing, and recovery-code formatting with subject MFA.
+- **Suspension through contracts, with audit.** `Organizations::suspend()` /
+  `reactivate()` and `PlatformOperators::suspend()` / `reactivate()` transition
+  status *and* record an audit event (`ActorType::Operator`), so a suspension is
+  attributable instead of a silent `->update()`. The operator variant refuses to
+  suspend the last active operator (`CannotSuspendLastOperator`) — no lock-out.
 
 ### Changed
 
@@ -64,11 +79,22 @@ A follow-up hardening + DX pass from a deep review. Targets v0.5.0 when tagged.
 - **Discovery no longer advertises an unserved `authorization_endpoint`.**
   `ServerMetadata` omits the key unless `cbox-id.oauth.authorization_endpoint` is
   set (interactive authorize is the host app's responsibility).
+- **`TotpAuthenticator` and `TotpEnrollment` moved to `Kernel\Crypto`** (from
+  `Identity\Mfa` / `Identity\ValueObjects`). TOTP is a shared crypto primitive;
+  the move lets Platform's operator MFA reuse it without a Platform→Identity
+  dependency. Recovery-code formatting extracted to a shared
+  `Kernel\Crypto\Concerns\FormatsRecoveryCodes` trait. `ActorType` gains
+  `Operator`.
 
 ### Breaking
 
 - `EnvironmentResolver` gains `defaultEnvironment(): ?Environment` — custom
   implementations of the contract must add it.
+- `Organizations` gains `suspend()` / `reactivate()`, and `PlatformOperators`
+  gains `suspend()` / `reactivate()` — custom implementations must add them.
+- `TotpAuthenticator` / `TotpEnrollment` moved namespace (`Identity\Mfa` /
+  `Identity\ValueObjects` → `Kernel\Crypto` / `Kernel\Crypto\ValueObjects`);
+  update imports.
 - The `organizations` unique index changed (fresh-install migration edit, in
   keeping with the 0.x dogfooding cadence — no `alter` shipped).
 

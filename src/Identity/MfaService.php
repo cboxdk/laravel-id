@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\Mfa;
-use Cbox\Id\Identity\Mfa\TotpAuthenticator;
 use Cbox\Id\Identity\Models\MfaFactor;
 use Cbox\Id\Identity\Models\MfaRecoveryCode;
-use Cbox\Id\Identity\ValueObjects\TotpEnrollment;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\Concerns\FormatsRecoveryCodes;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
+use Cbox\Id\Kernel\Crypto\ValueObjects\TotpEnrollment;
 
 final class MfaService implements Mfa
 {
+    use FormatsRecoveryCodes;
+
     public function __construct(
         private readonly TotpAuthenticator $totp,
         private readonly SecretBox $secretBox,
@@ -156,23 +159,6 @@ final class MfaService implements Mfa
     public function remainingRecoveryCodes(string $userId): int
     {
         return MfaRecoveryCode::query()->where('user_id', $userId)->whereNull('used_at')->count();
-    }
-
-    /**
-     * Group the raw hex into a readable "xxxx-xxxx-xxxx-xxxx" code.
-     */
-    private function formatRecoveryCode(string $raw): string
-    {
-        return implode('-', str_split($raw, 4));
-    }
-
-    /**
-     * Canonicalize user input before hashing: hyphens/spaces are cosmetic and the
-     * comparison is case-insensitive.
-     */
-    private function normalizeRecoveryCode(string $code): string
-    {
-        return strtolower((string) preg_replace('/[^a-zA-Z0-9]/', '', $code));
     }
 
     private function totpFactor(string $userId): ?MfaFactor

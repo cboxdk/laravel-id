@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Cbox\Id\Identity\Mfa;
+namespace Cbox\Id\Kernel\Crypto;
 
 /**
  * RFC 6238 (TOTP) over RFC 4238 (HOTP), built on the vetted `hash_hmac`

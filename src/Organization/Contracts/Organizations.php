@@ -21,4 +21,17 @@ interface Organizations
     public function find(string $id): ?Organization;
 
     public function bySlug(string $slug): ?Organization;
+
+    /**
+     * Suspend an organization: set its status to Suspended and record the change
+     * on the tenant's audit trail. A suspended org's members are refused by the
+     * host's request pipeline (deny-by-default). `$actorId` attributes the action
+     * to the operator who performed it.
+     */
+    public function suspend(string $id, string $actorId): Organization;
+
+    /**
+     * Lift a suspension, returning the organization to Active.
+     */
+    public function reactivate(string $id, string $actorId): Organization;
 }

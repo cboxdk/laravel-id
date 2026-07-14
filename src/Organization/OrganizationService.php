@@ -82,6 +82,16 @@ final class OrganizationService implements Organizations
         return $organization;
     }
 
+    public function suspend(string $id, string $actorId): Organization
+    {
+        return $this->transitionStatus($id, OrganizationStatus::Suspended, 'organization.suspended', $actorId);
+    }
+
+    public function reactivate(string $id, string $actorId): Organization
+    {
+        return $this->transitionStatus($id, OrganizationStatus::Active, 'organization.reactivated', $actorId);
+    }
+
     public function find(string $id): ?Organization
     {
         return Organization::query()->whereKey($id)->first();
@@ -90,5 +100,30 @@ final class OrganizationService implements Organizations
     public function bySlug(string $slug): ?Organization
     {
         return Organization::query()->where('slug', $slug)->first();
+    }
+
+    private function transitionStatus(string $id, OrganizationStatus $status, string $action, string $actorId): Organization
+    {
+        $organization = Organization::query()->whereKey($id)->firstOrFail();
+        $organization->status = $status;
+        $organization->save();
+
+        $this->events->emit(new DomainEvent(
+            $action,
+            ['id' => $organization->id, 'status' => $status->value],
+            $organization->id,
+        ));
+
+        $this->audit->record(new AuditEvent(
+            action: $action,
+            actorType: ActorType::Operator,
+            actorId: $actorId,
+            organizationId: $organization->id,
+            targetType: 'organization',
+            targetId: $organization->id,
+            context: ['status' => $status->value],
+        ));
+
+        return $organization;
     }
 }

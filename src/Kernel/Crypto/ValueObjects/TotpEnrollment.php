@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Cbox\Id\Identity\ValueObjects;
+namespace Cbox\Id\Kernel\Crypto\ValueObjects;
 
 /**
  * Returned once when enrolling TOTP: the base32 secret and the `otpauth://` URI

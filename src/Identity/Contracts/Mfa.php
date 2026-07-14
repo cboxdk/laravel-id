@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Contracts;
 
-use Cbox\Id\Identity\ValueObjects\TotpEnrollment;
+use Cbox\Id\Kernel\Crypto\ValueObjects\TotpEnrollment;
 
 interface Mfa
 {

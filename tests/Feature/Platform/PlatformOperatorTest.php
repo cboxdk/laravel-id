@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
+use Cbox\Id\Platform\Exceptions\CannotSuspendLastOperator;
 use Cbox\Id\Platform\Testing\InteractsWithPlatform;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -35,6 +36,32 @@ it('refuses a suspended operator even with the right password', function (): voi
     $op->update(['status' => 'suspended']);
 
     expect($ops->verifyPassword($op->id, 'right-passphrase'))->toBeFalse();
+});
+
+it('suspends and reactivates an operator through the contract, with audit', function (): void {
+    $audit = $this->fakeAudit();
+    $ops = app(PlatformOperators::class);
+    $keeper = $ops->create('keeper@platform.test', 'pw-strong-enough');
+    $target = $ops->create('target@platform.test', 'pw-strong-enough');
+
+    $ops->suspend($target->id, $keeper->id);
+
+    expect($ops->find($target->id)?->isActive())->toBeFalse()
+        ->and($ops->verifyPassword($target->id, 'pw-strong-enough'))->toBeFalse();
+    $audit->assertRecorded('operator.suspended');
+
+    $ops->reactivate($target->id, $keeper->id);
+    expect($ops->find($target->id)?->isActive())->toBeTrue();
+    $audit->assertRecorded('operator.reactivated');
+});
+
+it('refuses to suspend the last active operator', function (): void {
+    $ops = app(PlatformOperators::class);
+    $only = $ops->create('solo@platform.test', 'pw-strong-enough');
+
+    expect(fn () => $ops->suspend($only->id, $only->id))
+        ->toThrow(CannotSuspendLastOperator::class);
+    expect($ops->find($only->id)?->isActive())->toBeTrue();
 });
 
 it('reports whether any operator exists yet — the bootstrap gate', function (): void {

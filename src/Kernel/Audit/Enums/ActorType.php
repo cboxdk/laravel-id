@@ -9,4 +9,5 @@ enum ActorType: string
     case User = 'user';
     case Service = 'service';
     case System = 'system';
+    case Operator = 'operator';
 }

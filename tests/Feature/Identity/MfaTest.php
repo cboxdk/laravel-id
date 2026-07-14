@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\Mfa;
-use Cbox\Id\Identity\Mfa\TotpAuthenticator;
+use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

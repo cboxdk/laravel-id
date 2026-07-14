@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Contracts\Tenant;
 use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Enums\OrganizationStatus;
 use Cbox\Id\Organization\Exceptions\SlugAlreadyTaken;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -55,4 +56,19 @@ it('merges and persists organization settings', function (): void {
         'brand_color' => '#0ea5e9',
         'brand_logo_url' => 'https://x/logo.png',
     ]);
+});
+
+it('suspends and reactivates an organization, auditing the change to the operator', function (): void {
+    $audit = $this->fakeAudit();
+    $orgs = app(Organizations::class);
+    $org = $this->makeOrganization('Acme');
+
+    $suspended = $orgs->suspend($org->id, 'op_99');
+    expect($suspended->status)->toBe(OrganizationStatus::Suspended)
+        ->and($orgs->find($org->id)?->status)->toBe(OrganizationStatus::Suspended);
+    $audit->assertRecorded('organization.suspended');
+
+    $reactivated = $orgs->reactivate($org->id, 'op_99');
+    expect($reactivated->status)->toBe(OrganizationStatus::Active);
+    $audit->assertRecorded('organization.reactivated');
 });
