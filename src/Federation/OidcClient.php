@@ -6,7 +6,9 @@ namespace Cbox\Id\Federation;
 
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -55,10 +57,23 @@ final class OidcClient
     {
         $config = $this->connections->config($connection);
 
+        $endpoint = $this->require($config, 'token_endpoint');
+
+        // The token endpoint is org-admin-configured — hence untrusted. Guard it
+        // like any other outbound URL (same SSRF mechanism as webhook delivery):
+        // refuse internal/reserved addresses (e.g. cloud metadata) and pin the
+        // connection to the validated IPs, closing DNS-rebinding (TOCTOU).
+        try {
+            $pinned = SafeFederationUrl::pinnedOptions($endpoint);
+        } catch (UnsafeFederationUrl $e) {
+            throw InvalidAssertion::make('token endpoint blocked: '.$e->getMessage());
+        }
+
         $response = Http::asForm()
-            ->withoutRedirecting()
+            ->withOptions($pinned)          // pinned resolution + no redirects
+            ->withoutRedirecting()          // a 30x to an internal host must not be followed
             ->timeout(10)
-            ->post($this->require($config, 'token_endpoint'), [
+            ->post($endpoint, [
                 'grant_type' => 'authorization_code',
                 'code' => $code,
                 'redirect_uri' => $redirectUri,

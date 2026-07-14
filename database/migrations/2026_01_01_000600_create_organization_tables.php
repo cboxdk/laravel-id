@@ -14,12 +14,16 @@ return new class extends Migration
             $table->ulid('id')->primary();
             $table->ulid('environment_id')->index();
             $table->string('name');
-            $table->string('slug')->unique();
+            $table->string('slug');
             $table->ulid('parent_id')->nullable()->index();
             $table->string('type')->default('customer');
             $table->string('status')->default('active');
             $table->json('settings')->default('{}');
             $table->timestamps();
+
+            // Slugs are unique per environment, mirroring the users table's
+            // (environment_id, email): the same slug may exist in two environments.
+            $table->unique(['environment_id', 'slug']);
         });
 
         Schema::create('organization_closure', function (Blueprint $table): void {

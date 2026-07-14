@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
-use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,22 +19,17 @@ use Illuminate\Http\Request;
 final class PushedAuthorizationController
 {
     public function __construct(
-        private readonly ClientRegistry $clients,
+        private readonly ClientAuthenticator $clientAuth,
         private readonly PushedAuthorizationRequests $par,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
-        $client = $this->clients->byClientId($request->string('client_id')->toString());
-
         // Confidential clients authenticate with their secret; public clients (PKCE)
         // may push without one. An unknown or mis-authenticated client is refused.
-        if ($client === null) {
-            return $this->error('invalid_client', 401);
-        }
+        $client = $this->clientAuth->authenticate($request);
 
-        if ($client->secret_hash !== null
-            && ! $this->clients->verifySecret($client, $request->string('client_secret')->toString())) {
+        if ($client === null) {
             return $this->error('invalid_client', 401);
         }
 

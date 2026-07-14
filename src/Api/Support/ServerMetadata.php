@@ -31,7 +31,6 @@ final class ServerMetadata
         $document = [
             'issuer' => $issuer,
             'jwks_uri' => $issuer.'/.well-known/jwks.json',
-            'authorization_endpoint' => $issuer.'/oauth/authorize',
             'token_endpoint' => $issuer.'/oauth/token',
             'introspection_endpoint' => $issuer.'/oauth/introspect',
             'revocation_endpoint' => $issuer.'/oauth/revoke',
@@ -53,6 +52,15 @@ final class ServerMetadata
             'subject_types_supported' => ['public'],
             'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'none'],
         ];
+
+        // The interactive `/authorize` endpoint is the host app's responsibility;
+        // advertise it only when the host has told us where it lives. Omitting the
+        // key is valid per RFC 8414 rather than advertising a route we don't serve.
+        $authorizationEndpoint = config('cbox-id.oauth.authorization_endpoint');
+
+        if (is_string($authorizationEndpoint) && $authorizationEndpoint !== '') {
+            $document['authorization_endpoint'] = $authorizationEndpoint;
+        }
 
         // Advertise DCR only when it is actually enabled.
         if (config('cbox-id.oauth.dynamic_registration.mode', 'disabled') !== 'disabled') {

@@ -182,6 +182,35 @@ it('requires a confidential client to present its secret on authorization_code',
         ->assertJsonPath('error', 'invalid_client');
 });
 
+it('authenticates a confidential client via HTTP Basic (client_secret_basic)', function (): void {
+    $registered = $this->makeClient(['api.read']);
+
+    // RFC 6749 §2.3.1: credentials in the Authorization header, not the body.
+    $this->withBasicAuth($registered->client->client_id, $registered->secret)
+        ->postJson('/oauth/token', [
+            'grant_type' => 'client_credentials',
+            'scope' => 'api.read',
+        ])
+        ->assertOk()
+        ->assertJsonPath('token_type', 'Bearer')
+        ->assertJsonStructure(['access_token', 'expires_in']);
+});
+
+it('rejects combining HTTP Basic and body client credentials (RFC 6749 §2.3.1)', function (): void {
+    $registered = $this->makeClient(['api.read']);
+
+    // A client MUST NOT use more than one authentication mechanism per request.
+    $this->withBasicAuth($registered->client->client_id, $registered->secret)
+        ->postJson('/oauth/token', [
+            'grant_type' => 'client_credentials',
+            'client_id' => $registered->client->client_id,
+            'client_secret' => $registered->secret,
+            'scope' => 'api.read',
+        ])
+        ->assertStatus(401)
+        ->assertJsonPath('error', 'invalid_client');
+});
+
 it('accepts a confidential client on authorization_code with the correct secret', function (): void {
     $registered = $this->makeClient(['openid'], ClientType::Confidential);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';

@@ -16,4 +16,11 @@ interface EnvironmentResolver
      * null when the host maps to no environment.
      */
     public function resolveForHost(string $host): ?Environment;
+
+    /**
+     * The single-tenant / host-less fallback plane, or null when none is marked.
+     * Read from durable storage (not an env var) so a horizontally-scaled,
+     * stateless deployment resolves the same default across every replica.
+     */
+    public function defaultEnvironment(): ?Environment;
 }

@@ -33,10 +33,14 @@ final class ResolveEnvironment
         $environment = $this->resolver->resolveForHost($request->getHost());
 
         if ($environment === null) {
+            // Host matched nothing → fall back to the single-tenant default. An
+            // explicit config key (env var / ConfigMap) wins when set; otherwise
+            // the environment flagged default in the database, so a host-less,
+            // horizontally-scaled deployment needs no per-replica config.
             $default = config('cbox-id.environments.default');
             $environment = is_string($default) && $default !== ''
                 ? GenericEnvironment::of($default)
-                : null;
+                : $this->resolver->defaultEnvironment();
         }
 
         abort_if($environment === null, 404, 'Unknown environment for host.');

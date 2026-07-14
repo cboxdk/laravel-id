@@ -33,8 +33,8 @@ requirements to the feature that addresses it, and end with what remains yours.
 | CC6.1 | Encryption of credentials/keys at rest | XChaCha20-Poly1305 AEAD for all secrets; signing keys sealed |
 | CC6.2 | Registration & authorization of users | Explicit provisioning, SCIM, invitation flow; no silent account merge |
 | CC6.3 | Least privilege / role changes | Roles + permissions, org-scoped, cross-tenant write guard |
-| CC6.6 | Authentication (MFA) | Passwords (breach-screened), TOTP (replay-safe), WebAuthn/passkeys (UV-enforced), step-up |
-| CC6.7 | Transmission protection | Bearer over TLS; HSTS; SSRF-guarded webhooks; SAML/OIDC signature verification |
+| CC6.6 | Authentication (MFA) | Passwords (hashed; breach-screen is app-layer), TOTP (replay-safe), WebAuthn/passkeys (UV-enforced), step-up |
+| CC6.7 | Transmission protection | Bearer over TLS; SSRF-guarded webhooks; SAML/OIDC signature verification (HSTS is set by the app's security-headers middleware) |
 | CC6.8 | Prevent unauthorized software | SBOM, dependency audit, license gate in CI |
 | CC7.1–7.2 | Monitoring / anomaly detection | Hash-chained audit log (framework); request risk-scoring is an **app-layer add-on** (e.g. `cboxdk/laravel-risk`, shipped by the host app — not this package) |
 | CC7.2 | Security event logging | Audit trail of auth, provisioning, key, and admin events |
@@ -46,7 +46,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 |---------|---------|---------|
 | A.5.15–5.18 | Access control, identity, authentication | RBAC, provisioning, MFA, session management |
 | A.8.2 / A.8.3 | Privileged & information access rights | Owner/admin roles, step-up ("sudo") re-auth, org scoping |
-| A.8.5 | Secure authentication | Passkeys (phishing-resistant), TOTP, breach-screened passwords |
+| A.8.5 | Secure authentication | Passkeys (phishing-resistant), TOTP, hashed passwords (breach screen is app-layer) |
 | A.8.24 | Use of cryptography | Crypto kernel: alg allow-list (RFC 8725), AEAD at rest, key rotation |
 | A.8.15 | Logging | Tamper-evident, hash-chained audit log with signed checkpoints |
 | A.8.16 | Monitoring activities | Auditable security events (framework); risk-scoring pipeline at the app layer (add-on) |
@@ -63,7 +63,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 | (g) basic cyber hygiene / access control | MFA, RBAC, least privilege, step-up |
 | (h) cryptography | Crypto kernel, key rotation, sealed secrets |
 | (i) HR security / access control | provisioning + immediate deprovision (SCIM revokes sessions) |
-| (j) MFA & secured comms | passkeys/TOTP; signed/verified federation; HSTS |
+| (j) MFA & secured comms | passkeys/TOTP; signed/verified federation (HSTS added by the app) |
 | incident handling / reporting | audit trail + security event log as forensic evidence |
 
 ## GDPR (data protection by design)
@@ -86,8 +86,8 @@ requirements to the feature that addresses it, and end with what remains yours.
 | §164.312(a)(2)(iii) Automatic logoff | absolute + idle session timeout |
 | §164.312(b) Audit controls | hash-chained audit log |
 | §164.312(c) Integrity | signed checkpoints detect tampering; JWT signature verification |
-| §164.312(d) Person/entity authentication | MFA, passkeys, breach-screened passwords |
-| §164.312(e) Transmission security | TLS bearer, HSTS, signed federation assertions |
+| §164.312(d) Person/entity authentication | MFA, passkeys, hashed passwords (breach screen at the app layer) |
+| §164.312(e) Transmission security | TLS bearer, signed federation assertions (HSTS via the app's security-headers middleware) |
 
 ## PCI-DSS v4.0 (relevant requirements)
 
@@ -96,8 +96,8 @@ requirements to the feature that addresses it, and end with what remains yours.
 | Req 3/4 — protect & encrypt data | AEAD-sealed secrets; TLS transmission; no secret ever logged |
 | Req 6 — secure development | CI gates, SAST, dependency scanning, SBOM |
 | Req 7 — restrict access by need-to-know | RBAC, least privilege, deny-by-default |
-| Req 8 — identify & authenticate | unique IDs, **MFA (8.4)**, strong password + breach screen (8.3), session mgmt |
-| Req 8.3.6 | password length/complexity | 12-char minimum, NIST-aligned, HIBP screen |
+| Req 8 — identify & authenticate | unique IDs, **MFA (8.4)**, hashed passwords + session mgmt (strong-password rules & breach screen (8.3) are app-layer) |
+| Req 8.3.6 | password length/complexity | extension point in the framework; the deployable app enforces a 12-char minimum, NIST-aligned, + HIBP screen (app layer, not this package) |
 | Req 10 — log & monitor | tamper-evident audit log of all access to auth systems |
 | Req 11 — test security | tests vs real vectors; pen-test cadence is the operator's to schedule |
 
@@ -118,4 +118,4 @@ The package cannot supply these — they are process, not code:
 - The [security model](_index.md) and threat model.
 - A machine-readable **CycloneDX SBOM** and a passing dependency/license/vuln gate.
 - A **tamper-evident audit trail** exportable as forensic evidence.
-- Config that is **secure by default** (MFA available, breach screen on, deny-by-default).
+- Config that is **secure by default** (MFA available, deny-by-default; the app adds the breach screen and password policy).

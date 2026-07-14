@@ -6,8 +6,11 @@ namespace Cbox\Id\Console;
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Throwable;
 
 use function Laravel\Prompts\confirm;
@@ -76,8 +79,20 @@ final class InstallCommand extends Command
             $this->line('  <fg=green>✓</> Migrations applied.');
         }
 
+        // Every domain model (organizations, users, signing keys) is owned by an
+        // environment — the hard isolation boundary — and the deny-by-default
+        // scope returns nothing until one is in context. A fresh install has
+        // none, so mint the first one here and pin it as the default; otherwise
+        // the signing-key step below (and the operator's first query) silently
+        // hit an empty scope. Skipped if migrations haven't run yet.
+        $context = $this->laravel->make(EnvironmentContext::class);
+        $environment = $this->hasTable('environments') ? $this->ensureEnvironment($context) : null;
+
         try {
-            spin(fn () => $keys->activeSigningKey(), 'Minting the first signing key…');
+            $mint = $environment instanceof Environment
+                ? fn () => $context->runAs($environment, fn () => $keys->activeSigningKey())
+                : fn () => $keys->activeSigningKey();
+            spin($mint, 'Minting the first signing key…');
             $this->line('  <fg=green>✓</> Signing key ready — the JWKS is populated.');
         } catch (Throwable $e) {
             warning('Could not mint a signing key yet: '.$e->getMessage().' — it will be created on first use.');
@@ -113,12 +128,92 @@ final class InstallCommand extends Command
         $this->line('  <fg=green>✓</> Generated a crypto master key (32 bytes) and wrote it to .env.');
     }
 
+    /**
+     * Ensure at least one environment exists and a default is configured, then
+     * return the one to bootstrap against. The environment is the hard boundary
+     * and is itself NOT environment-owned, so it is created/queried with the
+     * scope suspended.
+     */
+    private function ensureEnvironment(EnvironmentContext $context): Environment
+    {
+        return $context->withoutScope(function (): Environment {
+            $existing = Environment::query()->orderBy('created_at')->first();
+
+            if ($existing instanceof Environment) {
+                $this->ensureDefaultEnvironment($existing);
+                $this->line('  <fg=green>✓</> Using existing environment ['.$existing->slug.'].');
+
+                return $existing;
+            }
+
+            $name = text(
+                label: 'Name your first environment (its own users, keys and issuer)',
+                default: 'Production',
+                hint: 'The hard isolation boundary. Most single-tenant installs need just one; add more later.',
+            );
+
+            $environment = Environment::query()->create([
+                'name' => $name !== '' ? $name : 'Production',
+                'slug' => $this->uniqueEnvironmentSlug($name !== '' ? $name : 'Production'),
+                'status' => 'active',
+                'settings' => [],
+            ]);
+
+            $this->ensureDefaultEnvironment($environment);
+            $this->line('  <fg=green>✓</> Created environment ['.$environment->slug.'].');
+
+            return $environment;
+        });
+    }
+
+    /**
+     * Mark an environment as the single-tenant default so host-less requests
+     * resolve — stored in the database, not .env, so it holds across a
+     * horizontally-scaled deployment. Skipped when the operator has pinned one
+     * explicitly via config, or when a default already exists.
+     */
+    private function ensureDefaultEnvironment(Environment $environment): void
+    {
+        $explicit = config('cbox-id.environments.default');
+
+        if (is_string($explicit) && $explicit !== '') {
+            return;
+        }
+
+        if (Environment::query()->where('is_default', true)->exists()) {
+            return;
+        }
+
+        $environment->makeDefault();
+        $this->line('  <fg=green>✓</> Marked this environment as the default (stored in the database).');
+    }
+
+    private function uniqueEnvironmentSlug(string $name): string
+    {
+        $base = Str::slug($name);
+        $base = $base !== '' ? $base : 'default';
+        $slug = $base;
+        $suffix = 2;
+
+        while (Environment::query()->where('slug', $slug)->exists()) {
+            $slug = $base.'-'.$suffix;
+            $suffix++;
+        }
+
+        return $slug;
+    }
+
     private function needsMigrations(): bool
     {
+        return ! $this->hasTable('signing_keys');
+    }
+
+    private function hasTable(string $table): bool
+    {
         try {
-            return ! Schema::hasTable('signing_keys');
+            return Schema::hasTable($table);
         } catch (Throwable) {
-            return true;
+            return false;
         }
     }
 

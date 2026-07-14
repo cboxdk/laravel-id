@@ -110,17 +110,27 @@ final class DatabaseSubjects implements Subjects
 
     public function link(string $subjectId, FederatedPrincipal $principal): void
     {
-        $existing = $this->linkQuery($principal)->first();
+        // Guard the check-then-insert against a duplicate concurrent link of the
+        // same identity, exactly like {@see provisionFederated()}. The natural
+        // uniqueness index (environment_id, provider, subject, connection_id) does
+        // NOT catch a social link, because its `connection_id` is null and SQL
+        // treats NULLs as distinct — so two racing calls would both pass the
+        // existence check and write two rows. Running inside one transaction with
+        // the lookup taken FOR UPDATE serializes them: the second sees the first's
+        // row (or its lock) instead of inserting a duplicate.
+        DB::transaction(function () use ($subjectId, $principal): void {
+            $existing = $this->linkQuery($principal)->lockForUpdate()->first();
 
-        if ($existing !== null) {
-            if ($existing->user_id !== $subjectId) {
-                throw IdentityAlreadyLinked::make($principal->provider);
+            if ($existing !== null) {
+                if ($existing->user_id !== $subjectId) {
+                    throw IdentityAlreadyLinked::make($principal->provider);
+                }
+
+                return; // already linked to this subject
             }
 
-            return; // already linked to this subject
-        }
-
-        $this->writeLink($subjectId, $principal);
+            $this->writeLink($subjectId, $principal);
+        });
     }
 
     public function linkedIdentities(string $subjectId): array

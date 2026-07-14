@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
+// The flow tests use fake IdP hostnames that don't resolve; the SSRF guard is
+// exercised by its own test below, so disable enforcement for the happy paths
+// (mirrors how the webhook delivery tests disable verify_url).
+beforeEach(fn () => config(['cbox-id.federation.verify_url' => false]));
+
 /**
  * @return array{private: string, public: string}
  */
@@ -102,6 +107,26 @@ it('rejects a callback whose state does not match (CSRF)', function (): void {
     $this->withSession(['oidc.'.$connection->id => ['state' => 'real-state', 'nonce' => 'n']])
         ->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=forged-state')
         ->assertStatus(400);
+});
+
+it('refuses a code exchange whose token_endpoint resolves to an internal address (SSRF)', function (): void {
+    // The guard is on for this test; a token_endpoint pointing at the cloud
+    // metadata service must be refused before any request leaves the box.
+    config(['cbox-id.federation.verify_url' => true]);
+
+    $setup = oidcFlowSetup();
+    $setup['config']['token_endpoint'] = 'http://169.254.169.254/token';
+    $connection = $this->makeConnection($this->makeOrganization()->id, ConnectionType::Oidc, 'Corp OIDC', $setup['config']);
+
+    // If the guard were bypassed the request would hit the (unfaked) network; it
+    // must instead be rejected as a failed exchange (401), never dispatched.
+    Http::fake(['169.254.169.254/*' => Http::response(['id_token' => 'should-never-be-requested'])]);
+
+    $this->withSession(['oidc.'.$connection->id => ['state' => 's', 'nonce' => 'n']])
+        ->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=s')
+        ->assertStatus(401);
+
+    Http::assertNothingSent();
 });
 
 it('rejects a callback whose id_token nonce does not match (replay)', function (): void {

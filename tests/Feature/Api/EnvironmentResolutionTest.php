@@ -49,6 +49,26 @@ it('refuses a request whose host maps to no environment and no default', functio
     $this->getJson('http://stranger.example.com/up')->assertStatus(404);
 });
 
+it('falls back to the database default environment when the host maps to none', function (): void {
+    // No explicit config override — the DB flag is the source of truth, so a
+    // host-less / unknown-host request resolves without any per-replica config.
+    config(['cbox-id.environments.default' => null]);
+    $prod = Environment::create(['name' => 'Production', 'slug' => 'prod']);
+    $prod->makeDefault();
+
+    expect(app(EnvironmentResolver::class)->defaultEnvironment()?->slug)->toBe('prod');
+    $this->getJson('http://stranger.example.com/up')->assertOk();
+});
+
+it('keeps exactly one default when another environment is promoted', function (): void {
+    $prod = Environment::create(['name' => 'Production', 'slug' => 'prod']);
+    $prod->makeDefault();
+    $dr = Environment::create(['name' => 'DR', 'slug' => 'dr']);
+    $dr->makeDefault();
+
+    expect(Environment::query()->where('is_default', true)->pluck('slug')->all())->toBe(['dr']);
+});
+
 it('serves a request on a resolved environment host', function (): void {
     config(['cbox-id.environments.default' => null]);
 

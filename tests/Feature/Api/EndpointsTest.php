@@ -21,6 +21,21 @@ it('serves the OIDC discovery document', function (): void {
         ->assertJsonPath('code_challenge_methods_supported.0', 'S256');
 });
 
+it('omits authorization_endpoint when the host has not configured one', function (): void {
+    // The package serves no /authorize route, so it must not advertise one.
+    $this->getJson('/.well-known/openid-configuration')
+        ->assertOk()
+        ->assertJsonMissingPath('authorization_endpoint');
+});
+
+it('advertises the host authorization_endpoint when configured', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint' => 'https://app.example.com/authorize']);
+
+    $this->getJson('/.well-known/openid-configuration')
+        ->assertOk()
+        ->assertJsonPath('authorization_endpoint', 'https://app.example.com/authorize');
+});
+
 it('introspects an active token over HTTP for an authenticated caller', function (): void {
     $registered = $this->makeClient(['api.read']);
     $token = app(TokenIssuer::class)->issueClientCredentials($registered->client);

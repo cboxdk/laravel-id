@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
-use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Illuminate\Http\JsonResponse;
@@ -19,18 +19,20 @@ use Illuminate\Http\Request;
 final class RevocationController
 {
     public function __construct(
-        private readonly ClientRegistry $clients,
+        private readonly ClientAuthenticator $clientAuth,
         private readonly TokenIntrospector $introspector,
         private readonly RefreshTokens $refreshTokens,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
-        $callerId = $this->authenticatedClientId($request);
+        $caller = $this->clientAuth->authenticateConfidential($request);
 
-        if ($callerId === null) {
+        if ($caller === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401, ['WWW-Authenticate' => 'Basic realm="revocation"']);
         }
+
+        $callerId = $caller->client_id;
 
         $token = $request->string('token')->toString();
 
@@ -50,23 +52,5 @@ final class RevocationController
         }
 
         return new JsonResponse([]);
-    }
-
-    /**
-     * The authenticated client's id (HTTP Basic preferred, else form body), or
-     * null when the credentials are missing or invalid.
-     */
-    private function authenticatedClientId(Request $request): ?string
-    {
-        $clientId = $request->getUser() ?? $request->string('client_id')->toString();
-        $secret = $request->getPassword() ?? $request->string('client_secret')->toString();
-
-        if ($clientId === '') {
-            return null;
-        }
-
-        $client = $this->clients->byClientId($clientId);
-
-        return $client !== null && $this->clients->verifySecret($client, $secret) ? $client->client_id : null;
     }
 }

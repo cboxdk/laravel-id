@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
-use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,15 +16,17 @@ use Illuminate\Http\Request;
  */
 final class IntrospectionController
 {
-    public function __construct(private readonly ClientRegistry $clients) {}
+    public function __construct(private readonly ClientAuthenticator $clientAuth) {}
 
     public function __invoke(Request $request, TokenIntrospector $introspector): JsonResponse
     {
-        $callerId = $this->authenticatedClientId($request);
+        $caller = $this->clientAuth->authenticateConfidential($request);
 
-        if ($callerId === null) {
+        if ($caller === null) {
             return response()->json(['error' => 'invalid_client'], 401, ['WWW-Authenticate' => 'Basic realm="introspection"']);
         }
+
+        $callerId = $caller->client_id;
 
         $result = $introspector->introspect($request->string('token')->toString());
 
@@ -41,23 +43,5 @@ final class IntrospectionController
             'client_id' => $result->clientId,
             'scope' => implode(' ', $result->scopes),
         ]);
-    }
-
-    /**
-     * The authenticated client's id via HTTP Basic (preferred) or form body
-     * credentials, verified in constant time — or null when missing/invalid.
-     */
-    private function authenticatedClientId(Request $request): ?string
-    {
-        $clientId = $request->getUser() ?? $request->string('client_id')->toString();
-        $secret = $request->getPassword() ?? $request->string('client_secret')->toString();
-
-        if ($clientId === '') {
-            return null;
-        }
-
-        $client = $this->clients->byClientId($clientId);
-
-        return $client !== null && $this->clients->verifySecret($client, $secret) ? $client->client_id : null;
     }
 }

@@ -7,6 +7,7 @@ namespace Cbox\Id\Organization\Models;
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment as EnvironmentContract;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The environment — the hard identity/tenancy boundary. It is NOT itself
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $name
  * @property string $slug
  * @property string $status
+ * @property bool $is_default
  * @property array<string, mixed> $settings
  */
 final class Environment extends Model implements EnvironmentContract
@@ -29,11 +31,33 @@ final class Environment extends Model implements EnvironmentContract
 
     protected function casts(): array
     {
-        return ['settings' => 'array'];
+        return [
+            'is_default' => 'boolean',
+            'settings' => 'array',
+        ];
     }
 
     public function environmentKey(): string
     {
         return $this->id;
+    }
+
+    /**
+     * Mark this environment as the single-tenant / host-less default, clearing
+     * the flag on every other row in the same transaction so exactly one default
+     * ever exists. This is the source of truth for the fallback plane — no env
+     * var required, so it holds across a horizontally-scaled, stateless
+     * deployment (k8s with no writable .env).
+     */
+    public function makeDefault(): void
+    {
+        DB::transaction(function (): void {
+            static::query()
+                ->where('is_default', true)
+                ->whereKeyNot($this->getKey())
+                ->update(['is_default' => false]);
+
+            $this->forceFill(['is_default' => true])->save();
+        });
     }
 }

@@ -44,6 +44,11 @@ final class DatabaseEnvironmentResolver implements EnvironmentResolver
         return EnvironmentModel::query()->where('slug', $label)->first();
     }
 
+    public function defaultEnvironment(): ?Environment
+    {
+        return EnvironmentModel::query()->where('is_default', true)->first();
+    }
+
     private function hostIsUnderBaseDomain(string $host): bool
     {
         $bases = config('cbox-id.environments.base_domains', []);

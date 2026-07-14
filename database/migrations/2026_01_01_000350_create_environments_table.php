@@ -19,6 +19,11 @@ return new class extends Migration
             $table->string('slug')->unique();
             $table->string('domain')->nullable()->unique();
             $table->string('status')->default('active');
+            // The single-tenant / host-less fallback plane. Kept in the database
+            // (not an env var) so a horizontally-scaled, stateless deployment —
+            // k8s with no writable .env — resolves the same default across every
+            // replica. At most one row is true; enforced by Environment::makeDefault().
+            $table->boolean('is_default')->default(false)->index();
             $table->json('settings')->default('{}');
             $table->timestamps();
         });

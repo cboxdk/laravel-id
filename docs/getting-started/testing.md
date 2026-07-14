@@ -31,8 +31,21 @@ uses(InteractsWithTenancy::class, InteractsWithOrganizations::class, InteractsWi
 | `InteractsWithDirectory` | `makeDirectory(orgId, name?)` |
 | `InteractsWithFederation` | `makeConnection(orgId, type?, name?, config?, active?)` |
 | `InteractsWithWebhooks` | `registerWebhook(orgId, url, eventTypes)` |
+| `InteractsWithOAuth` | `makeClient(scopes?, type?)`, `makeServiceAccount(orgId, scopes?, name?)` |
+| `InteractsWithPlatform` | `makeOperator(email?, password?, name?)` |
+
+> **Establish an environment first.** The domain models are environment-owned and
+> deny-by-default: a test that calls `makeOrganization()` or `makeUser()` with **no
+> environment in context** gets nothing back (or hits a NOT NULL `environment_id`). Pin one
+> in `setUp()` with `actingAsEnvironment('env_test')` (from `InteractsWithTenancy`) — this is
+> exactly what the package's own `tests/TestCase.php` does in `setUp()`. Isolation tests
+> override it per case.
 
 ```php
+uses(InteractsWithTenancy::class);
+
+beforeEach(fn () => $this->actingAsEnvironment('env_test')); // the hard outer scope
+
 it('scopes to the acting tenant', function () {
     $org = $this->makeOrganization('Acme');
     $user = $this->makeUser('a@acme.test');

@@ -36,8 +36,6 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | M2M service accounts (client_credentials) — **overlap credential rotation**: mint a successor with the same privileges, cut over with zero downtime, then retire the predecessor (revoking its tokens) | ✅ |
 | Authorization decision endpoint (`POST /oauth/decisions`) — live, deny-by-default permission (ReBAC) + entitlement checks in one round trip; version-invalidated hot-path cache; see [Authorization](../core-concepts/authorization.md) | ✅ |
 | Hybrid entitlement claims — coarse `EnforcementMode::Claims` entitlements embedded as the `ent` claim (`ent_ver` staleness signal); instant-critical ones stay live | ✅ |
-| **RFC 8628** | Device Authorization Grant | ▢ |
-| **RFC 9126** | Pushed Authorization Requests (PAR) | ▢ |
 
 ### Refresh tokens
 
@@ -91,7 +89,7 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 
 | Capability | Status |
 |------------|--------|
-| Passwords — bcrypt, breached-password check (HIBP k-anonymity) | ✅ |
+| Passwords — hashed via the framework hasher (bcrypt/argon2id), verified through the pluggable `Subjects` resolver; password rules are an extension point | ✅ |
 | TOTP (RFC 6238) — replay-protected (last-used step), rate-limited | ✅ |
 | WebAuthn / passkeys (FIDO2) — registration + assertion, sign-count clone detection | ✅ |
 | Passkey User-Verification enforced (primary-factor), server-side challenge TTL | ✅ |
@@ -99,6 +97,17 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 | Magic-link email sign-in | ✅ |
 | Password reset — hash-only single-use token, TTL, anti-enumeration, revokes all sessions on reset | ✅ |
 | Email verification — hash-only single-use token, TTL, stale-address guard | ✅ |
-| Social sign-in (Google, GitHub, Microsoft) with explicit account linking | ✅ |
+| Federated sign-in — generic `FederatedPrincipal` provisioning + explicit account linking (`Subjects::link()`) | ✅ |
 
 *This table is updated as each tier lands; ▢ items are tracked and in progress.*
+
+**App-layer additions (not shipped by this package).** The following live in the
+deployable app (cbox-id / `cboxdk/laravel-*` add-ons), built on the extension points
+above — not in this framework's `src/`:
+
+- **Breached-password screen** — HIBP k-anonymity check on password set/reset (the app
+  implements the rule against the `Subjects` resolver).
+- **Named social providers** — Google / GitHub / Microsoft sign-in via Laravel Socialite;
+  the framework only provides the provider-agnostic `FederatedPrincipal` linking path.
+- **Password policy** — e.g. a 12-char minimum and complexity rules, enforced in the app's
+  auth views/rules.

@@ -9,6 +9,69 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+A follow-up hardening + DX pass from a deep review. Targets v0.5.0 when tagged.
+
+### Security
+
+- **Outbound OIDC token exchange is now SSRF-guarded.** `OidcClient::exchangeCode()`
+  POSTed to an org-admin-configured `token_endpoint` without the SSRF guard the
+  webhook path already used, so a malicious endpoint (e.g. cloud metadata at
+  `169.254.169.254`) was reachable server-side. It now runs through
+  `SafeFederationUrl` — the same `cboxdk/laravel-ssrf` `UrlGuard` as webhooks,
+  with DNS-pinned options (no TOCTOU) and a `cbox-id.federation.verify_url`
+  toggle for on-prem internal IdPs.
+- **Social identity linking race closed.** `DatabaseSubjects::link()` was
+  check-then-insert with no lock, and the `identities` uniqueness index didn't
+  bite for connection-less (social) links because SQL treats NULL `connection_id`
+  as distinct. `link()` now serializes under `lockForUpdate` in a transaction, so
+  a concurrent double-link yields one row.
+
+### Added
+
+- **`client_secret_basic` at the token endpoint** (RFC 6749 §2.3.1). `/oauth/token`
+  accepted client credentials only in the body while discovery advertised Basic,
+  so Basic-defaulting clients got `invalid_client`. A shared `ClientAuthenticator`
+  now reads Basic-first then body, rejects combining both, and is used by the
+  token, introspection, revocation, and PAR endpoints (previously four divergent
+  copies).
+- **Database-backed default environment.** New `environments.is_default` column,
+  `Environment::makeDefault()`, and `EnvironmentResolver::defaultEnvironment()`.
+  The single-tenant / host-less fallback plane is now the row flagged in the
+  database rather than an env var written to `.env`, so a horizontally-scaled,
+  stateless deployment (k8s, no writable `.env`) resolves the same default across
+  every replica. `cbox-id.environments.default` config remains an explicit
+  override that wins when set.
+- **`cbox-id:install` bootstraps the first environment.** It now creates (or
+  reuses) an environment, marks it the default, and mints the first signing key
+  *inside that environment's scope* — fixing the fresh-install failure where the
+  deny-by-default scope left the signing-key step (and every first query) hitting
+  an empty scope.
+- **Optional `base64:` prefix on `CBOX_ID_CRYPTO_KEY`.** `CryptoServiceProvider`
+  strips a leading `base64:` (Laravel's conventional prefix) before decoding, so
+  a key copied with the prefix no longer throws at boot.
+- **`cbox-id.oauth.authorization_endpoint` config** (env `CBOX_ID_AUTHORIZATION_ENDPOINT`).
+
+### Changed
+
+- **`organizations.slug` uniqueness is environment-scoped** (`unique(['environment_id','slug'])`).
+  It was globally unique, contradicting the hard-boundary model — two environments
+  could not both have an `acme` org, and the collision surfaced as a raw
+  `QueryException` instead of `SlugAlreadyTaken`.
+- **SCIM controllers are thin again.** `Scim\UserController` / `Scim\GroupController`
+  no longer query models or implement PATCH/filter/membership logic inline; that
+  moved behind new `DirectoryUsers` / `DirectoryGroups` contracts. SCIM wire
+  behaviour is unchanged.
+- **Discovery no longer advertises an unserved `authorization_endpoint`.**
+  `ServerMetadata` omits the key unless `cbox-id.oauth.authorization_endpoint` is
+  set (interactive authorize is the host app's responsibility).
+
+### Breaking
+
+- `EnvironmentResolver` gains `defaultEnvironment(): ?Environment` — custom
+  implementations of the contract must add it.
+- The `organizations` unique index changed (fresh-install migration edit, in
+  keeping with the 0.x dogfooding cadence — no `alter` shipped).
+
 ## [0.4.0] - 2026-07-13
 
 A security-hardening pass from a full review. Isolation is now enforced by the

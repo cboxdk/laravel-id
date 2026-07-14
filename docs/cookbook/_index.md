@@ -49,7 +49,7 @@ use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 
 $role = app(Roles::class)->define($reseller->id, 'support');
-app(Roles::class)->grantPermission($role->id, 'tickets.manage');
+app(Roles::class)->grantPermission($reseller->id, $role->id, 'tickets.manage');
 app(Roles::class)->assign($reseller->id, 'support_1', $role->id);
 
 app(AccessChecker::class)->can('support_1', 'tickets.manage', $customer->id); // true (rolls down)

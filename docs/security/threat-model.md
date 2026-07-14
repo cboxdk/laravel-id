@@ -24,7 +24,7 @@ It is an engineering artifact, not a certification or audit result.
 
 | Threat | Mitigation |
 |--------|-----------|
-| Credential theft / stuffing | MFA (TOTP replay-safe, passkeys UV-enforced), breach screen, rate limits |
+| Credential theft / stuffing | MFA (TOTP replay-safe, passkeys UV-enforced), rate limits (breached-password screen is an app-layer add-on) |
 | `alg=none` / algorithm confusion | explicit alg allow-list, per-key alg binding (RFC 8725) |
 | Forged SAML/OIDC assertions | XML-DSig / JWS verification, RS256-pinned, `iss`/`aud` checks, replay guard |
 | Session fixation | session id regenerated on login |

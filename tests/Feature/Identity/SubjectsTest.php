@@ -100,6 +100,19 @@ it('links a provider identity explicitly to an authenticated subject', function 
         ->and($subjects->linkedIdentities($subject->id))->toContain(['provider' => 'social:github', 'subject' => 'gh|1']);
 });
 
+it('links the same social identity idempotently without creating a duplicate row', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('dana@corp.com', 'Dana');
+
+    // A social provider has a null connection_id, so the natural uniqueness index
+    // does not dedupe it at the DB level — the guarded check-then-insert must.
+    $principal = new FederatedPrincipal('social:github', 'gh|1', 'dana@corp.com');
+    $subjects->link($subject->id, $principal);
+    $subjects->link($subject->id, $principal);
+
+    expect(IdentityLink::query()->where('user_id', $subject->id)->count())->toBe(1);
+});
+
 it('refuses to link an identity already owned by another account', function (): void {
     $subjects = app(Subjects::class);
     $a = $subjects->create('a@corp.com');

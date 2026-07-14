@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers\Scim;
 
-use Cbox\Id\Api\Support\ScimFilter;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectorySync;
+use Cbox\Id\Directory\Contracts\DirectoryUsers;
+use Cbox\Id\Directory\Exceptions\UnsupportedDirectoryFilter;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
@@ -20,40 +21,33 @@ use Illuminate\Http\Response;
  * links the local user and — on deactivation/delete — revokes sessions instantly.
  *
  * Covers the full Okta/Entra lifecycle: filtered list, create, read, PATCH
- * (active + core attributes), PUT (full replace), and delete.
+ * (active + core attributes), PUT (full replace), and delete. The controller only
+ * validates and maps SCIM; the directory read/query and provisioning is delegated
+ * to the {@see DirectoryUsers} and {@see DirectorySync} contracts.
  */
 final class UserController
 {
-    private const MAX_PAGE = 200;
-
-    public function __construct(private readonly DirectorySync $sync) {}
+    public function __construct(
+        private readonly DirectoryUsers $users,
+        private readonly DirectorySync $sync,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
-        $directory = $this->directory($request);
-
-        $query = DirectoryUser::query()->where('directory_id', $directory->id);
-
-        $filterExpression = $request->string('filter')->toString();
-        if ($filterExpression !== '') {
-            $filter = ScimFilter::parse($filterExpression);
-
-            if ($filter === null) {
-                return $this->error('400', 'Unsupported filter.', 'invalidFilter');
-            }
-
-            $filter->apply($query);
+        try {
+            $page = $this->users->list(
+                $this->directory($request),
+                $request->string('filter')->toString(),
+                $request->has('startIndex') ? $request->integer('startIndex') : null,
+                $request->has('count') ? $request->integer('count') : null,
+            );
+        } catch (UnsupportedDirectoryFilter) {
+            return $this->error('400', 'Unsupported filter.', 'invalidFilter');
         }
 
-        $total = (clone $query)->count();
+        $resources = array_values($page->resources->map(ScimMapper::toResource(...))->all());
 
-        $startIndex = max(1, (int) $request->integer('startIndex', 1));
-        $count = min(self::MAX_PAGE, max(0, (int) $request->integer('count', self::MAX_PAGE)));
-
-        $users = $query->orderBy('id')->offset($startIndex - 1)->limit($count)->get();
-        $resources = array_values($users->map(ScimMapper::toResource(...))->all());
-
-        return new JsonResponse(ScimMapper::listResponse($resources, $total, $startIndex, count($resources)));
+        return new JsonResponse(ScimMapper::listResponse($resources, $page->total, $page->startIndex, count($resources)));
     }
 
     public function store(Request $request): JsonResponse
@@ -69,9 +63,8 @@ final class UserController
     public function replace(Request $request, string $id): JsonResponse
     {
         $directory = $this->directory($request);
-        $directoryUser = $this->find($directory, $id);
 
-        if ($directoryUser === null) {
+        if ($this->users->find($directory, $id) === null) {
             return $this->notFound();
         }
 
@@ -86,7 +79,7 @@ final class UserController
 
     public function show(Request $request, string $id): JsonResponse
     {
-        $directoryUser = $this->find($this->directory($request), $id);
+        $directoryUser = $this->users->find($this->directory($request), $id);
 
         return $directoryUser === null
             ? $this->notFound()
@@ -96,7 +89,7 @@ final class UserController
     public function patch(Request $request, string $id): JsonResponse
     {
         $directory = $this->directory($request);
-        $directoryUser = $this->find($directory, $id);
+        $directoryUser = $this->users->find($directory, $id);
 
         if ($directoryUser === null) {
             return $this->notFound();
@@ -112,6 +105,18 @@ final class UserController
             : new JsonResponse(ScimMapper::toResource($result));
     }
 
+    public function destroy(Request $request, string $id): Response
+    {
+        $directory = $this->directory($request);
+        $directoryUser = $this->users->find($directory, $id);
+
+        if ($directoryUser !== null) {
+            $this->sync->deprovisionUser($directory->id, $directoryUser->external_id);
+        }
+
+        return response()->noContent();
+    }
+
     /**
      * Provision a user, translating the platform's no-silent-merge policy into a
      * SCIM 409 uniqueness error instead of a 500.
@@ -123,26 +128,6 @@ final class UserController
         } catch (AccountExistsForEmail) {
             return $this->error('409', 'A user with this email already exists on the platform.', 'uniqueness');
         }
-    }
-
-    public function destroy(Request $request, string $id): Response
-    {
-        $directory = $this->directory($request);
-        $directoryUser = $this->find($directory, $id);
-
-        if ($directoryUser !== null) {
-            $this->sync->deprovisionUser($directory->id, $directoryUser->external_id);
-        }
-
-        return response()->noContent();
-    }
-
-    private function find(Directory $directory, string $id): ?DirectoryUser
-    {
-        return DirectoryUser::query()
-            ->where('directory_id', $directory->id)
-            ->whereKey($id)
-            ->first();
     }
 
     private function directory(Request $request): Directory

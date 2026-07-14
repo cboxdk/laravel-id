@@ -9,6 +9,16 @@ weight: 2
 Everything is resolved from the container behind a contract. Here's the whole platform in a
 handful of calls.
 
+> **Environments — read this first.** `Organization`, `User`, `SigningKey` and every other
+> domain model is **environment-owned** with a deny-by-default scope. Without an environment
+> in context these snippets return nothing (reads) or hit a NOT NULL `environment_id`
+> (writes). So establish an environment first: a real request resolves one from its host
+> (`ResolveEnvironment` middleware / `EnvironmentResolver`), or set
+> `cbox-id.environments.default` for a single-tenant deployment; the deployable app (cbox-id)
+> creates the first environment from its operator console, and tests pin one with
+> `actingAsEnvironment('env_test')`. See
+> [Environments & the isolation model](core-concepts/environments.md).
+
 ## 1. Create an organization (a tenant)
 
 ```php
@@ -42,7 +52,7 @@ use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 
 $role = app(Roles::class)->define($org->id, 'admin');
-app(Roles::class)->grantPermission($role->id, 'members.invite');
+app(Roles::class)->grantPermission($org->id, $role->id, 'members.invite');
 app(Roles::class)->assign($org->id, $user->id, $role->id);
 
 app(AccessChecker::class)->can($user->id, 'members.invite', $org->id); // true
@@ -83,7 +93,7 @@ use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 
 $connections = app(Connections::class);
 $conn = $connections->create($org->id, ConnectionType::Saml, 'Okta', [/* idp config */]);
-$connections->activate($conn->id);
+$connections->activate($org->id, $conn->id);
 
 $session = app(FederationFlow::class)->completeLogin(
     $conn,

@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
-use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
-use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
@@ -36,7 +35,7 @@ use Illuminate\Http\Request;
 final class TokenController
 {
     public function __construct(
-        private readonly ClientRegistry $clients,
+        private readonly ClientAuthenticator $clientAuth,
         private readonly AuthorizationCodes $codes,
         private readonly TokenIssuer $issuer,
         private readonly TokenSigner $signer,
@@ -84,7 +83,7 @@ final class TokenController
 
     private function clientCredentials(Request $request, ?string $dpopJkt): JsonResponse
     {
-        $client = $this->authenticateClient($request);
+        $client = $this->clientAuth->authenticateConfidential($request);
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
@@ -98,24 +97,18 @@ final class TokenController
 
     private function authorizationCode(Request $request, ?string $dpopJkt): JsonResponse
     {
-        $clientId = $request->string('client_id')->toString();
-        $client = $this->clients->byClientId($clientId);
+        // Confidential clients must authenticate with their secret in addition to
+        // PKCE (RFC 6749 §4.1.3). PKCE alone is the guard for public clients, which
+        // hold no secret. Secrets are verified in constant time by the registry.
+        $client = $this->clientAuth->authenticate($request);
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
         }
 
-        // Confidential clients must authenticate with their secret in addition to
-        // PKCE (RFC 6749 §4.1.3). PKCE alone is the guard for public clients, which
-        // hold no secret. Verified in constant time by the registry.
-        if ($client->type === ClientType::Confidential
-            && ! $this->clients->verifySecret($client, $request->string('client_secret')->toString())) {
-            return $this->error('invalid_client', 401);
-        }
-
         try {
             $grant = $this->codes->exchange(
-                $clientId,
+                $client->client_id,
                 $request->string('code')->toString(),
                 $request->string('redirect_uri')->toString(),
                 $request->string('code_verifier')->toString(),
@@ -134,25 +127,19 @@ final class TokenController
             ? $this->refreshTokens->issue($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt)
             : null;
 
-        return $this->tokenResponse($access, $this->idToken($clientId, $grant, $access), $refresh);
+        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access), $refresh);
     }
 
     private function deviceCode(Request $request, ?string $dpopJkt): JsonResponse
     {
-        $clientId = $request->string('client_id')->toString();
-        $client = $this->clients->byClientId($clientId);
+        $client = $this->clientAuth->authenticate($request);
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
         }
 
-        if ($client->secret_hash !== null
-            && ! $this->clients->verifySecret($client, $request->string('client_secret')->toString())) {
-            return $this->error('invalid_client', 401);
-        }
-
         try {
-            $grant = $this->device->redeem($clientId, $request->string('device_code')->toString());
+            $grant = $this->device->redeem($client->client_id, $request->string('device_code')->toString());
         } catch (DeviceAuthorizationPending) {
             return $this->error('authorization_pending', 400);
         } catch (DeviceSlowDown) {
@@ -173,20 +160,14 @@ final class TokenController
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
     {
-        $clientId = $request->string('client_id')->toString();
-        $client = $this->clients->byClientId($clientId);
+        $client = $this->clientAuth->authenticate($request);
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
         }
 
-        if ($client->type === ClientType::Confidential
-            && ! $this->clients->verifySecret($client, $request->string('client_secret')->toString())) {
-            return $this->error('invalid_client', 401);
-        }
-
         try {
-            $rotated = $this->refreshTokens->rotate($clientId, $request->string('refresh_token')->toString(), $dpopJkt);
+            $rotated = $this->refreshTokens->rotate($client->client_id, $request->string('refresh_token')->toString(), $dpopJkt);
         } catch (InvalidGrant) {
             return $this->error('invalid_grant', 400);
         }
@@ -246,15 +227,6 @@ final class TokenController
         $digest = hash('sha256', $accessToken, true);
 
         return Base64Url::encode(substr($digest, 0, intdiv(strlen($digest), 2)));
-    }
-
-    private function authenticateClient(Request $request): ?Client
-    {
-        $client = $this->clients->byClientId($request->string('client_id')->toString());
-
-        return $client !== null && $this->clients->verifySecret($client, $request->string('client_secret')->toString())
-            ? $client
-            : null;
     }
 
     /**

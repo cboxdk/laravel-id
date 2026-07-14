@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Cbox\Id\Api\Support;
+namespace Cbox\Id\Directory\Support;
 
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,10 +11,10 @@ use Illuminate\Database\Eloquent\Builder;
  * Parses and applies the subset of SCIM 2.0 filter syntax that identity
  * providers actually send against `/Users` — overwhelmingly
  * `userName eq "x"` / `externalId eq "x"` existence checks before provisioning,
- * plus `co`/`sw`/`ew` and `pr`. Anything outside the subset is reported so the
- * caller can return a `400 invalidFilter` rather than silently mis-matching.
+ * plus `co`/`sw`/`ew` and `pr`. Anything outside the subset returns null so the
+ * caller can surface an `invalidFilter` error rather than silently mis-matching.
  */
-final readonly class ScimFilter
+final readonly class ScimUserFilter
 {
     private const ATTRIBUTES = [
         'username' => 'resource->userName',

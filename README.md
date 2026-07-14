@@ -27,12 +27,19 @@ $org  = app(Organizations::class)->create(new NewOrganization('Northwind', 'nort
 $user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
 ```
 
+> **Environments first.** `Organization`, `User` and the other domain models are
+> environment-owned and deny-by-default — the calls above need an environment in context
+> (a request resolves one from its host, or set `cbox-id.environments.default`; the
+> deployable app creates the first one from its operator console). See
+> [Environments & the isolation model](docs/core-concepts/environments.md).
+
 ## Modules
 
 | Layer | Modules |
 |---|---|
 | Kernels | `Tenancy` · `Crypto` · `Audit` · `Events` · `Authorization` |
-| Domain | `Organization` · `Identity` · `AccessControl` · `Directory` (SCIM) · `Federation` (SSO) · `Webhooks` · `AuditQuery` |
+| Domain | `Organization` · `Identity` · `AccessControl` · `Directory` (SCIM) · `Federation` (SSO) · `OAuthServer` (OAuth 2.0 / OIDC provider) · `Webhooks` · `AuditQuery` |
+| HTTP & ops | `Api` (OAuth/OIDC/SCIM endpoints) · `Platform` (control-plane operators) · `Console` (`cbox-id:install` / `cbox-id:doctor`) |
 
 ## Documentation
 
@@ -49,4 +56,5 @@ Full docs live in [`docs/`](docs/index.md):
 
 ## License
 
-MIT. Private during internal dogfooding; public release when ready.
+MIT. Published on Packagist as a pre-1.0 (`0.x`) release — installable via `composer
+require cboxdk/laravel-id`; the API may still shift before 1.0.

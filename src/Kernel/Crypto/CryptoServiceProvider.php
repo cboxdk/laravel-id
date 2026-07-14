@@ -20,9 +20,7 @@ final class CryptoServiceProvider extends ServiceProvider
         $this->app->singleton(SecretBox::class, static function (): SecretBox {
             $configured = config('cbox-id.crypto.key');
 
-            $decoded = is_string($configured) && $configured !== ''
-                ? base64_decode($configured, true)
-                : false;
+            $decoded = is_string($configured) ? self::decodeKey($configured) : false;
 
             if ($decoded === false) {
                 throw CryptoConfigurationException::missingKey();
@@ -33,6 +31,26 @@ final class CryptoServiceProvider extends ServiceProvider
 
         $this->app->singleton(KeyManager::class, DatabaseKeyManager::class);
         $this->app->singleton(TokenSigner::class, JwtTokenSigner::class);
+    }
+
+    /**
+     * Decode the configured master key. An optional leading `base64:` prefix —
+     * Laravel's own convention for `APP_KEY` and friends, which operators reach
+     * for by muscle memory — is stripped before the strict decode. Returns false
+     * for an empty or genuinely invalid value, so the caller raises the missing-key
+     * exception unchanged.
+     */
+    private static function decodeKey(string $configured): string|false
+    {
+        if ($configured === '') {
+            return false;
+        }
+
+        if (str_starts_with($configured, 'base64:')) {
+            $configured = substr($configured, 7);
+        }
+
+        return base64_decode($configured, true);
     }
 
     public function boot(): void

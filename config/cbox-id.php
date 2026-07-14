@@ -82,10 +82,25 @@ return [
     ],
 
     /*
+     * Federation (inbound SSO). `verify_url` (SSRF guard) applies the same
+     * loopback/private/link-local/reserved blocking and DNS-pinning as webhook
+     * delivery to org-admin-configured outbound IdP endpoints (e.g. an OIDC
+     * `token_endpoint`) that the platform fetches server-side. Keep it true in any
+     * multi-tenant deployment; a single-tenant/on-prem install that must reach an
+     * internal IdP may disable it.
+     */
+    'federation' => [
+        'verify_url' => env('CBOX_ID_FEDERATION_VERIFY_URL', true),
+    ],
+
+    /*
      * Environments — the hard identity boundary resolved per request from the host
-     * (own users, signing keys, issuer). `default` is the fallback environment key
-     * used when the host maps to none: set it for single-tenant / on-prem, or leave
-     * null for a multi-tenant deployment (an unknown host is then refused).
+     * (own users, signing keys, issuer). When the host maps to none, the fallback
+     * plane is used: the environment flagged `is_default` in the database (the
+     * primary mechanism — set once by `cbox-id:install`, held across every replica
+     * with no writable .env). This `default` config key is an OPTIONAL override
+     * that wins when set — an explicit environment key via env var / ConfigMap.
+     * Leave both unset in a multi-tenant deployment (an unknown host is refused).
      */
     'environments' => [
         'default' => env('CBOX_ID_ENVIRONMENT_DEFAULT'),
@@ -127,6 +142,17 @@ return [
             'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access'],
             'allowed_grant_types' => ['authorization_code', 'refresh_token', 'client_credentials'],
         ],
+
+        /*
+         * The interactive authorization endpoint (OIDC/OAuth `/authorize`) is the
+         * HOST app's responsibility — this package serves the back-channel token,
+         * introspection, revocation and PAR endpoints, not the user-facing consent
+         * screen. Set this to the absolute URL where the host mounts `/authorize`
+         * and it is advertised in discovery metadata; leave it null (default) and
+         * the `authorization_endpoint` key is omitted rather than pointing at a
+         * route the package does not serve (RFC 8414 allows omitting it).
+         */
+        'authorization_endpoint' => env('CBOX_ID_AUTHORIZATION_ENDPOINT'),
 
         /*
          * FAPI baseline: require every authorization request to be pushed

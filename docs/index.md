@@ -25,13 +25,15 @@ The package is one Composer package with clean internal module boundaries. Two l
   AccessControl, Directory, Federation, Webhooks, AuditQuery.
 
 Products don't embed this package — they authenticate against the running instance over OIDC
-and call it via the SDK. The framework is embedded only in the hosted app.
+and talk to it over its HTTP API (or, inside the same app, by resolving its contracts from the
+container). There is no separate client SDK. The framework is embedded only in the hosted app.
 
 > **Don't want to build the app layer yourself?** There's a full, deployable
-> application built on this framework — the **Cbox ID app** — with the admin console,
-> hosted login, onboarding and app-layer add-ons already implemented. See its
-> [operator docs](../../../host/docs/index.md). This documentation covers the
-> framework you'd build on directly; the app is the batteries-included path.
+> application built on this framework — the **cbox-id app**, a separate project with the
+> admin console, hosted login, onboarding and app-layer add-ons (risk-scoring, breached-password
+> screen, security headers) already implemented, shipped with its own operator documentation.
+> This documentation covers the framework you'd build on directly; the app is the
+> batteries-included path.
 
 ## Module reference
 
@@ -42,13 +44,17 @@ and call it via the SDK. The framework is embedded only in the hosted app.
 | `Kernel\Audit` | `AuditLog` | Append-only, hash-chained trail; signed checkpoints. |
 | `Kernel\Events` | `EventBus` | Transactional outbox; at-least-once relay. |
 | `Kernel\Authorization` | `PolicyDecisionPoint`, `RelationshipStore`, `EntitlementReader`/`EntitlementWriter` | Owned ReBAC engine, deny-by-default PDP, billing-fed entitlement projection. |
-| `Organization` | `Organizations`, `OrganizationHierarchy`, `Memberships` | Tenants, closure-tree hierarchy (reseller/parent), memberships. |
+| `Organization` | `Organizations`, `OrganizationHierarchy`, `Memberships`, `EnvironmentResolver` | Environments, tenants, closure-tree hierarchy (reseller/parent), memberships. |
 | `Identity` | `Subjects`, `SessionManager` | Global users, federated identities, sessions, password auth. |
 | `AccessControl` | `Roles`, `AccessChecker` | RBAC with hierarchy-aware roll-down. |
 | `Directory` | `Directories`, `DirectorySync` | SCIM provisioning; deprovision revokes sessions immediately. |
 | `Federation` | `Connections`, `FederationFlow`, `AssertionValidator` | Per-org SSO connections + login orchestration. |
+| `OAuthServer` | `TokenIssuer`, `TokenIntrospector`, `ClientRegistry`, `AuthorizationCodes`, `RefreshTokens`, `DeviceAuthorization`, `PushedAuthorizationRequests`, `DynamicClientRegistration`, `ServiceAccounts` | OAuth 2.0 / OIDC provider: authorization-code + PKCE, client-credentials, refresh rotation, DPoP, PAR, device grant, dynamic client registration, introspection/revocation. |
 | `Webhooks` | `WebhookRegistry`, `WebhookDispatcher` | HMAC-signed delivery + retries; fans out `EventDelivered`. |
 | `AuditQuery` | `AuditReader` | Filtered/paginated reads + SIEM pull-stream. |
+| `Api` | (HTTP routes/middleware) | The HTTP surface — OAuth/OIDC, SCIM, discovery endpoints; resolves each request's environment (`ResolveEnvironment`). |
+| `Platform` | `PlatformOperators` | Control-plane operators (the cross-environment admin identity behind the operator console). |
+| `Console` | (`cbox-id:install`, `cbox-id:doctor`) | Artisan commands: guided bootstrap and health checks. (Key rotation, `cbox-id:keys:rotate`, ships in `Kernel\Crypto`.) |
 
 ## Sections
 
