@@ -9,6 +9,28 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-14
+
+### Added
+
+- **DNS domain verification + home-realm discovery.** New `Federation\Contracts\DomainVerification`
+  (`DatabaseDomainVerification`): an organization registers an email domain, proves
+  control by publishing a DNS TXT challenge at `_cbox-id-challenge.<domain>`, and
+  once verified, `connectionForEmail($email)` routes matching users to the org's
+  active SSO connection. Resolution is deny-by-default — an unverified domain never
+  routes and never captures — and environment-scoped, so a domain verified in one
+  environment never routes a login in another. New `verified_domains` table +
+  `VerifiedDomain` model.
+- **Optional capture gate.** A verified domain carries a `capture` flag: off by
+  default (verification enables routing only); when the host turns it on, matching
+  users are meant to be forced into the org's auth policy. The package exposes the
+  flag; enforcement is the host's.
+- **`DnsResolver` contract** (`SystemDnsResolver` default over `dns_get_record`) so
+  the DNS lookup is swappable — a host can bind a direct-authoritative resolver to
+  avoid recursive-cache staleness at verification time — and testable
+  (`Testing\FakeDnsResolver`, plus `InteractsWithFederation::fakeDns()` /
+  `makeVerifiedDomain()`). The library ships only the dependency-light default.
+
 ## [0.5.0] - 2026-07-14
 
 A follow-up hardening + DX pass from a deep review, plus operator MFA and

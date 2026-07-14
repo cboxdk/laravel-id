@@ -6,6 +6,8 @@ namespace Cbox\Id\Federation;
 
 use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\DnsResolver;
+use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Validators\DispatchingAssertionValidator;
@@ -20,6 +22,8 @@ final class FederationServiceProvider extends ServiceProvider
     {
         $this->app->singleton(Connections::class, ConnectionService::class);
         $this->app->singleton(FederationFlow::class, FederationLoginService::class);
+        $this->app->singleton(DnsResolver::class, SystemDnsResolver::class);
+        $this->app->singleton(DomainVerification::class, DatabaseDomainVerification::class);
 
         // Per-type signature validation, each wrapping a vetted library: OIDC
         // (id_token / JWS via firebase/php-jwt, RS256-pinned) and SAML (XML-DSig
