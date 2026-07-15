@@ -12,6 +12,7 @@ use Cbox\Id\Console\DoctorCommand;
 use Cbox\Id\Console\ImportUsersCommand;
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Directory\DirectoryServiceProvider;
+use Cbox\Id\ExternalActions\ExternalActionsServiceProvider;
 use Cbox\Id\Federation\FederationServiceProvider;
 use Cbox\Id\Governance\GovernanceServiceProvider;
 use Cbox\Id\Identity\IdentityServiceProvider;
@@ -64,6 +65,11 @@ final class IdServiceProvider extends ServiceProvider
         AuditQueryServiceProvider::class,
         DirectoryServiceProvider::class,
         FederationServiceProvider::class,
+        // Inline hooks / external actions: synchronous extension points that can
+        // enrich or veto an operation. Registered before OAuthServer because the
+        // token issuer runs the TokenMinting hook; depends only on kernels + the SSRF
+        // guard.
+        ExternalActionsServiceProvider::class,
         OAuthServerServiceProvider::class,
         // AI token vault: seals downstream third-party credentials and brokers
         // deny-by-default leased access to agent (OAuth client) principals.

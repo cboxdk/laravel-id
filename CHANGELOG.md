@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.15.0] - 2026-07-15
+
+### Added
+
+- **External actions / inline hooks (`src/ExternalActions/`).** Synchronous extension
+  points where the platform consults registered logic that can ENRICH or VETO an
+  operation — the Okta-inline-hook / Auth0-Actions capability. Distinct from webhooks
+  (which only notify, async): a hook participates in-band and changes the outcome. No new
+  runtime dependency (reuses the crypto SecretBox, the already-present
+  `cboxdk/laravel-ssrf` guard, the audit trail and the environment scope).
+  - **`Contracts\ActionPipeline` + `DefaultActionPipeline` (new contract).** For a hook
+    point, runs the in-process actions then the external endpoints and folds the results:
+    the first deny short-circuits (vetoes the operation); enrichment is merged (later
+    wins). A hook point with no actions is a cheap allow, so callers invoke it
+    unconditionally on the hot path.
+  - **In-process actions (`Contracts\Action` + `ConfigActionRegistry`).** A host class
+    that runs synchronously at a hook point, returning `ActionResult::continue([...])` or
+    `deny($reason)`. Deny-by-default: only classes listed in
+    `cbox-id.external_actions.hooks.<point>` run.
+  - **External HTTP actions (`Contracts\ExternalActions` + `HttpActionTransport`).**
+    Register a customer HTTPS endpoint; the platform POSTs a SIGNED
+    (HMAC-SHA256 over `"{ts}.{body}"`, `X-Cbox-Signature`), SSRF-GUARDED (URL asserted at
+    registration, IPs pinned per send, redirects off, TLS on), SHORT-TIMEOUT, NO-RETRY
+    request and interprets `{"action":"continue"|"deny","claims":{…},"reason":"…"}`. The
+    per-endpoint signing secret is reveal-once and sealed at rest.
+  - **Fail-closed by default.** A hook that throws / times out / errors / returns non-2xx
+    DENIES the operation (a security control that fails open is not a control). Config
+    `external_actions.fail_open` trades that for availability on enrichment-only hooks.
+  - **Flagship wiring — the `TokenMinting` hook in `JwtTokenIssuer`.** Runs just before an
+    access token is signed, on every grant (client-credentials, authorization-code,
+    refresh, device, CIBA). An action can add claims (reserved protocol/security claims —
+    `iss`/`sub`/`exp`/`scope`/`aud`/`cnf`/`ent`/… — can never be overwritten) or veto
+    issuance (`ActionDenied`, mapped by the token endpoint to `access_denied`) BEFORE the
+    `jti` row is written, so a denied token leaves no trace.
+  - **Models + config + testing.** Env-owned `ExternalActionEndpoint` (migration
+    `external_action_endpoints`); config `cbox-id.external_actions.*` (verify_url, timeout,
+    connect_timeout, fail_open, hooks map); `Testing\InteractsWithExternalActions` +
+    `Testing\FakeActionTransport` (network-free), dogfooded by 17 tests (enrichment,
+    reserved-claim protection, veto→no-jti + `access_denied`, fail-closed/open, SSRF
+    refusal, sealed-secret at rest, environment isolation, HTTP sign/interpret).
+
+### Security
+
+- Inline hooks fail CLOSED, veto before any token row is written, cannot overwrite reserved
+  claims, and make signed, SSRF-guarded, no-redirect egress calls. See
+  [security/external-actions.md](docs/security/external-actions.md).
+
 ## [0.14.0] - 2026-07-15
 
 ### Added

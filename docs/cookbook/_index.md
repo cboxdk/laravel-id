@@ -130,6 +130,12 @@ Open a campaign, have reviewers certify or revoke each role/membership, and appl
 revokes on close — pending items are removed by default. See the full recipe:
 [Run an access review](run-an-access-review.md).
 
+## Enrich or veto a token with an inline hook
+
+Add a custom claim to every access token — or block issuance — with an in-process action
+or an external HTTPS endpoint. See the full recipe:
+[Add a token claims hook](add-a-token-hook.md).
+
 ## Register a webhook
 
 ```php

@@ -32,3 +32,5 @@ How the platform is put together and the ideas you build against:
   Backchannel Authentication: human-in-the-loop approval for agent actions.
 - **[Access governance](access-governance.md)** — IGA: access-certification
   campaigns and Segregation-of-Duties policies over roles and memberships.
+- **[External actions & inline hooks](external-actions.md)** — synchronous
+  extension points that enrich or veto an operation (in-process or external HTTP).

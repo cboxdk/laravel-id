@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
+use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
@@ -67,14 +68,19 @@ final class TokenController
             return $this->error('invalid_target', 400);
         }
 
-        return match ($request->string('grant_type')->toString()) {
-            'client_credentials' => $this->clientCredentials($request, $jkt),
-            'authorization_code' => $this->authorizationCode($request, $jkt),
-            'refresh_token' => $this->refreshToken($request, $jkt),
-            'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt),
-            'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt),
-            default => $this->error('unsupported_grant_type', 400),
-        };
+        try {
+            return match ($request->string('grant_type')->toString()) {
+                'client_credentials' => $this->clientCredentials($request, $jkt),
+                'authorization_code' => $this->authorizationCode($request, $jkt),
+                'refresh_token' => $this->refreshToken($request, $jkt),
+                'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt),
+                'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt),
+                default => $this->error('unsupported_grant_type', 400),
+            };
+        } catch (ActionDenied) {
+            // A TokenMinting inline hook vetoed issuance (fires on every grant).
+            return $this->error('access_denied', 400);
+        }
     }
 
     private function dpopBinding(Request $request): ?string

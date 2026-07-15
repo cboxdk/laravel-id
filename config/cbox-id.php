@@ -334,6 +334,32 @@ return [
     ],
 
     /*
+     * External actions / inline hooks (src/ExternalActions/) — synchronous extension
+     * points where the platform consults registered logic that can ENRICH or VETO an
+     * operation (distinct from webhooks, which only notify, async). v1 ships the
+     * `token.minting` hook: run just before an access token is signed.
+     *
+     * `hooks` maps a hook point to a deny-by-default list of in-process Action
+     * classes. External HTTP endpoints are registered at runtime via the
+     * ExternalActions contract (SSRF-guarded, signed, sealed secret).
+     *
+     * `verify_url` toggles the SSRF guard on registered endpoints; `timeout` /
+     * `connect_timeout` bound the synchronous call. `fail_open` decides what happens
+     * when a hook cannot be run: the default (false) FAILS CLOSED — a security
+     * control that fails open is not a control — at the cost of availability if the
+     * hook endpoint is down. Set it true only for enrichment-only hooks.
+     */
+    'external_actions' => [
+        'verify_url' => env('CBOX_ID_ACTIONS_VERIFY_URL', true),
+        'timeout' => env('CBOX_ID_ACTIONS_TIMEOUT', 3),
+        'connect_timeout' => env('CBOX_ID_ACTIONS_CONNECT_TIMEOUT', 2),
+        'fail_open' => env('CBOX_ID_ACTIONS_FAIL_OPEN', false),
+        'hooks' => [
+            // 'token_minting' => [ App\Actions\AddTenantTierClaim::class ],
+        ],
+    ],
+
+    /*
      * Access governance (src/Governance/) — Identity Governance & Administration.
      * Access-certification campaigns (periodic review of who holds which role /
      * membership, with reviewer certify/revoke decisions applied on close) and

@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\ExternalActions\Contracts\ActionPipeline;
+use Cbox\Id\ExternalActions\Enums\HookPoint;
+use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
+use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
@@ -16,14 +20,27 @@ use Illuminate\Support\Str;
 /**
  * Issues stateless RS256 JWT access tokens (signed by the Crypto kernel) and
  * records each `jti` so tokens remain revocable and introspectable.
+ *
+ * Just before signing, the {@see HookPoint::TokenMinting} inline hook runs
+ * ({@see ActionPipeline}): registered actions may enrich the token with extra claims
+ * or veto issuance. Reserved protocol/security claims can never be overwritten, and a
+ * veto throws {@see ActionDenied} before any `jti` is recorded — so a denied token
+ * leaves no trace.
  */
 final class JwtTokenIssuer implements TokenIssuer
 {
     private const TTL_SECONDS = 900;
 
+    /**
+     * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
+     * Enrichment that names any of these is dropped.
+     */
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ'];
+
     public function __construct(
         private readonly TokenSigner $signer,
         private readonly EntitlementReader $entitlements,
+        private readonly ActionPipeline $actions,
     ) {}
 
     public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
@@ -62,6 +79,28 @@ final class JwtTokenIssuer implements TokenIssuer
         }
 
         return [$embedded, $version];
+    }
+
+    /**
+     * Fold a hook's enrichment into the claims, skipping any reserved key — a hook
+     * can add custom claims but never rewrite `sub`, `exp`, `scope`, `aud`, etc.
+     *
+     * @param  array<string, mixed>  $claims
+     * @param  array<string, mixed>  $enrichment
+     * @return array<string, mixed>
+     */
+    private function applyEnrichment(array $claims, array $enrichment): array
+    {
+        foreach ($enrichment as $key => $value) {
+            // Keys are string-typed by contract; a reserved claim is never overwritten.
+            if (in_array($key, self::RESERVED_CLAIMS, true)) {
+                continue;
+            }
+
+            $claims[$key] = $value;
+        }
+
+        return $claims;
     }
 
     /**
@@ -121,6 +160,25 @@ final class JwtTokenIssuer implements TokenIssuer
                 $claims['ent_ver'] = $version;
             }
         }
+
+        // Inline hook: let registered actions enrich the claims or veto issuance,
+        // with the fully-assembled base claims in context. Runs before the jti row is
+        // written, so a veto leaves nothing behind.
+        $outcome = $this->actions->run(HookPoint::TokenMinting, new ActionContext(HookPoint::TokenMinting, [
+            'client_id' => $client->client_id,
+            'subject' => $subject,
+            'user_id' => $userId,
+            'organization_id' => $organizationId,
+            'scopes' => $scopes,
+            'grant' => $userId === null ? 'client_credentials' : 'user',
+            'claims' => $claims,
+        ]));
+
+        if (! $outcome->allowed) {
+            throw ActionDenied::because($outcome->reason);
+        }
+
+        $claims = $this->applyEnrichment($claims, $outcome->enrichment);
 
         // RFC 9068: OAuth access tokens carry the `at+jwt` media type.
         $token = $this->signer->sign($claims, type: 'at+jwt');

@@ -128,6 +128,16 @@ dropped. Segregation-of-Duties returns a reasoned `Decision` before a grant comp
 toxic combination. Everything is environment-isolated and correlated on the audit trail
 by `campaign_id`. See [Security: access governance](governance.md).
 
+## External actions & inline hooks
+
+Inline hooks let external logic enrich or veto security decisions, so they are hardened
+both ways: they **fail closed** (an unreachable or erroring hook denies, unless
+`fail_open`), a veto fires **before** the token's `jti` is recorded (no trace), and a hook
+can never overwrite a reserved protocol claim (`sub`/`exp`/`scope`/`aud`/…). The outbound
+call reuses the webhook SSRF guard (URL asserted, IPs pinned, redirects off, TLS on) and
+is HMAC-signed with a reveal-once sealed secret — only synchronous (short timeout, no
+retry). See [Security: external actions](external-actions.md).
+
 ## Reporting
 
 Found a vulnerability? See `SECURITY.md` for private disclosure and safe-harbor terms. Do not
