@@ -7,6 +7,7 @@ namespace Cbox\Id;
 use Cbox\Id\AccessControl\AccessControlServiceProvider;
 use Cbox\Id\Api\ApiServiceProvider;
 use Cbox\Id\AuditQuery\AuditQueryServiceProvider;
+use Cbox\Id\AuditStreaming\AuditStreamingServiceProvider;
 use Cbox\Id\Console\DoctorCommand;
 use Cbox\Id\Console\ImportUsersCommand;
 use Cbox\Id\Console\InstallCommand;
@@ -55,6 +56,10 @@ final class IdServiceProvider extends ServiceProvider
         OAuthServerServiceProvider::class,
         SamlIdpServiceProvider::class,
         WebhookServiceProvider::class,
+        // Registered after AuditServiceProvider so the base AuditLog binding
+        // exists to decorate; composes cboxdk/laravel-siem for env-isolated SIEM
+        // audit streaming.
+        AuditStreamingServiceProvider::class,
         ApiServiceProvider::class,
     ];
 

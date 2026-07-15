@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:c7b72844-9879-43cf-9f89-8853e3b17ac9",
+    "serialNumber": "urn:uuid:1a71c9eb-e489-41f7-846f-d9b17e0c077e",
     "version": 1,
     "metadata": {
         "tools": [
@@ -53,12 +53,44 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.0.1",
+            "bom-ref": "pkg:composer/cboxdk/laravel-siem@v0.1.1",
+            "group": "cboxdk",
+            "name": "laravel-siem",
+            "version": "v0.1.1",
+            "purl": "pkg:composer/cboxdk/laravel-siem@v0.1.1",
+            "description": "The SIEM log-streaming delivery engine for Laravel \u2014 a durable transactional outbox, queued batched delivery with retry/backoff/dead-letter/circuit-breaker, SSRF-guarded HTTP egress, encrypted destination secrets, and PII redaction, on top of the framework-agnostic cboxdk/siem core.",
+            "licenses": [
+                {
+                    "license": {
+                        "id": "MIT"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "library",
+            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.0.2",
             "group": "cboxdk",
             "name": "laravel-ssrf",
-            "version": "v1.0.1",
-            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.0.1",
+            "version": "v1.0.2",
+            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.0.2",
             "description": "Cbox SSRF \u2014 a hardened, config-driven guard against server-side request forgery for outbound URLs in Laravel. Blocks private/reserved/cloud-metadata targets, pins DNS, and refuses redirects.",
+            "licenses": [
+                {
+                    "license": {
+                        "id": "MIT"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "library",
+            "bom-ref": "pkg:composer/cboxdk/siem@v0.1.0",
+            "group": "cboxdk",
+            "name": "siem",
+            "version": "v0.1.0",
+            "purl": "pkg:composer/cboxdk/siem@v0.1.0",
+            "description": "Zero-dependency SIEM log-streaming core for PHP: a normalized security-event value object and the formatters (Splunk HEC, Elastic ECS, ArcSight/syslog CEF, generic JSON) that turn it into what real SIEMs ingest. Framework-agnostic; the delivery/egress layer lives in the Laravel wrapper.",
             "licenses": [
                 {
                     "license": {
@@ -197,11 +229,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/guzzlehttp/guzzle@7.14.0",
+            "bom-ref": "pkg:composer/guzzlehttp/guzzle@7.14.2",
             "group": "guzzlehttp",
             "name": "guzzle",
-            "version": "7.14.0",
-            "purl": "pkg:composer/guzzlehttp/guzzle@7.14.0",
+            "version": "7.14.2",
+            "purl": "pkg:composer/guzzlehttp/guzzle@7.14.2",
             "description": "Guzzle is a PHP HTTP client library",
             "licenses": [
                 {
@@ -229,11 +261,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/guzzlehttp/psr7@2.12.4",
+            "bom-ref": "pkg:composer/guzzlehttp/psr7@2.12.5",
             "group": "guzzlehttp",
             "name": "psr7",
-            "version": "2.12.4",
-            "purl": "pkg:composer/guzzlehttp/psr7@2.12.4",
+            "version": "2.12.5",
+            "purl": "pkg:composer/guzzlehttp/psr7@2.12.5",
             "description": "PSR-7 message implementation that also provides common utility methods",
             "licenses": [
                 {
@@ -261,11 +293,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/framework@v13.19.0",
+            "bom-ref": "pkg:composer/laravel/framework@v13.20.0",
             "group": "laravel",
             "name": "framework",
-            "version": "v13.19.0",
-            "purl": "pkg:composer/laravel/framework@v13.19.0",
+            "version": "v13.20.0",
+            "purl": "pkg:composer/laravel/framework@v13.20.0",
             "description": "The Laravel Framework.",
             "licenses": [
                 {

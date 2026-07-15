@@ -18,3 +18,5 @@ How the platform is put together and the ideas you build against:
   entitlement decisions, the hot path, and the token hybrid.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
+- **[SIEM audit streaming](audit-streaming.md)** — mirror the hash-chained,
+  environment-scoped audit trail out to a customer's SIEM, isolation intact.

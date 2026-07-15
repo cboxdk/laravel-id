@@ -101,3 +101,26 @@ it('requireEnvironment throws when none is set', function (): void {
     expect(fn () => app(EnvironmentContext::class)->requireEnvironment())
         ->toThrow(EnvironmentMissing::class);
 });
+
+it('reads the current environment after the scoped context is flushed (queue-worker safety)', function (): void {
+    // EnvironmentContext is a `scoped` binding — a queue worker gets a fresh one per
+    // job. The global scope is registered once at model-boot, so it must resolve the
+    // context PER QUERY, never capture the boot-time instance. This reproduces a
+    // worker processing a second job: flush the scoped instances, act as a DIFFERENT
+    // environment, and confirm the scope follows the NEW context — not the stale one.
+    // Drop only the ORG wall so this exercises the ENVIRONMENT scope in isolation.
+    $this->actingAsEnvironment('env_a');
+    expect($this->withoutTenantScope(fn () => EnvThing::pluck('name')->all()))
+        ->toContain('a1'); // boots the scope under env_a
+
+    // Simulate the between-jobs container reset a queue worker performs.
+    $this->app->forgetScopedInstances();
+
+    // The next "job" acts as env_b on the freshly-resolved context instance.
+    $this->actingAsEnvironment('env_b');
+
+    // The scope must see env_b now. A captured stale instance would still read env_a
+    // and leak a1/a2 into this env_b-scoped query.
+    expect($this->withoutTenantScope(fn () => EnvThing::pluck('name')->all()))
+        ->toBe(['b1']);
+});
