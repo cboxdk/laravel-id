@@ -57,6 +57,8 @@ final class DpopProofValidator
             throw InvalidDpopProof::make('header must carry the public jwk only');
         }
 
+        $jwk = $this->normalizeCoordinates($jwk);
+
         // Verify the signature against the embedded public key.
         try {
             $key = JWK::parseKey($jwk, $alg);
@@ -133,6 +135,47 @@ final class DpopProofValidator
         } catch (UniqueConstraintViolationException) {
             throw InvalidDpopProof::make('proof replay detected');
         }
+    }
+
+    /**
+     * Left-pad EC/OKP coordinates to their curve's field length before the key
+     * is reconstructed. OpenSSL-based clients strip leading zero bytes, so
+     * ~0.75% of P-256 keys carry a short `x`/`y`; RFC 7518 §6.2.1.2 requires the
+     * fixed-length, zero-padded octet string, and an under-length coordinate
+     * rebuilds the wrong point and fails verification. Normalising here (Postel's
+     * law) accepts those proofs, and because the thumbprint is taken from the
+     * padded members it yields the same `jkt` a compliant client computes — so
+     * an issued token and its resource-time proof still agree. Padding can never
+     * turn an invalid signature valid: the key is embedded in the signed proof.
+     *
+     * @param  array<array-key, mixed>  $jwk
+     * @return array<array-key, mixed>
+     */
+    private function normalizeCoordinates(array $jwk): array
+    {
+        // Only the curves our allowed algs use (ES256 → P-256, EdDSA → Ed25519).
+        $length = match ($jwk['crv'] ?? null) {
+            'P-256', 'Ed25519' => 32,
+            default => null,
+        };
+
+        if ($length === null) {
+            return $jwk;
+        }
+
+        foreach (['x', 'y'] as $member) {
+            $value = $jwk[$member] ?? null;
+            if (! is_string($value) || $value === '') {
+                continue;
+            }
+
+            $raw = JWT::urlsafeB64Decode($value);
+            if (strlen($raw) < $length) {
+                $jwk[$member] = $this->base64url(str_pad($raw, $length, "\0", STR_PAD_LEFT));
+            }
+        }
+
+        return $jwk;
     }
 
     /**

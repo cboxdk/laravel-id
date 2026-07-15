@@ -28,13 +28,18 @@ function dpopKey(): array
     openssl_pkey_export($key, $pem);
     $d = openssl_pkey_get_details($key);
 
+    // RFC 7518 §6.2.1.2: for P-256 the x/y coordinates are the fixed 32-byte
+    // field elements, left-padded with zeros. OpenSSL strips leading zero bytes,
+    // so ~0.75% of keys return a short (31-byte) coordinate — encoding that
+    // unpadded yields a malformed JWK whose reconstructed key fails signature
+    // verification, making any DPoP test intermittently 400 in the full suite.
     return [
         'pem' => (string) $pem,
         'jwk' => [
             'kty' => 'EC',
             'crv' => 'P-256',
-            'x' => base64url($d['ec']['x']),
-            'y' => base64url($d['ec']['y']),
+            'x' => base64url(str_pad($d['ec']['x'], 32, "\0", STR_PAD_LEFT)),
+            'y' => base64url(str_pad($d['ec']['y'], 32, "\0", STR_PAD_LEFT)),
         ],
     ];
 }
@@ -68,6 +73,41 @@ it('returns the RFC 7638 thumbprint for a valid proof', function (): void {
         ->and($jkt)->toBe(base64url(hash('sha256', json_encode([
             'crv' => $key['jwk']['crv'], 'kty' => 'EC', 'x' => $key['jwk']['x'], 'y' => $key['jwk']['y'],
         ], JSON_UNESCAPED_SLASHES), true)));
+});
+
+it('accepts a proof whose EC coordinate lost a leading zero byte (RFC 7518 padding)', function (): void {
+    // The ~0.75% case: an OpenSSL client emits x/y with the leading zero byte
+    // stripped, so the JWK carries a short (31-byte) coordinate. Find such a key.
+    $pem = null;
+    $d = null;
+    for ($i = 0; $i < 5000; $i++) {
+        $k = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        openssl_pkey_export($k, $pem);
+        $d = openssl_pkey_get_details($k);
+        if (strlen($d['ec']['x']) < 32 || strlen($d['ec']['y']) < 32) {
+            break;
+        }
+        $pem = null;
+    }
+    expect($pem)->not->toBeNull('no short-coordinate P-256 key generated in 5000 tries');
+
+    $unpadded = ['kty' => 'EC', 'crv' => 'P-256', 'x' => base64url($d['ec']['x']), 'y' => base64url($d['ec']['y'])];
+    $proof = JWT::encode(
+        ['htm' => 'POST', 'htu' => 'https://id.test/oauth/token', 'iat' => time(), 'jti' => bin2hex(random_bytes(12))],
+        (string) $pem, 'ES256', null, ['typ' => 'dpop+jwt', 'jwk' => $unpadded],
+    );
+
+    $jkt = app(DpopProofValidator::class)->verify($proof, 'POST', 'https://id.test/oauth/token');
+
+    // Verified despite the short coordinate, and the jkt matches the padded
+    // canonical form — the value a compliant client and the token endpoint use.
+    $expected = base64url(hash('sha256', json_encode([
+        'crv' => 'P-256', 'kty' => 'EC',
+        'x' => base64url(str_pad($d['ec']['x'], 32, "\0", STR_PAD_LEFT)),
+        'y' => base64url(str_pad($d['ec']['y'], 32, "\0", STR_PAD_LEFT)),
+    ], JSON_UNESCAPED_SLASHES), true));
+
+    expect($jkt)->toBe($expected);
 });
 
 it('rejects a replayed proof (same jti twice)', function (): void {
