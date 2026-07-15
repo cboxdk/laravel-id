@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.10.0] - 2026-07-15
+
+### Added
+
+- **Outbound SCIM 2.0 provisioning (`src/Provisioning/`).** The mirror of the
+  inbound Directory module: the platform acting as a SCIM **client**, pushing user
+  and membership changes OUT to an organization's downstream apps over THEIR SCIM
+  2.0 endpoints (create/update/deactivate the remote user). No new runtime
+  dependency — it reuses the existing HTTP client, `cboxdk/laravel-ssrf`, the Crypto
+  kernel and the domain event bus.
+  - **Shared SCIM schema (`Cbox\Id\Scim\ScimSchema`).** The RFC 7643/7644 URNs and
+    pure body builders (`User` resource, `PatchOp`, `ListResponse`, error, equality
+    filter) were extracted into one transport-agnostic source of truth, now consumed
+    by BOTH the inbound `Api\Support\ScimMapper` (which was refactored to reference
+    it, no behaviour change) and the new outbound client — the URNs are declared
+    once, not duplicated per direction.
+  - **`Contracts\ScimClient` + `HttpScimClient` (new contract).** The outbound SCIM
+    2.0 HTTP client: `POST /Users` (create → capture the remote id), `PATCH
+    /Users/{id}` with a `PatchOp` body (update / `replace active`), `DELETE
+    /Users/{id}`, and `GET /Users?filter=externalId eq "…"` for reconcile. Every
+    request is SSRF-guarded and IP-pinned immediately before connect (redirects
+    refused), TLS-verified, and carries `application/scim+json`. Bearer or OAuth 2.0
+    client-credentials auth is opened from the sealed secret; the token is never
+    placed in a returned result or a stored error.
+  - **`Contracts\ProvisioningConnections` + `DatabaseProvisioningConnections` (new
+    contract).** The registry of downstream targets. Registration SSRF-checks the
+    base URL and seals the secret (reveal-once); `inScopeFor()` resolves the
+    connections in the current environment that a given change belongs to.
+  - **`Contracts\ProvisioningService` + `OutboxProvisioningService` (new contract).**
+    Translates a domain event to a SCIM operation and enqueues a durable outbox row
+    per in-scope connection, then drains it statefully — POST vs. PATCH is decided by
+    the captured remote id, a 409-on-create reconciles by `externalId`, a 404-on-update
+    recreates. Bounded exponential backoff + jitter, a dead-letter cap, and a
+    per-connection circuit breaker.
+  - **Environment-owned models (`Models\ProvisioningConnection`,
+    `Models\ProvisionedResource`, `Models\ProvisioningOperation`).** All
+    `BelongsToEnvironment`, so cross-environment provisioning is structurally
+    impossible. `ProvisionedResource` (unique per environment+connection+user) is the
+    SCIM statefulness — the platform user ↔ remote resource id mapping. A migration
+    adds the three tables.
+  - **Event-driven, async delivery.** `Listeners\ProvisionOnDomainEvent` enqueues on
+    every `EventDelivered` (request thread, never delivers). `Jobs\DrainProvisioningConnection`
+    (`ShouldBeUnique` per connection) drains in a worker, reconstructing the
+    connection's environment (`EnvironmentContext::withoutScope()` single-id read →
+    `runAs()`) exactly as the audit-streaming pump does. `Console\DrainProvisioningCommand`
+    (scheduled per-minute, mirroring the Webhooks retry schedule) fans a drain out to
+    every active connection across all environments; `Console\SyncProvisioningCommand`
+    (`cbox-id:provisioning:sync {--connection=}`) reconciles in-scope subjects.
+  - **Attribute mapping (`Support\AttributeMapping`).** Maps platform attributes onto
+    SCIM `User` paths, defaulting to userName/email/displayName and supporting the
+    Enterprise User extension; rebind per connection or via the contract.
+  - **Config.** New `cbox-id.provisioning.*` keys: `verify_url` (SSRF, operator-only),
+    `max_attempts`, `batch_limit`, `schedule`, and `circuit_breaker.*`.
+  - **Testing.** `Testing\InteractsWithProvisioning` + an in-memory `Testing\FakeScimClient`
+    (a conformant fake downstream SCIM server) — dogfooded by the suite, which proves
+    the lifecycle against real RFC 7643/7644 payload shapes, the 409/404 reconcile
+    paths, cross-environment isolation at both dispatch and drain, retry/dead-letter,
+    the circuit breaker, deny-by-default, SSRF refusal and secret-at-rest.
+
+### Security
+
+- Outbound provisioning egress is SSRF-guarded and DNS-pinned on every request
+  (SCIM base URL and OAuth token URL), TLS-verify on, with connection secrets sealed
+  at rest (reveal-once) and scrubbed from errors/dead-letter rows. Environment-owned
+  models keep provisioning deny-by-default and single-environment. Delivery is
+  documented as at-least-once (not exactly-once); no unverified SCIM-conformance
+  claim is made beyond what the tests exercise.
+- **Adversarial review — three defects found and fixed before release:**
+  - **No longer deprovisions a still-entitled user.** `organization.member_removed`
+    now deprovisions ONLY connections the user has genuinely LEFT
+    (`ProvisioningConnections::leftScopeFor()`): an org-scoped connection only when no
+    remaining membership keeps the user in its scope, and an environment-wide
+    connection never on an org removal. Removing a user from one org they share with
+    another org on the same connection previously deactivated — or with the `Delete`
+    policy, **DELETED** — a user still entitled through the other org.
+  - **409 reconcile no longer trusts a filter-ignoring peer.** `findByExternalId`
+    adopts a remote record only when the response is unambiguous AND the matched
+    resource actually carries the requested `externalId`
+    (`ScimResult::resourceIdForExternalId()`). A downstream SCIM server that ignores
+    the `externalId eq` filter and returns its whole list can no longer bind an
+    arbitrary remote user as this subject's mirror (then wrongly PATCH/DELETE it).
+  - **OAuth token cache now expires.** The client-credentials token is cached with
+    its `expires_in` lifetime (minus a skew margin) and refreshed on expiry, so the
+    singleton client in a long-running worker no longer serves a dead token and
+    dead-letters every operation after the first expiry.
+
 ## [0.9.0] - 2026-07-15
 
 ### Added

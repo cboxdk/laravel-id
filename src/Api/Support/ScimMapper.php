@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Support;
 
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
+use Cbox\Id\Scim\ScimSchema;
 use Illuminate\Http\Request;
 
 /**
@@ -14,8 +15,12 @@ use Illuminate\Http\Request;
  */
 final class ScimMapper
 {
-    /** RFC 7643 §4.3 Enterprise User extension schema URN. */
-    public const ENTERPRISE_URN = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
+    /**
+     * RFC 7643 §4.3 Enterprise User extension schema URN. Aliased to the shared
+     * {@see ScimSchema} constant so the server and the outbound client speak the
+     * exact same URN from one source.
+     */
+    public const ENTERPRISE_URN = ScimSchema::ENTERPRISE_URN;
 
     /** Enterprise-extension attributes IdPs actually provision. */
     private const ENTERPRISE_ATTRIBUTES = ['employeeNumber', 'costCenter', 'organization', 'division', 'department', 'manager'];
@@ -115,13 +120,7 @@ final class ScimMapper
      */
     public static function listResponse(array $resources, int $totalResults, int $startIndex, int $itemsPerPage): array
     {
-        return [
-            'schemas' => ['urn:ietf:params:scim:api:messages:2.0:ListResponse'],
-            'totalResults' => $totalResults,
-            'startIndex' => $startIndex,
-            'itemsPerPage' => $itemsPerPage,
-            'Resources' => $resources,
-        ];
+        return ScimSchema::listResponse($resources, $totalResults, $startIndex, $itemsPerPage);
     }
 
     /**
@@ -278,7 +277,7 @@ final class ScimMapper
         $email = self::nullableStr($resource['email'] ?? null);
 
         $out = [
-            'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:User'],
+            'schemas' => [ScimSchema::USER_URN],
             'id' => $directoryUser->id,
             'externalId' => $directoryUser->external_id,
             'userName' => self::str($resource['userName'] ?? null),

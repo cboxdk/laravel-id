@@ -22,6 +22,7 @@ use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
 use Cbox\Id\Platform\PlatformServiceProvider;
+use Cbox\Id\Provisioning\ProvisioningServiceProvider;
 use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
 use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
@@ -56,6 +57,10 @@ final class IdServiceProvider extends ServiceProvider
         OAuthServerServiceProvider::class,
         SamlIdpServiceProvider::class,
         WebhookServiceProvider::class,
+        // Outbound SCIM 2.0 provisioning: the mirror of the Directory (inbound
+        // SCIM server) module — pushes user/membership changes OUT to downstream
+        // apps. Registered after the domain modules whose events it subscribes to.
+        ProvisioningServiceProvider::class,
         // Registered after AuditServiceProvider so the base AuditLog binding
         // exists to decorate; composes cboxdk/laravel-siem for env-isolated SIEM
         // audit streaming.
