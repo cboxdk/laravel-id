@@ -76,6 +76,16 @@ type. A type with no registered validator is **rejected**, never trusted.
 - SCIM deprovision / deactivation drops membership **and revokes the user's sessions
   immediately** — access ends the moment the directory says so, not at token expiry.
 
+## Outbound provisioning
+
+Pushing users OUT to downstream apps is authenticated, server-side egress carrying
+tenant data. Its controls mirror the other egress paths: SSRF-guarded and IP-pinned
+requests (base URL and OAuth token URL), TLS-verify on, connection secrets sealed
+at rest and never logged or dead-lettered, environment-owned deny-by-default scope,
+and bounded retries with a per-connection circuit breaker. Delivery is honestly
+**at-least-once**, not exactly-once. See
+[Outbound provisioning security](provisioning.md).
+
 ## Reporting
 
 Found a vulnerability? See `SECURITY.md` for private disclosure and safe-harbor terms. Do not

@@ -108,6 +108,37 @@ return [
     ],
 
     /*
+     * Outbound SCIM 2.0 provisioning (src/Provisioning/). The mirror of the
+     * inbound Directory (SCIM server): when a user or membership changes, the
+     * platform pushes the change OUT to each org's downstream SaaS apps via THEIR
+     * SCIM endpoints (create/update/deactivate the remote user).
+     *
+     * `verify_url` (SSRF guard) rejects a downstream SCIM base URL or OAuth token
+     * URL that resolves to loopback/private/link-local/reserved addresses and pins
+     * the connection to the validated IPs (closing DNS-rebinding) — the same guard
+     * webhooks and federation use. Keep it true in any multi-tenant deployment; a
+     * single-tenant/on-prem install delivering to an internal SCIM endpoint may
+     * disable it. `max_attempts` bounds retries before an operation is dead-lettered
+     * (status `exhausted`); `batch_limit` caps how many operations one drain pass
+     * ships per connection. `circuit_breaker` opens a connection after
+     * `failure_threshold` consecutive transient failures and pauses it for
+     * `cooldown_seconds`, so a failing downstream app never blocks the others.
+     * `schedule` registers the per-minute drain that fans a job out to every active
+     * connection across all environments; disable it to run
+     * `cbox-id:provisioning:drain` yourself.
+     */
+    'provisioning' => [
+        'verify_url' => env('CBOX_ID_PROVISIONING_VERIFY_URL', true),
+        'max_attempts' => env('CBOX_ID_PROVISIONING_MAX_ATTEMPTS', 12),
+        'batch_limit' => env('CBOX_ID_PROVISIONING_BATCH_LIMIT', 50),
+        'schedule' => env('CBOX_ID_PROVISIONING_SCHEDULE', true),
+        'circuit_breaker' => [
+            'failure_threshold' => env('CBOX_ID_PROVISIONING_CB_FAILURE_THRESHOLD', 5),
+            'cooldown_seconds' => env('CBOX_ID_PROVISIONING_CB_COOLDOWN_SECONDS', 300),
+        ],
+    ],
+
+    /*
      * Federation (inbound SSO). `verify_url` (SSRF guard) applies the same
      * loopback/private/link-local/reserved blocking and DNS-pinning as webhook
      * delivery to org-admin-configured outbound IdP endpoints (e.g. an OIDC

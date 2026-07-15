@@ -80,7 +80,7 @@ and `EnforcementMode::DecisionApi` (the default) for anything that must revoke i
 > Keeping your own billing engine and want the full flow — reconcile, enforcement
 > modes, provenance and events? See [Entitlements & billing](../core-concepts/entitlements-and-billing.md).
 
-## Provision users over SCIM
+## Provision users over SCIM (inbound — an IdP → the platform)
 
 ```php
 use Cbox\Id\Directory\Contracts\Directories;
@@ -95,6 +95,12 @@ app(DirectorySync::class)->provisionUser($directory->id, new ScimUser('okta|1', 
 // Deprovision drops membership AND kills the user's sessions immediately:
 app(DirectorySync::class)->deprovisionUser($directory->id, 'okta|1');
 ```
+
+## Provision users to a downstream app (outbound — the platform → a SaaS app)
+
+The mirror direction: push the platform's user/membership changes OUT to an
+organization's downstream apps over **their** SCIM endpoints. See the full recipe:
+[Provision users to a downstream app](provision-users-to-a-downstream-app.md).
 
 ## Register a webhook
 

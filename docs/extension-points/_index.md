@@ -8,6 +8,14 @@ weight: 5
 
 Because every capability is a contract bound in the container, extension is just a binding.
 
+Topic guides:
+
+- **[Hash verifiers](hash-verifiers.md)** — accept a foreign password-hash format
+  during a migration.
+- **[Custom SCIM attribute mapping](custom-scim-attribute-mapping.md)** — control
+  how platform user attributes map onto the SCIM `User` schema pushed to a
+  downstream app.
+
 ## Swap an implementation
 
 Rebind any contract in a service provider — yours wins over the package default:
