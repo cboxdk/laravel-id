@@ -334,6 +334,20 @@ return [
     ],
 
     /*
+     * Access governance (src/Governance/) — Identity Governance & Administration.
+     * Access-certification campaigns (periodic review of who holds which role /
+     * membership, with reviewer certify/revoke decisions applied on close) and
+     * Segregation-of-Duties policies (a pre-grant gate + a detector for toxic role
+     * combinations). All environment-owned, deny-by-default, and audited.
+     *
+     * `schedule` runs `cbox-id:governance:close-overdue` every minute to auto-close
+     * campaigns past their due date. Turn it off to drive the command by hand.
+     */
+    'governance' => [
+        'schedule' => env('CBOX_ID_GOVERNANCE_SCHEDULE', true),
+    ],
+
+    /*
      * AI token vault (src/TokenVault/) — holds downstream third-party credentials
      * (API keys, OAuth tokens for services an AI agent calls) SEALED at rest via
      * the Crypto SecretBox, and brokers short-lived, deny-by-default leased access

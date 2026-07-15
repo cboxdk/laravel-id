@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.13.0] - 2026-07-15
+
+### Added
+
+- **Access governance — IGA (`src/Governance/`).** The Identity Governance &
+  Administration layer over the platform's RBAC roles and organization memberships:
+  periodic access reviews and Segregation-of-Duties policies. No new runtime dependency
+  — it composes the existing `Roles`, `Memberships`, audit and events, all
+  environment-owned and deny-by-default.
+  - **`Contracts\AccessReviews` + `DatabaseAccessReviews` (new contract).** `open()`
+    snapshots every DIRECT role assignment and membership in an organization as pending
+    certification items; `certify()`/`revoke()` record a reviewer's decision (reversible
+    while the campaign is open); `close()` **applies** every revoke against the real
+    contracts (`Roles::unassign()` / `Memberships::remove()`) and marks the campaign
+    closed. Items left un-reviewed at close follow the campaign's `PendingPolicy`
+    (default **Revoke** — unattested access is removed). A revoke the domain refuses
+    (removing an org's last owner) is recorded un-applied with the reason and audited
+    (`governance.access.revoke_blocked`), never silently dropped.
+  - **`Contracts\SegregationOfDuties` + `DatabaseSegregationOfDuties` (new contract).**
+    Policies over a mutually-exclusive set of roles. `evaluate()` returns a reasoned
+    `Decision` (the authorization kernel's value object; deny carries `sod:{policyId}`)
+    as a pre-grant gate the host calls before assigning a role; `wouldViolate()` is the
+    boolean convenience; `violationsFor()` / `scan()` detect conflicts that already
+    exist. Policies scope to one org or environment-wide (`organizationId: null`).
+  - **Scheduled auto-close.** `cbox-id:governance:close-overdue` (registered + scheduled
+    every minute, config-gated by `cbox-id.governance.schedule`) closes any open campaign
+    past its `due_at`, reconstructing each campaign's environment first
+    (`withoutScope` → `runAs`).
+  - **Additive read methods on `Roles`.** `assignmentsForSubject()` and
+    `assignmentsInOrganization()` were added to the `AccessControl\Contracts\Roles`
+    contract (and `RoleService`) so governance enumerates real grants through the
+    contract rather than the model.
+  - **Models.** `CertificationCampaign`, `CertificationItem`, `SodPolicy` — all
+    `BelongsToEnvironment`. Migration adds `governance_campaigns`,
+    `governance_certification_items`, `governance_sod_policies`.
+  - **Config.** New `cbox-id.governance.schedule`.
+  - **Testing.** `Testing\InteractsWithGovernance`, dogfooded by the suite (snapshot,
+    apply-on-close, certified-survives, pending policies, last-owner block, closed-freeze,
+    idempotent re-close, SoD gate + detection, environment isolation, scheduled close).
+
+### Security
+
+- Certification **applies** revokes against the real access contracts rather than
+  recording paper decisions; un-reviewed items default to revoke; a refused revoke is
+  surfaced and audited, never dropped; every decision and application is correlated by
+  `campaign_id` on the hash-chained trail. See
+  [security/governance.md](docs/security/governance.md).
+
 ## [0.12.1] - 2026-07-15
 
 ### Changed

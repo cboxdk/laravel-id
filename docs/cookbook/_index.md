@@ -124,6 +124,12 @@ call — the agent never holds the long-lived secret. See the full recipe:
 to approve a high-risk agent action first, see
 [Approve agent actions with CIBA](approve-agent-actions-with-ciba.md).
 
+## Review who has access (access certification)
+
+Open a campaign, have reviewers certify or revoke each role/membership, and apply the
+revokes on close — pending items are removed by default. See the full recipe:
+[Run an access review](run-an-access-review.md).
+
 ## Register a webhook
 
 ```php

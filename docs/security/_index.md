@@ -117,6 +117,17 @@ and the host's internal approval handle are **separate identifiers**, so a clien
 can never approve its own request. Poll mode only; the approval channel's strength
 is the host's. See [Security: CIBA](ciba.md).
 
+## Access governance
+
+Identity governance makes over-provisioned access visible and removable, so its own
+controls are load-bearing. Certification campaigns **apply** revokes against the real
+access contracts (not paper decisions), items left un-reviewed at close default to
+**revoke** (deny-by-default), and a revoke the domain refuses — removing an org's last
+owner — is recorded and audited (`governance.access.revoke_blocked`), never silently
+dropped. Segregation-of-Duties returns a reasoned `Decision` before a grant completes a
+toxic combination. Everything is environment-isolated and correlated on the audit trail
+by `campaign_id`. See [Security: access governance](governance.md).
+
 ## Reporting
 
 Found a vulnerability? See `SECURITY.md` for private disclosure and safe-harbor terms. Do not

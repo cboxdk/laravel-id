@@ -30,3 +30,5 @@ How the platform is put together and the ideas you build against:
   and broker short-lived, deny-by-default leased access to autonomous / AI agents.
 - **[CIBA backchannel approval](ciba.md)** — OpenID Connect Client-Initiated
   Backchannel Authentication: human-in-the-loop approval for agent actions.
+- **[Access governance](access-governance.md)** — IGA: access-certification
+  campaigns and Segregation-of-Duties policies over roles and memberships.

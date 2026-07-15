@@ -13,6 +13,7 @@ use Cbox\Id\Console\ImportUsersCommand;
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Directory\DirectoryServiceProvider;
 use Cbox\Id\Federation\FederationServiceProvider;
+use Cbox\Id\Governance\GovernanceServiceProvider;
 use Cbox\Id\Identity\IdentityServiceProvider;
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Authorization\AuthorizationServiceProvider;
@@ -56,6 +57,10 @@ final class IdServiceProvider extends ServiceProvider
         // sits alongside the other authentication factors; depends only on kernels.
         OtpServiceProvider::class,
         AccessControlServiceProvider::class,
+        // Access governance (IGA): certification campaigns + Segregation of Duties.
+        // After AccessControl and Organization, whose role/membership grants it
+        // enumerates, certifies and revokes.
+        GovernanceServiceProvider::class,
         AuditQueryServiceProvider::class,
         DirectoryServiceProvider::class,
         FederationServiceProvider::class,

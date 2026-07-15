@@ -80,6 +80,24 @@ final class RoleService implements Roles
         $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
     }
 
+    public function assignmentsForSubject(string $organizationId, string $userId): array
+    {
+        return array_values(RoleAssignment::query()
+            ->where('organization_id', $organizationId)
+            ->where('user_id', $userId)
+            ->get()
+            ->all());
+    }
+
+    public function assignmentsInOrganization(string $organizationId): array
+    {
+        return array_values(RoleAssignment::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('user_id')
+            ->get()
+            ->all());
+    }
+
     private function emitAndAudit(string $organizationId, string $userId, string $roleId, string $action): void
     {
         $this->events->emit(new DomainEvent($action, ['user_id' => $userId, 'role_id' => $roleId], $organizationId));

@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\Testing\InteractsWithAccessControl;
 use Cbox\Id\AuditStreaming\Testing\InteractsWithAuditStreaming;
 use Cbox\Id\Directory\Testing\InteractsWithDirectory;
 use Cbox\Id\Federation\Testing\InteractsWithFederation;
+use Cbox\Id\Governance\Testing\InteractsWithGovernance;
 use Cbox\Id\Identity\Testing\InteractsWithIdentity;
 use Cbox\Id\Identity\Testing\InteractsWithImport;
 use Cbox\Id\IdServiceProvider;
@@ -37,6 +38,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithEntitlements;
     use InteractsWithEvents;
     use InteractsWithFederation;
+    use InteractsWithGovernance;
     use InteractsWithIdentity;
     use InteractsWithImport;
     use InteractsWithOAuth;
