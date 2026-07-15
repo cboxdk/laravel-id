@@ -24,11 +24,17 @@ use Illuminate\Database\Eloquent\Scope;
  */
 final class EnvironmentScope implements Scope
 {
-    public function __construct(private readonly EnvironmentContext $context) {}
-
     public function apply(Builder $builder, Model $model): void
     {
-        if ($this->context->isScopingSuspended()) {
+        // Resolve the context LAZILY, per query — never capture it. The binding is
+        // `scoped`, so a queue worker gets a fresh EnvironmentContext per job; a
+        // global scope is registered once at model-boot, so a captured instance
+        // would go stale after the first job and read the wrong (or no) environment.
+        // Resolving here keeps the read scope in lock-step with the write hook in
+        // BelongsToEnvironment::saving(), which already resolves it per call.
+        $context = app(EnvironmentContext::class);
+
+        if ($context->isScopingSuspended()) {
             return;
         }
 
@@ -37,7 +43,7 @@ final class EnvironmentScope implements Scope
         }
 
         $column = $model->qualifyColumn($model->environmentColumn());
-        $environment = $this->context->current();
+        $environment = $context->current();
 
         if ($environment === null) {
             // Deny-by-default: no environment in context => no rows.

@@ -28,7 +28,7 @@ trait BelongsToTenant
 {
     public static function bootBelongsToTenant(): void
     {
-        static::addGlobalScope(new TenantScope(app(TenantContext::class)));
+        static::addGlobalScope(new TenantScope);
 
         static::saving(static function (self $model): void {
             $context = app(TenantContext::class);

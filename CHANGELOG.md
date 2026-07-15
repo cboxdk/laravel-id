@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.9.0] - 2026-07-15
+
+### Added
+
+- **SIEM audit streaming (`src/AuditStreaming/`).** A thin, isolation-critical
+  binding that mirrors the hash-chained, environment-scoped audit trail OUT to a
+  customer's SIEM (Splunk HEC, Elastic ECS, Graylog GELF, ArcSight/CEF, generic
+  JSON). It composes two new runtime dependencies rather than reimplementing
+  delivery: `cboxdk/siem` (the `SiemEvent` value object + formatters) and
+  `cboxdk/laravel-siem` (the transactional-outbox delivery engine: batching, retry /
+  dead-letter / circuit-breaker, SSRF-guarded HTTP egress, encrypted secrets,
+  redaction).
+  - **Environment-owned models (`Models\AuditStream`, `Models\AuditStreamDelivery`).**
+    Subclasses of the engine's `LogStream` / `StreamDelivery` with
+    `BelongsToEnvironment`. Pointed at by `config('siem.models.*')`, so the engine's
+    registry, dispatcher and pump inherit the hard environment scope for free —
+    deny-by-default, no bespoke tenancy checks. A migration adds an indexed
+    `environment_id` to the engine's `log_streams` and `stream_deliveries` tables
+    (runs after the engine's own create migration).
+  - **`StreamingAuditLog` decorator (behavior addition).** Bound via
+    `app->extend(AuditLog::class, …)`, so it composes with a host decorator (e.g.
+    impersonation attribution — stamped `context.impersonated_by` flows to the SIEM
+    automatically). On `record()` it maps the `AuditEntry` to a `SiemEvent` and writes
+    the outbox row **in the same database transaction as the entry** (transactional
+    outbox → at-least-once; a rolled-back caller leaves neither the entry nor an
+    orphan delivery). Deny-by-default: with no stream configured in the environment it
+    is a no-op beyond the inner `record()`. `verifyChain()` / `checkpoint()` delegate
+    unchanged.
+  - **`Contracts\SiemEventMapper` + `DefaultSiemEventMapper` (new contract).** Maps
+    `AuditEntry` → `SiemEvent`; rebind to refine category/outcome/severity. Two
+    invariants are fixed by contract: the event **id is the entry hash** (dedup /
+    idempotency key), and the context carries `sequence`, `hash`, `prev_hash` and
+    `organization_id` so the receiving SIEM can verify chain continuity and detect
+    gaps/reorder/replay.
+  - **Async pump with environment reconstruction.** `Jobs\PumpAuditStream`
+    (`ShouldBeUnique` per stream) resolves the stream's `environment_id` via a
+    provisioning-only `EnvironmentContext::withoutScope()` read, then runs the engine's
+    delivery inside `EnvironmentContext::runAs($env, …)` so the hard scope matches and
+    only that environment's rows are ever loaded. `Console\PumpAuditStreamsCommand`
+    (scheduled every minute, mirroring the Webhooks module) is the single
+    cross-environment step: under `withoutScope` it enumerates enabled streams across
+    all environments and dispatches one pump each — it dispatches, it never delivers.
+  - **Config.** New `cbox-id.audit_streaming.schedule` toggle. The provider forces
+    three engine keys: `siem.models.log_stream`, `siem.models.stream_delivery`, and
+    `siem.schedule.enabled = false` (laravel-id owns scheduling so the pump can
+    reconstruct each stream's environment).
+  - **Testing.** `Testing\InteractsWithAuditStreaming` (env-aware stream registration,
+    an in-memory fake sink, synchronous pump) — dogfooded by the suite.
+
+### Security
+
+- **Environment isolation for streaming is structural, proven at both stages.** An
+  env-A audit entry only ever matches/writes env-A streams (dispatch), and the pump
+  for an env-A stream can only load/deliver env-A rows (pump) — enforced by the
+  env-owned models and the hard scope, not a filter. Covered by cross-environment
+  tests at both stages.
+- **`siem.http.verify_url` (SSRF guard) and `siem.http.tls_verify` are operator-only.**
+  Documented (config + `docs/security/audit-streaming.md`) as deployment-level toggles
+  that must NEVER be exposed to a tenant/org admin — a tenant able to disable the SSRF
+  guard could turn a stream into an SSRF primitive against internal infrastructure.
+
+### Dependencies
+
+- Added runtime deps `cboxdk/laravel-siem` and `cboxdk/siem` (both MIT). SBOM
+  regenerated (78 → 80 components).
+- **DEV-ONLY composer wiring:** while both siblings are unreleased they resolve from
+  local `path` repositories (`../laravel-siem` and `../siem`) and the requires alias
+  `dev-main as 0.1.0`. Composer `path` repos are not transitive, so BOTH are declared
+  in `composer.json` even though only `laravel-siem` is required directly. **At
+  release:** remove both `repositories` entries and change both requires to a plain
+  `^0.1` from Packagist. The `@dev-main` version strings in `sbom.json` become `@0.1.0`
+  at that point.
+
 ## [0.8.0] - 2026-07-15
 
 ### Added

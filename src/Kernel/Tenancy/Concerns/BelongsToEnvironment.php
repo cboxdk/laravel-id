@@ -28,7 +28,7 @@ trait BelongsToEnvironment
 {
     public static function bootBelongsToEnvironment(): void
     {
-        static::addGlobalScope(new EnvironmentScope(app(EnvironmentContext::class)));
+        static::addGlobalScope(new EnvironmentScope);
 
         static::saving(static function (self $model): void {
             $context = app(EnvironmentContext::class);

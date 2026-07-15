@@ -3,11 +3,18 @@
     "description": "Cbox ID — self-hostable, Laravel-native identity platform (framework). AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
     "type": "library",
     "license": "MIT",
+    "//": "DEV-ONLY REPOSITORIES (v0.9.0): cboxdk/laravel-siem and cboxdk/siem are resolved from local `path` checkouts while both are unreleased. A composer `path` repo reports the working tree as `dev-main` (it ignores git tags) and is NOT transitive, so BOTH siblings are declared here even though laravel-id only requires laravel-siem directly — laravel-siem's own require of cboxdk/siem cannot see laravel-siem's private path repo from this project. The two requires alias `dev-main as 0.1.0`. AT RELEASE: remove BOTH `repositories` entries and change the two requires to a plain `^0.1` from Packagist. cboxdk/laravel-ssrf already resolves from Packagist and needs no path repo.",
+    "repositories": [
+        { "type": "path", "url": "../laravel-siem", "options": { "symlink": true } },
+        { "type": "path", "url": "../siem", "options": { "symlink": true } }
+    ],
     "require": {
         "php": "^8.4",
         "ext-openssl": "*",
         "ext-sodium": "*",
+        "cboxdk/laravel-siem": "dev-main as 0.1.0",
         "cboxdk/laravel-ssrf": "^1.0",
+        "cboxdk/siem": "dev-main as 0.1.0",
         "firebase/php-jwt": "^7.0",
         "illuminate/auth": "^12.0 || ^13.0",
         "illuminate/contracts": "^12.0 || ^13.0",

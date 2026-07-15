@@ -82,6 +82,32 @@ return [
     ],
 
     /*
+     * SIEM audit streaming (src/AuditStreaming/). Mirrors the hash-chained,
+     * environment-scoped audit trail out to a customer's SIEM by composing
+     * cboxdk/laravel-siem's delivery engine over ENVIRONMENT-OWNED stream/outbox
+     * models — so isolation is inherited from the hard environment scope, never
+     * re-implemented. The engine itself is configured under the `siem.*` namespace
+     * (published from cboxdk/laravel-siem: batching, retry/dead-letter, circuit
+     * breaker, backpressure, HTTP egress). This package forces three of those keys
+     * and owns none of the rest:
+     *   - siem.models.log_stream      → AuditStream (env-owned)
+     *   - siem.models.stream_delivery → AuditStreamDelivery (env-owned)
+     *   - siem.schedule.enabled       → false (laravel-id schedules the pump, so it
+     *                                   can reconstruct each stream's environment)
+     *
+     * SECURITY: `siem.http.verify_url` (the SSRF guard) and `siem.http.tls_verify`
+     * are operator-only. NEVER expose either to a tenant/org admin — a tenant that
+     * could disable the SSRF guard could point a stream at an internal address.
+     *
+     * `schedule` registers the per-minute pump that fans a delivery job out to every
+     * enabled stream across all environments; disable it to run
+     * `cbox-id:audit-streams:pump` yourself.
+     */
+    'audit_streaming' => [
+        'schedule' => env('CBOX_ID_AUDIT_STREAMING_SCHEDULE', true),
+    ],
+
+    /*
      * Federation (inbound SSO). `verify_url` (SSRF guard) applies the same
      * loopback/private/link-local/reserved blocking and DNS-pinning as webhook
      * delivery to org-admin-configured outbound IdP endpoints (e.g. an OIDC

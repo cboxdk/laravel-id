@@ -38,6 +38,10 @@ not an audited or certified conformance claim.
   tamper-resistant against someone who can rewrite the database.
 - The chain proves *integrity*, not *completeness*. Logging coverage of security-relevant
   actions is a separate obligation.
+- **Streaming the trail to a customer's SIEM** is environment-isolated and carries the
+  chain metadata for dedup and gap-detection at the destination — with two operator-only
+  safety toggles that must never reach a tenant. See
+  [Audit streaming — isolation & operator-only controls](audit-streaming.md).
 
 ## Federation
 

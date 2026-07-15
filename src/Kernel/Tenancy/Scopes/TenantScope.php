@@ -24,11 +24,16 @@ use Illuminate\Database\Eloquent\Scope;
  */
 final class TenantScope implements Scope
 {
-    public function __construct(private readonly TenantContext $context) {}
-
     public function apply(Builder $builder, Model $model): void
     {
-        if ($this->context->isScopingSuspended()) {
+        // Resolve the context LAZILY, per query — never capture it. The binding is
+        // `scoped` (fresh per request/queue job), but a global scope is registered
+        // once at model-boot; a captured instance would go stale after the first job
+        // and scope to the wrong (or no) tenant. This mirrors the write hook in
+        // BelongsToTenant::saving(), which already resolves the context per call.
+        $context = app(TenantContext::class);
+
+        if ($context->isScopingSuspended()) {
             return;
         }
 
@@ -39,7 +44,7 @@ final class TenantScope implements Scope
         $column = $model->qualifyColumn($model->tenantColumn());
 
         // Bounded roll-up: reads constrained to an explicit, authorized set.
-        $keys = $this->context->activeScopeKeys();
+        $keys = $context->activeScopeKeys();
 
         if ($keys !== null) {
             if ($keys === []) {
@@ -52,7 +57,7 @@ final class TenantScope implements Scope
             return;
         }
 
-        $tenant = $this->context->current();
+        $tenant = $context->current();
 
         if ($tenant === null) {
             // Deny-by-default: no tenant in context => no rows.
