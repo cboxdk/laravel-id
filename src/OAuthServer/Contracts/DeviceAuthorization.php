@@ -12,6 +12,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
+use Cbox\Id\OAuthServer\ValueObjects\PendingDeviceAuthorization;
 
 interface DeviceAuthorization
 {
@@ -21,6 +22,14 @@ interface DeviceAuthorization
      * @param  list<string>  $scopes
      */
     public function request(Client $client, array $scopes): DeviceAuthorizationResult;
+
+    /**
+     * Resolve a live (pending, unexpired) request by its `user_code`, so a
+     * verification screen can show which client and scopes are asking BEFORE the
+     * user approves. Returns null for an unknown, expired or already-decided code.
+     * Never exposes the device_code.
+     */
+    public function pending(string $userCode): ?PendingDeviceAuthorization;
 
     /**
      * Approve a pending grant identified by its user_code, binding the user who

@@ -28,6 +28,26 @@ it('starts a device grant with a user_code and verification URI', function (): v
         ->and($response->json('verification_uri'))->toEndWith('/device');
 });
 
+it('resolves a live request by user_code for the verification screen (never the device_code)', function (): void {
+    $registered = $this->makeClient(['openid', 'profile']);
+    $device = app(DeviceAuthorization::class);
+    $result = $device->request($registered->client, ['openid', 'profile']);
+
+    // The verification screen looks the code up (case-insensitively) to show what is asking.
+    $pending = $device->pending(strtolower($result->userCode));
+
+    expect($pending)->not->toBeNull()
+        ->and($pending->clientId)->toBe($registered->client->client_id)
+        ->and($pending->scopes)->toBe(['openid', 'profile'])
+        // The VO carries no device_code — the requesting device's polling secret stays secret.
+        ->and(json_encode($pending))->not->toContain($result->deviceCode);
+
+    // Unknown, approved and expired codes all resolve to null (nothing to consent to).
+    expect($device->pending('ZZZZ-ZZZZ'))->toBeNull();
+    $device->approve($result->userCode, 'user-1', 'org-1');
+    expect($device->pending($result->userCode))->toBeNull();
+});
+
 it('polls pending, then issues a token once the user approves', function (): void {
     $registered = $this->makeClient(['openid']);
     $device = app(DeviceAuthorization::class);

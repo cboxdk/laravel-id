@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.14.0] - 2026-07-15
+
+### Added
+
+- **`DeviceAuthorization::pending()` (device flow consent lookup).** A read method on
+  the existing device-grant contract that resolves a live (pending, unexpired) request
+  by its `user_code`, returning a new `PendingDeviceAuthorization` value object
+  (`clientId`, `scopes`, `expiresAt`). This lets a verification/consent screen show
+  **which** client and scopes are asking BEFORE the user approves — the piece a
+  deployable app needs to build the RFC 8628 "enter the code on your TV/CLI" screen. It
+  returns null for an unknown, expired or already-decided code and never exposes the
+  `device_code` (the requesting device's polling secret). Additive; the rest of the
+  device grant is unchanged.
+
 ## [0.13.0] - 2026-07-15
 
 ### Added

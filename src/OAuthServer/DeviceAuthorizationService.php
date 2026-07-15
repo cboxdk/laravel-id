@@ -14,6 +14,7 @@ use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
+use Cbox\Id\OAuthServer\ValueObjects\PendingDeviceAuthorization;
 use Illuminate\Support\Facades\DB;
 
 final class DeviceAuthorizationService implements DeviceAuthorization
@@ -49,6 +50,25 @@ final class DeviceAuthorizationService implements DeviceAuthorization
             expiresIn: self::TTL_SECONDS,
             interval: self::POLL_INTERVAL,
             scopes: $scopes,
+        );
+    }
+
+    public function pending(string $userCode): ?PendingDeviceAuthorization
+    {
+        $record = DeviceCode::query()
+            ->where('user_code', strtoupper($userCode))
+            ->where('status', 'pending')
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if ($record === null) {
+            return null;
+        }
+
+        return new PendingDeviceAuthorization(
+            clientId: $record->client_id,
+            scopes: array_values($record->scopes),
+            expiresAt: $record->expires_at->toDateTimeImmutable(),
         );
     }
 
