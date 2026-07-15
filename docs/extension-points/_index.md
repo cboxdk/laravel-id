@@ -15,6 +15,8 @@ Topic guides:
 - **[Custom SCIM attribute mapping](custom-scim-attribute-mapping.md)** — control
   how platform user attributes map onto the SCIM `User` schema pushed to a
   downstream app.
+- **[Custom OTP channel](custom-otp-channel.md)** — swap, add, or decorate how
+  one-time passcodes are delivered (e.g. wire an SMS provider behind the contract).
 
 ## Swap an implementation
 

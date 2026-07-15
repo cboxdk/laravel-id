@@ -21,6 +21,7 @@ use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
+use Cbox\Id\Otp\OtpServiceProvider;
 use Cbox\Id\Platform\PlatformServiceProvider;
 use Cbox\Id\Provisioning\ProvisioningServiceProvider;
 use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
@@ -50,6 +51,9 @@ final class IdServiceProvider extends ServiceProvider
         OrganizationServiceProvider::class,
         PlatformServiceProvider::class,
         IdentityServiceProvider::class,
+        // Delivered-OTP (email/SMS) verification + MFA factor. After Identity so it
+        // sits alongside the other authentication factors; depends only on kernels.
+        OtpServiceProvider::class,
         AccessControlServiceProvider::class,
         AuditQueryServiceProvider::class,
         DirectoryServiceProvider::class,

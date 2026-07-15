@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.11.0] - 2026-07-15
+
+### Added
+
+- **Delivered OTP channels (`src/Otp/`).** One-time passcodes over email / SMS as a
+  verification and MFA factor, sitting alongside the existing authenticator-app TOTP,
+  passkeys and magic links. A host wires it into its own step-up / second-factor /
+  contact-verification flows — the module ships primitives, no UI. No new runtime
+  dependency: it reuses the framework mailer (via the `Mailer` contract only), the
+  crypto master key, Laravel's `RateLimiter`, the hash-chained audit trail and the
+  hard environment scope.
+  - **`Contracts\OtpService` + `DatabaseOtpService` (new contract).** `issue(purpose,
+    recipient, channel, ip?)` generates a CSPRNG numeric code (`random_int`,
+    configurable length, default 6), stores only its hash with a short TTL (default
+    5 min), delivers the plaintext via the channel, and returns an `OtpChallenge`
+    value object that never carries the code. `verify(challengeId, code, ip?)` /
+    `verifyLatest(purpose, recipient, code, ip?)` are constant-time, single-use, and
+    deny-by-default — unknown, expired, consumed, locked or wrong all fail with a
+    uniform `OtpResult`, and the hash-compare runs on every path (a decoy on the miss)
+    so there is no enumeration or timing oracle.
+  - **`Contracts\OtpChannel` + `Contracts\OtpChannels` + `ChannelRegistry` (new
+    contracts).** A deny-by-default sender registry: a channel key with no registered
+    sender is refused (`UnknownOtpChannel`), never a silent no-op. Ships
+    `EmailOtpChannel` (framework mailer, plain honest text), plus `LogOtpChannel` and
+    `NullOtpChannel` for local dev / tests. **SMS is a CONTRACT ONLY** — a host
+    registers its own `OtpChannel` wrapping its provider's SDK; this package ships no
+    SMS SDK.
+  - **`Contracts\OtpHasher` + `KeyedOtpHasher` (new contract).** A short numeric code
+    has little entropy, so the at-rest value is a **keyed HMAC** under a key derived
+    (HKDF) from the crypto master key — which lives outside the database — rather than
+    a plain hash (offline-brute-forceable) or a slow password hash (a CPU-amplification
+    lever on the verify path). All vetted PHP core primitives; nothing hand-rolled.
+  - **Environment-owned model (`Models\OtpChallenge`).** `BelongsToEnvironment`, so a
+    challenge issued in one environment is structurally invisible to any other. A
+    migration adds the `otp_challenges` table (purpose, channel, recipient, code_hash,
+    expires_at, attempts, max_attempts, consumed_at).
+  - **Abuse resistance (layered).** Issuance is throttled both per recipient+purpose+IP
+    **and** per recipient across all purposes/IPs — the second cap is what bounds
+    bombing / SMS-cost abuse when an attacker rotates the purpose or source IP.
+    Verification is throttled globally per IP **and**, on the `verifyLatest()` recipient
+    path, per recipient+purpose across IPs. `verifyLatest()` targets only a LIVE,
+    unlocked challenge (skipping expired/attempt-capped rows), so a locked fresher
+    challenge can neither shadow an older valid one nor leak an expired/locked status as
+    an enumeration signal. Underneath, the at-rest per-challenge attempt cap (default 5,
+    then the challenge locks) is the last-resort bound independent of the cache-backed
+    limiter. Issue / verify-fail / lockout / verify are audited — with the challenge id,
+    purpose, channel and recipient, and never the code.
+  - **Minimum code length.** Configuring `code_length` below 6 is floored to 6: a 10^4
+    space is brute-forceable within the attempt cap once sprayed across recipients/IPs,
+    so it is refused rather than silently accepted.
+  - **Config.** New `cbox-id.otp.*` keys: `code_length` (floored to 6), `ttl_seconds`,
+    `max_attempts`, `issue.max_per_window` + `issue.per_recipient_max`,
+    `verify.max_per_window` + `verify.per_recipient_max`, the deny-by-default `channels`
+    map, and `email.*` (subject / from).
+  - **Testing.** `Testing\InteractsWithOtp` + an in-memory `Testing\FakeOtpChannel`
+    that captures delivered codes — dogfooded by the suite, which proves the
+    issue→verify lifecycle, single-use, TTL, attempt-cap + lockout, both rate limits,
+    deny-by-default (unregistered channel, no-ambient-environment, cross-environment
+    isolation), code-hashed-at-rest, code-absent-from-audit, and the uniform
+    constant-time miss path.
+
+### Security
+
+- OTP is treated as an auth factor: codes are CSPRNG-generated, stored only as a
+  keyed HMAC (never plaintext), single-use, TTL-bounded, attempt-capped and
+  rate-limited on both issue and verify; verification is constant-time on every path
+  and returns a uniform result (no enumeration / timing oracle); the plaintext code
+  never appears in a return value, an audit row, a log (outside the dev-only
+  `LogOtpChannel`), or an exception. Honest scope is documented: a short code's safety
+  rests on the caps, not its entropy, and SMS is only as secure as SIM-swap
+  resistance. New docs: `core-concepts/otp-channels.md`, `security/otp.md`,
+  `cookbook/add-an-sms-otp-channel.md`, `extension-points/custom-otp-channel.md`.
+
 ## [0.10.0] - 2026-07-15
 
 ### Added

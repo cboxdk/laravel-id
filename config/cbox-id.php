@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 use Cbox\Id\Identity\Models\User;
+use Cbox\Id\Otp\Channels\EmailOtpChannel;
 
 return [
 
@@ -262,6 +263,60 @@ return [
     'hashing' => [
         'verifiers' => [
             // App\Auth\FirebaseScryptVerifier::class,
+        ],
+    ],
+
+    /*
+     * Delivered one-time passcodes (src/Otp/) — email/SMS codes as a verification
+     * or MFA factor. Security note: a short numeric code lives in a ~10^length
+     * space, so its safety rests on these CAPS, not on the code's entropy —
+     * `ttl_seconds`, `max_attempts`, and the two rate limits are the real controls.
+     *
+     * `channels` is the DENY-BY-DEFAULT sender registry (`key => OtpChannel class`).
+     * A key with no registered sender is refused, never a silent no-op. The package
+     * ships `email` (framework mailer) and `log` (DEV-ONLY: writes the code to the
+     * log). SMS is a CONTRACT ONLY — register your provider's channel here (see
+     * docs/cookbook/add-an-sms-otp-channel.md); this package ships no SMS SDK.
+     *
+     * `issue` throttles issuance: `max_per_window` per recipient+purpose+IP, and
+     * `per_recipient_max` per recipient ACROSS all purposes and IPs — the latter is
+     * what bounds SMS-bombing when an attacker rotates IPs or purposes. `verify`
+     * throttles verification: `max_per_window` globally per IP, and
+     * `per_recipient_max` per recipient+purpose across IPs (anti-brute-force). A
+     * short numeric code is only safe because of these caps, not its entropy.
+     */
+    'otp' => [
+        // Minimum enforced length is 6 digits (see OtpServiceProvider::clampedLength).
+        'code_length' => env('CBOX_ID_OTP_CODE_LENGTH', 6),
+        'ttl_seconds' => env('CBOX_ID_OTP_TTL_SECONDS', 300),
+        'max_attempts' => env('CBOX_ID_OTP_MAX_ATTEMPTS', 5),
+
+        'issue' => [
+            'max_per_window' => env('CBOX_ID_OTP_ISSUE_MAX', 5),
+            'per_recipient_max' => env('CBOX_ID_OTP_ISSUE_RECIPIENT_MAX', 10),
+            'window_seconds' => env('CBOX_ID_OTP_ISSUE_WINDOW', 3600),
+        ],
+
+        'verify' => [
+            'max_per_window' => env('CBOX_ID_OTP_VERIFY_MAX', 20),
+            'per_recipient_max' => env('CBOX_ID_OTP_VERIFY_RECIPIENT_MAX', 15),
+            'window_seconds' => env('CBOX_ID_OTP_VERIFY_WINDOW', 900),
+        ],
+
+        'channels' => [
+            'email' => EmailOtpChannel::class,
+            // Local development only — logs the plaintext code. Never enable in prod.
+            // 'log' => Cbox\Id\Otp\Channels\LogOtpChannel::class,
+            // Register your own channel wrapping an SMS provider (Twilio, etc.):
+            // 'sms' => App\Otp\SmsOtpChannel::class,
+        ],
+
+        'email' => [
+            'subject' => env('CBOX_ID_OTP_EMAIL_SUBJECT', 'Your verification code'),
+            'from' => [
+                'address' => env('CBOX_ID_OTP_EMAIL_FROM_ADDRESS'),
+                'name' => env('CBOX_ID_OTP_EMAIL_FROM_NAME'),
+            ],
         ],
     ],
 

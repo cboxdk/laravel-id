@@ -33,6 +33,7 @@ uses(InteractsWithTenancy::class, InteractsWithOrganizations::class, InteractsWi
 | `InteractsWithWebhooks` | `registerWebhook(orgId, url, eventTypes)` |
 | `InteractsWithOAuth` | `makeClient(scopes?, type?)`, `makeServiceAccount(orgId, scopes?, name?)` |
 | `InteractsWithPlatform` | `makeOperator(email?, password?, name?)` |
+| `InteractsWithOtp` | `fakeOtpChannel(key?)`, `issueOtp(purpose, recipient, channel?, ip?)`, `verifyOtp(challengeId, code, ip?)` |
 
 > **Establish an environment first.** The domain models are environment-owned and
 > deny-by-default: a test that calls `makeOrganization()` or `makeUser()` with **no
@@ -68,6 +69,18 @@ app(Organizations::class)->create(new NewOrganization('Acme', 'acme'));
 $events->assertEmitted('organization.created', fn ($e) => $e->organizationId !== null);
 $audit->assertRecorded('organization.created');
 $events->assertNotEmitted('organization.deleted');
+```
+
+The OTP module ships a `FakeOtpChannel` that captures delivered codes, so a test
+can read the code without a real transport:
+
+```php
+$channel   = $this->fakeOtpChannel();                       // InteractsWithOtp
+$challenge = $this->issueOtp('login', 'a@acme.test');       // over the fake channel
+$result    = $this->verifyOtp($challenge->id, $channel->codeFor('a@acme.test'));
+
+expect($result->verified)->toBeTrue();
+$channel->assertDelivered('a@acme.test');
 ```
 
 ## Mocking

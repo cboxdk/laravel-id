@@ -86,6 +86,17 @@ and bounded retries with a per-connection circuit breaker. Delivery is honestly
 **at-least-once**, not exactly-once. See
 [Outbound provisioning security](provisioning.md).
 
+## One-time passcodes (OTP)
+
+Delivered email/SMS codes are an auth factor, so their controls are load-bearing.
+A short code is safe because of the **caps**, not its entropy: it is stored only as
+a **keyed HMAC** (never plaintext), single-use, TTL-bounded, attempt-capped, and
+rate-limited on both issue (anti-bomb / anti-SMS-cost) and verify (anti-brute-force).
+Verification is constant-time on every path — including the miss — and returns a
+uniform result, so there is no enumeration or timing oracle. Honest scope: SMS is
+only as secure as SIM-swap resistance; prefer a phishing-resistant primary factor.
+See [Security: OTP](otp.md).
+
 ## Reporting
 
 Found a vulnerability? See `SECURITY.md` for private disclosure and safe-harbor terms. Do not

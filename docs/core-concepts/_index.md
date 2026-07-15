@@ -23,3 +23,6 @@ How the platform is put together and the ideas you build against:
 - **[Outbound SCIM provisioning](outbound-provisioning.md)** — push user and
   membership changes OUT to downstream apps over their SCIM 2.0 endpoints; the
   stateful mirror of the inbound directory.
+- **[OTP delivery channels](otp-channels.md)** — delivered one-time passcodes
+  (email/SMS) as a verification and MFA factor, and the caps that make a short
+  code safe.

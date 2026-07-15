@@ -102,6 +102,20 @@ The mirror direction: push the platform's user/membership changes OUT to an
 organization's downstream apps over **their** SCIM endpoints. See the full recipe:
 [Provision users to a downstream app](provision-users-to-a-downstream-app.md).
 
+## Send a one-time passcode (email / SMS)
+
+```php
+use Cbox\Id\Otp\Contracts\OtpService;
+
+$challenge = app(OtpService::class)->issue('login', 'sam@acme.test', 'email', request()->ip());
+// ... user types the code they received ...
+$result = app(OtpService::class)->verify($challenge->id, $code, request()->ip());
+$result->verified; // true once, then single-use
+```
+
+Email works out of the box. To offer "text me a code", wire your SMS provider
+behind the channel contract: [Add an SMS OTP channel](add-an-sms-otp-channel.md).
+
 ## Register a webhook
 
 ```php
