@@ -69,6 +69,16 @@ interface Subjects
     public function setPassword(string $subjectId, string $password): void;
 
     /**
+     * Store an ALREADY-HASHED credential verbatim — the migration/import path. The
+     * hash is NOT re-hashed on the way in (that would destroy a foreign format),
+     * so it must be a format a registered {@see HashVerifier} can verify. It is
+     * transparently upgraded to the platform hasher on the subject's next
+     * successful password login (lazy migration). Use {@see setPassword()} for a
+     * plaintext password. A no-op for an unknown subject.
+     */
+    public function storeCredential(string $subjectId, string $passwordHash): void;
+
+    /**
      * Whether the subject may authenticate right now. A resolver returns false
      * for accounts it considers disabled, deprovisioned, or locked. The platform
      * calls this at every login path to refuse a deactivated account a new

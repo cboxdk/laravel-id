@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity;
 
+use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
@@ -29,12 +30,13 @@ use Illuminate\Support\Facades\DB;
  * never forced on them. It returns opaque {@see Subject} value objects, never
  * the underlying model, so nothing downstream depends on the storage shape.
  */
-final class DatabaseSubjects implements Subjects
+class DatabaseSubjects implements Subjects
 {
     public function __construct(
         private readonly EventBus $events,
         private readonly AuditLog $audit,
         private readonly Hasher $hasher,
+        private readonly HashVerifier $verifier,
     ) {}
 
     public function find(string $id): ?Subject
@@ -204,14 +206,54 @@ final class DatabaseSubjects implements Subjects
         if ($model === null || $model->getAttribute('status') !== UserStatus::Active) {
             // Constant-cost dummy verify so a missing/inactive account takes the
             // same time as a real one — no username-enumeration timing oracle.
-            $this->hasher->check($password, $this->dummyHash());
+            $this->verifier->verify($password, $this->dummyHash());
 
             return false;
         }
 
         $hash = $model->getAttribute('password');
 
-        return is_string($hash) && $this->hasher->check($password, $hash);
+        if (! is_string($hash) || $hash === '') {
+            return false;
+        }
+
+        // The registry is deny-by-default: a hash whose format no registered
+        // verifier understands (including an unsupported foreign hash that slipped
+        // in) fails here — never a silent pass. This covers the platform's own
+        // hashes (bcrypt/argon2 via the native verifier) and any host-registered
+        // legacy format the same way.
+        if (! $this->verifier->verify($password, $hash)) {
+            return false;
+        }
+
+        // Correct password. Lazy migration: if the stored hash is a foreign/legacy
+        // format, or the platform algorithm with weaker-than-current parameters,
+        // re-hash the just-verified plaintext with the platform hasher and persist
+        // it — so an imported bcrypt hash self-upgrades to argon2id on first login
+        // and every subsequent login uses the platform standard.
+        if ($this->verifier->needsRehash($hash)) {
+            $this->upgradeHash($model, $password);
+        }
+
+        return true;
+    }
+
+    /**
+     * Replace a just-verified legacy/foreign hash with a fresh platform-hasher
+     * hash of the same password. The model's `hashed` cast passes an
+     * already-hashed value through untouched, so no double-hashing.
+     */
+    private function upgradeHash(Model $model, string $password): void
+    {
+        $model->setAttribute('password', $this->hasher->make($password));
+        $model->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.password_rehashed',
+            actorType: ActorType::System,
+            targetType: 'user',
+            targetId: $this->keyOf($model),
+        ));
     }
 
     private ?string $dummyHash = null;
@@ -276,6 +318,27 @@ final class DatabaseSubjects implements Subjects
             actorType: ActorType::System,
             targetType: 'user',
             targetId: $this->keyOf($model),
+        ));
+    }
+
+    public function storeCredential(string $subjectId, string $passwordHash): void
+    {
+        // Write through the query builder, NOT setAttribute: the model's `hashed`
+        // cast would re-hash any value it doesn't recognize as already-hashed
+        // (e.g. a Firebase-scrypt string), corrupting a foreign credential. A raw
+        // update stores the provider's hash verbatim so lazy migration can verify
+        // and then upgrade it on first login. The environment scope still applies.
+        $updated = $this->query()->whereKey($subjectId)->update(['password' => $passwordHash]);
+
+        if ($updated === 0) {
+            return;
+        }
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.credential_imported',
+            actorType: ActorType::System,
+            targetType: 'user',
+            targetId: $subjectId,
         ));
     }
 

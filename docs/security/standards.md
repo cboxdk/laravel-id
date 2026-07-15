@@ -90,6 +90,7 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 | Capability | Status |
 |------------|--------|
 | Passwords — hashed via the framework hasher (bcrypt/argon2id), verified through the pluggable `Subjects` resolver; password rules are an extension point | ✅ |
+| Bulk import + lazy password-hash migration — import existing hashes (bcrypt/argon2 natively), verified through a deny-by-default `HashVerifier` registry, and upgraded to the platform hasher on first login; unknown formats refused, foreign formats added by wrapping a vetted library | ✅ |
 | TOTP (RFC 6238) — replay-protected (last-used step), rate-limited | ✅ |
 | WebAuthn / passkeys (FIDO2) — registration + assertion, sign-count clone detection | ✅ |
 | Passkey User-Verification enforced (primary-factor), server-side challenge TTL | ✅ |

@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
-## [Unreleased]
+## [0.8.0] - 2026-07-15
+
+### Added
+
+- **Bulk user import + lazy password-hash migration (`src/Identity/`).** The
+  enterprise migration wedge: import users from another provider
+  (Auth0/Cognito/Firebase/a CSV) INCLUDING their existing password hashes, so they
+  sign in on day one, with each foreign hash transparently upgraded to the platform
+  hasher (argon2id) on first successful login — no forced reset, no dual-run window.
+  - **Multi-algorithm hash verification (`Identity\Hashing`).** New contract
+    `Identity\Contracts\HashVerifier` (`supports`/`verify`/`needsRehash`) with
+    `NativePasswordVerifier` (bcrypt `$2y$/$2a$/$2b$` + argon2 `$argon2i$/$argon2id$`
+    via PHP's vetted `password_verify`/`password_needs_rehash` — nothing hand-rolled)
+    and a **deny-by-default** `HashVerifierRegistry` bound to the contract: a hash no
+    registered verifier `supports()` fails `verify()` — never a silent pass. The
+    registry is the seam a host uses to add a foreign format (Firebase scrypt,
+    PBKDF2, `{SSHA}`) by wrapping a vetted library, via
+    `config('cbox-id.hashing.verifiers')`.
+  - **Lazy migration in `DatabaseSubjects::verifyPassword()`.** Verification now
+    routes through the registry; on a correct password against a foreign/legacy hash
+    (or the platform algorithm with weaker-than-current parameters) the plaintext is
+    re-hashed with the platform hasher and persisted in place. The constant-time
+    dummy-verify (no enumeration/timing oracle) and active-status gating are
+    preserved.
+  - **Import service.** New contracts `Identity\Contracts\UserImport` +
+    `DatabaseUserImport`, value objects `ImportedUser` / `ImportOptions` /
+    `ImportResult` / `ImportError`. Idempotent per email (skip or `upsert`), batched
+    in a transaction per chunk with atomic rows, per-row errors collected instead of
+    aborting the run, and **deny-by-default** on credentials — with
+    `ImportOptions::$rejectUnverifiableHashes` (default) a `passwordHash` no verifier
+    supports is a per-row error, so you can't import a user who could never log in.
+    Attaches each user to an organization via `Organization\Contracts\Memberships`
+    and honors the per-row verified-email flag.
+  - **Artisan `cbox-id:users:import {file} {--org=} {--format=csv|json} {--upsert}
+    {--role=}`** — streams a CSV/JSON export into the importer and exits non-zero if
+    any row errored.
+  - **Contract change:** `Identity\Contracts\Subjects` gains `storeCredential()`
+    (store an already-hashed credential verbatim, for import/migration — NOT
+    re-hashed, upgraded lazily on next login). Hosts with a custom `Subjects`
+    resolver must implement it.
+  - `Testing\InteractsWithImport` helper. Docs: cookbook recipe *Migrate users from
+    another provider* and extension-points *Custom hash verifiers*.
+  - **Environment integrity on the import command.** `cbox-id:users:import` always
+    provisions into the TARGET ORG's own environment: when an environment is already
+    ambient it must be the org's (a mismatch is refused, never a silent import into
+    the wrong plane), and a bare console invocation pins it from the org. The
+    `--upsert` match is by environment-wide email (a user is unique per
+    `(environment, email)` and may belong to several orgs) — the recipe documents
+    why this stays an operator-run console command with no per-org authorization.
 
 ## [0.7.0] - 2026-07-15
 

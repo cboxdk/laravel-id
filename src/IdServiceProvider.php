@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\AccessControlServiceProvider;
 use Cbox\Id\Api\ApiServiceProvider;
 use Cbox\Id\AuditQuery\AuditQueryServiceProvider;
 use Cbox\Id\Console\DoctorCommand;
+use Cbox\Id\Console\ImportUsersCommand;
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Directory\DirectoryServiceProvider;
 use Cbox\Id\Federation\FederationServiceProvider;
@@ -75,7 +76,7 @@ final class IdServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([InstallCommand::class, DoctorCommand::class]);
+            $this->commands([InstallCommand::class, DoctorCommand::class, ImportUsersCommand::class]);
 
             $this->publishes([
                 __DIR__.'/../config/cbox-id.php' => config_path('cbox-id.php'),

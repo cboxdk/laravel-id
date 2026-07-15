@@ -76,6 +76,11 @@ final class ArraySubjects implements Subjects
         // No-op: this host delegates credentials elsewhere.
     }
 
+    public function storeCredential(string $subjectId, string $passwordHash): void
+    {
+        // No-op: this host owns its credential store; import targets the default.
+    }
+
     public function isActive(string $subjectId): bool
     {
         // This host tracks account state elsewhere; everything it resolves is live.

@@ -189,6 +189,25 @@ return [
         'login_url' => env('CBOX_ID_SAML_IDP_LOGIN_URL'),
     ],
 
+    /*
+     * Password-hash verification for bulk import + lazy migration. The platform
+     * verifies stored password hashes through a DENY-BY-DEFAULT registry: a hash
+     * whose format no registered verifier understands is REFUSED, never a silent
+     * pass. The package ships only the native verifier (bcrypt + argon2, via PHP's
+     * vetted password_verify). To accept a foreign format when migrating off
+     * another provider — Firebase scrypt, PBKDF2, an LDAP {SSHA} digest — add your
+     * own class implementing Cbox\Id\Identity\Contracts\HashVerifier (wrapping a
+     * vetted library; never hand-roll the primitive). Once a user with such a hash
+     * signs in successfully, their password is transparently re-hashed with the
+     * platform hasher (see Subjects::verifyPassword()), so the foreign format is
+     * needed only during the migration window.
+     */
+    'hashing' => [
+        'verifiers' => [
+            // App\Auth\FirebaseScryptVerifier::class,
+        ],
+    ],
+
     'crypto' => [
 
         /*
