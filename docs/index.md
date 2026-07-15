@@ -50,7 +50,8 @@ container). There is no separate client SDK. The framework is embedded only in t
 | `Directory` | `Directories`, `DirectorySync` | SCIM provisioning; deprovision revokes sessions immediately. |
 | `Federation` | `Connections`, `FederationFlow`, `AssertionValidator` | Per-org SSO connections + login orchestration (relying-party / SP side). |
 | `SamlIdp` | `SamlIdentityProvider`, `ServiceProviders`, `IdpKeyMaterial` | SAML 2.0 **Identity Provider**: downstream SPs (Salesforce, Workday, AWS) federate here — signed assertions, ACS/audience pinning, RSA-SHA256. |
-| `OAuthServer` | `TokenIssuer`, `TokenIntrospector`, `ClientRegistry`, `AuthorizationCodes`, `RefreshTokens`, `DeviceAuthorization`, `PushedAuthorizationRequests`, `DynamicClientRegistration`, `ServiceAccounts` | OAuth 2.0 / OIDC provider: authorization-code + PKCE, client-credentials, refresh rotation, DPoP, PAR, device grant, dynamic client registration, introspection/revocation. |
+| `OAuthServer` | `TokenIssuer`, `TokenIntrospector`, `ClientRegistry`, `AuthorizationCodes`, `RefreshTokens`, `DeviceAuthorization`, `BackchannelAuthentication`, `PushedAuthorizationRequests`, `DynamicClientRegistration`, `ServiceAccounts` | OAuth 2.0 / OIDC provider: authorization-code + PKCE, client-credentials, refresh rotation, DPoP, PAR, device grant, CIBA (backchannel approval for agents), dynamic client registration, introspection/revocation. |
+| `TokenVault` | `SecretVault` | AI token vault: seals downstream third-party credentials and brokers short-lived, deny-by-default leased access to agent clients. |
 | `Webhooks` | `WebhookRegistry`, `WebhookDispatcher` | HMAC-signed delivery + retries; fans out `EventDelivered`. |
 | `AuditQuery` | `AuditReader` | Filtered/paginated reads + SIEM pull-stream. |
 | `Api` | (HTTP routes/middleware) | The HTTP surface — OAuth/OIDC, SCIM, discovery endpoints; resolves each request's environment (`ResolveEnvironment`). |

@@ -17,6 +17,8 @@ Topic guides:
   downstream app.
 - **[Custom OTP channel](custom-otp-channel.md)** — swap, add, or decorate how
   one-time passcodes are delivered (e.g. wire an SMS provider behind the contract).
+- **[Custom secret vault](custom-secret-vault.md)** — back the AI token vault with
+  an HSM or external secrets manager while keeping the deny-by-default grant model.
 
 ## Swap an implementation
 

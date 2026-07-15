@@ -40,6 +40,10 @@ final class ServerMetadata
             'require_pushed_authorization_requests' => (bool) config('cbox-id.oauth.require_par', false),
             // RFC 8628: device authorization grant.
             'device_authorization_endpoint' => $issuer.'/oauth/device_authorization',
+            // OIDC CIBA: client-initiated backchannel authentication (poll mode).
+            'backchannel_authentication_endpoint' => $issuer.'/oauth/backchannel_authentication',
+            'backchannel_token_delivery_modes_supported' => ['poll'],
+            'backchannel_user_code_parameter_supported' => false,
             // RFC 9207: the authorization response carries `iss` (mix-up defense).
             'authorization_response_iss_parameter_supported' => true,
             'response_types_supported' => ['code'],
@@ -75,6 +79,12 @@ final class ServerMetadata
      */
     private static function grantTypes(): array
     {
-        return ['authorization_code', 'client_credentials', 'refresh_token', 'urn:ietf:params:oauth:grant-type:device_code'];
+        return [
+            'authorization_code',
+            'client_credentials',
+            'refresh_token',
+            'urn:ietf:params:oauth:grant-type:device_code',
+            'urn:openid:params:grant-type:ciba',
+        ];
     }
 }

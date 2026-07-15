@@ -220,6 +220,19 @@ return [
         'require_par' => env('CBOX_ID_REQUIRE_PAR', false),
 
         /*
+         * OpenID Connect CIBA (Client-Initiated Backchannel Authentication), poll
+         * mode — the human-in-the-loop approval grant for autonomous / AI agents.
+         * `ttl_seconds` is the approval window (and the ceiling on a client's
+         * requested_expiry); `poll_interval` is the minimum seconds between token
+         * polls (enforced with `slow_down`). The user notification + approval UI is
+         * the host's; the package emits `oauth.backchannel_authentication_requested`.
+         */
+        'ciba' => [
+            'ttl_seconds' => env('CBOX_ID_CIBA_TTL_SECONDS', 300),
+            'poll_interval' => env('CBOX_ID_CIBA_POLL_INTERVAL', 5),
+        ],
+
+        /*
          * Hybrid entitlements: embed the coarse, Claims-mode entitlements in the
          * access token (`ent` claim) so resource servers can gate statelessly.
          * Instant-critical entitlements stay DecisionApi (live via /oauth/decisions)
@@ -318,6 +331,21 @@ return [
                 'name' => env('CBOX_ID_OTP_EMAIL_FROM_NAME'),
             ],
         ],
+    ],
+
+    /*
+     * AI token vault (src/TokenVault/) — holds downstream third-party credentials
+     * (API keys, OAuth tokens for services an AI agent calls) SEALED at rest via
+     * the Crypto SecretBox, and brokers short-lived, deny-by-default leased access
+     * to agent clients. A lease returns the plaintext to an AUTHORIZED client for
+     * immediate use and audits every access — never the value. Access needs an
+     * explicit, revocable grant (client_id → secret); no grant means refused.
+     *
+     * `default_lease_ttl_seconds` is the vault-wide ceiling on how long a leased
+     * secret may be held; a per-grant `max_ttl_seconds` can only shorten it.
+     */
+    'token_vault' => [
+        'default_lease_ttl_seconds' => env('CBOX_ID_VAULT_LEASE_TTL', 300),
     ],
 
     'crypto' => [

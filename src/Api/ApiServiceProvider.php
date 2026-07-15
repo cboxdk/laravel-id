@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api;
 
 use Cbox\Id\Api\Http\Controllers\AuthorizationServerMetadataController;
+use Cbox\Id\Api\Http\Controllers\BackchannelAuthenticationController;
 use Cbox\Id\Api\Http\Controllers\DecisionController;
 use Cbox\Id\Api\Http\Controllers\DeviceAuthorizationController;
 use Cbox\Id\Api\Http\Controllers\DiscoveryController;
@@ -81,6 +82,9 @@ final class ApiServiceProvider extends ServiceProvider
 
                 // RFC 8628: device authorization grant (TVs, CLIs, IoT).
                 Route::post('/oauth/device_authorization', DeviceAuthorizationController::class);
+
+                // OIDC CIBA: client-initiated backchannel authentication (agents).
+                Route::post('/oauth/backchannel_authentication', BackchannelAuthenticationController::class);
 
                 // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
                 Route::post('/sso/saml/{connection}/acs', SamlAcsController::class);

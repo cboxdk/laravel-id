@@ -116,6 +116,14 @@ $result->verified; // true once, then single-use
 Email works out of the box. To offer "text me a code", wire your SMS provider
 behind the channel contract: [Add an SMS OTP channel](add-an-sms-otp-channel.md).
 
+## Vault a credential for an AI agent
+
+Store a downstream API key sealed, authorize an agent, and lease it for a single
+call — the agent never holds the long-lived secret. See the full recipe:
+[Vault a downstream credential](vault-a-downstream-credential.md). To require a human
+to approve a high-risk agent action first, see
+[Approve agent actions with CIBA](approve-agent-actions-with-ciba.md).
+
 ## Register a webhook
 
 ```php

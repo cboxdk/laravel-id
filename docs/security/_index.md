@@ -97,6 +97,26 @@ uniform result, so there is no enumeration or timing oracle. Honest scope: SMS i
 only as secure as SIM-swap resistance; prefer a phishing-resistant primary factor.
 See [Security: OTP](otp.md).
 
+## AI token vault
+
+The vault holds downstream third-party credentials that carry real power, so its
+value is stored **sealed** (SecretBox, recoverable — the vault must replay it, so
+hashing won't do), never plaintext. Access is deny-by-default: a lease needs a live
+`(secret, client)` grant, and every failure raises a **uniform** `LeaseDenied` (the
+reason audited, never returned) so the vault is no enumeration oracle. Every store,
+rotation, revocation, grant and lease is audited with actor and purpose — never the
+value. Honest scope: a lease TTL is advisory, and master-key rotation is a manual
+re-seal. See [Security: token vault](token-vault.md).
+
+## CIBA backchannel approval
+
+CIBA issues tokens on an out-of-band human approval, so it inherits the device
+grant's hardening: a CSPRNG `auth_req_id` stored only as a hash, single-use under a
+row lock, TTL-bounded, and poll-throttled (`slow_down`). The client's polling secret
+and the host's internal approval handle are **separate identifiers**, so a client
+can never approve its own request. Poll mode only; the approval channel's strength
+is the host's. See [Security: CIBA](ciba.md).
+
 ## Reporting
 
 Found a vulnerability? See `SECURITY.md` for private disclosure and safe-harbor terms. Do not

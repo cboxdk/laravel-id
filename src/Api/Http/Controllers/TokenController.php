@@ -8,10 +8,15 @@ use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
+use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
+use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
+use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
+use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
+use Cbox\Id\OAuthServer\Exceptions\CibaSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
@@ -42,6 +47,7 @@ final class TokenController
         private readonly RefreshTokens $refreshTokens,
         private readonly DpopProofValidator $dpop,
         private readonly DeviceAuthorization $device,
+        private readonly BackchannelAuthentication $ciba,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -66,6 +72,7 @@ final class TokenController
             'authorization_code' => $this->authorizationCode($request, $jkt),
             'refresh_token' => $this->refreshToken($request, $jkt),
             'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt),
+            'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt),
             default => $this->error('unsupported_grant_type', 400),
         };
     }
@@ -156,6 +163,35 @@ final class TokenController
             $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt),
             null,
         );
+    }
+
+    private function ciba(Request $request, ?string $dpopJkt): JsonResponse
+    {
+        $client = $this->clientAuth->authenticate($request);
+
+        if ($client === null) {
+            return $this->error('invalid_client', 401);
+        }
+
+        try {
+            $grant = $this->ciba->redeem($client->client_id, $request->string('auth_req_id')->toString());
+        } catch (CibaAuthorizationPending) {
+            return $this->error('authorization_pending', 400);
+        } catch (CibaSlowDown) {
+            return $this->error('slow_down', 400);
+        } catch (CibaAccessDenied) {
+            return $this->error('access_denied', 400);
+        } catch (CibaExpired) {
+            return $this->error('expired_token', 400);
+        } catch (InvalidGrant) {
+            return $this->error('invalid_grant', 400);
+        }
+
+        // CIBA is OpenID Connect: the token response carries an id_token bound to
+        // the approving user (with auth_time and the request nonce).
+        $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt);
+
+        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access));
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse

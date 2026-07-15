@@ -25,6 +25,7 @@ use Cbox\Id\Otp\OtpServiceProvider;
 use Cbox\Id\Platform\PlatformServiceProvider;
 use Cbox\Id\Provisioning\ProvisioningServiceProvider;
 use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
+use Cbox\Id\TokenVault\TokenVaultServiceProvider;
 use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -59,6 +60,11 @@ final class IdServiceProvider extends ServiceProvider
         DirectoryServiceProvider::class,
         FederationServiceProvider::class,
         OAuthServerServiceProvider::class,
+        // AI token vault: seals downstream third-party credentials and brokers
+        // deny-by-default leased access to agent (OAuth client) principals.
+        // Depends only on kernels (Crypto/Audit/Tenancy); placed alongside the
+        // OAuth/agent machinery it serves.
+        TokenVaultServiceProvider::class,
         SamlIdpServiceProvider::class,
         WebhookServiceProvider::class,
         // Outbound SCIM 2.0 provisioning: the mirror of the Directory (inbound

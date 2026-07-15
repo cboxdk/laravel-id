@@ -21,6 +21,7 @@ use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Cbox\Id\Otp\Testing\InteractsWithOtp;
 use Cbox\Id\Provisioning\Testing\InteractsWithProvisioning;
 use Cbox\Id\SamlIdp\Testing\InteractsWithSamlIdp;
+use Cbox\Id\TokenVault\Testing\InteractsWithTokenVault;
 use Cbox\Id\Webhooks\Testing\InteractsWithWebhooks;
 use Cbox\Ssrf\SsrfServiceProvider;
 use Illuminate\Foundation\Application;
@@ -44,6 +45,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithProvisioning;
     use InteractsWithSamlIdp;
     use InteractsWithTenancy;
+    use InteractsWithTokenVault;
     use InteractsWithWebhooks;
 
     protected function setUp(): void

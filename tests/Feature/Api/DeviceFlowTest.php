@@ -129,5 +129,6 @@ it('advertises the device endpoint and grant type in metadata', function (): voi
         ->assertJsonPath('device_authorization_endpoint', fn (string $v): bool => str_ends_with($v, '/oauth/device_authorization'))
         ->assertJsonFragment(['grant_types_supported' => [
             'authorization_code', 'client_credentials', 'refresh_token', DEVICE_GRANT,
+            'urn:openid:params:grant-type:ciba',
         ]]);
 });

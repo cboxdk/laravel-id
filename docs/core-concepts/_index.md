@@ -26,3 +26,7 @@ How the platform is put together and the ideas you build against:
 - **[OTP delivery channels](otp-channels.md)** — delivered one-time passcodes
   (email/SMS) as a verification and MFA factor, and the caps that make a short
   code safe.
+- **[AI token vault](token-vault.md)** — seal downstream third-party credentials
+  and broker short-lived, deny-by-default leased access to autonomous / AI agents.
+- **[CIBA backchannel approval](ciba.md)** — OpenID Connect Client-Initiated
+  Backchannel Authentication: human-in-the-loop approval for agent actions.

@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.12.0] - 2026-07-15
+
+### Added
+
+- **AI token vault (`src/TokenVault/`).** A deny-by-default broker for the downstream
+  third-party credentials (OpenAI/GitHub/Google API keys and OAuth tokens) that
+  autonomous / AI agents must present to the services they call. The agent never holds
+  the long-lived secret; the vault does, sealed, and hands out short-lived audited
+  leases. No new runtime dependency — it reuses the Crypto `SecretBox`, the hash-chained
+  audit trail and the hard environment scope.
+  - **`Contracts\SecretVault` + `DatabaseSecretVault` (new contract).** `store()` seals a
+    credential via `SecretBox` (recoverable, AEAD-bound to the row — not a hash, because
+    the vault must replay it); `grant()`/`revokeGrant()` are the deny-by-default
+    authorization edge (a `client_id` → secret); `lease()` returns the plaintext to an
+    authorized agent for immediate use with an advisory TTL; `rotate()`/`revoke()` are
+    immediate. Every op is audited with actor + purpose, never the value.
+  - **Uniform lease denial (no enumeration oracle).** Unknown secret, missing grant,
+    revoked or expired all raise the same `LeaseDenied`; the real reason is written to
+    the audit trail (`vault.lease.denied`), never returned. Management ops throw
+    `SecretNotFound`.
+  - **Environment-owned models (`Models\VaultSecret`, `Models\VaultGrant`).**
+    `BelongsToEnvironment`; a `key_version` column makes a future manual master-key
+    re-seal auditable (the crypto kernel has no master-key rotation). Migration adds
+    `vault_secrets` + `vault_grants`.
+  - **Config.** New `cbox-id.token_vault.default_lease_ttl_seconds` (the vault-wide lease
+    ceiling; a per-grant `max_ttl_seconds` can only shorten it).
+  - **Testing.** `Testing\InteractsWithTokenVault` + an in-memory `Testing\FakeTokenVault`
+    that mirrors the deny-by-default semantics — dogfooded by the suite (lifecycle,
+    grant-required + revoked/expired refusal, uniform denial, environment isolation,
+    sealed-at-rest + AEAD context binding, value-absent-from-audit).
+- **OpenID Connect CIBA — backchannel approval (`src/OAuthServer/`).** A new OAuth grant
+  and endpoint for human-in-the-loop approval of agent actions, modelled on the device
+  authorization grant. An agent starts a decoupled authentication naming the user; the
+  user approves out-of-band; the agent polls for its tokens.
+  - **`Contracts\BackchannelAuthentication` + `CibaAuthenticationService` (new contract).**
+    `request()` resolves the user from `login_hint`, persists a pending request and emits
+    `oauth.backchannel_authentication_requested` for the host to notify + drive its
+    approval UI; `approve()`/`deny()` key off the INTERNAL request id (never the client's
+    `auth_req_id`); `redeem()` is the poll grant. The `auth_req_id` is a CSPRNG secret
+    stored only as a hash, single-use under a `lockForUpdate` mint, TTL-bounded and
+    poll-throttled (`slow_down`) — the device grant's hardening, without a user_code.
+  - **`POST /oauth/backchannel_authentication`** (client-authenticated) + the
+    `urn:openid:params:grant-type:ciba` arm on `POST /oauth/token`, which returns an
+    access token AND an id_token bound to the approving user (auth_time, nonce). Discovery
+    advertises `backchannel_authentication_endpoint`,
+    `backchannel_token_delivery_modes_supported: ["poll"]` and the grant type.
+  - **Host boundary.** As with the OAuth consent screen, the user notification + approval
+    surface is the host's; the package ships the protocol and emits the domain event.
+    Poll mode only (ping/push not implemented).
+  - **Config.** New `cbox-id.oauth.ciba.*`: `ttl_seconds` (approval window / ceiling on
+    `requested_expiry`) and `poll_interval`.
+
+### Security
+
+- The token vault seals downstream credentials at rest and never returns which secret ids
+  exist (uniform `LeaseDenied`); CIBA keeps the client's polling secret and the host's
+  approval handle as separate identifiers so a client can never approve its own request.
+  See [security/token-vault.md](docs/security/token-vault.md) and
+  [security/ciba.md](docs/security/ciba.md).
+
 ## [0.11.0] - 2026-07-15
 
 ### Added
