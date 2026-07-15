@@ -20,6 +20,7 @@ use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
 use Cbox\Id\Platform\PlatformServiceProvider;
+use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
 use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -51,6 +52,7 @@ final class IdServiceProvider extends ServiceProvider
         DirectoryServiceProvider::class,
         FederationServiceProvider::class,
         OAuthServerServiceProvider::class,
+        SamlIdpServiceProvider::class,
         WebhookServiceProvider::class,
         ApiServiceProvider::class,
     ];

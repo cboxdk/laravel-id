@@ -9,6 +9,75 @@ Confirmed security vulnerabilities and their fixes are cross-referenced under
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-15
+
+### Added
+
+- **SAML 2.0 Identity Provider (`src/SamlIdp/`).** Cbox ID can now act as the SAML
+  IdP that downstream service providers (Salesforce, Workday, AWS, any SP) federate
+  to — the mirror of the existing relying-party side. New contracts
+  `SamlIdp\Contracts\{SamlIdentityProvider, ServiceProviders, IdpKeyMaterial}`:
+  - **Registered SPs** (`saml_service_providers`, environment-owned `ServiceProvider`
+    model): `entity_id` (unique per environment), an exact-match `acs_url` (the only
+    place an assertion is ever sent), `name_id_format`/`name_id_attribute`,
+    `attribute_mappings`, the SP `certificate`, and `want_authn_requests_signed`.
+  - **`parseAuthnRequest()`** decodes the request (base64 + DEFLATE for redirect,
+    base64 for POST) through an XXE-safe loader and validates deny-by-default: the
+    issuer must be a registered, active SP; a request-supplied
+    `AssertionConsumerServiceURL` must equal the registered ACS exactly
+    (open-redirect defense); when signing is required the signature must verify
+    against the SP certificate with the algorithm **pinned to RSA-SHA256** (SHA-1 and
+    unknown algorithms refused).
+  - **`issueResponse()`** mints a signed SAML Response containing a signed Assertion:
+    bearer `SubjectConfirmation` (Recipient = registered ACS, `InResponseTo`, short
+    `NotOnOrAfter`), `Conditions` with a ~5-minute window and an `AudienceRestriction`
+    pinned to the SP EntityID, an `AuthnStatement`, and an `AttributeStatement` from
+    the SP's mappings. The Assertion is signed with `robrichards/xmlseclibs`
+    (enveloped signature, **exclusive C14N**, **RSA-SHA256**, SHA-256 digest) and the
+    Response with `onelogin/php-saml`'s `addSign`. XML is built with DOM so every
+    value is escaped. SHA-1 is never emitted.
+  - **One identity:** the IdP signs with the platform's active RSA signing key
+    (`KeyManager::activeSigningKey`), the same key behind JWKS/OIDC — no second key
+    store. The public half is published as a self-signed X.509 certificate, persisted
+    per `kid` (`saml_idp_certificates`).
+  - **Endpoints** (behind `ResolveEnvironment` + throttle): `GET /sso/saml/idp/metadata`,
+    `GET|POST /sso/saml/idp/sso` (parse + validate + host hand-off + auto-POST form),
+    `GET|POST /sso/saml/idp/slo` (local session termination). Thin controllers — the
+    authenticate-the-subject step is the host's, as with OAuth `/authorize`.
+  - **Testing:** `Testing\InteractsWithSamlIdp` trait (now with `samlSigningKeypair()`
+    and `makeSignedPostAuthnRequest()` helpers) + `FakeServiceProviders`. The suite
+    proves issued assertions against `onelogin/php-saml` acting as the SP (signature,
+    audience, recipient, `InResponseTo`, conditions), asserts a tampered assertion is
+    rejected by that verifier, and covers the ACS-mismatch, unregistered-SP, XXE, and
+    algorithm-pin refusals — plus the POST-binding signed-request path (accepted valid;
+    refused when unsigned, tampered, SHA-1, or XML-Signature-Wrapped).
+  - **Integrating (host apps):** the HTTP-POST binding is a cross-site form POST with
+    no Laravel CSRF token, so hosts must add `sso/saml/idp/sso` to
+    `VerifyCsrfToken::$except` (fail-closed — a missing exemption breaks the POST
+    binding, it does not weaken security). See `docs/core-concepts/saml-idp.md`.
+  - **Not yet implemented (honest scope):** assertion **encryption**
+    (`EncryptedAssertion`), full Single Logout fan-out / signed `LogoutResponse`, and
+    IdP-initiated (unsolicited) SSO. See `docs/core-concepts/saml-idp.md`.
+
+### Security
+
+- **SAML IdP — XML Signature Wrapping (XSW) hardening on the POST-binding
+  signed-`AuthnRequest` path (defense-in-depth).** `onelogin/php-saml`'s
+  `Utils::validateSign()` confirms *a* signature verifies against the SP certificate
+  but does not bind the signed element to the request root the parser reads. The
+  embedded-signature verification now, before trusting the result, requires the
+  message `ds:Signature` to be a single enveloped signature that is a **direct child
+  of the `AuthnRequest` root**, requires its `Reference` to **cover that root** (empty
+  URI = whole document, or `#<root ID>` — never a wrapped or duplicated element), and
+  **pins verification to that exact signature** (via `validateSign`'s `$xpath`) so the
+  verified crypto is the one enveloped in the root rather than whichever `ds:Signature`
+  appears first in document order. The embedded `SignatureMethod`/`DigestMethod` are
+  also pinned to **RSA-SHA256 / SHA-256** (onelogin would otherwise accept SHA-1),
+  matching the redirect binding. Impact of the prior gap was bounded — a forged
+  request still only produced an assertion delivered to the genuine registered ACS —
+  so this is hardening, not a fix for a known exploit. Covered by a new XSW regression
+  test.
+
 ## [0.6.0] - 2026-07-14
 
 ### Added

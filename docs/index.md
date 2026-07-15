@@ -48,7 +48,8 @@ container). There is no separate client SDK. The framework is embedded only in t
 | `Identity` | `Subjects`, `SessionManager` | Global users, federated identities, sessions, password auth. |
 | `AccessControl` | `Roles`, `AccessChecker` | RBAC with hierarchy-aware roll-down. |
 | `Directory` | `Directories`, `DirectorySync` | SCIM provisioning; deprovision revokes sessions immediately. |
-| `Federation` | `Connections`, `FederationFlow`, `AssertionValidator` | Per-org SSO connections + login orchestration. |
+| `Federation` | `Connections`, `FederationFlow`, `AssertionValidator` | Per-org SSO connections + login orchestration (relying-party / SP side). |
+| `SamlIdp` | `SamlIdentityProvider`, `ServiceProviders`, `IdpKeyMaterial` | SAML 2.0 **Identity Provider**: downstream SPs (Salesforce, Workday, AWS) federate here — signed assertions, ACS/audience pinning, RSA-SHA256. |
 | `OAuthServer` | `TokenIssuer`, `TokenIntrospector`, `ClientRegistry`, `AuthorizationCodes`, `RefreshTokens`, `DeviceAuthorization`, `PushedAuthorizationRequests`, `DynamicClientRegistration`, `ServiceAccounts` | OAuth 2.0 / OIDC provider: authorization-code + PKCE, client-credentials, refresh rotation, DPoP, PAR, device grant, dynamic client registration, introspection/revocation. |
 | `Webhooks` | `WebhookRegistry`, `WebhookDispatcher` | HMAC-signed delivery + retries; fans out `EventDelivered`. |
 | `AuditQuery` | `AuditReader` | Filtered/paginated reads + SIEM pull-stream. |

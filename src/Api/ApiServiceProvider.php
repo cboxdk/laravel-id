@@ -22,6 +22,9 @@ use Cbox\Id\Api\Http\Controllers\Scim\UserController;
 use Cbox\Id\Api\Http\Controllers\Sso\OidcCallbackController;
 use Cbox\Id\Api\Http\Controllers\Sso\OidcRedirectController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlAcsController;
+use Cbox\Id\Api\Http\Controllers\Sso\SamlIdpLogoutController;
+use Cbox\Id\Api\Http\Controllers\Sso\SamlIdpMetadataController;
+use Cbox\Id\Api\Http\Controllers\Sso\SamlIdpSsoController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlLoginController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlLogoutController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlMetadataController;
@@ -47,6 +50,11 @@ final class ApiServiceProvider extends ServiceProvider
                 Route::get('/.well-known/oauth-authorization-server', AuthorizationServerMetadataController::class);
                 Route::get('/.well-known/oauth-protected-resource', ProtectedResourceMetadataController::class);
                 Route::get('/up', HealthController::class);
+
+                // IdP-role SAML metadata (this platform AS the IdP) — public,
+                // imported by a relying SP during federation setup. Registered before
+                // the `{connection}` route below so the literal `idp` segment wins.
+                Route::get('/sso/saml/idp/metadata', SamlIdpMetadataController::class);
 
                 // SP SAML metadata for a connection — public, no secrets, imported by
                 // the IdP admin during connector setup.
@@ -83,6 +91,15 @@ final class ApiServiceProvider extends ServiceProvider
             Route::middleware(['web', 'throttle:30,1'])->group(function (): void {
                 Route::get('/sso/oidc/{connection}/redirect', OidcRedirectController::class);
                 Route::get('/sso/oidc/{connection}/callback', OidcCallbackController::class);
+
+                // IdP-role endpoints (this platform AS the IdP a downstream SP
+                // federates to). Registered before the `{connection}` routes below so
+                // the literal `idp` segment wins the match. The SSO endpoint needs a
+                // session so it can hand off to the host's login and resume; both
+                // bindings (redirect GET, POST) are accepted. Validation is
+                // deny-by-default in the IdP contract.
+                Route::match(['get', 'post'], '/sso/saml/idp/sso', SamlIdpSsoController::class);
+                Route::match(['get', 'post'], '/sso/saml/idp/slo', SamlIdpLogoutController::class);
 
                 // SP-initiated SAML login (AuthnRequest) — needs a session for the
                 // InResponseTo request id. Single Logout accepts the IdP's redirect

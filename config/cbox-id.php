@@ -170,6 +170,25 @@ return [
         'embed_entitlements' => env('CBOX_ID_EMBED_ENTITLEMENTS', true),
     ],
 
+    /*
+     * SAML 2.0 Identity Provider (this platform acting AS the IdP that downstream
+     * service providers — Salesforce, Workday, AWS, … — federate to).
+     *
+     * `entity_id` is the IdP EntityID published in metadata and set as the
+     * assertion Issuer. It is an opaque URI and MUST stay stable once SPs have
+     * imported it; leave null to derive `{issuer}/sso/saml/idp`.
+     *
+     * `login_url` is where the SingleSignOnService endpoint sends a browser that
+     * has no authenticated subject yet — the host's own login screen. The endpoint
+     * appends `return_to` so the host can re-dispatch the SSO request after the
+     * user signs in. Leave null and an unauthenticated SSO request is answered
+     * with 401 (the host is expected to drive the flow itself).
+     */
+    'saml_idp' => [
+        'entity_id' => env('CBOX_ID_SAML_IDP_ENTITY_ID'),
+        'login_url' => env('CBOX_ID_SAML_IDP_LOGIN_URL'),
+    ],
+
     'crypto' => [
 
         /*
