@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.12.1] - 2026-07-15
+
+### Changed
+
+- Add `keywords` to `composer.json` (identity, authentication, sso, saml, scim,
+  oauth, oidc, rbac, audit) so the package is discoverable on Packagist and its
+  GitHub topics are populated. Metadata only — no code changes.
+
 ## [0.12.0] - 2026-07-15
 
 ### Added
