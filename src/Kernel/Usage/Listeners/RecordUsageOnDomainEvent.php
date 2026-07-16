@@ -7,12 +7,14 @@ namespace Cbox\Id\Kernel\Usage\Listeners;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Kernel\Usage\Contracts\UsageMeter;
 use Cbox\Id\Kernel\Usage\Enums\UsageMetric;
+use Cbox\Id\Kernel\Usage\EventMetricMap;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Meters domain events off the transactional outbox: it maps a delivered event's
- * `type` to a {@see UsageMetric} and increments the counter, attributed to the event's
- * organization. Decoupled from every emit site — new metered events are a map entry.
+ * `type` to a {@see UsageMetric} (via {@see EventMetricMap}, the shared mapping) and
+ * increments the counter, attributed to the event's organization. Decoupled from
+ * every emit site — new metered events are a map entry.
  *
  * Delivery is at-least-once, and a raw increment is not idempotent, so each event is
  * metered exactly once: an `insertOrIgnore` into `usage_metered_events` keyed on the
@@ -20,37 +22,11 @@ use Illuminate\Support\Facades\DB;
  */
 final class RecordUsageOnDomainEvent
 {
-    /**
-     * Domain-event type → metric. Only mapped types are metered; everything else on
-     * the bus is ignored.
-     *
-     * @var array<string, UsageMetric>
-     */
-    private const MAP = [
-        'user.login' => UsageMetric::Login,
-        'user.session_started' => UsageMetric::SessionStarted,
-        'user.created' => UsageMetric::UserCreated,
-        'user.mfa_enrolled' => UsageMetric::MfaEnrolled,
-        'user.passkey_registered' => UsageMetric::PasskeyRegistered,
-        'user.passkey_authenticated' => UsageMetric::PasskeyAuthenticated,
-        'otp.issued' => UsageMetric::OtpIssued,
-        'identity.linked' => UsageMetric::IdentityLinked,
-        'organization.created' => UsageMetric::OrganizationCreated,
-        'organization.member_added' => UsageMetric::MemberAdded,
-        'organization.invitation_created' => UsageMetric::InvitationCreated,
-        'organization.invitation_accepted' => UsageMetric::InvitationAccepted,
-        'role.assigned' => UsageMetric::RoleAssigned,
-        'service_account.created' => UsageMetric::ServiceAccountCreated,
-        'oauth.backchannel_authentication_requested' => UsageMetric::CibaRequested,
-        'domain.verified' => UsageMetric::DomainVerified,
-        'governance.campaign_opened' => UsageMetric::GovernanceCampaignOpened,
-    ];
-
     public function __construct(private readonly UsageMeter $meter) {}
 
     public function handle(EventDelivered $delivered): void
     {
-        $metric = self::MAP[$delivered->event->type] ?? null;
+        $metric = EventMetricMap::for($delivered->event->type);
 
         if (! $metric instanceof UsageMetric) {
             return;
