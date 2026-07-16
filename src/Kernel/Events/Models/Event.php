@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $type
  * @property string|null $organization_id
+ * @property string|null $environment_id
  * @property array<string, mixed> $payload
  * @property Carbon $occurred_at
  * @property Carbon|null $dispatched_at

@@ -6,6 +6,7 @@ use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Kernel\Events\Models\Event;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event as EventFacade;
@@ -19,6 +20,15 @@ it('persists an undelivered outbox row on emit', function (): void {
         ->and($event->organization_id)->toBe('org_1')
         ->and($event->dispatched_at)->toBeNull()
         ->and(Event::query()->count())->toBe(1);
+});
+
+it('stamps the ambient environment on an emitted outbox row', function (): void {
+    $env = app(EnvironmentContext::class)->current()?->environmentKey();
+
+    $event = app(EventBus::class)->emit(new DomainEvent('organization.created', ['id' => 'org_1'], 'org_1'));
+
+    expect($env)->not->toBeNull()
+        ->and($event->environment_id)->toBe($env);
 });
 
 it('persists nothing when the surrounding transaction rolls back (no dual-write)', function (): void {

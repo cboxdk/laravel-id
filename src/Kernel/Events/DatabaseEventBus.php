@@ -7,11 +7,15 @@ namespace Cbox\Id\Kernel\Events;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\Models\Event;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Illuminate\Contracts\Events\Dispatcher;
 
 final class DatabaseEventBus implements EventBus
 {
-    public function __construct(private readonly Dispatcher $dispatcher) {}
+    public function __construct(
+        private readonly Dispatcher $dispatcher,
+        private readonly EnvironmentContext $environments,
+    ) {}
 
     public function emit(DomainEvent $event): Event
     {
@@ -19,6 +23,10 @@ final class DatabaseEventBus implements EventBus
         $row->fill([
             'type' => $event->type,
             'organization_id' => $event->organizationId,
+            // Stamp the ambient environment at emit — the relay flushes across
+            // environments, so this is how a delivered event carries its origin
+            // (the outbox row is deliberately NOT environment-scoped itself).
+            'environment_id' => $this->environments->current()?->environmentKey(),
             'payload' => $event->payload,
             'occurred_at' => now(),
         ]);
