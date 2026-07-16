@@ -33,6 +33,23 @@ it('filters by action', function (): void {
         ->and($page->items[0]->action)->toBe('login');
 });
 
+it('filters by target for a data-subject (DSR) export', function (): void {
+    $log = app(AuditLog::class);
+    $log->record(new AuditEvent('user.updated', organizationId: 'org_a', targetType: 'user', targetId: 'user_42'));
+    $log->record(new AuditEvent('user.updated', organizationId: 'org_a', targetType: 'user', targetId: 'user_99'));
+    $log->record(new AuditEvent('user.deleted', organizationId: 'org_a', targetType: 'user', targetId: 'user_42'));
+
+    $page = app(AuditReader::class)->query(new AuditQueryFilter(
+        organizationId: 'org_a',
+        targetType: 'user',
+        targetId: 'user_42',
+    ));
+
+    expect($page->items)->toHaveCount(2)
+        ->and($page->items[0]->action)->toBe('user.updated')
+        ->and($page->items[1]->action)->toBe('user.deleted');
+});
+
 it('paginates with a sequence cursor', function (): void {
     $log = app(AuditLog::class);
     foreach (range(1, 5) as $i) {

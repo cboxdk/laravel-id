@@ -19,6 +19,8 @@ final class DatabaseAuditReader implements AuditReader
         $rows = $this->scoped($filter->organizationId)
             ->when($filter->action !== null, fn (Builder $q) => $q->where('action', $filter->action))
             ->when($filter->actorId !== null, fn (Builder $q) => $q->where('actor_id', $filter->actorId))
+            ->when($filter->targetType !== null, fn (Builder $q) => $q->where('target_type', $filter->targetType))
+            ->when($filter->targetId !== null, fn (Builder $q) => $q->where('target_id', $filter->targetId))
             ->when($filter->afterSequence !== null, fn (Builder $q) => $q->where('sequence', '>', $filter->afterSequence))
             ->orderBy('sequence')
             ->limit($limit + 1)
