@@ -32,10 +32,17 @@ weight: 7
                                                                          ┘
 ```
 
-Cbox ID never touches money and never counts usage. It holds the **consequence** —
-"this org is allowed X" — as pure authorization, the same shape as roles and
-permissions. That is why entitlements live in the [decision plane](authorization.md)
-next to permissions: both are just *capability grants*.
+Cbox ID never touches money and never counts usage *for billing*. It holds the
+**consequence** — "this org is allowed X" — as pure authorization, the same shape as
+roles and permissions. That is why entitlements live in the
+[decision plane](authorization.md) next to permissions: both are just *capability
+grants*.
+
+> **Entitlements gate; metering measures.** There *is* a separate, local
+> [usage-metering](usage-metering.md) module that counts what an org did (sign-ins,
+> tokens, …) for dashboards and future soft gates — but that is analytics, not billing,
+> and it never feeds the capability projection. Billing remains the only source of the
+> gates.
 
 ## Why entitlements are gates, not billing
 

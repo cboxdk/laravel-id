@@ -18,6 +18,8 @@ How the platform is put together and the ideas you build against:
   entitlement decisions, the hot path, and the token hybrid.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
+- **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters
+  for analytics and future soft gates; local measurement, distinct from billing.
 - **[SIEM audit streaming](audit-streaming.md)** — mirror the hash-chained,
   environment-scoped audit trail out to a customer's SIEM, isolation intact.
 - **[Outbound SCIM provisioning](outbound-provisioning.md)** — push user and

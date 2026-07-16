@@ -80,6 +80,32 @@ and `EnforcementMode::DecisionApi` (the default) for anything that must revoke i
 > Keeping your own billing engine and want the full flow — reconcile, enforcement
 > modes, provenance and events? See [Entitlements & billing](../core-concepts/entitlements-and-billing.md).
 
+## Read an organization's usage
+
+Metering counts what an org *did* (locally — analytics, not billing). Read it for a
+dashboard, or as the input to a soft gate:
+
+```php
+use Cbox\Id\Kernel\Usage\Contracts\UsageMeter;
+
+$meter = app(UsageMeter::class);
+$since = now()->subDays(30);
+$until = now();
+
+$meter->snapshot($org->id, $since, $until);            // ['auth.login' => 74, 'auth.id_token' => 120, …]
+$meter->total('auth.login', $org->id, $since, $until);  // 74
+$meter->series('auth.login', $org->id, $since, $until); // ['2026-07-01' => 3, …] for a chart
+
+// A soft gate is just: read the counter, compare to the plan's allowance.
+if ($meter->total('auth.id_token', $org->id, now()->startOfMonth()) >= $monthlyTokenLimit) {
+    // warn / throttle / prompt an upgrade
+}
+```
+
+Metrics are recorded automatically off the outbox — you rarely call `record()` by hand.
+See [Usage metering](../core-concepts/usage-metering.md) for the shared `auth.*`
+vocabulary and the metering-vs-billing boundary.
+
 ## Provision users over SCIM (inbound — an IdP → the platform)
 
 ```php
