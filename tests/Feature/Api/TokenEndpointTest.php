@@ -70,6 +70,45 @@ it('completes the authorization_code + PKCE flow and returns an id_token', funct
         ->and($claims->get('org'))->toBe('org_a');
 });
 
+it('carries the org name in the id_token, access token and userinfo', function (): void {
+    $org = $this->makeOrganization('Northwind Traders');
+    $registered = $this->makeClient(['openid', 'profile'], ClientType::Public);
+    $verifier = 'a-sufficiently-long-code-verifier-1234567890';
+    $challenge = Base64Url::encode(hash('sha256', $verifier, true));
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id,
+        'user_42',
+        $org->id,
+        'https://app.test/cb',
+        ['openid', 'profile'],
+        $challenge,
+    );
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => $verifier,
+    ])->assertOk();
+
+    // id_token names the org.
+    $idClaims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+    expect($idClaims->get('org'))->toBe($org->id)
+        ->and($idClaims->get('org_name'))->toBe('Northwind Traders');
+
+    // Access token names the org.
+    $accessClaims = app(TokenSigner::class)->verify($response->json('access_token'), [SigningAlg::RS256]);
+    expect($accessClaims->get('org_name'))->toBe('Northwind Traders');
+
+    // UserInfo resolves and returns it too.
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$response->json('access_token')])
+        ->assertOk()
+        ->assertJsonPath('org', $org->id)
+        ->assertJsonPath('org_name', 'Northwind Traders');
+});
+
 it('echoes the OIDC nonce from the authorize request into the id_token', function (): void {
     $registered = $this->makeClient(['openid'], ClientType::Public);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';

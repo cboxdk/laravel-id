@@ -28,6 +28,7 @@ use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
+use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -49,6 +50,7 @@ final class TokenController
         private readonly DpopProofValidator $dpop,
         private readonly DeviceAuthorization $device,
         private readonly BackchannelAuthentication $ciba,
+        private readonly Organizations $organizations,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -239,6 +241,15 @@ final class TokenController
             // OIDC Core 3.1.3.6: binds the id_token to the issued access token.
             'at_hash' => $this->atHash($access->token),
         ];
+
+        // Human-readable org name alongside the id, so the relying party can label
+        // the organization (e.g. in its own top bar) without a second lookup.
+        if ($grant->organizationId !== null) {
+            $orgName = $this->organizations->find($grant->organizationId)?->name;
+            if (is_string($orgName) && $orgName !== '') {
+                $claims['org_name'] = $orgName;
+            }
+        }
 
         // OIDC Core 3.1.3.6: echo the request nonce so the client can bind the
         // id_token to its authorization request and detect replay.

@@ -12,7 +12,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * An OAuth client (relying party). `organization_id` null = a first-party client.
+ * An OAuth client (relying party). `organization_id` names the owning org (null =
+ * platform-owned, not scoped to one org); `first_party` is the explicit trust flag —
+ * an org may register its OWN first-party clients, so the two are independent. Consent
+ * skip must therefore be scoped: only a `first_party` client that is platform-owned OR
+ * owned by the authorizing user's org may skip the consent screen (never cross-org).
  * The secret is stored only as a SHA-256 hash.
  *
  * @property string $id

@@ -15,6 +15,7 @@ use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
+use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Support\Str;
 
 /**
@@ -35,12 +36,13 @@ final class JwtTokenIssuer implements TokenIssuer
      * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
      * Enrichment that names any of these is dropped.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ'];
 
     public function __construct(
         private readonly TokenSigner $signer,
         private readonly EntitlementReader $entitlements,
         private readonly ActionPipeline $actions,
+        private readonly Organizations $organizations,
     ) {}
 
     public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
@@ -134,6 +136,16 @@ final class JwtTokenIssuer implements TokenIssuer
             'iat' => $issuedAt,
             'exp' => $issuedAt + self::TTL_SECONDS,
         ];
+
+        // Carry the org's human-readable name alongside its id, so a relying party
+        // can label the organization without a second lookup (fixes downstream apps
+        // that could only show the opaque org id).
+        if ($organizationId !== null) {
+            $orgName = $this->organizations->find($organizationId)?->name;
+            if (is_string($orgName) && $orgName !== '') {
+                $claims['org_name'] = $orgName;
+            }
+        }
 
         // RFC 8707 / 9068: bind the token to the requested resource server so it
         // can verify the token was minted for it (confused-deputy defense, which

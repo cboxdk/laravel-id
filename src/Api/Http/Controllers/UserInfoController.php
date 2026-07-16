@@ -8,6 +8,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
+use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,6 +25,7 @@ final class UserInfoController
         private readonly TokenIntrospector $introspector,
         private readonly Subjects $subjects,
         private readonly DpopResourceGuard $dpop,
+        private readonly Organizations $organizations,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -58,6 +60,17 @@ final class UserInfoController
 
             if ($token->hasScope('profile') && $subject->name !== null) {
                 $claims['name'] = $subject->name;
+            }
+        }
+
+        // The org id travels in the token's `org` claim; resolve its name so a
+        // relying party can display the organization, not an opaque id.
+        $orgId = $token->claims['org'] ?? null;
+        if (is_string($orgId) && $orgId !== '') {
+            $claims['org'] = $orgId;
+            $orgName = $this->organizations->find($orgId)?->name;
+            if (is_string($orgName) && $orgName !== '') {
+                $claims['org_name'] = $orgName;
             }
         }
 
