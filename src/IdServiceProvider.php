@@ -22,6 +22,7 @@ use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\Kernel\Usage\UsageServiceProvider;
+use Cbox\Id\Licensing\LicensingServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
 use Cbox\Id\Otp\OtpServiceProvider;
@@ -51,6 +52,8 @@ final class IdServiceProvider extends ServiceProvider
         EventsServiceProvider::class,
         AuditServiceProvider::class,
         AuthorizationServiceProvider::class,
+        // After Authorization: overlays on-prem license grants onto the reader.
+        LicensingServiceProvider::class,
         UsageServiceProvider::class,
         // Domain modules
         OrganizationServiceProvider::class,

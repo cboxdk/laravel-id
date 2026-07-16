@@ -13,6 +13,24 @@ return [
     'issuer' => env('CBOX_ID_ISSUER'),
 
     /*
+     * On-prem licensing. A signed, offline-verifiable license key unlocks paid /
+     * enterprise entitlements deployment-wide through the entitlement gate — no
+     * phone-home. Leave both blank for the free single-tenant tier.
+     *
+     *   key         — the license token the customer installs (CBOX_ID_LICENSE_KEY).
+     *   public_key  — base64 Ed25519 public key the app verifies against; bake the
+     *                 issuer's public key in here (safe to ship). Generate a keypair
+     *                 with `php artisan id:license:keygen`.
+     *   domain      — optional host the license is bound to (defaults to the issuer
+     *                 host); a domain-bound key only unlocks on that host.
+     */
+    'license' => [
+        'key' => env('CBOX_ID_LICENSE_KEY'),
+        'public_key' => env('CBOX_ID_LICENSE_PUBLIC_KEY'),
+        'domain' => env('CBOX_ID_LICENSE_DOMAIN'),
+    ],
+
+    /*
      * Override a package model with your own subclass to add relations, casts or
      * behaviour. Your class must extend the package model; the platform still owns
      * the schema. Extend the pattern to other models as you need them.

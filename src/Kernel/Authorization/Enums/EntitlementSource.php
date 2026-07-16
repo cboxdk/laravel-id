@@ -13,4 +13,5 @@ enum EntitlementSource: string
     case Billing = 'billing';
     case Manual = 'manual';
     case System = 'system';
+    case License = 'license';
 }

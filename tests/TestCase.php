@@ -18,6 +18,7 @@ use Cbox\Id\Kernel\Authorization\Testing\InteractsWithAuthorization;
 use Cbox\Id\Kernel\Authorization\Testing\InteractsWithEntitlements;
 use Cbox\Id\Kernel\Events\Testing\InteractsWithEvents;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
+use Cbox\Id\Licensing\Testing\InteractsWithLicensing;
 use Cbox\Id\OAuthServer\Testing\InteractsWithOAuth;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Cbox\Id\Otp\Testing\InteractsWithOtp;
@@ -43,6 +44,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithGovernance;
     use InteractsWithIdentity;
     use InteractsWithImport;
+    use InteractsWithLicensing;
     use InteractsWithOAuth;
     use InteractsWithOrganizations;
     use InteractsWithOtp;
