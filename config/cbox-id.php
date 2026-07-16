@@ -374,6 +374,17 @@ return [
     ],
 
     /*
+     * Usage metering (src/Kernel/Usage/) — records meaningful events as environment-
+     * and organization-scoped per-day counters, the MEASUREMENT layer a usage
+     * dashboard renders and future plan gates read. When enabled, domain events are
+     * auto-metered off the outbox (exactly-once). Disable to skip all metering — no
+     * counter or marker writes are made.
+     */
+    'usage' => [
+        'enabled' => env('CBOX_ID_USAGE_ENABLED', true),
+    ],
+
+    /*
      * AI token vault (src/TokenVault/) — holds downstream third-party credentials
      * (API keys, OAuth tokens for services an AI agent calls) SEALED at rest via
      * the Crypto SecretBox, and brokers short-lived, deny-by-default leased access
