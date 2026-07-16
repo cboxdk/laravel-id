@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Licensing\Console;
 
+use Cbox\License\Support\Ed25519KeyPair;
 use Illuminate\Console\Command;
 
 /**
@@ -20,18 +21,18 @@ final class GenerateLicenseKeypairCommand extends Command
 
     public function handle(): int
     {
-        $keypair = sodium_crypto_sign_keypair();
+        $keypair = Ed25519KeyPair::generate();
 
         $this->newLine();
         $this->info('Cbox ID license keypair generated.');
         $this->newLine();
 
         $this->comment('PUBLIC key — set as CBOX_ID_LICENSE_PUBLIC_KEY in the app (safe to ship):');
-        $this->line(base64_encode(sodium_crypto_sign_publickey($keypair)));
+        $this->line($keypair['publicKey']);
         $this->newLine();
 
         $this->comment('SECRET key — store in the issuer/billing vault ONLY (never commit or ship):');
-        $this->line(base64_encode(sodium_crypto_sign_secretkey($keypair)));
+        $this->line($keypair['privateKey']);
         $this->newLine();
 
         $this->warn('Anyone with the secret key can mint licenses. Treat it as a signing root.');

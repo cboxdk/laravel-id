@@ -24,22 +24,24 @@ answered.
 
 ## How a key is verified
 
-```
-CBXLIC1.<base64url(claims)>.<base64url(ed25519-signature)>
-```
-
-The token is an **Ed25519** (libsodium) detached signature over its own claims — a vetted
-primitive, algorithm fixed (no `alg` field to confuse). The app verifies it against a
-**bundled public key**, with no network call, checking the signature, `nbf`/`exp` (with a
-small clock skew), and an optional domain binding. Any failure is treated as unlicensed
-and logged; it never throws into a request.
+Verification uses the shared, framework-agnostic [`cboxdk/license`](https://github.com/cboxdk/license)
+core — the same package the issuer mints with, so the format can never drift. A token is
+an **Ed25519** (EdDSA) signed artifact, algorithm pinned (no `alg` confusion). The app
+verifies it against a **bundled public key**, with no network call, checking the
+signature, validity window (with a small clock skew and an optional **grace** period past
+expiry), the **deployment** binding, and an optional **domain** binding. Any failure
+resolves to unlicensed (deny-by-default) with a logged reason; it never throws into a
+request. `LicensingServiceProvider` maps the verified result's entitlements + limits onto
+the entitlement reader.
 
 ## Configuration
 
 ```dotenv
-CBOX_ID_LICENSE_KEY=CBXLIC1.…          # the customer's key
+CBOX_ID_LICENSE_KEY=…                  # the customer's key
 CBOX_ID_LICENSE_PUBLIC_KEY=…           # base64 Ed25519 public key (safe to ship)
+CBOX_ID_LICENSE_DEPLOYMENT_ID=…        # this install's id; must match the key's binding
 CBOX_ID_LICENSE_DOMAIN=id.acme.com     # optional; defaults to the issuer host
+CBOX_ID_LICENSE_GRACE=0                # optional seconds of post-expiry grace
 ```
 
 Generate a keypair once:
@@ -50,9 +52,8 @@ php artisan id:license:keygen
 
 The **public** key is baked into the app (safe to ship — it can only verify). The
 **secret** key lives only in the issuer (the billing service) that mints keys; it never
-ships. The framework contains the verifier and the token format (`LicenseSigner` /
-`Ed25519LicenseVerifier`); the issuer supplies the private key and the plan→license
-business logic.
+ships. The verifier and the token format live in `cboxdk/license`; the issuer supplies the
+private key and the plan→license business logic.
 
 ## What a license carries
 

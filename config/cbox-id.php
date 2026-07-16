@@ -17,17 +17,23 @@ return [
      * enterprise entitlements deployment-wide through the entitlement gate — no
      * phone-home. Leave both blank for the free single-tenant tier.
      *
-     *   key         — the license token the customer installs (CBOX_ID_LICENSE_KEY).
-     *   public_key  — base64 Ed25519 public key the app verifies against; bake the
-     *                 issuer's public key in here (safe to ship). Generate a keypair
-     *                 with `php artisan id:license:keygen`.
-     *   domain      — optional host the license is bound to (defaults to the issuer
-     *                 host); a domain-bound key only unlocks on that host.
+     *   key            — the license token the customer installs (CBOX_ID_LICENSE_KEY).
+     *   public_key     — base64 Ed25519 public key the app verifies against; bake the
+     *                    issuer's public key in here (safe to ship). Generate a keypair
+     *                    with `php artisan id:license:keygen`.
+     *   deployment_id  — this install's id; must match the id the license was minted
+     *                    for (binding), else the key is refused.
+     *   domain         — optional host the license is bound to (defaults to the issuer
+     *                    host); a domain-bound key only unlocks on that host.
+     *   grace          — seconds a license keeps working past expiry before it locks,
+     *                    so a lapsed renewal degrades gracefully instead of at midnight.
      */
     'license' => [
         'key' => env('CBOX_ID_LICENSE_KEY'),
         'public_key' => env('CBOX_ID_LICENSE_PUBLIC_KEY'),
+        'deployment_id' => env('CBOX_ID_LICENSE_DEPLOYMENT_ID'),
         'domain' => env('CBOX_ID_LICENSE_DOMAIN'),
+        'grace' => (int) env('CBOX_ID_LICENSE_GRACE', 0),
     ],
 
     /*

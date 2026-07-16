@@ -1,6 +1,6 @@
 {
     "name": "cboxdk/laravel-id",
-    "description": "Cbox ID — self-hostable, Laravel-native identity platform (framework). AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
+    "description": "Cbox ID \u2014 self-hostable, Laravel-native identity platform (framework). AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
     "type": "library",
     "keywords": [
         "cbox",
@@ -30,7 +30,8 @@
         "illuminate/support": "^12.0 || ^13.0",
         "onelogin/php-saml": "^4.0",
         "robrichards/xmlseclibs": "^3.1.5",
-        "spomky-labs/cbor-php": "^3.0"
+        "spomky-labs/cbor-php": "^3.0",
+        "cboxdk/license": "^0.1"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",
@@ -43,10 +44,14 @@
         "bin/generate-sbom.php"
     ],
     "autoload": {
-        "psr-4": { "Cbox\\Id\\": "src/" }
+        "psr-4": {
+            "Cbox\\Id\\": "src/"
+        }
     },
     "autoload-dev": {
-        "psr-4": { "Cbox\\Id\\Tests\\": "tests/" }
+        "psr-4": {
+            "Cbox\\Id\\Tests\\": "tests/"
+        }
     },
     "scripts": {
         "lint": "pint --test",
@@ -68,7 +73,11 @@
         "qa": "Run the full quality gate: lint, static analysis, tests, license check, security audit."
     },
     "extra": {
-        "laravel": { "providers": ["Cbox\\Id\\IdServiceProvider"] }
+        "laravel": {
+            "providers": [
+                "Cbox\\Id\\IdServiceProvider"
+            ]
+        }
     },
     "config": {
         "sort-packages": true,

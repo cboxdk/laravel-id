@@ -4,86 +4,65 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Licensing;
 
-use Cbox\Id\Licensing\Contracts\LicenseVerifier;
-use Cbox\Id\Licensing\Exceptions\LicenseException;
-use Cbox\Id\Licensing\ValueObjects\License;
+use Cbox\License;
+use Cbox\License\Contracts\LicenseVerifier;
+use Cbox\License\Enums\LicenseStatus;
+use Cbox\License\ValueObjects\VerificationContext;
+use Cbox\License\ValueObjects\VerificationResult;
+use Illuminate\Support\Carbon;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
- * Resolves (once, memoized) the deployment's current license from the configured
- * token: verify the signature + validity, then check the domain binding. Any
- * failure resolves to "no license" (deny-by-default) with a logged reason, never an
- * exception that could break a request — an install with an invalid key simply runs
- * as the free single-tenant tier.
+ * Resolves (once, memoized) the deployment's license status from the configured
+ * token, using the shared {@see License} verifier. Any problem — no key, a
+ * bad signature, expiry beyond grace, a binding mismatch — resolves to an
+ * unlicensed result (deny-by-default) with a logged reason, never an exception into
+ * a request: an install with no/invalid key simply runs the free single-tenant tier.
  */
 final class LicenseState
 {
-    private bool $resolved = false;
-
-    private ?License $license = null;
+    private ?VerificationResult $result = null;
 
     public function __construct(
         private readonly ?LicenseVerifier $verifier,
         private readonly ?string $token,
-        private readonly ?string $expectedDomain,
+        private readonly string $deploymentId,
+        private readonly ?string $domain,
         private readonly LoggerInterface $logger,
     ) {}
 
-    public function current(): ?License
+    public function result(): VerificationResult
     {
-        if (! $this->resolved) {
-            $this->resolved = true;
-            $this->license = $this->resolve();
-        }
-
-        return $this->license;
+        return $this->result ??= $this->resolve();
     }
 
     public function isLicensed(): bool
     {
-        return $this->current() !== null;
+        return $this->result()->isLicensed();
     }
 
-    private function resolve(): ?License
+    private function resolve(): VerificationResult
     {
         if ($this->verifier === null || $this->token === null || $this->token === '') {
-            return null;
+            return new VerificationResult(LicenseStatus::Unlicensed, null, 'No license configured.');
         }
 
         try {
-            $license = $this->verifier->verify($this->token);
-        } catch (LicenseException $e) {
-            $this->logger->warning('Cbox ID license rejected: '.$e->getMessage());
+            $result = $this->verifier->verify(
+                $this->token,
+                new VerificationContext($this->deploymentId, $this->domain, Carbon::now()->toDateTimeImmutable()),
+            );
+        } catch (Throwable $e) {
+            $this->logger->warning('Cbox ID license could not be verified: '.$e->getMessage());
 
-            return null;
+            return new VerificationResult(LicenseStatus::Malformed, null, 'License could not be verified.');
         }
 
-        if (! $this->domainAllowed($license)) {
-            $this->logger->warning('Cbox ID license rejected: domain binding mismatch.');
-
-            return null;
+        if (! $result->isLicensed()) {
+            $this->logger->warning('Cbox ID license not in force: '.$result->reason);
         }
 
-        return $license;
-    }
-
-    private function domainAllowed(License $license): bool
-    {
-        // An unbound license (no domains) runs anywhere; if we can't determine our
-        // own host, don't fail on the soft binding — the signature + expiry are the
-        // hard gates, domain binding is only an anti-sharing hint.
-        if ($license->domains === [] || $this->expectedDomain === null || $this->expectedDomain === '') {
-            return true;
-        }
-
-        $expected = strtolower($this->expectedDomain);
-
-        foreach ($license->domains as $domain) {
-            if (strtolower($domain) === $expected) {
-                return true;
-            }
-        }
-
-        return false;
+        return $result;
     }
 }

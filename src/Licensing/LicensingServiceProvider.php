@@ -6,16 +6,24 @@ namespace Cbox\Id\Licensing;
 
 use Cbox\Id\Kernel\Authorization\CachedEntitlements;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
+use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
+use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
+use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Licensing\Console\GenerateLicenseKeypairCommand;
+use Cbox\License;
+use Cbox\License\Ed25519LicenseVerifier;
+use Cbox\License\ValueObjects\LicenseLimits;
+use Cbox\License\ValueObjects\VerificationResult;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
 
 /**
- * Wires on-prem licensing: it resolves the configured license once and overlays its
- * deployment-wide grants onto the entitlement reader, so paid capabilities unlock
- * through the SAME gate the online billing projection feeds. With no (or an invalid)
- * license the overlay is empty — the install runs as the free single-tenant tier.
+ * Wires on-prem licensing: it verifies the configured license once (via the shared
+ * {@see License} core) and overlays its deployment-wide grants onto the
+ * entitlement reader, so paid capabilities unlock through the SAME gate the online
+ * billing projection feeds. With no (or an invalid) license the overlay is empty —
+ * the install runs as the free single-tenant tier.
  *
  * Registered after the authorization kernel so it can re-point the EntitlementReader
  * alias to the license-aware decorator; the writer alias is left untouched.
@@ -25,22 +33,23 @@ final class LicensingServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(LicenseState::class, function (Application $app): LicenseState {
-            $publicKey = $this->publicKey();
+            $publicKey = $this->configString('cbox-id.license.public_key');
 
             return new LicenseState(
-                $publicKey !== null ? new Ed25519LicenseVerifier($publicKey) : null,
+                $publicKey !== null
+                    ? new Ed25519LicenseVerifier($publicKey, $this->configInt('cbox-id.license.grace', 0))
+                    : null,
                 $this->configString('cbox-id.license.key'),
+                $this->configString('cbox-id.license.deployment_id') ?? '',
                 $this->deploymentDomain(),
                 $app->make(LoggerInterface::class),
             );
         });
 
         $this->app->singleton(LicenseAwareEntitlements::class, function (Application $app): LicenseAwareEntitlements {
-            $license = $app->make(LicenseState::class)->current();
-
             return new LicenseAwareEntitlements(
                 $app->make(CachedEntitlements::class),
-                $license?->entitlementValues() ?? [],
+                $this->grants($app->make(LicenseState::class)->result()),
             );
         });
 
@@ -55,20 +64,58 @@ final class LicensingServiceProvider extends ServiceProvider
     }
 
     /**
-     * The raw Ed25519 public key from config, or null if unset/misconfigured (in
-     * which case licenses can't be verified and the install stays free-tier).
+     * A verified license's grants as entitlement values (source: license). The
+     * version is the issue time, so re-issuing busts the entitlement cache the same
+     * way a billing push does.
+     *
+     * @return array<string, EntitlementValue>
      */
-    private function publicKey(): ?string
+    private function grants(VerificationResult $result): array
     {
-        $encoded = $this->configString('cbox-id.license.public_key');
+        $license = $result->license;
 
-        if ($encoded === null) {
-            return null;
+        if (! $result->isLicensed() || $license === null) {
+            return [];
         }
 
-        $decoded = base64_decode(strtr($encoded, '-_', '+/'), true);
+        $version = $license->issuedAt->getTimestamp();
+        $grants = [];
 
-        return $decoded !== false && strlen($decoded) === SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES ? $decoded : null;
+        foreach ($result->entitlements() as $key) {
+            $grants[$key] = new EntitlementValue($key, ['enabled' => true], EnforcementMode::DecisionApi, EntitlementSource::License, $version);
+        }
+
+        foreach ($this->limitGrants($result->limits()) as $key => $value) {
+            $grants[$key] = new EntitlementValue($key, $value, EnforcementMode::DecisionApi, EntitlementSource::License, $version);
+        }
+
+        return $grants;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function limitGrants(?LicenseLimits $limits): array
+    {
+        if ($limits === null) {
+            return [];
+        }
+
+        $out = [];
+
+        if ($limits->organizations !== null) {
+            $out['limits.organizations'] = ['limit' => $limits->organizations];
+        }
+
+        if ($limits->seats !== null) {
+            $out['limits.seats'] = ['limit' => $limits->seats];
+        }
+
+        if ($limits->environments !== null) {
+            $out['limits.environments'] = ['limit' => $limits->environments];
+        }
+
+        return $out;
     }
 
     private function deploymentDomain(): ?string
@@ -89,5 +136,12 @@ final class LicensingServiceProvider extends ServiceProvider
         $value = config($key);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function configInt(string $key, int $default): int
+    {
+        $value = config($key, $default);
+
+        return is_int($value) ? $value : (is_numeric($value) ? (int) $value : $default);
     }
 }
