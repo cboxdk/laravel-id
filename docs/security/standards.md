@@ -37,6 +37,18 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | Authorization decision endpoint (`POST /oauth/decisions`) — live, deny-by-default permission (ReBAC) + entitlement checks in one round trip; version-invalidated hot-path cache; see [Authorization](../core-concepts/authorization.md) | ✅ |
 | Hybrid entitlement claims — coarse `EnforcementMode::Claims` entitlements embedded as the `ent` claim (`ent_ver` staleness signal); instant-critical ones stay live | ✅ |
 
+### Scope: what the framework provides vs. the integrator
+
+The framework ships the **back-channel and token machinery** — the token, introspection,
+revocation, registration, PAR, device, and discovery endpoints, plus the crypto,
+algorithm pinning, and PKCE/redirect/`aud` validation those enforce. The **interactive
+front-channel** — the `/authorize` endpoint itself, login, consent, and session
+management — is the host application's responsibility (the deployable **cbox-id app**
+implements it). PKCE is enforced structurally regardless: an authorization code minted
+without a `code_challenge` can never satisfy the exchange, so a host that forgets to
+require PKCE fails closed, not open. Treat "OIDC provider" here as "a conformant OIDC
+token endpoint + back-channel," not a drop-in hosted-login UI.
+
 ### Refresh tokens
 
 Refresh tokens are issued only when the client is granted `offline_access`.
@@ -92,8 +104,9 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 | Passwords — hashed via the framework hasher (bcrypt/argon2id), verified through the pluggable `Subjects` resolver; password rules are an extension point | ✅ |
 | Bulk import + lazy password-hash migration — import existing hashes (bcrypt/argon2 natively), verified through a deny-by-default `HashVerifier` registry, and upgraded to the platform hasher on first login; unknown formats refused, foreign formats added by wrapping a vetted library | ✅ |
 | TOTP (RFC 6238) — replay-protected (last-used step), rate-limited | ✅ |
-| WebAuthn / passkeys (FIDO2) — registration + assertion, sign-count clone detection | ✅ |
+| WebAuthn / passkeys — registration + assertion (ES256/RS256), sign-count clone detection, real signature verification via OpenSSL | ✅ |
 | Passkey User-Verification enforced (primary-factor), server-side challenge TTL | ✅ |
+| WebAuthn **attestation** — `none` and self-attestation `packed` accepted; full attestation-statement chains (`x5c`) and FIDO Metadata Service / AAGUID allow-listing are **not** verified (unknown formats are refused, so this fails safe). Enterprise authenticator-provenance policies bind their own verifier. | ◐ |
 | MFA recovery / backup codes — single-use, regenerable | ✅ |
 | Magic-link email sign-in | ✅ |
 | Password reset — hash-only single-use token, TTL, anti-enumeration, revokes all sessions on reset | ✅ |
