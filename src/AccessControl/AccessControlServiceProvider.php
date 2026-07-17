@@ -7,9 +7,13 @@ namespace Cbox\Id\AccessControl;
 use Cbox\Id\AccessControl\Console\SyncAppManifestsCommand;
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\AccessControl\Contracts\AppManifests;
+use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
 use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
+use Cbox\Id\Kernel\Events\EventDelivered;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 final class AccessControlServiceProvider extends ServiceProvider
@@ -20,10 +24,17 @@ final class AccessControlServiceProvider extends ServiceProvider
         $this->app->singleton(AccessChecker::class, HierarchyAwareAccessChecker::class);
         $this->app->singleton(AppManifests::class, ManifestSyncService::class);
         $this->app->singleton(ManifestFetcher::class, HttpManifestFetcher::class);
+        $this->app->singleton(GroupRoleMappings::class, DatabaseGroupRoleMappings::class);
     }
 
     public function boot(): void
     {
+        // Reconcile group→role assignments whenever a directory group's membership
+        // changes (the SCIM→role bridge), via the domain-event outbox.
+        Event::listen(EventDelivered::class, function (EventDelivered $delivered): void {
+            $this->app->make(ReconcileGroupRolesOnDomainEvent::class)->handle($delivered);
+        });
+
         if ($this->app->runningInConsole()) {
             $this->commands([SyncAppManifestsCommand::class]);
         }

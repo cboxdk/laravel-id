@@ -10,15 +10,22 @@ use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryGroup;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\DirectoryPage;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 
 /**
  * The default {@see DirectoryGroups} implementation over `directory_groups` and
  * its membership pivot. All the group query, SCIM PATCH semantics and membership
  * resolution the SCIM controller used to inline live here, behind the contract.
+ *
+ * Membership-changing operations emit `directory.group.membership_changed` so the
+ * access-control layer can reconcile group→role assignments — the SCIM→role bridge.
  */
 final class DatabaseDirectoryGroups implements DirectoryGroups
 {
     private const MAX_PAGE = 200;
+
+    public function __construct(private readonly EventBus $events) {}
 
     public function list(Directory $directory, string $filter, ?int $startIndex, ?int $count): DirectoryPage
     {
@@ -61,6 +68,8 @@ final class DatabaseDirectoryGroups implements DirectoryGroups
 
         $group->members()->sync($this->resolveMembers($directory->id, $memberIds));
 
+        $this->emitMembershipChanged($group->id, $directory->organization_id);
+
         return $group->load('members');
     }
 
@@ -74,6 +83,8 @@ final class DatabaseDirectoryGroups implements DirectoryGroups
         // PUT is a full replace: membership becomes exactly the supplied set.
         $group->members()->sync($this->resolveMembers($group->directory_id, $memberIds));
 
+        $this->emitMembershipChanged($group->id, $this->organizationOf($group->directory_id));
+
         return $group->load('members');
     }
 
@@ -85,13 +96,37 @@ final class DatabaseDirectoryGroups implements DirectoryGroups
             }
         }
 
+        $this->emitMembershipChanged($group->id, $this->organizationOf($group->directory_id));
+
         return $group->load('members');
     }
 
     public function delete(DirectoryGroup $group): void
     {
+        // Capture the org before the row is gone, then reconcile after — so prior
+        // members lose the roles the group granted.
+        $organizationId = $this->organizationOf($group->directory_id);
+
         $group->members()->detach();
         $group->delete();
+
+        $this->emitMembershipChanged($group->id, $organizationId);
+    }
+
+    private function emitMembershipChanged(string $groupId, ?string $organizationId): void
+    {
+        $this->events->emit(new DomainEvent(
+            'directory.group.membership_changed',
+            ['group_id' => $groupId, 'organization_id' => $organizationId],
+            $organizationId,
+        ));
+    }
+
+    private function organizationOf(string $directoryId): ?string
+    {
+        $organizationId = Directory::query()->whereKey($directoryId)->value('organization_id');
+
+        return is_string($organizationId) ? $organizationId : null;
     }
 
     /**
