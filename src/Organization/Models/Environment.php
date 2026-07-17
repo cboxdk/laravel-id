@@ -16,9 +16,11 @@ use Illuminate\Support\Facades\DB;
  * environment scope. Its id is the environment key stored on every owned row.
  *
  * @property string $id
+ * @property string|null $account_id
  * @property string $name
  * @property string $slug
  * @property EnvironmentType $type
+ * @property string|null $domain
  * @property string $status
  * @property bool $is_default
  * @property array<string, mixed> $settings
