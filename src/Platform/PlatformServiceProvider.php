@@ -7,6 +7,8 @@ namespace Cbox\Id\Platform;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
+use Cbox\Id\Platform\Contracts\AccountMembers;
+use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
 use Illuminate\Contracts\Foundation\Application;
@@ -30,6 +32,14 @@ final class PlatformServiceProvider extends ServiceProvider
                 $app->make(SecretBox::class),
                 $app->make(AuditLog::class),
             );
+        });
+
+        // The account plane — the customer workspaces that own environments, and
+        // the members who administer them from the platform root.
+        $this->app->singleton(Accounts::class, DatabaseAccounts::class);
+
+        $this->app->singleton(AccountMembers::class, function (Application $app): AccountMembers {
+            return new DatabaseAccountMembers($app->make(Hasher::class));
         });
     }
 }
