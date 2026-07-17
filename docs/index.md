@@ -26,7 +26,20 @@ The package is one Composer package with clean internal module boundaries. Two l
 
 Products don't embed this package — they authenticate against the running instance over OIDC
 and talk to it over its HTTP API (or, inside the same app, by resolving its contracts from the
-container). There is no separate client SDK. The framework is embedded only in the hosted app.
+container). The framework itself is embedded only in the hosted app.
+
+**Client SDKs.** You don't have to hand-roll OIDC — first-party client libraries wrap sign-in,
+the profile/account redirect, back-channel token exchange, webhook-signature verification, the
+Token Vault, and app-manifest publishing:
+
+| SDK | Package | For |
+|---|---|---|
+| JavaScript / TypeScript | `@cboxdk/id-js` | any JS runtime — the core client |
+| React | `@cboxdk/id-react` | React apps (`UserButton`, `SignInButton`, hooks) |
+| Vue / Nuxt | `@cboxdk/id-vue`, `@cboxdk/id-nuxt` | Vue and Nuxt apps |
+| Python | `cboxdk-id` | Python services |
+| Go | `github.com/cboxdk/id-go` | Go services |
+| Laravel / PHP | `cboxdk/laravel-id-client` | Laravel apps consuming a Cbox ID instance |
 
 > **Don't want to build the app layer yourself?** There's a full, deployable
 > application built on this framework — the **cbox-id app**, a separate project with the
