@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
-use Cbox\Id\AccessControl\Models\Permission;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
 use Illuminate\Support\Facades\DB;
@@ -26,15 +25,14 @@ final class HierarchyAwareAccessChecker implements AccessChecker
             return false;
         }
 
-        $permissionId = Permission::query()->where('name', $permission)->value('id');
-
-        if (! is_string($permissionId)) {
-            return false;
-        }
-
+        // Match by permission NAME via the pivot join — permission names are only
+        // unique per declaring app now, so resolving name→id up front would be
+        // ambiguous. "Does any assigned role grant a permission of this name?" is the
+        // correct, unambiguous question.
         return DB::table('role_permission')
-            ->whereIn('role_id', $roleIds)
-            ->where('permission_id', $permissionId)
+            ->join('permissions', 'permissions.id', '=', 'role_permission.permission_id')
+            ->whereIn('role_permission.role_id', $roleIds)
+            ->where('permissions.name', $permission)
             ->exists();
     }
 
