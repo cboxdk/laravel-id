@@ -13,9 +13,12 @@ use Illuminate\Support\Facades\Schema;
  * "owned by the platform, managed by operators". A customer's self-serve
  * environment always carries its owning account_id.
  *
- * nullOnDelete rather than cascade: deleting an account is a heavyweight,
- * audited operation that must tear down its environments deliberately — it must
- * never silently drop a whole IdP realm as a side effect of a foreign key.
+ * restrictOnDelete, NOT nullOnDelete: null account_id is the sentinel for a
+ * platform-owned environment, so nulling a customer's environments on account
+ * delete would silently convert live customer IdPs into platform-owned ones while
+ * they keep serving. Instead the FK BLOCKS deleting an account that still owns
+ * environments — teardown must explicitly remove the environments first, so an IdP
+ * realm can never be orphaned as a side effect.
  */
 return new class extends Migration
 {
@@ -23,7 +26,7 @@ return new class extends Migration
     {
         Schema::table('environments', function (Blueprint $table): void {
             $table->foreignUlid('account_id')->nullable()->after('id')
-                ->constrained('accounts')->nullOnDelete();
+                ->constrained('accounts')->restrictOnDelete();
 
             $table->index('account_id');
         });
