@@ -16,6 +16,7 @@ use Cbox\Id\Organization\Enums\MembershipStatus;
 use Cbox\Id\Organization\Exceptions\LastOwner;
 use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Membership operations run inside the target org's tenant scope, so the tenant
@@ -32,7 +33,7 @@ final class MembershipService implements Memberships
 
     public function add(string $organizationId, string $userId, string $role, ?string $invitedBy = null): Membership
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $userId, $role, $invitedBy): Membership {
+        return $this->tenant->runAs(GenericTenant::of($organizationId), fn (): Membership => DB::transaction(function () use ($organizationId, $userId, $role, $invitedBy): Membership {
             $existing = Membership::query()->where('user_id', $userId)->first();
 
             if ($existing !== null) {
@@ -48,15 +49,18 @@ final class MembershipService implements Memberships
             ]);
             $membership->save();
 
+            // Same transaction as the row write: the outbox event and the membership
+            // commit atomically, so a crash can't leave a changed member with no event
+            // (which the outbox could never retry) — closing that drift window.
             $this->emitAndAudit($organizationId, $userId, 'organization.member_added', ['role' => $role]);
 
             return $membership;
-        });
+        }));
     }
 
     public function changeRole(string $organizationId, string $userId, string $role): Membership
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $userId, $role): Membership {
+        return $this->tenant->runAs(GenericTenant::of($organizationId), fn (): Membership => DB::transaction(function () use ($organizationId, $userId, $role): Membership {
             $membership = Membership::query()->where('user_id', $userId)->firstOrFail();
 
             // Demoting the sole owner would orphan the org — never allow it.
@@ -69,12 +73,12 @@ final class MembershipService implements Memberships
             $this->emitAndAudit($organizationId, $userId, 'organization.member_role_changed', ['role' => $role]);
 
             return $membership;
-        });
+        }));
     }
 
     public function remove(string $organizationId, string $userId): void
     {
-        $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $userId): void {
+        $this->tenant->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $userId): void {
             $membership = Membership::query()->where('user_id', $userId)->first();
 
             if ($membership !== null && $membership->role === 'owner' && $this->ownerCount() <= 1) {
@@ -84,7 +88,7 @@ final class MembershipService implements Memberships
             Membership::query()->where('user_id', $userId)->delete();
 
             $this->emitAndAudit($organizationId, $userId, 'organization.member_removed', []);
-        });
+        }));
     }
 
     /** Owners in the current tenant scope. */

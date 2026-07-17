@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Usage;
 
 use Cbox\Id\Kernel\Events\EventDelivered;
+use Cbox\Id\Kernel\Usage\Console\ReconcileUsageCommand;
 use Cbox\Id\Kernel\Usage\Contracts\UsageMeter;
 use Cbox\Id\Kernel\Usage\Listeners\RecordUsageOnDomainEvent;
 use Illuminate\Support\Facades\Event;
@@ -22,6 +23,10 @@ final class UsageServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if ($this->app->runningInConsole()) {
+            $this->commands([ReconcileUsageCommand::class]);
+        }
+
         // Auto-meter domain events off the outbox. Skipped entirely when disabled, so
         // a deployment that doesn't want metering pays nothing (no marker writes).
         if (! $this->enabled()) {
