@@ -176,6 +176,18 @@ return [
     ],
 
     /*
+     * Access control — app authorization manifests. When an app publishes its
+     * roles/permissions at a well-known URL, the platform PULLS it server-side, so
+     * `verify_manifest_url` (SSRF guard) applies the same private/reserved/metadata
+     * blocking + DNS-pinning as federation/webhooks. `fetch_timeout` bounds the
+     * pull. Keep the guard true in any multi-tenant deployment.
+     */
+    'access_control' => [
+        'verify_manifest_url' => env('CBOX_ID_MANIFEST_VERIFY_URL', true),
+        'fetch_timeout' => (int) env('CBOX_ID_MANIFEST_FETCH_TIMEOUT', 10),
+    ],
+
+    /*
      * Environments — the hard identity boundary resolved per request from the host
      * (own users, signing keys, issuer). When the host maps to none, the fallback
      * plane is used: the environment flagged `is_default` in the database (the

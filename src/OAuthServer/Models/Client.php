@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * The secret is stored only as a SHA-256 hash.
  *
  * @property string $id
+ * @property string $environment_id
  * @property string|null $organization_id
  * @property string $client_id
  * @property string|null $secret_hash
@@ -28,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $redirect_uris
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
+ * @property string|null $manifest_url
  * @property bool $first_party
  * @property string|null $registration_access_token_hash
  * @property Carbon|null $created_at
