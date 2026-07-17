@@ -10,8 +10,19 @@ use Cbox\Id\AccessControl\Models\RoleAssignment;
 
 interface Roles
 {
-    public function define(?string $organizationId, string $name, ?string $description = null): Role;
+    /**
+     * Define (or fetch) a role. Org-wide when $clientId is null (its permissions
+     * apply in every app's token); scoped to one app when $clientId is that app's
+     * client id. Uniqueness is (organization_id, client_id, name).
+     */
+    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null): Role;
 
+    /**
+     * Attach a permission to a role. The permission is resolved (and, if new,
+     * created) within the ROLE's own scope — an app-scoped role's permissions live
+     * under that app's client_id, an org-wide role's under client_id null — so a
+     * permission name is never silently duplicated across scopes.
+     */
     public function grantPermission(string $organizationId, string $roleId, string $permission): void;
 
     public function assign(

@@ -24,10 +24,10 @@ final class RoleService implements Roles
         private readonly AuditLog $audit,
     ) {}
 
-    public function define(?string $organizationId, string $name, ?string $description = null): Role
+    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null): Role
     {
         return Role::query()->firstOrCreate(
-            ['organization_id' => $organizationId, 'name' => $name],
+            ['organization_id' => $organizationId, 'client_id' => $clientId, 'name' => $name],
             ['description' => $description],
         );
     }
@@ -36,16 +36,24 @@ final class RoleService implements Roles
     {
         // The role must belong to the caller's org — never grant onto another
         // tenant's role.
-        $exists = Role::query()
+        $role = Role::query()
             ->whereKey($roleId)
             ->where('organization_id', $organizationId)
-            ->exists();
+            ->first();
 
-        if (! $exists) {
+        if ($role === null) {
             throw UnknownRole::make($roleId);
         }
 
-        $model = Permission::query()->firstOrCreate(['name' => $permission]);
+        // Resolve the permission WITHIN the role's own scope. An app-scoped role's
+        // permissions live under that app's client_id; an org-wide role's under
+        // client_id null. Matching on (client_id, name) — the table's unique key —
+        // means we reuse the app's declared permission instead of minting a stray
+        // client_id-null duplicate of it (the old firstOrCreate(['name']) bug).
+        $model = Permission::query()->firstOrCreate([
+            'client_id' => $role->client_id,
+            'name' => $permission,
+        ]);
 
         DB::table('role_permission')->insertOrIgnore([
             'role_id' => $roleId,
