@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\ExternalActions\Contracts\ActionPipeline;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
@@ -36,13 +37,14 @@ final class JwtTokenIssuer implements TokenIssuer
      * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
      * Enrichment that names any of these is dropped.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions'];
 
     public function __construct(
         private readonly TokenSigner $signer,
         private readonly EntitlementReader $entitlements,
         private readonly ActionPipeline $actions,
         private readonly Organizations $organizations,
+        private readonly AccessChecker $access,
     ) {}
 
     public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
@@ -170,6 +172,18 @@ final class JwtTokenIssuer implements TokenIssuer
             if ($entitlements !== []) {
                 $claims['ent'] = $entitlements;
                 $claims['ent_ver'] = $version;
+            }
+        }
+
+        // RBAC (federated model): stamp the user's roles + permissions for THIS app,
+        // so the app enforces straight from the token with no extra call. Scoped to
+        // the app — its own declared roles plus org-wide roles, never another app's.
+        // Client-credentials tokens (no user) carry no roles claim.
+        if ($userId !== null && $organizationId !== null) {
+            $rbac = $this->access->forToken($userId, $organizationId, $client->client_id);
+            if (! $rbac->isEmpty()) {
+                $claims['roles'] = $rbac->roles;
+                $claims['permissions'] = $rbac->permissions;
             }
         }
 
