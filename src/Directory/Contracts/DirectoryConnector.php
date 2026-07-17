@@ -6,6 +6,7 @@ namespace Cbox\Id\Directory\Contracts;
 
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 
 /**
@@ -29,6 +30,17 @@ interface DirectoryConnector
      * @throws DirectoryConnectionFailed
      */
     public function fetchUsers(array $credentials): iterable;
+
+    /**
+     * The full current set of groups (with member external ids). A provider without
+     * group support yields nothing.
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return iterable<DirectoryGroupSnapshot>
+     *
+     * @throws DirectoryConnectionFailed
+     */
+    public function fetchGroups(array $credentials): iterable;
 
     /**
      * Verify the credentials reach the provider (a cheap probe), without a full

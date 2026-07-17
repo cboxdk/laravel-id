@@ -9,8 +9,10 @@ use Cbox\Id\Directory\DirectoryConnectors;
 use Cbox\Id\Directory\DirectoryPullSync;
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Directory\Models\DirectoryGroup;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\Testing\FakeDirectoryConnector;
+use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
@@ -72,6 +74,52 @@ it('pulls and maps Microsoft Entra users across pages (disabled → inactive)', 
         // Entra user with no `mail` falls back to the UPN.
         ->and($users[1]->email)->toBe('bo@acme.com')
         ->and($users[1]->active)->toBeFalse();
+});
+
+it('pulls Google Workspace groups with their user members', function (): void {
+    Http::fake([
+        'oauth2.googleapis.com/token' => Http::response(['access_token' => 'ya29.token']),
+        'admin.googleapis.com/admin/directory/v1/groups/grp1/members*' => Http::response(['members' => [
+            ['id' => 'g1', 'type' => 'USER'],
+            ['id' => 'nested', 'type' => 'GROUP'],
+        ]]),
+        'admin.googleapis.com/admin/directory/v1/groups*' => Http::response(['groups' => [
+            ['id' => 'grp1', 'name' => 'Engineering', 'email' => 'eng@acme.com'],
+        ]]),
+    ]);
+
+    $groups = iterator_to_array((new GoogleWorkspaceConnector)->fetchGroups([
+        'client_email' => 'sa@x.iam', 'private_key' => testRsaKey(), 'admin_email' => 'admin@acme.com',
+    ]));
+
+    expect($groups)->toHaveCount(1)
+        ->and($groups[0]->externalId)->toBe('grp1')
+        ->and($groups[0]->displayName)->toBe('Engineering')
+        // Only USER members; the nested GROUP is excluded.
+        ->and($groups[0]->memberExternalIds)->toBe(['g1']);
+});
+
+it('reconciles groups, resolving members to directory users', function (): void {
+    $org = app(Organizations::class)->create(new NewOrganization('Acme', 'acme'));
+
+    $fake = (new FakeDirectoryConnector(DirectoryProvider::GoogleWorkspace, [
+        new ScimUser(externalId: 'u1', userName: 'a@acme.com', email: 'a@acme.com'),
+        new ScimUser(externalId: 'u2', userName: 'b@acme.com', email: 'b@acme.com'),
+    ]))->returnsGroups([
+        new DirectoryGroupSnapshot('grp1', 'Engineering', ['u1', 'u2', 'ghost']),
+    ]);
+    app()->instance(DirectoryConnectors::class, new DirectoryConnectors([$fake]));
+
+    $directory = app(Directories::class)->registerPull($org->id, 'Google', DirectoryProvider::GoogleWorkspace, [
+        'client_email' => 'x', 'private_key' => 'y', 'admin_email' => 'z',
+    ]);
+
+    $result = app(DirectoryPullSync::class)->sync($directory);
+
+    expect($result->groupsSynced)->toBe(1);
+    $group = DirectoryGroup::query()->where('directory_id', $directory->id)->where('external_id', 'grp1')->first();
+    expect($group)->not->toBeNull()
+        ->and($group->display_name)->toBe('Engineering');
 });
 
 it('reconciles a pull: provisions users then deprovisions leavers', function (): void {

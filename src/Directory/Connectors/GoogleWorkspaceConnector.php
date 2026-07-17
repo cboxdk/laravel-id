@@ -7,6 +7,7 @@ namespace Cbox\Id\Directory\Connectors;
 use Cbox\Id\Directory\Contracts\DirectoryConnector;
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Firebase\JWT\JWT;
 use Illuminate\Support\Facades\Http;
@@ -27,7 +28,9 @@ final class GoogleWorkspaceConnector implements DirectoryConnector
 
     private const DIRECTORY_URL = 'https://admin.googleapis.com/admin/directory/v1/users';
 
-    private const SCOPE = 'https://www.googleapis.com/auth/admin.directory.user.readonly';
+    private const GROUPS_URL = 'https://admin.googleapis.com/admin/directory/v1/groups';
+
+    private const SCOPE = 'https://www.googleapis.com/auth/admin.directory.user.readonly https://www.googleapis.com/auth/admin.directory.group.readonly';
 
     public function provider(): DirectoryProvider
     {
@@ -68,6 +71,78 @@ final class GoogleWorkspaceConnector implements DirectoryConnector
             $next = $response->json('nextPageToken');
             $pageToken = is_string($next) && $next !== '' ? $next : null;
         } while ($pageToken !== null);
+    }
+
+    public function fetchGroups(array $credentials): iterable
+    {
+        $token = $this->accessToken($credentials);
+        $customer = is_string($credentials['customer_id'] ?? null) && $credentials['customer_id'] !== ''
+            ? $credentials['customer_id']
+            : 'my_customer';
+
+        $pageToken = null;
+
+        do {
+            $response = Http::withToken($token)->acceptJson()->get(self::GROUPS_URL, array_filter([
+                'customer' => $customer,
+                'maxResults' => 200,
+                'pageToken' => $pageToken,
+            ], fn ($v) => $v !== null));
+
+            if ($response->failed()) {
+                throw DirectoryConnectionFailed::make('Google Workspace', 'Directory groups request failed ('.$response->status().').');
+            }
+
+            /** @var array<int, array<string, mixed>> $groups */
+            $groups = $response->json('groups', []);
+
+            foreach ($groups as $group) {
+                $id = $group['id'] ?? null;
+                $name = is_string($group['name'] ?? null) && $group['name'] !== '' ? $group['name'] : ($group['email'] ?? null);
+
+                if (is_string($id) && $id !== '' && is_string($name) && $name !== '') {
+                    yield new DirectoryGroupSnapshot($id, $name, $this->groupMembers($token, $id));
+                }
+            }
+
+            $next = $response->json('nextPageToken');
+            $pageToken = is_string($next) && $next !== '' ? $next : null;
+        } while ($pageToken !== null);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function groupMembers(string $token, string $groupId): array
+    {
+        $ids = [];
+        $pageToken = null;
+
+        do {
+            $response = Http::withToken($token)->acceptJson()->get(self::GROUPS_URL.'/'.$groupId.'/members', array_filter([
+                'maxResults' => 200,
+                'pageToken' => $pageToken,
+            ], fn ($v) => $v !== null));
+
+            // A partial membership is better than failing the whole sync.
+            if ($response->failed()) {
+                break;
+            }
+
+            /** @var array<int, array<string, mixed>> $members */
+            $members = $response->json('members', []);
+
+            foreach ($members as $member) {
+                if (($member['type'] ?? null) === 'USER' && is_string($member['id'] ?? null)) {
+                    $ids[] = $member['id'];
+                }
+            }
+
+            $next = $response->json('nextPageToken');
+            $pageToken = is_string($next) && $next !== '' ? $next : null;
+        } while ($pageToken !== null);
+
+        return $ids;
     }
 
     public function verify(array $credentials): bool

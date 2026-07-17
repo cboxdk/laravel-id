@@ -7,6 +7,7 @@ namespace Cbox\Id\Directory\Connectors;
 use Cbox\Id\Directory\Contracts\DirectoryConnector;
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Illuminate\Support\Facades\Http;
 
@@ -61,6 +62,67 @@ final class MicrosoftEntraConnector implements DirectoryConnector
             $next = $body['@odata.nextLink'] ?? null;
             $url = is_string($next) && $next !== '' ? $next : null;
         }
+    }
+
+    public function fetchGroups(array $credentials): iterable
+    {
+        $token = $this->accessToken($credentials);
+        $url = self::GRAPH.'/groups?$select=id,displayName&$top=999';
+
+        while ($url !== null) {
+            $response = Http::withToken($token)->acceptJson()->get($url);
+
+            if ($response->failed()) {
+                throw DirectoryConnectionFailed::make('Microsoft Entra', 'Graph groups request failed ('.$response->status().').');
+            }
+
+            $body = is_array($response->json()) ? $response->json() : [];
+            /** @var array<int, array<string, mixed>> $groups */
+            $groups = is_array($body['value'] ?? null) ? $body['value'] : [];
+
+            foreach ($groups as $group) {
+                $id = $group['id'] ?? null;
+                $name = $group['displayName'] ?? null;
+
+                if (is_string($id) && $id !== '' && is_string($name) && $name !== '') {
+                    yield new DirectoryGroupSnapshot($id, $name, $this->groupMembers($token, $id));
+                }
+            }
+
+            $next = $body['@odata.nextLink'] ?? null;
+            $url = is_string($next) && $next !== '' ? $next : null;
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function groupMembers(string $token, string $groupId): array
+    {
+        // The /microsoft.graph.user OData cast returns only user members.
+        $url = self::GRAPH.'/groups/'.$groupId.'/members/microsoft.graph.user?$select=id&$top=999';
+        $ids = [];
+
+        while ($url !== null) {
+            $response = Http::withToken($token)->acceptJson()->get($url);
+
+            if ($response->failed()) {
+                break;
+            }
+
+            $body = is_array($response->json()) ? $response->json() : [];
+
+            foreach ((is_array($body['value'] ?? null) ? $body['value'] : []) as $member) {
+                if (is_array($member) && is_string($member['id'] ?? null)) {
+                    $ids[] = $member['id'];
+                }
+            }
+
+            $next = $body['@odata.nextLink'] ?? null;
+            $url = is_string($next) && $next !== '' ? $next : null;
+        }
+
+        return $ids;
     }
 
     public function verify(array $credentials): bool

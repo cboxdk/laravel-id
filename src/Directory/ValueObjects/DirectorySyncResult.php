@@ -13,5 +13,6 @@ final readonly class DirectorySyncResult
     public function __construct(
         public int $provisioned,
         public int $deprovisioned,
+        public int $groupsSynced = 0,
     ) {}
 }
