@@ -10,6 +10,7 @@ use Cbox\Id\Platform\Enums\AccountRole;
 use Cbox\Id\Platform\Models\AccountMember;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -152,6 +153,48 @@ final class DatabaseAccountMembers implements AccountMembers
         $member->forceFill(['password' => $password, 'status' => 'active'])->save();
 
         return true;
+    }
+
+    public function remove(string $id): bool
+    {
+        $member = $this->find($id);
+
+        // An owner can't simply be removed — that could orphan the account. Transfer
+        // ownership first.
+        if ($member === null || $member->role === AccountRole::Owner) {
+            return false;
+        }
+
+        $member->delete();
+
+        return true;
+    }
+
+    public function transferOwnership(string $accountId, string $newOwnerId): void
+    {
+        DB::transaction(function () use ($accountId, $newOwnerId): void {
+            $newOwner = AccountMember::query()
+                ->whereKey($newOwnerId)
+                ->where('account_id', $accountId)
+                ->where('status', 'active')
+                ->lockForUpdate()
+                ->first();
+
+            if ($newOwner === null) {
+                return;
+            }
+
+            // Demote the current owner(s) to admin — they keep full management access
+            // but no longer own the account.
+            AccountMember::query()
+                ->where('account_id', $accountId)
+                ->where('role', AccountRole::Owner->value)
+                ->whereKeyNot($newOwnerId)
+                ->update(['role' => AccountRole::Admin->value]);
+
+            $newOwner->forceFill(['role' => AccountRole::Owner, 'all_environments' => true])->save();
+            $newOwner->environments()->detach();
+        });
     }
 
     public function verifyPassword(string $id, string $password): bool

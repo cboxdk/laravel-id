@@ -19,6 +19,11 @@ final class DatabaseAccounts implements Accounts
         return Account::query()->whereKey($id)->first();
     }
 
+    public function rename(string $id, string $name): void
+    {
+        Account::query()->whereKey($id)->update(['name' => $name]);
+    }
+
     public function create(string $name, int $environmentLimit = 2): Account
     {
         return Account::query()->create([

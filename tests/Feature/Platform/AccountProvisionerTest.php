@@ -7,6 +7,7 @@ use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\AccountMembers;
+use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Enums\AccountRole;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
 use Cbox\Id\Platform\Models\Account;
@@ -151,6 +152,41 @@ it('refuses to re-activate an already-active member (replayed accept)', function
     expect($members->activate($result->member->id, 'attacker-chosen-password'))->toBeFalse()
         ->and($members->verifyPassword($result->member->id, 'attacker-chosen-password'))->toBeFalse()
         ->and($members->verifyPassword($result->member->id, 'supersecret123'))->toBeTrue();
+});
+
+it('removes a member but refuses to remove an owner', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+    $members = app(AccountMembers::class);
+    $mate = $members->invite($result->account->id, 'mate@acme.test', AccountRole::Developer);
+
+    expect($members->remove($mate->id))->toBeTrue()
+        ->and($members->find($mate->id))->toBeNull();
+
+    // The owner can't be removed — that would orphan the account.
+    expect($members->remove($result->member->id))->toBeFalse()
+        ->and($members->find($result->member->id))->not->toBeNull();
+});
+
+it('transfers ownership, promoting one member and demoting the old owner', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+    $members = app(AccountMembers::class);
+    $successor = $members->invite($result->account->id, 'next@acme.test', AccountRole::Admin);
+    $members->activate($successor->id, 'successor-passphrase');
+
+    $members->transferOwnership($result->account->id, $successor->id);
+
+    expect($members->find($successor->id)->role)->toBe(AccountRole::Owner)
+        ->and($members->find($successor->id)->all_environments)->toBeTrue()
+        // The former owner is demoted to admin, not removed.
+        ->and($members->find($result->member->id)->role)->toBe(AccountRole::Admin);
+});
+
+it('renames an account', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+
+    app(Accounts::class)->rename($result->account->id, 'Renamed Co');
+
+    expect(app(Accounts::class)->find($result->account->id)->name)->toBe('Renamed Co');
 });
 
 it('lets an account add environments up to its plan limit, then refuses', function (): void {

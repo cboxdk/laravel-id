@@ -69,6 +69,20 @@ interface AccountMembers
     public function accessibleEnvironmentIds(AccountMember $member): array;
 
     /**
+     * Remove a member from the account. Refuses to remove an owner — ownership must
+     * be transferred first, so an account is never left ownerless. Returns whether
+     * the member was removed.
+     */
+    public function remove(string $id): bool;
+
+    /**
+     * Transfer ownership: promote `$newOwnerId` to owner (with every environment)
+     * and demote the account's current owner(s) to admin, atomically. A no-op if the
+     * target isn't an active member of the account.
+     */
+    public function transferOwnership(string $accountId, string $newOwnerId): void;
+
+    /**
      * Verify a password for a member, gated on active status — a suspended
      * member never authenticates, even with the right credential.
      */

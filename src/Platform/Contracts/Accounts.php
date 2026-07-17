@@ -15,6 +15,9 @@ interface Accounts
 {
     public function find(string $id): ?Account;
 
+    /** Rename an account (its display name across the workspace console). */
+    public function rename(string $id, string $name): void;
+
     /**
      * Provision a new account. `$environmentLimit` is the plan's environment
      * allowance; the default matches the standard one-prod-one-staging shape.
