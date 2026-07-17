@@ -1,8 +1,8 @@
 # Cbox ID
 
-**`cboxdk/laravel-id`** — a self-hostable, Laravel-native identity platform. Central login,
+**`cboxdk/laravel-id`** is a Laravel-native auth and identity framework. Central login,
 enterprise SSO, directory sync, RBAC, billing-driven entitlements and a tamper-evident audit
-trail — all interface-driven, deny-by-default, and verified (tests + PHPStan level max +
+trail: all interface-driven, deny-by-default, and verified (tests + PHPStan level max +
 `composer audit`) before it ships.
 
 UI-free and domain-free: every capability sits behind a contract you bind, mock, extend or

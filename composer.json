@@ -1,6 +1,6 @@
 {
     "name": "cboxdk/laravel-id",
-    "description": "Cbox ID \u2014 self-hostable, Laravel-native identity platform (framework). AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
+    "description": "cboxdk/laravel-id: a Laravel-native auth and identity framework. AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
     "type": "library",
     "keywords": [
         "cbox",
