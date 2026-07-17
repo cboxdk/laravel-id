@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
 use Cbox\Id\Platform\Contracts\AccountMemberMfa;
 use Cbox\Id\Platform\Contracts\AccountMembers;
+use Cbox\Id\Platform\Contracts\AccountPasskeys;
 use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
@@ -50,6 +52,13 @@ final class PlatformServiceProvider extends ServiceProvider
             return new DatabaseAccountMemberMfa(
                 $app->make(TotpAuthenticator::class),
                 $app->make(SecretBox::class),
+                $app->make(AuditLog::class),
+            );
+        });
+
+        $this->app->singleton(AccountPasskeys::class, function (Application $app): AccountPasskeys {
+            return new DatabaseAccountPasskeys(
+                $app->make(WebAuthnVerifier::class),
                 $app->make(AuditLog::class),
             );
         });
