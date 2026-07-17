@@ -197,6 +197,21 @@ final class DatabaseAccountMembers implements AccountMembers
         });
     }
 
+    public function resetPassword(string $id, string $password): bool
+    {
+        $member = $this->find($id);
+
+        // Only an already-active member resets — never an invited one (which would
+        // bypass the accept flow) or a suspended one.
+        if ($member === null || ! $member->isActive()) {
+            return false;
+        }
+
+        $member->forceFill(['password' => $password])->save();
+
+        return true;
+    }
+
     public function verifyPassword(string $id, string $password): bool
     {
         $member = $this->find($id);

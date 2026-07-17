@@ -181,6 +181,19 @@ it('transfers ownership, promoting one member and demoting the old owner', funct
         ->and($members->find($result->member->id)->role)->toBe(AccountRole::Admin);
 });
 
+it('resets an active member\'s password but never an invited one', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+    $members = app(AccountMembers::class);
+
+    expect($members->resetPassword($result->member->id, 'brand-new-passphrase'))->toBeTrue()
+        ->and($members->verifyPassword($result->member->id, 'brand-new-passphrase'))->toBeTrue();
+
+    // An invited member can't be reset — they must accept the invitation first.
+    $invited = $members->invite($result->account->id, 'inv@acme.test', AccountRole::Viewer);
+    expect($members->resetPassword($invited->id, 'sneaky-passphrase'))->toBeFalse()
+        ->and($members->find($invited->id)->status)->toBe('invited');
+});
+
 it('renames an account', function (): void {
     $result = app(AccountProvisioner::class)->provision(accountBlueprint());
 

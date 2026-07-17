@@ -83,6 +83,13 @@ interface AccountMembers
     public function transferOwnership(string $accountId, string $newOwnerId): void;
 
     /**
+     * Reset an active member's password (the forgot-password path). Returns false
+     * for an unknown or non-active member — an invited member must accept first, so
+     * a reset link can never activate one behind the invitation flow.
+     */
+    public function resetPassword(string $id, string $password): bool;
+
+    /**
      * Verify a password for a member, gated on active status — a suspended
      * member never authenticates, even with the right credential.
      */
