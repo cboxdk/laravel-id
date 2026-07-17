@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property bool $all_environments
  * @property string $password
  * @property string $status
+ * @property int $session_version
  * @property Carbon|null $last_login_at
  */
 final class AccountMember extends Model

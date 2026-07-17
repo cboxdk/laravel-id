@@ -207,7 +207,13 @@ final class DatabaseAccountMembers implements AccountMembers
             return false;
         }
 
-        $member->forceFill(['password' => $password])->save();
+        // Bump the security stamp: every existing session AND any other outstanding
+        // reset link bound to the old version is invalidated (log-out-everywhere +
+        // single-use reset).
+        $member->forceFill([
+            'password' => $password,
+            'session_version' => $member->session_version + 1,
+        ])->save();
 
         return true;
     }
