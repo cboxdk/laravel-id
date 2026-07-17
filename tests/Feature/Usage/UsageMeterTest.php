@@ -79,6 +79,18 @@ it('auto-meters a domain event off the outbox relay', function (): void {
     expect(app(UsageMeter::class)->total('auth.organization', 'org_x'))->toBe(1);
 });
 
+it('meters the seat and directory dimensions billing prices', function (): void {
+    app(EventBus::class)->emit(new DomainEvent('organization.member_added', ['user_id' => 'u1'], 'org_x'));
+    app(EventBus::class)->emit(new DomainEvent('organization.member_removed', ['user_id' => 'u2'], 'org_x'));
+    app(EventBus::class)->emit(new DomainEvent('directory.user.provisioned', ['user_id' => 'u3'], 'org_x'));
+    app(EventBus::class)->flushPending();
+
+    $meter = app(UsageMeter::class);
+    expect($meter->total('auth.member_added', 'org_x'))->toBe(1)
+        ->and($meter->total('auth.member_removed', 'org_x'))->toBe(1)      // seat decrease is now tracked
+        ->and($meter->total('auth.directory_user', 'org_x'))->toBe(1);     // SCIM provisioning dimension
+});
+
 it('meters a delivered event exactly once, even on redelivery', function (): void {
     $event = app(EventBus::class)->emit(new DomainEvent('user.login', [], 'org_a'));
     $listener = app(RecordUsageOnDomainEvent::class);

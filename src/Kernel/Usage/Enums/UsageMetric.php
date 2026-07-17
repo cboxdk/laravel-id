@@ -39,4 +39,10 @@ enum UsageMetric: string
     case GovernanceCampaignOpened = 'auth.governance_campaign';
     case ScimSync = 'auth.scim_sync';
     case TokenLease = 'auth.vault_lease';
+
+    // Seats: pair MemberAdded so billing can track the net headcount, not just joins.
+    case MemberRemoved = 'auth.member_removed';
+    // Directory (SCIM) provisioning — an enterprise usage dimension on top of MAU and
+    // seats. (SSO usage folds into Login; SSO-as-a-feature is entitlement-gated.)
+    case DirectoryUserProvisioned = 'auth.directory_user';
 }

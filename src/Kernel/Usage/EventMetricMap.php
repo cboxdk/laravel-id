@@ -28,6 +28,7 @@ final class EventMetricMap
         'identity.linked' => UsageMetric::IdentityLinked,
         'organization.created' => UsageMetric::OrganizationCreated,
         'organization.member_added' => UsageMetric::MemberAdded,
+        'organization.member_removed' => UsageMetric::MemberRemoved,
         'organization.invitation_created' => UsageMetric::InvitationCreated,
         'organization.invitation_accepted' => UsageMetric::InvitationAccepted,
         'role.assigned' => UsageMetric::RoleAssigned,
@@ -35,6 +36,10 @@ final class EventMetricMap
         'oauth.backchannel_authentication_requested' => UsageMetric::CibaRequested,
         'domain.verified' => UsageMetric::DomainVerified,
         'governance.campaign_opened' => UsageMetric::GovernanceCampaignOpened,
+        // SCIM/directory provisioning — an enterprise usage dimension on top of MAU
+        // and seats. (SSO usage folds into user.login; SSO-as-a-feature is an
+        // entitlement, not a metered event.)
+        'directory.user.provisioned' => UsageMetric::DirectoryUserProvisioned,
     ];
 
     /**
