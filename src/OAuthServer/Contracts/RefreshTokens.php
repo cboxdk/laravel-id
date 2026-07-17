@@ -39,4 +39,13 @@ interface RefreshTokens
      * client — a client can't revoke another client's tokens.
      */
     public function revoke(string $rawToken, ?string $clientId = null): void;
+
+    /**
+     * Revoke every active refresh token a user holds, optionally scoped to one
+     * organization. The freshness lever for the federated-RBAC model: when a role
+     * or permission changes, revoke the user's refresh tokens so their next refresh
+     * forces re-authentication and re-mints a token with the new claims, instead of
+     * riding a stale grant until it expires. Returns the number revoked.
+     */
+    public function revokeForUser(string $userId, ?string $organizationId = null): int;
 }

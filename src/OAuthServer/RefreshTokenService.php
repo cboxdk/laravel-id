@@ -105,6 +105,15 @@ final class RefreshTokenService implements RefreshTokens
         $this->revokeFamily($token->family_id);
     }
 
+    public function revokeForUser(string $userId, ?string $organizationId = null): int
+    {
+        return RefreshToken::query()
+            ->where('user_id', $userId)
+            ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now()]);
+    }
+
     /**
      * @param  list<string>  $scopes
      */

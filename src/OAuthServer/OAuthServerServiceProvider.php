@@ -23,6 +23,13 @@ final class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(ClientRegistry::class, ClientRegistryService::class);
         $this->app->singleton(ServiceAccounts::class, ServiceAccountService::class);
         $this->app->singleton(TokenIssuer::class, JwtTokenIssuer::class);
+
+        // Access-token lifetime is operator-tunable. A short TTL is the standard way
+        // stateless roles/permissions claims stay fresh — the token self-expires
+        // rather than requiring a per-request revocation check.
+        $this->app->when(JwtTokenIssuer::class)
+            ->needs('$accessTokenTtl')
+            ->give(static fn (): int => is_numeric($ttl = config('cbox-id.oauth.access_token_ttl', 900)) ? (int) $ttl : 900);
         $this->app->singleton(TokenIntrospector::class, JwtTokenIntrospector::class);
         $this->app->singleton(AuthorizationCodes::class, AuthorizationCodeService::class);
         $this->app->singleton(DynamicClientRegistration::class, DynamicClientRegistrar::class);

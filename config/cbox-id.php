@@ -275,6 +275,16 @@ return [
          * regardless. Turn off to keep tokens free of entitlement claims entirely.
          */
         'embed_entitlements' => env('CBOX_ID_EMBED_ENTITLEMENTS', true),
+
+        /*
+         * Access-token lifetime, in seconds. Access tokens carry roles + permissions
+         * claims, so a SHORT lifetime is how authorization stays fresh: a revoked or
+         * downgraded grant self-heals within one TTL, with no per-request revocation
+         * check. Pair a short TTL with refresh tokens (which ARE revocable — see
+         * RefreshTokens::revokeForUser) for instant effect on the next refresh.
+         * Default 900s (15 min).
+         */
+        'access_token_ttl' => env('CBOX_ID_ACCESS_TOKEN_TTL', 900),
     ],
 
     /*

@@ -31,7 +31,12 @@ use Illuminate\Support\Str;
  */
 final class JwtTokenIssuer implements TokenIssuer
 {
-    private const TTL_SECONDS = 900;
+    /**
+     * Fallback access-token lifetime when none is configured. Short by design: the
+     * token carries roles/permissions, so a brief TTL is how stale authorization
+     * self-heals without a per-request revocation check.
+     */
+    private const DEFAULT_TTL_SECONDS = 900;
 
     /**
      * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
@@ -45,6 +50,7 @@ final class JwtTokenIssuer implements TokenIssuer
         private readonly ActionPipeline $actions,
         private readonly Organizations $organizations,
         private readonly AccessChecker $access,
+        private readonly int $accessTokenTtl = self::DEFAULT_TTL_SECONDS,
     ) {}
 
     public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
@@ -136,7 +142,7 @@ final class JwtTokenIssuer implements TokenIssuer
             'scope' => implode(' ', $scopes),
             'org' => $organizationId,
             'iat' => $issuedAt,
-            'exp' => $issuedAt + self::TTL_SECONDS,
+            'exp' => $issuedAt + $this->accessTokenTtl,
         ];
 
         // Carry the org's human-readable name alongside its id, so a relying party
@@ -216,9 +222,9 @@ final class JwtTokenIssuer implements TokenIssuer
             'organization_id' => $organizationId,
             'scopes' => $scopes,
             'audience' => $resource,
-            'expires_at' => now()->addSeconds(self::TTL_SECONDS),
+            'expires_at' => now()->addSeconds($this->accessTokenTtl),
         ]);
 
-        return new IssuedToken($token, $jti, self::TTL_SECONDS, $dpopJkt !== null ? 'DPoP' : 'Bearer');
+        return new IssuedToken($token, $jti, $this->accessTokenTtl, $dpopJkt !== null ? 'DPoP' : 'Bearer');
     }
 }
