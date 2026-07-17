@@ -21,12 +21,22 @@ final class WebhookServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Fan every delivered domain event out to subscribed webhook endpoints.
+        // Fan every delivered domain event out to subscribed webhook endpoints. The
+        // event's organization id is folded into the payload so a receiver always
+        // knows which tenant an event belongs to — domain events keep org as a
+        // separate field, but an outbound consumer only sees the JSON body.
         Event::listen(EventDelivered::class, function (EventDelivered $delivered): void {
+            $payload = $delivered->event->payload;
+            $organizationId = $delivered->event->organization_id;
+
+            if ($organizationId !== null && ! array_key_exists('organization_id', $payload)) {
+                $payload['organization_id'] = $organizationId;
+            }
+
             $this->app->make(WebhookDispatcher::class)->dispatch(
                 $delivered->event->type,
-                $delivered->event->payload,
-                $delivered->event->organization_id,
+                $payload,
+                $organizationId,
             );
         });
 

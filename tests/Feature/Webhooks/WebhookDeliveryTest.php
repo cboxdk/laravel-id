@@ -122,3 +122,22 @@ it('fans a delivered domain event out to webhooks end-to-end', function (): void
 
     Http::assertSentCount(1);
 });
+
+it('folds the event organization id into the delivered webhook payload', function (): void {
+    Http::fake(['*' => Http::response('', 200)]);
+    $this->registerWebhook('org_a', 'https://hook.test/x', ['organization.member_added']);
+
+    // Emitting enqueues on the outbox; flushing relays it as EventDelivered, which
+    // the webhook layer fans out — injecting the org so a receiver (e.g. billing)
+    // knows the tenant without a separate lookup.
+    app(EventBus::class)->emit(new DomainEvent('organization.member_added', ['user_id' => 'user_1'], 'org_a'));
+    app(EventBus::class)->flushPending();
+
+    Http::assertSent(function (Request $request): bool {
+        $body = json_decode($request->body(), true);
+
+        return is_array($body)
+            && ($body['data']['user_id'] ?? null) === 'user_1'
+            && ($body['data']['organization_id'] ?? null) === 'org_a';
+    });
+});
