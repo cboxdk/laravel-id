@@ -111,7 +111,11 @@ final class ManifestSyncService implements AppManifests
         foreach ($manifest->permissions as $permission) {
             Permission::query()->updateOrCreate(
                 ['client_id' => $clientId, 'name' => $permission->key],
-                ['description' => $permission->description, 'orphaned_at' => null],
+                [
+                    'description' => $permission->description,
+                    'tenant_assignable' => $permission->tenantAssignable,
+                    'orphaned_at' => null,
+                ],
             );
         }
     }

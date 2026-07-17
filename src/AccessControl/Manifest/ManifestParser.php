@@ -61,7 +61,13 @@ final class ManifestParser
             }
             $seen[$key] = true;
 
-            $permissions[] = new DeclaredPermission($key, $this->optionalString($entry['description'] ?? null));
+            $permissions[] = new DeclaredPermission(
+                $key,
+                $this->optionalString($entry['description'] ?? null),
+                // Default true — an app opts a permission OUT of tenant self-serve by
+                // declaring "tenant_assignable": false. Any non-false value stays true.
+                ($entry['tenant_assignable'] ?? true) !== false,
+            );
         }
 
         return $permissions;

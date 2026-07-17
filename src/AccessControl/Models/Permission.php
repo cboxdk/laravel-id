@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $client_id
  * @property string $name
  * @property string|null $description
+ * @property bool $tenant_assignable
  * @property Carbon|null $orphaned_at
  */
 final class Permission extends Model
@@ -33,6 +34,7 @@ final class Permission extends Model
     protected function casts(): array
     {
         return [
+            'tenant_assignable' => 'boolean',
             'orphaned_at' => 'datetime',
         ];
     }

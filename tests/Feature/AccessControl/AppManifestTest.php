@@ -138,3 +138,17 @@ it('rejects a malformed manifest whole', function (array $bad): void {
     'undeclared permission' => [['version' => '1', 'permissions' => [], 'roles' => [['key' => 'x', 'name' => 'X', 'permissions' => ['nope:read']]]]],
     'duplicate role name' => [['version' => '1', 'permissions' => [], 'roles' => [['key' => 'a', 'name' => 'Admin', 'permissions' => []], ['key' => 'b', 'name' => 'Admin', 'permissions' => []]]]],
 ]);
+
+it('honours tenant_assignable, defaulting to true and marking opted-out permissions internal', function (): void {
+    syncManifest('app_billing', [
+        'version' => 'v1',
+        'permissions' => [
+            ['key' => 'invoices:read', 'description' => 'View invoices'],                                    // default → assignable
+            ['key' => 'ledger:close', 'description' => 'Close the ledger', 'tenant_assignable' => false],    // internal, app-only
+        ],
+        'roles' => [],
+    ]);
+
+    expect(Permission::query()->where('name', 'invoices:read')->sole()->tenant_assignable)->toBeTrue()
+        ->and(Permission::query()->where('name', 'ledger:close')->sole()->tenant_assignable)->toBeFalse();
+});
