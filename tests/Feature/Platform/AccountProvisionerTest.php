@@ -9,6 +9,7 @@ use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Enums\AccountRole;
+use Cbox\Id\Platform\Exceptions\AccountSuspended;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
 use Cbox\Id\Platform\Models\Account;
 use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
@@ -192,6 +193,14 @@ it('resets an active member\'s password but never an invited one', function (): 
     $invited = $members->invite($result->account->id, 'inv@acme.test', AccountRole::Viewer);
     expect($members->resetPassword($invited->id, 'sneaky-passphrase'))->toBeFalse()
         ->and($members->find($invited->id)->status)->toBe('invited');
+});
+
+it('refuses to add an environment for a suspended account', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
+    app(Accounts::class)->suspend($result->account->id);
+
+    expect(fn () => app(AccountProvisioner::class)->addEnvironment($result->account, 'Blocked'))
+        ->toThrow(AccountSuspended::class);
 });
 
 it('renames an account', function (): void {

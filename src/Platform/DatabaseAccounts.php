@@ -24,6 +24,16 @@ final class DatabaseAccounts implements Accounts
         Account::query()->whereKey($id)->update(['name' => $name]);
     }
 
+    public function suspend(string $id): void
+    {
+        Account::query()->whereKey($id)->update(['status' => 'suspended']);
+    }
+
+    public function reactivate(string $id): void
+    {
+        Account::query()->whereKey($id)->update(['status' => 'active']);
+    }
+
     public function create(string $name, int $environmentLimit = 2): Account
     {
         return Account::query()->create([

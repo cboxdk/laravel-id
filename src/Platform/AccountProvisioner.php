@@ -10,6 +10,7 @@ use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\Accounts;
+use Cbox\Id\Platform\Exceptions\AccountSuspended;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
 use Cbox\Id\Platform\Models\Account;
 use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
@@ -81,6 +82,10 @@ final class AccountProvisioner
             // Re-check under the row lock so two concurrent adds can't both slip
             // past a limit-of-one.
             $locked = Account::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
+
+            if (! $locked->isActive()) {
+                throw AccountSuspended::make($locked->id);
+            }
 
             if ($this->accounts->remainingEnvironments($locked) < 1) {
                 throw EnvironmentLimitReached::make($locked->id, $locked->environment_limit);

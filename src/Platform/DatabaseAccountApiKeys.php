@@ -52,9 +52,12 @@ final class DatabaseAccountApiKeys implements AccountApiKeys
             return null;
         }
 
-        $key = AccountApiKey::query()->where('token_hash', $this->hash($plaintext))->first();
+        $key = AccountApiKey::query()->with('account')->where('token_hash', $this->hash($plaintext))->first();
 
-        if ($key === null || ! $key->isActive()) {
+        // The key must be live AND its owning account active — a suspended account's
+        // keys stop working, so a delinquent or compromised tenant can't keep driving
+        // the management API.
+        if ($key === null || ! $key->isActive() || ! ($key->account?->isActive() ?? false)) {
             return null;
         }
 

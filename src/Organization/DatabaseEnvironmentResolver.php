@@ -7,6 +7,7 @@ namespace Cbox\Id\Organization;
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Organization\Models\Environment as EnvironmentModel;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Resolves an environment from the request host: first an exact custom-domain
@@ -15,6 +16,12 @@ use Cbox\Id\Organization\Models\Environment as EnvironmentModel;
  * base domain, so a spoofed `staging.attacker.com` can never select a plane.
  * The Environment model is not itself environment-owned, so these lookups run
  * unscoped by design.
+ *
+ * A resolved environment only serves while it AND its owning account are active:
+ * a suspended environment, or one whose account is suspended/delinquent, resolves
+ * to null so the host stops serving auth entirely (the platform's off-switch for
+ * an abusive or non-paying tenant actually cuts the end-user plane, not just the
+ * dashboard).
  */
 final class DatabaseEnvironmentResolver implements EnvironmentResolver
 {
@@ -29,7 +36,7 @@ final class DatabaseEnvironmentResolver implements EnvironmentResolver
         $byDomain = EnvironmentModel::query()->where('domain', $host)->first();
 
         if ($byDomain !== null) {
-            return $byDomain;
+            return $this->servable($byDomain);
         }
 
         // Subdomain-slug resolution is only trusted under a configured base
@@ -41,12 +48,38 @@ final class DatabaseEnvironmentResolver implements EnvironmentResolver
             return null;
         }
 
-        return EnvironmentModel::query()->where('slug', $label)->first();
+        return $this->servable(EnvironmentModel::query()->where('slug', $label)->first());
     }
 
     public function defaultEnvironment(): ?Environment
     {
-        return EnvironmentModel::query()->where('is_default', true)->first();
+        return $this->servable(EnvironmentModel::query()->where('is_default', true)->first());
+    }
+
+    /**
+     * Gate a resolved environment on liveness: it must be active, and its owning
+     * account (if any) must be active. A null owning account is a platform-owned
+     * environment (Cbox's own / self-hosted single tenant), which has no account to
+     * suspend. Returns null when the environment must not serve.
+     */
+    private function servable(?EnvironmentModel $environment): ?EnvironmentModel
+    {
+        if ($environment === null || $environment->status !== 'active') {
+            return null;
+        }
+
+        if ($environment->account_id !== null) {
+            $accountActive = DB::table('accounts')
+                ->where('id', $environment->account_id)
+                ->where('status', 'active')
+                ->exists();
+
+            if (! $accountActive) {
+                return null;
+            }
+        }
+
+        return $environment;
     }
 
     private function hostIsUnderBaseDomain(string $host): bool

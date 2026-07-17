@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
+use Cbox\Id\Platform\Contracts\AccountMemberMfa;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
@@ -44,5 +45,13 @@ final class PlatformServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(AccountApiKeys::class, DatabaseAccountApiKeys::class);
+
+        $this->app->singleton(AccountMemberMfa::class, function (Application $app): AccountMemberMfa {
+            return new DatabaseAccountMemberMfa(
+                $app->make(TotpAuthenticator::class),
+                $app->make(SecretBox::class),
+                $app->make(AuditLog::class),
+            );
+        });
     }
 }

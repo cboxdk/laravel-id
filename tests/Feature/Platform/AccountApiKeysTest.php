@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
+use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Enums\AccountRole;
 use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,6 +43,22 @@ it('resolves a valid token to its key and records use', function (): void {
     expect($resolved)->not->toBeNull()
         ->and($resolved->id)->toBe($issued->key->id)
         ->and($resolved->last_used_at)->not->toBeNull();
+});
+
+it('rejects a valid key once its account is suspended', function (): void {
+    $keys = app(AccountApiKeys::class);
+    $accountId = anAccount();
+    $issued = $keys->issue($accountId, 'Key', AccountRole::Admin);
+
+    expect($keys->resolve($issued->plaintext))->not->toBeNull();
+
+    // The platform's off-switch: suspending the account kills its keys immediately.
+    app(Accounts::class)->suspend($accountId);
+    expect($keys->resolve($issued->plaintext))->toBeNull();
+
+    // Reactivation restores it.
+    app(Accounts::class)->reactivate($accountId);
+    expect($keys->resolve($issued->plaintext))->not->toBeNull();
 });
 
 it('rejects unknown, revoked, and expired tokens', function (): void {
