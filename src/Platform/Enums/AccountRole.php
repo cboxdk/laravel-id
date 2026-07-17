@@ -64,6 +64,25 @@ enum AccountRole: string
         };
     }
 
+    /**
+     * Read the member roster (PII). Owners/admins manage it; a read-only Viewer may
+     * see it; a Developer (a technical/CI credential) and a Billing-only role may
+     * NOT — a leaked developer key must not enumerate the team.
+     */
+    public function canReadMembers(): bool
+    {
+        return match ($this) {
+            self::Owner, self::Admin, self::Viewer => true,
+            default => false,
+        };
+    }
+
+    /** Read billing/plan/usage. Managers plus the read-only Viewer; not a Developer. */
+    public function canReadBilling(): bool
+    {
+        return $this->canManageBilling() || $this === self::Viewer;
+    }
+
     /** Create environments and manage their settings. */
     public function canManageEnvironments(): bool
     {
