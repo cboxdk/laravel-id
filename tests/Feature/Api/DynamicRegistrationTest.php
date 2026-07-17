@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
+use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\Organization\Enums\EnvironmentType;
+use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -71,6 +76,27 @@ it('reduces requested scopes to the configured allow-list', function (): void {
     ])->assertStatus(201);
 
     expect($response->json('scope'))->toBe('openid email');
+});
+
+it('accepts plain-http redirect URIs on any host only in a sandbox environment', function (): void {
+    openDcr();
+    $registrar = app(DynamicClientRegistration::class);
+    $metadata = [
+        'client_name' => 'Dev App',
+        'token_endpoint_auth_method' => 'none',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['http://app.test/cb'],
+    ];
+
+    // Production: plain http on a non-loopback host is refused.
+    $prod = Environment::query()->create(['name' => 'Prod', 'slug' => 'p', 'type' => EnvironmentType::Production, 'status' => 'active']);
+    app(EnvironmentContext::class)->set($prod);
+    expect(fn () => $registrar->validate($metadata))->toThrow(InvalidClientMetadata::class);
+
+    // Sandbox: the same redirect_uri is accepted for local development.
+    $sandbox = Environment::query()->create(['name' => 'Sandbox', 'slug' => 's', 'type' => EnvironmentType::Sandbox, 'status' => 'active']);
+    app(EnvironmentContext::class)->set($sandbox);
+    expect($registrar->validate($metadata)->redirectUris)->toBe(['http://app.test/cb']);
 });
 
 it('rejects a redirect_uri that is not https or loopback', function (): void {

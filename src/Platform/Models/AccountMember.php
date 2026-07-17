@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\Models;
 
+use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\Enums\AccountRole;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -19,6 +22,8 @@ use Illuminate\Support\Carbon;
  * @property string $account_id
  * @property string $email
  * @property string|null $name
+ * @property AccountRole $role
+ * @property bool $all_environments
  * @property string $password
  * @property string $status
  * @property Carbon|null $last_login_at
@@ -48,11 +53,24 @@ final class AccountMember extends Model
     }
 
     /**
+     * The environments this member is explicitly granted — only meaningful when
+     * {@see $all_environments} is false.
+     *
+     * @return BelongsToMany<Environment, $this>
+     */
+    public function environments(): BelongsToMany
+    {
+        return $this->belongsToMany(Environment::class, 'account_member_environments');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
+            'role' => AccountRole::class,
+            'all_environments' => 'boolean',
             'password' => 'hashed',
             'last_login_at' => 'datetime',
         ];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
@@ -24,7 +25,10 @@ final class DynamicClientRegistrar implements DynamicClientRegistration
 {
     private const AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post'];
 
-    public function __construct(private readonly ClientRegistry $clients) {}
+    public function __construct(
+        private readonly ClientRegistry $clients,
+        private readonly EnvironmentContext $environment,
+    ) {}
 
     public function validate(array $request): ClientMetadata
     {
@@ -223,6 +227,12 @@ final class DynamicClientRegistrar implements DynamicClientRegistration
         }
 
         if ($scheme === 'http' && $isLoopback) {
+            return;
+        }
+
+        // A sandbox environment is for development, so it accepts plain http on any
+        // host (e.g. http://app.test) — never permitted in production.
+        if ($scheme === 'http' && $host !== null && ($this->environment->current()?->isSandbox() ?? false)) {
             return;
         }
 

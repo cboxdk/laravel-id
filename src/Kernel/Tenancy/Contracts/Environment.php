@@ -22,4 +22,12 @@ interface Environment
      * and compared against on every scoped query.
      */
     public function environmentKey(): string;
+
+    /**
+     * Whether this is a sandbox (development/test) environment. Sandbox realms run
+     * with relaxed rules — e.g. plain-http redirect URIs — so callers that must
+     * behave differently in testing can branch on this without loading the
+     * environment record. Production realms return false.
+     */
+    public function isSandbox(): bool;
 }

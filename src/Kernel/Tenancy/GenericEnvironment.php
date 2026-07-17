@@ -25,4 +25,13 @@ final readonly class GenericEnvironment implements Environment
     {
         return $this->key;
     }
+
+    /**
+     * A bare-key environment carries no type, so it is never treated as a sandbox
+     * — callers that need sandbox behaviour resolve the full Environment model.
+     */
+    public function isSandbox(): bool
+    {
+        return false;
+    }
 }

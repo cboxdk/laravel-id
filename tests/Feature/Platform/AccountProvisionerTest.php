@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\AccountMembers;
+use Cbox\Id\Platform\Enums\AccountRole;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
 use Cbox\Id\Platform\Models\Account;
 use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
@@ -31,7 +33,9 @@ it('provisions an account with a member and a first environment', function (): v
         ->and($result->account->environment_limit)->toBe(2)
         ->and($result->member->email)->toBe('owner@acme.test')
         ->and($result->member->account_id)->toBe($result->account->id)
-        ->and($result->environment->slug)->toBe('production')
+        // The routing slug derives from the ACCOUNT name, not the stage name.
+        ->and($result->environment->slug)->toBe('acme')
+        ->and($result->environment->name)->toBe('Production')
         ->and($result->environment->status)->toBe('active')
         // The environment is OWNED by the account…
         ->and($result->environment->account_id)->toBe($result->account->id);
@@ -48,11 +52,13 @@ it('provisions the environment empty — the account plane never seeds tenants',
 });
 
 it('gives each environment a unique routing slug', function (): void {
+    // Two different accounts that happen to share a name still get distinct
+    // subdomains — the slug is globally unique.
     $a = app(AccountProvisioner::class)->provision(accountBlueprint('Acme', 'a@acme.test'));
     $b = app(AccountProvisioner::class)->provision(accountBlueprint('Acme', 'b@acme.test'));
 
-    expect($a->environment->slug)->toBe('production')
-        ->and($b->environment->slug)->toBe('production-2')
+    expect($a->environment->slug)->toBe('acme')
+        ->and($b->environment->slug)->toBe('acme-2')
         ->and($a->environment->id)->not->toBe($b->environment->id);
 });
 
@@ -68,6 +74,85 @@ it('resolves a member globally by email — the answer to "which account"', func
         ->and($members->verifyPassword($found->id, 'wrong-password'))->toBeFalse();
 });
 
+it('provisions a production environment and can add a sandbox', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
+
+    expect($result->environment->type)->toBe(EnvironmentType::Production)
+        ->and($result->environment->isSandbox())->toBeFalse();
+
+    $sandbox = app(AccountProvisioner::class)->addEnvironment($result->account, 'Sandbox', null, EnvironmentType::Sandbox);
+
+    expect($sandbox->type)->toBe(EnvironmentType::Sandbox)
+        ->and($sandbox->isSandbox())->toBeTrue();
+});
+
+it('provisions the owner with the Owner role and every environment', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+
+    expect($result->member->role)->toBe(AccountRole::Owner)
+        ->and($result->member->all_environments)->toBeTrue();
+});
+
+it('invites a member with a role who cannot authenticate until they accept', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+    $members = app(AccountMembers::class);
+
+    $invited = $members->invite($result->account->id, 'teammate@acme.test', AccountRole::Developer, 'Team Mate');
+
+    expect($invited->status)->toBe('invited')
+        ->and($invited->role)->toBe(AccountRole::Developer)
+        ->and($invited->account_id)->toBe($result->account->id)
+        // Invited members are inactive — no credential works, even a lucky guess.
+        ->and($members->verifyPassword($invited->id, 'anything'))->toBeFalse();
+
+    // Accepting sets a password and activates them.
+    expect($members->activate($invited->id, 'their-own-passphrase'))->toBeTrue();
+    $active = $members->find($invited->id);
+    expect($active->status)->toBe('active')
+        ->and($members->verifyPassword($invited->id, 'their-own-passphrase'))->toBeTrue();
+});
+
+it('scopes a member to specific environments and resolves their access', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
+    $members = app(AccountMembers::class);
+    $prod = $result->environment;
+    $staging = app(AccountProvisioner::class)->addEnvironment($result->account, 'Staging');
+
+    $dev = $members->invite($result->account->id, 'dev@acme.test', AccountRole::Developer);
+    // Restrict the developer to staging only (Stripe-style test-vs-prod access).
+    $members->setEnvironmentAccess($dev->id, all: false, environmentIds: [$staging->id]);
+
+    $access = $members->accessibleEnvironmentIds($members->find($dev->id));
+    expect($access)->toBe([$staging->id])
+        ->and($access)->not->toContain($prod->id);
+});
+
+it('never scopes an owner/admin and ignores foreign environment grants', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+    $members = app(AccountMembers::class);
+
+    // Another account's environment — must never be grantable.
+    $other = app(AccountProvisioner::class)->provision(accountBlueprint('Other', 'other@x.test'));
+
+    $admin = $members->invite($result->account->id, 'admin@acme.test', AccountRole::Admin);
+    // Admins can't be scoped down — the call is a no-op, access stays all.
+    $members->setEnvironmentAccess($admin->id, all: false, environmentIds: [$other->environment->id]);
+
+    $admin = $members->find($admin->id);
+    expect($admin->all_environments)->toBeTrue()
+        ->and($members->accessibleEnvironmentIds($admin))->toBe([$result->environment->id]);
+});
+
+it('refuses to re-activate an already-active member (replayed accept)', function (): void {
+    $result = app(AccountProvisioner::class)->provision(accountBlueprint());
+    $members = app(AccountMembers::class);
+
+    // The provisioned owner is already active — a replayed accept must not reset it.
+    expect($members->activate($result->member->id, 'attacker-chosen-password'))->toBeFalse()
+        ->and($members->verifyPassword($result->member->id, 'attacker-chosen-password'))->toBeFalse()
+        ->and($members->verifyPassword($result->member->id, 'supersecret123'))->toBeTrue();
+});
+
 it('lets an account add environments up to its plan limit, then refuses', function (): void {
     $provisioner = app(AccountProvisioner::class);
     $result = $provisioner->provision(accountBlueprint(limit: 2));
@@ -75,7 +160,7 @@ it('lets an account add environments up to its plan limit, then refuses', functi
 
     // Limit is 2, one used by provisioning → one more is allowed…
     $staging = $provisioner->addEnvironment($account, 'Staging');
-    expect($staging->slug)->toBe('staging')
+    expect($staging->slug)->toBe('acme-staging')
         ->and($staging->account_id)->toBe($account->id)
         ->and(app(Account::class)->newQuery()->find($account->id))->not->toBeNull();
 

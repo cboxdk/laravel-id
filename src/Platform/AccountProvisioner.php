@@ -6,6 +6,7 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\Accounts;
@@ -53,7 +54,16 @@ final class AccountProvisioner
                 $blueprint->ownerName,
             );
 
-            $environment = $this->createEnvironment($account, $blueprint->environmentName, $blueprint->domain);
+            // The routing slug (subdomain) derives from the ACCOUNT's identity, not
+            // the stage name — so a customer "Acme" gets acme.example, not a generic
+            // "production.example" that every customer would collide on.
+            $environment = $this->createEnvironment(
+                $account,
+                $blueprint->environmentName,
+                $blueprint->domain,
+                slugSeed: $blueprint->accountName,
+                type: EnvironmentType::Production,
+            );
 
             return new ProvisionedAccount($account, $member, $environment);
         });
@@ -65,9 +75,9 @@ final class AccountProvisioner
      *
      * @throws EnvironmentLimitReached
      */
-    public function addEnvironment(Account $account, string $name, ?string $domain = null): Environment
+    public function addEnvironment(Account $account, string $name, ?string $domain = null, EnvironmentType $type = EnvironmentType::Production): Environment
     {
-        return DB::transaction(function () use ($account, $name, $domain): Environment {
+        return DB::transaction(function () use ($account, $name, $domain, $type): Environment {
             // Re-check under the row lock so two concurrent adds can't both slip
             // past a limit-of-one.
             $locked = Account::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
@@ -76,21 +86,25 @@ final class AccountProvisioner
                 throw EnvironmentLimitReached::make($locked->id, $locked->environment_limit);
             }
 
-            return $this->createEnvironment($locked, $name, $domain);
+            // Additional environments keep the account's identity in the slug and add
+            // the stage name to distinguish it: "Acme" + "Staging" → acme-staging.
+            return $this->createEnvironment($locked, $name, $domain, slugSeed: $locked->name.' '.$name, type: $type);
         });
     }
 
     /**
      * Create an environment owned by the account and warm its signing key so its
      * JWKS/discovery is live the instant it is routable. The environment is left
-     * empty of tenants by design.
+     * empty of tenants by design. `$slugSeed` is what the routing subdomain derives
+     * from — the account's identity, not the (often generic) stage name.
      */
-    private function createEnvironment(Account $account, string $name, ?string $domain): Environment
+    private function createEnvironment(Account $account, string $name, ?string $domain, string $slugSeed, EnvironmentType $type): Environment
     {
         $environment = Environment::query()->create([
             'account_id' => $account->id,
             'name' => $name,
-            'slug' => $this->uniqueSlug($name),
+            'slug' => $this->uniqueSlug($slugSeed),
+            'type' => $type,
             'domain' => $domain,
             'status' => 'active',
         ]);

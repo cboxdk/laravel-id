@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Organization\Models;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment as EnvironmentContract;
+use Cbox\Id\Organization\Enums\EnvironmentType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
  * @property string $id
  * @property string $name
  * @property string $slug
+ * @property EnvironmentType $type
  * @property string $status
  * @property bool $is_default
  * @property array<string, mixed> $settings
@@ -29,9 +31,16 @@ final class Environment extends Model implements EnvironmentContract
 
     protected $guarded = [];
 
+    /** A development/test realm: relaxed rules, no real outbound email, badged. */
+    public function isSandbox(): bool
+    {
+        return $this->type === EnvironmentType::Sandbox;
+    }
+
     protected function casts(): array
     {
         return [
+            'type' => EnvironmentType::class,
             'is_default' => 'boolean',
             'settings' => 'array',
         ];
