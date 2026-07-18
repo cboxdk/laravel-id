@@ -7,6 +7,7 @@ namespace Cbox\Id\Platform;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
@@ -14,6 +15,7 @@ use Cbox\Id\Platform\Contracts\AccountMemberMfa;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\AccountPasskeys;
 use Cbox\Id\Platform\Contracts\Accounts;
+use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
@@ -52,6 +54,12 @@ final class PlatformServiceProvider extends ServiceProvider
 
         $this->app->singleton(EnvironmentApiKeys::class, function (Application $app): EnvironmentApiKeys {
             return new DatabaseEnvironmentApiKeys($app->make(EnvironmentContext::class));
+        });
+
+        // The signed bridge that lets an account member administer a tenant
+        // environment without a second login (and without being a subject there).
+        $this->app->singleton(EnvironmentAdminHandoff::class, function (Application $app): EnvironmentAdminHandoff {
+            return new SignedEnvironmentAdminHandoff($app->make(TokenSigner::class));
         });
 
         $this->app->singleton(AccountMemberMfa::class, function (Application $app): AccountMemberMfa {
