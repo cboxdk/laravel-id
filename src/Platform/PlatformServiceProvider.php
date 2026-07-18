@@ -8,11 +8,13 @@ use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
 use Cbox\Id\Platform\Contracts\AccountMemberMfa;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\AccountPasskeys;
 use Cbox\Id\Platform\Contracts\Accounts;
+use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
 use Illuminate\Contracts\Foundation\Application;
@@ -47,6 +49,10 @@ final class PlatformServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(AccountApiKeys::class, DatabaseAccountApiKeys::class);
+
+        $this->app->singleton(EnvironmentApiKeys::class, function (Application $app): EnvironmentApiKeys {
+            return new DatabaseEnvironmentApiKeys($app->make(EnvironmentContext::class));
+        });
 
         $this->app->singleton(AccountMemberMfa::class, function (Application $app): AccountMemberMfa {
             return new DatabaseAccountMemberMfa(
