@@ -27,7 +27,13 @@ jobs:
       - run: composer update --no-interaction --no-progress --prefer-dist
       - name: Pint (lint)
         run: vendor/bin/pint --test
+      # PHPStan runs on the CURRENT Laravel major only (both PHP versions). larastan
+      # ships its generic `Eloquent\Scope` stub gated on the Laravel version, so the
+      # SAME correct `@implements Scope<Model>` annotation is required on 13 but
+      # rejected as "not generic" on 12 — an unresolvable per-major stub discrepancy,
+      # not a code bug. Pest still exercises BOTH majors at runtime below.
       - name: PHPStan
+        if: matrix.testbench == '^11.0'
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
       - name: Pest
         run: vendor/bin/pest

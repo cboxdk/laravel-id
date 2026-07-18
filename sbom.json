@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:2df9cba5-2b63-43f4-a8fa-ea127d5e6d67",
+    "serialNumber": "urn:uuid:d3e02538-7ad7-4b81-a69f-815d285cae98",
     "version": 1,
     "metadata": {
         "tools": [
@@ -21,11 +21,11 @@
     "components": [
         {
             "type": "library",
-            "bom-ref": "pkg:composer/brick/math@0.17.2",
+            "bom-ref": "pkg:composer/brick/math@0.18.0",
             "group": "brick",
             "name": "math",
-            "version": "0.17.2",
-            "purl": "pkg:composer/brick/math@0.17.2",
+            "version": "0.18.0",
+            "purl": "pkg:composer/brick/math@0.18.0",
             "description": "Arbitrary-precision arithmetic library",
             "licenses": [
                 {
@@ -69,11 +69,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.0.2",
+            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.1.0",
             "group": "cboxdk",
             "name": "laravel-ssrf",
-            "version": "v1.0.2",
-            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.0.2",
+            "version": "v1.1.0",
+            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.1.0",
             "description": "Cbox SSRF \u2014 a hardened, config-driven guard against server-side request forgery for outbound URLs in Laravel. Blocks private/reserved/cloud-metadata targets, pins DNS, and refuses redirects.",
             "licenses": [
                 {
@@ -85,11 +85,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/license@v0.1.0",
+            "bom-ref": "pkg:composer/cboxdk/license@v0.1.1",
             "group": "cboxdk",
             "name": "license",
-            "version": "v0.1.0",
-            "purl": "pkg:composer/cboxdk/license@v0.1.0",
+            "version": "v0.1.1",
+            "purl": "pkg:composer/cboxdk/license@v0.1.1",
             "description": "Framework-agnostic, offline license core: mint and verify compact Ed25519-signed license artifacts (EdDSA JWTs) with entitlements, limits, deployment/domain binding, grace windows and signed revocation lists. The shared leaf both a billing issuer and a self-hosted verifier depend on.",
             "licenses": [
                 {
@@ -245,11 +245,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/guzzlehttp/guzzle@7.14.2",
+            "bom-ref": "pkg:composer/guzzlehttp/guzzle@7.15.0",
             "group": "guzzlehttp",
             "name": "guzzle",
-            "version": "7.14.2",
-            "purl": "pkg:composer/guzzlehttp/guzzle@7.14.2",
+            "version": "7.15.0",
+            "purl": "pkg:composer/guzzlehttp/guzzle@7.15.0",
             "description": "Guzzle is a PHP HTTP client library",
             "licenses": [
                 {
@@ -277,11 +277,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/guzzlehttp/psr7@2.12.5",
+            "bom-ref": "pkg:composer/guzzlehttp/psr7@2.13.0",
             "group": "guzzlehttp",
             "name": "psr7",
-            "version": "2.12.5",
-            "purl": "pkg:composer/guzzlehttp/psr7@2.12.5",
+            "version": "2.13.0",
+            "purl": "pkg:composer/guzzlehttp/psr7@2.13.0",
             "description": "PSR-7 message implementation that also provides common utility methods",
             "licenses": [
                 {
@@ -293,11 +293,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/guzzlehttp/uri-template@v1.0.9",
+            "bom-ref": "pkg:composer/guzzlehttp/uri-template@v1.0.10",
             "group": "guzzlehttp",
             "name": "uri-template",
-            "version": "v1.0.9",
-            "purl": "pkg:composer/guzzlehttp/uri-template@v1.0.9",
+            "version": "v1.0.10",
+            "purl": "pkg:composer/guzzlehttp/uri-template@v1.0.10",
             "description": "A polyfill class for uri_template of PHP",
             "licenses": [
                 {
@@ -515,11 +515,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/nette/utils@v4.1.4",
+            "bom-ref": "pkg:composer/nette/utils@v4.1.5",
             "group": "nette",
             "name": "utils",
-            "version": "v4.1.4",
-            "purl": "pkg:composer/nette/utils@v4.1.4",
+            "version": "v4.1.5",
+            "purl": "pkg:composer/nette/utils@v4.1.5",
             "description": "\ud83d\udee0  Nette Utils: lightweight utilities for string & array manipulation, image handling, safe JSON encoding/decoding, validation, slug or strong password generating etc.",
             "licenses": [
                 {
@@ -769,11 +769,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/spomky-labs/cbor-php@3.2.3",
+            "bom-ref": "pkg:composer/spomky-labs/cbor-php@3.3.0",
             "group": "spomky-labs",
             "name": "cbor-php",
-            "version": "3.2.3",
-            "purl": "pkg:composer/spomky-labs/cbor-php@3.2.3",
+            "version": "3.3.0",
+            "purl": "pkg:composer/spomky-labs/cbor-php@3.3.0",
             "description": "CBOR Encoder/Decoder for PHP",
             "licenses": [
                 {
