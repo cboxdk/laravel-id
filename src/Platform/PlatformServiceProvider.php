@@ -59,7 +59,10 @@ final class PlatformServiceProvider extends ServiceProvider
         // The signed bridge that lets an account member administer a tenant
         // environment without a second login (and without being a subject there).
         $this->app->singleton(EnvironmentAdminHandoff::class, function (Application $app): EnvironmentAdminHandoff {
-            return new SignedEnvironmentAdminHandoff($app->make(TokenSigner::class));
+            return new SignedEnvironmentAdminHandoff(
+                $app->make(TokenSigner::class),
+                $app->make(EnvironmentContext::class),
+            );
         });
 
         $this->app->singleton(AccountMemberMfa::class, function (Application $app): AccountMemberMfa {

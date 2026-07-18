@@ -3,10 +3,27 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(RefreshDatabase::class);
+uses(RefreshDatabase::class, InteractsWithTenancy::class);
+
+it('verifies ACROSS environments — minted on the account plane, redeemed on the target env host', function (): void {
+    $handoff = app(EnvironmentAdminHandoff::class);
+
+    // Minted while the account plane's (root) environment is active…
+    $token = $this->runAsEnvironment('env_platform_root', fn () => $handoff->mint('acct_member_1', 'env_tenant_x'));
+
+    // …redeemed while the TARGET tenant environment is active. Env signing keys differ
+    // between these contexts, so this only works because the handoff signs/verifies in
+    // its own fixed platform scope.
+    $grant = $this->runAsEnvironment('env_tenant_x', fn () => $handoff->verify($token));
+
+    expect($grant)->not->toBeNull()
+        ->and($grant->accountMemberId)->toBe('acct_member_1')
+        ->and($grant->environmentId)->toBe('env_tenant_x');
+});
 
 it('mints and verifies a handoff, binding the account member to the environment', function (): void {
     $handoff = app(EnvironmentAdminHandoff::class);
