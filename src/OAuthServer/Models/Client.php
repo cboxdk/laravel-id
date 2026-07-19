@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $organization_id
  * @property string $client_id
  * @property string|null $secret_hash
+ * @property array<string, mixed>|null $jwks
  * @property string $name
  * @property ClientType $type
  * @property array<int, string> $redirect_uris
@@ -58,6 +59,7 @@ final class Client extends Model implements EnvironmentOwned
             'redirect_uris' => 'array',
             'grant_types' => 'array',
             'scopes' => 'array',
+            'jwks' => 'array',
             'first_party' => 'boolean',
         ];
     }

@@ -54,7 +54,9 @@ final class ServerMetadata
             'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
             'scopes_supported' => ['openid', 'profile', 'email', 'offline_access'],
             'subject_types_supported' => ['public'],
-            'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'none'],
+            'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none'],
+            // RFC 7523 client-assertion signing algs (private_key_jwt).
+            'token_endpoint_auth_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
         ];
 
         // The interactive `/authorize` endpoint is the host app's responsibility;

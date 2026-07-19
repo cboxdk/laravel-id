@@ -29,7 +29,12 @@ final class ClientRegistryService implements ClientRegistry
             'first_party' => $input->firstParty,
         ]);
 
-        if ($input->type === ClientType::Confidential) {
+        $client->jwks = $input->jwks;
+
+        // A confidential client authenticates EITHER by a shared secret OR by
+        // signing assertions with its registered keys (`private_key_jwt`). When it
+        // registers a JWK Set it gets no secret — one credential mechanism, not two.
+        if ($input->type === ClientType::Confidential && $input->jwks === null) {
             $secret = 'csec_'.bin2hex(random_bytes(32));
             $client->secret_hash = hash('sha256', $secret);
         }

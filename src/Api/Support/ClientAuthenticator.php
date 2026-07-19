@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Support;
 
+use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Http\Request;
@@ -13,16 +14,20 @@ use Illuminate\Http\Request;
  * credential-bearing endpoint (`/oauth/token`, `/introspect`, `/revoke`, `/par`)
  * authenticates a client the same way.
  *
- * Credentials are taken from HTTP Basic first (RFC 6749 §2.3.1, `client_secret_basic`),
- * falling back to the `client_id`/`client_secret` body parameters (`client_secret_post`).
- * The RFC forbids a client from combining mechanisms, so a request that carries
- * BOTH a Basic header and body credentials is refused. Secrets are verified in
- * constant time by the {@see ClientRegistry}; public clients (which hold no
- * secret, `none`) authenticate by `client_id` alone where the endpoint allows it.
+ * Three methods, in precedence order: `private_key_jwt` (RFC 7523 — a signed
+ * `client_assertion` verified against the client's registered keys), then HTTP Basic
+ * (RFC 6749 §2.3.1, `client_secret_basic`), then the `client_id`/`client_secret` body
+ * (`client_secret_post`). The RFC forbids combining mechanisms, so a request mixing an
+ * assertion with a secret — or Basic with body credentials — is refused. Secrets are
+ * verified in constant time by the {@see ClientRegistry}; public clients (no secret,
+ * `none`) authenticate by `client_id` alone where the endpoint allows it.
  */
 final class ClientAuthenticator
 {
-    public function __construct(private readonly ClientRegistry $clients) {}
+    public function __construct(
+        private readonly ClientRegistry $clients,
+        private readonly ClientAssertionValidator $assertions,
+    ) {}
 
     /**
      * Authenticate a client that MAY be public (`none`): a confidential client
@@ -32,6 +37,10 @@ final class ClientAuthenticator
      */
     public function authenticate(Request $request): ?Client
     {
+        if ($this->hasAssertion($request)) {
+            return $this->assertionClient($request);
+        }
+
         $credentials = $this->credentials($request);
 
         if ($credentials === null) {
@@ -61,6 +70,10 @@ final class ClientAuthenticator
      */
     public function authenticateConfidential(Request $request): ?Client
     {
+        if ($this->hasAssertion($request)) {
+            return $this->assertionClient($request);
+        }
+
         $credentials = $this->credentials($request);
 
         if ($credentials === null) {
@@ -71,6 +84,31 @@ final class ClientAuthenticator
         $client = $this->clients->byClientId($clientId);
 
         return $client !== null && $this->clients->verifySecret($client, $secret) ? $client : null;
+    }
+
+    private function hasAssertion(Request $request): bool
+    {
+        return $request->string('client_assertion')->toString() !== '';
+    }
+
+    /**
+     * Authenticate via `private_key_jwt` (RFC 7523). Refuses a wrong assertion type,
+     * and — per RFC 6749 §2.3 — an assertion COMBINED with a secret or Basic header.
+     */
+    private function assertionClient(Request $request): ?Client
+    {
+        if ($request->string('client_assertion_type')->toString() !== ClientAssertionValidator::ASSERTION_TYPE) {
+            return null;
+        }
+
+        $basicUser = $request->getUser();
+        $combined = (is_string($basicUser) && $basicUser !== '') || $request->string('client_secret')->toString() !== '';
+
+        if ($combined) {
+            return null;
+        }
+
+        return $this->assertions->verify($request->string('client_assertion')->toString());
     }
 
     /**
