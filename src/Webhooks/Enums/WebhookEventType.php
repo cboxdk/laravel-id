@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Cbox\Id\Webhooks\Enums;
 
 /**
- * The catalog of resource-lifecycle events a webhook endpoint may subscribe to.
- * These are the domain events a downstream integration cares about — not the full
- * internal audit stream. Subscription is deny-by-default: an endpoint may register
- * for a value in this catalog (or the {@see self::WILDCARD} "all events"), and
- * nothing else, so a typo silently subscribing to a never-fired event is caught at
- * registration rather than discovered as missing deliveries in production.
+ * A DOCUMENTED catalog of common resource-lifecycle events a webhook endpoint is
+ * likely to subscribe to — for the console's subscription picker, discovery, and the
+ * {@see self::WILDCARD} "all events" subscription. It is intentionally NOT an
+ * allow-list: event types are open-ended (the domain and its plugins emit far more,
+ * e.g. `auth.*`), so the registry accepts any non-empty type. Use this enum for the
+ * known ones you want typed; a type absent from it is still a valid subscription.
  */
 enum WebhookEventType: string
 {

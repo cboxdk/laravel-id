@@ -24,9 +24,13 @@ final class DatabaseWebhookRegistry implements WebhookRegistry
         // SSRF guard: refuse endpoints that point at non-public addresses.
         SafeWebhookUrl::assert($url);
 
-        // Deny-by-default: every subscription must name a catalogued event (or `*`).
+        // Event types are open-ended — the domain (and its plugins) emit far more
+        // than any curated list could track, so a subscription may name ANY non-empty
+        // type. WebhookEventType stays a *documented* catalog (the console picker, the
+        // `*` wildcard) rather than a hard allow-list that would reject a legitimate
+        // event and break the subscriber. Only an empty/blank type is refused.
         foreach ($eventTypes as $eventType) {
-            if (! WebhookEventType::subscribable($eventType)) {
+            if (trim($eventType) === '') {
                 throw UnknownWebhookEvent::forType($eventType);
             }
         }

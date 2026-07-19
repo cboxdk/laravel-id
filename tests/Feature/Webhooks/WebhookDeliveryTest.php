@@ -144,8 +144,19 @@ it('folds the event organization id into the delivered webhook payload', functio
     });
 });
 
-it('refuses to subscribe an endpoint to an uncatalogued event type', function (): void {
-    expect(fn () => $this->registerWebhook('org_a', 'https://hook.test/x', ['not.a.real.event']))
+it('accepts any non-empty event type (types are open-ended, not a hard allow-list)', function (): void {
+    // A type outside the WebhookEventType catalog (e.g. an auth event, or a plugin's
+    // own) is a perfectly valid subscription — the registry must not reject it.
+    Http::fake(['*' => Http::response('', 200)]);
+    $this->registerWebhook('org_a', 'https://hook.test/x', ['auth.login']);
+
+    app(WebhookDispatcher::class)->dispatch('auth.login', [], 'org_a');
+
+    Http::assertSentCount(1);
+});
+
+it('still refuses a blank event type', function (): void {
+    expect(fn () => $this->registerWebhook('org_a', 'https://hook.test/x', ['']))
         ->toThrow(UnknownWebhookEvent::class);
 });
 
