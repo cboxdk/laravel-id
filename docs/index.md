@@ -70,7 +70,7 @@ Token Vault, and app-manifest publishing:
 | `Webhooks` | `WebhookRegistry`, `WebhookDispatcher` | HMAC-signed delivery + retries; fans out `EventDelivered`. |
 | `AuditQuery` | `AuditReader` | Filtered/paginated reads + SIEM pull-stream. |
 | `Api` | (HTTP routes/middleware) | The HTTP surface — OAuth/OIDC, SCIM, discovery endpoints; resolves each request's environment (`ResolveEnvironment`). |
-| `Platform` | `PlatformOperators` | Control-plane operators (the cross-environment admin identity behind the operator console). |
+| `Platform` | `PlatformOperators`, `Accounts`, `Projects`, `AccountMembers` | Control-plane operators AND the self-serve account plane: accounts own projects (the billing anchor) which own environments. |
 | `Console` | (`cbox-id:install`, `cbox-id:doctor`) | Artisan commands: guided bootstrap and health checks. (Key rotation, `cbox-id:keys:rotate`, ships in `Kernel\Crypto`.) |
 
 ## Sections

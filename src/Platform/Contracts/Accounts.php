@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform\Contracts;
 
 use Cbox\Id\Platform\Models\Account;
+use Cbox\Id\Platform\Models\Project;
 
 /**
  * Repository for accounts — the customer workspaces that own environments. Never
@@ -29,14 +30,17 @@ interface Accounts
     public function reactivate(string $id): void;
 
     /**
-     * Provision a new account. `$environmentLimit` is the plan's environment
-     * allowance; the default matches the standard one-prod-one-staging shape.
+     * Provision a new account. `$environmentLimit` seeds the account's first
+     * ("Default") project's environment allowance — billing/limits live on the
+     * {@see Project}, so this is only the starting value.
      */
     public function create(string $name, int $environmentLimit = 2): Account;
 
     /**
-     * How many more environments this account may create under its plan. Zero
-     * means the limit is reached; a negative result is clamped to zero.
+     * @deprecated The enforced allowance moved to the project; use
+     *   {@see Projects::remainingEnvironments()}. This account-level tally (limit
+     *   minus ALL environments across every project) is retained only for back-compat
+     *   and MISREPORTS capacity for a multi-project account — do not gate on it.
      */
     public function remainingEnvironments(Account $account): int;
 }

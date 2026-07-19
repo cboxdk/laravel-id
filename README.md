@@ -39,7 +39,7 @@ $user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3c
 |---|---|
 | Kernels | `Tenancy` · `Crypto` · `Audit` · `Events` · `Authorization` |
 | Domain | `Organization` · `Identity` · `AccessControl` · `Directory` (SCIM) · `Federation` (SSO) · `OAuthServer` (OAuth 2.0 / OIDC provider) · `Webhooks` · `AuditQuery` |
-| HTTP & ops | `Api` (OAuth/OIDC/SCIM endpoints) · `Platform` (control-plane operators) · `Console` (`cbox-id:install` / `cbox-id:doctor`) |
+| HTTP & ops | `Api` (OAuth/OIDC/SCIM endpoints) · `Platform` (operators + the self-serve account/project/billing plane) · `Console` (`cbox-id:install` / `cbox-id:doctor`) |
 
 ## Documentation
 

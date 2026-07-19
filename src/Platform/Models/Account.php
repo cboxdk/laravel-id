@@ -10,18 +10,21 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * An account — the customer's workspace, the plane that owns environments. It
- * sits ABOVE environments (like operators), so it is deliberately NOT
- * environment-owned: these rows are global.
+ * An account — the login/identity umbrella and the billing CUSTOMER: it owns members
+ * and payment methods, and it owns environments transitively through its PROJECTS. It
+ * sits ABOVE the tenancy (like operators), so it is deliberately NOT environment-owned:
+ * these rows are global.
  *
- * The account is where the plan/billing anchor lives. `environment_limit` is the
- * plan's environment allowance — the dial that turns "a plan with 2 environments"
- * into an enforceable rule.
+ * The plan/billing anchor is NOT here — it moved to the {@see Project}
+ * ({@see Project::$environment_limit}), so one account can own several
+ * independently-billed IdP products. This model's own `environment_limit` is retained
+ * only as the seed the account's first ("Default") project inherits at provision time;
+ * per-project allowance is what the framework actually enforces.
  *
  * @property string $id
  * @property string $name
  * @property string $status
- * @property int $environment_limit
+ * @property int $environment_limit Seed for the first project's allowance; NOT the enforced limit.
  * @property array<string, mixed> $settings
  */
 final class Account extends Model
