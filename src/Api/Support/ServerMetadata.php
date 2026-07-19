@@ -85,6 +85,7 @@ final class ServerMetadata
             'refresh_token',
             'urn:ietf:params:oauth:grant-type:device_code',
             'urn:openid:params:grant-type:ciba',
+            'urn:ietf:params:oauth:grant-type:token-exchange',
         ];
     }
 }

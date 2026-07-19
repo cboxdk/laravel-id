@@ -172,5 +172,6 @@ it('advertises the CIBA endpoint, delivery mode and grant type in metadata', fun
         ->assertJsonFragment(['grant_types_supported' => [
             'authorization_code', 'client_credentials', 'refresh_token',
             'urn:ietf:params:oauth:grant-type:device_code', CIBA_GRANT,
+            'urn:ietf:params:oauth:grant-type:token-exchange',
         ]]);
 });

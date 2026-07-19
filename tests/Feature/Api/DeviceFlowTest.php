@@ -150,5 +150,6 @@ it('advertises the device endpoint and grant type in metadata', function (): voi
         ->assertJsonFragment(['grant_types_supported' => [
             'authorization_code', 'client_credentials', 'refresh_token', DEVICE_GRANT,
             'urn:openid:params:grant-type:ciba',
+            'urn:ietf:params:oauth:grant-type:token-exchange',
         ]]);
 });

@@ -13,6 +13,7 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
+use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
@@ -25,10 +26,12 @@ use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
 use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
+use Cbox\Id\OAuthServer\ValueObjects\TokenExchangeRequest;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -52,6 +55,7 @@ final class TokenController
         private readonly DeviceAuthorization $device,
         private readonly BackchannelAuthentication $ciba,
         private readonly Organizations $organizations,
+        private readonly TokenExchange $exchange,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -78,6 +82,7 @@ final class TokenController
                 'refresh_token' => $this->refreshToken($request, $jkt),
                 'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt),
                 'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt),
+                'urn:ietf:params:oauth:grant-type:token-exchange' => $this->tokenExchange($request, $jkt),
                 default => $this->error('unsupported_grant_type', 400),
             };
         } catch (ActionDenied) {
@@ -320,6 +325,45 @@ final class TokenController
         $scope = $request->string('scope')->toString();
 
         return $scope === '' ? [] : array_values(array_filter(explode(' ', $scope), fn (string $s): bool => $s !== ''));
+    }
+
+    /**
+     * RFC 8693 token exchange — exchange a valid subject access token for a new,
+     * down-scoped and/or re-audienced access token. Requires client authentication.
+     */
+    private function tokenExchange(Request $request, ?string $dpopJkt): JsonResponse
+    {
+        $client = $this->clientAuth->authenticateConfidential($request);
+
+        if ($client === null) {
+            return $this->error('invalid_client', 401);
+        }
+
+        $subjectToken = $request->string('subject_token')->toString();
+        $subjectTokenType = $request->string('subject_token_type')->toString();
+
+        if ($subjectToken === '' || $subjectTokenType === '') {
+            return $this->error('invalid_request', 400);
+        }
+
+        try {
+            $issued = $this->exchange->exchange($client, new TokenExchangeRequest(
+                subjectToken: $subjectToken,
+                subjectTokenType: $subjectTokenType,
+                requestedScopes: $this->scopes($request),
+                resource: $this->resource($request),
+                dpopJkt: $dpopJkt,
+            ));
+        } catch (InvalidTokenExchange $e) {
+            return $this->error($e->error, 400);
+        }
+
+        return new JsonResponse([
+            'access_token' => $issued->token,
+            'issued_token_type' => TokenExchangeRequest::ACCESS_TOKEN_TYPE,
+            'token_type' => $issued->tokenType,
+            'expires_in' => $issued->expiresIn,
+        ]);
     }
 
     private function tokenResponse(IssuedToken $token, ?string $idToken, ?string $refreshToken = null): JsonResponse

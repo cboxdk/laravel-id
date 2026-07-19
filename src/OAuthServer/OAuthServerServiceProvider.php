@@ -12,6 +12,7 @@ use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
+use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Illuminate\Support\ServiceProvider;
@@ -31,6 +32,7 @@ final class OAuthServerServiceProvider extends ServiceProvider
             ->needs('$accessTokenTtl')
             ->give(static fn (): int => is_numeric($ttl = config('cbox-id.oauth.access_token_ttl', 900)) ? (int) $ttl : 900);
         $this->app->singleton(TokenIntrospector::class, JwtTokenIntrospector::class);
+        $this->app->singleton(TokenExchange::class, TokenExchangeService::class);
         $this->app->singleton(AuthorizationCodes::class, AuthorizationCodeService::class);
         $this->app->singleton(DynamicClientRegistration::class, DynamicClientRegistrar::class);
         $this->app->singleton(RefreshTokens::class, RefreshTokenService::class);
