@@ -104,3 +104,47 @@ uses(Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy::class);
 $this->actingAsEnvironment('env_a');           // pin the hard boundary
 $this->runAsEnvironment('env_b', fn () => ...); // scoped, then restored
 ```
+
+## Custom domains
+
+An environment can publish its issuer on a custom host (`id.acme.com`) instead of
+the default `{slug}.{base_domain}`. The flow is self-serve and proves domain control
+before anything goes live:
+
+```php
+$domains = app(Cbox\Id\Organization\Contracts\EnvironmentDomains::class);
+
+// 1. Request — returns the DNS TXT record the admin must publish. Nothing changes yet.
+$challenge = $domains->request($environmentKey, 'id.acme.com');
+// $challenge->recordName  === '_cbox-id-challenge.id.acme.com'
+// $challenge->recordValue === 'cbox-id-domain-verification=<token>'
+
+// 2. Verify — once the TXT record resolves, the domain is promoted to the
+//    environment's issuer host (read by the per-environment issuer resolver).
+$result = $domains->verify($environmentKey);   // $result->verified === true
+
+// 3. Clear — drop back to the {slug}.{base_domain} / configured issuer.
+$domains->clear($environmentKey);
+```
+
+Verification reads TXT records through the injected `Federation\Contracts\DnsResolver`
+(the deployable app swaps in an authoritative resolver so a just-published record
+is seen immediately). A domain is refused if it is malformed, a bare IP, a platform
+base domain (or a subdomain of one), or already claimed by another environment.
+
+### TLS is the operator's responsibility (by design)
+
+The package proves domain control and records the host — it does **not** issue TLS
+certificates, and it never talks to your cluster. This keeps it portable across every
+deployment shape. Once a domain verifies, terminate TLS for it however your ingress
+already does:
+
+- **cert-manager** — create a `Certificate` (or an ingress annotation) for the new
+  host; ACME/Let's Encrypt issues it. Trigger this from your own reconciler off the
+  verified-domains list.
+- **On-demand TLS** (Caddy, Traefik) — issue on the first TLS handshake, gated by an
+  "is this host verified?" check the host app exposes, so only verified domains get a
+  certificate.
+
+The verified domain is available on the `Environment` (`->domain`), so a deployment
+can enumerate the hosts that need certificates without reaching into this package.

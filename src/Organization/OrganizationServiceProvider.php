@@ -6,6 +6,7 @@ namespace Cbox\Id\Organization;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\Organization\Contracts\EnvironmentDomains;
 use Cbox\Id\Organization\Contracts\Invitations;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
@@ -25,5 +26,6 @@ final class OrganizationServiceProvider extends ServiceProvider
             DatabaseEnvironmentResolver::class,
         );
         $this->app->singleton(IssuerResolver::class, EnvironmentIssuerResolver::class);
+        $this->app->singleton(EnvironmentDomains::class, EnvironmentDomainService::class);
     }
 }
