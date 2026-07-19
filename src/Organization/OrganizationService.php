@@ -97,6 +97,23 @@ final class OrganizationService implements Organizations
         return Organization::query()->whereKey($id)->first();
     }
 
+    public function findMany(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return Organization::query()
+            ->whereKey(array_values(array_unique($ids)))
+            ->get()
+            ->keyBy(function (Organization $o): string {
+                $key = $o->getKey();
+
+                return is_scalar($key) ? (string) $key : '';
+            })
+            ->all();
+    }
+
     public function bySlug(string $slug): ?Organization
     {
         return Organization::query()->where('slug', $slug)->first();

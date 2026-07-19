@@ -46,6 +46,22 @@ class DatabaseSubjects implements Subjects
         return $model === null ? null : $this->toSubject($model);
     }
 
+    public function findMany(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $subjects = [];
+
+        foreach ($this->query()->whereKey(array_values(array_unique($ids)))->get() as $model) {
+            $subject = $this->toSubject($model);
+            $subjects[$subject->id] = $subject;
+        }
+
+        return $subjects;
+    }
+
     public function findByEmail(string $email): ?Subject
     {
         $model = $this->query()->where('email', $email)->first();

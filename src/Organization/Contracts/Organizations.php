@@ -20,6 +20,16 @@ interface Organizations
 
     public function find(string $id): ?Organization;
 
+    /**
+     * Batch-load organizations by id, keyed by id — the N+1-free counterpart to
+     * {@see find} (e.g. resolving names for a membership list / org switcher).
+     * Missing ids are simply absent from the result.
+     *
+     * @param  array<int, string>  $ids
+     * @return array<string, Organization>
+     */
+    public function findMany(array $ids): array;
+
     public function bySlug(string $slug): ?Organization;
 
     /**

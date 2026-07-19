@@ -28,6 +28,19 @@ final class ArraySubjects implements Subjects
         return $this->byId[$id] ?? null;
     }
 
+    public function findMany(array $ids): array
+    {
+        $subjects = [];
+
+        foreach (array_unique($ids) as $id) {
+            if (isset($this->byId[$id])) {
+                $subjects[$id] = $this->byId[$id];
+            }
+        }
+
+        return $subjects;
+    }
+
     public function findByEmail(string $email): ?Subject
     {
         $id = $this->emailIndex[$email] ?? null;

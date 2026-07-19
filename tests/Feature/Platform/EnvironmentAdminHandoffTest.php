@@ -36,6 +36,18 @@ it('mints and verifies a handoff, binding the account member to the environment'
         ->and($grant->environmentId)->toBe('env_prod');
 });
 
+it('is single-use — a replayed handoff is refused', function (): void {
+    $handoff = app(EnvironmentAdminHandoff::class);
+    $token = $handoff->mint('acct_member_1', 'env_prod');
+
+    // First redemption wins…
+    expect($handoff->verify($token))->not->toBeNull();
+
+    // …and the very same token — e.g. lifted from the target host's access logs or
+    // browser history while still inside its short TTL — is refused on replay.
+    expect($handoff->verify($token))->toBeNull();
+});
+
 it('refuses a tampered token', function (): void {
     $handoff = app(EnvironmentAdminHandoff::class);
     $token = $handoff->mint('acct_member_1', 'env_prod');

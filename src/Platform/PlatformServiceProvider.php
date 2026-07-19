@@ -20,6 +20,7 @@ use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
 use Cbox\Id\Platform\Contracts\Projects;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\ServiceProvider;
@@ -66,6 +67,7 @@ final class PlatformServiceProvider extends ServiceProvider
             return new SignedEnvironmentAdminHandoff(
                 $app->make(TokenSigner::class),
                 $app->make(EnvironmentContext::class),
+                $app->make(CacheRepository::class),
             );
         });
 

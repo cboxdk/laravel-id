@@ -11,6 +11,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\ValueObjects\EnvironmentAdminGrant;
+use Illuminate\Contracts\Cache\Repository as Cache;
 
 /**
  * Token-based environment-admin handoff over the vetted {@see TokenSigner} (managed
@@ -24,6 +25,12 @@ use Cbox\Id\Platform\ValueObjects\EnvironmentAdminGrant;
  * ({@see SIGNING_SCOPE}) via {@see EnvironmentContext::runAs}, giving the handoff its
  * own env-independent key. That key never signs a tenant's OIDC/OAuth tokens (those
  * use the tenant env's keys), so the two can't be cross-used.
+ *
+ * SINGLE-USE: the token also carries a random `jti`, atomically burned in the shared
+ * cache on the first successful {@see verify}. Because the token rides in the redirect
+ * URL (and so may land in access logs / history), replay is the real risk — a spent
+ * token is refused even within its short TTL. The burn record is held only as long as
+ * the token could still be signature-valid (its remaining TTL), then expires with it.
  */
 final class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
 {
@@ -34,9 +41,13 @@ final class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
     /** The dedicated, env-independent signing scope for platform handoff tokens. */
     private const SIGNING_SCOPE = 'cbox:platform:handoff';
 
+    /** Cache-key prefix for the single-use redemption record (keyed by jti). */
+    private const REDEEMED_PREFIX = 'cbox:env-admin-handoff:redeemed:';
+
     public function __construct(
         private readonly TokenSigner $signer,
         private readonly EnvironmentContext $environments,
+        private readonly Cache $cache,
     ) {}
 
     public function mint(string $accountMemberId, string $environmentId, int $ttlSeconds = 120): string
@@ -45,6 +56,7 @@ final class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
             'sub' => $accountMemberId,
             'env' => $environmentId,
             'purpose' => self::PURPOSE,
+            'jti' => bin2hex(random_bytes(16)),
             'exp' => time() + max(1, $ttlSeconds),
         ], self::ALG));
     }
@@ -68,6 +80,22 @@ final class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
         $environment = $claims->string('env');
 
         if ($member === null || $member === '' || $environment === null || $environment === '') {
+            return null;
+        }
+
+        // Single-use: the first redemption wins; a replay finds the jti already
+        // burned and is refused. A token minted without a jti (legacy) is treated as
+        // already spent — deny-by-default rather than allow an unbounded replay.
+        $jti = $claims->string('jti');
+
+        if ($jti === null || $jti === '') {
+            return null;
+        }
+
+        $expClaim = $claims->get('exp', 0);
+        $ttl = max(1, (is_numeric($expClaim) ? (int) $expClaim : 0) - time());
+
+        if (! $this->cache->add(self::REDEEMED_PREFIX.$jti, true, $ttl)) {
             return null;
         }
 

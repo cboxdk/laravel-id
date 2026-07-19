@@ -26,6 +26,15 @@ interface Subjects
 {
     public function find(string $id): ?Subject;
 
+    /**
+     * Batch-load subjects by id, keyed by id — the N+1-free counterpart to {@see find}
+     * for rendering rosters/lists. Missing ids are simply absent from the result.
+     *
+     * @param  array<int, string>  $ids
+     * @return array<string, Subject>
+     */
+    public function findMany(array $ids): array;
+
     public function findByEmail(string $email): ?Subject;
 
     public function create(string $email, ?string $name = null, ?string $password = null): Subject;
