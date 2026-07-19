@@ -7,6 +7,7 @@ use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -96,4 +97,35 @@ it('omits the RBAC claims from UserInfo when the user holds no roles for the app
     $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
         ->assertOk()
         ->assertJsonMissingPath('roles');
+});
+
+it('lists the subject active organizations on UserInfo when the profile scope is granted', function (): void {
+    $orgA = $this->makeOrganization();
+    $orgB = $this->makeOrganization();
+    app(Memberships::class)->add($orgA->id, 'alice', 'admin');
+    app(Memberships::class)->add($orgB->id, 'alice', 'member');
+
+    $registered = $this->makeClient(['openid', 'profile']);
+    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $orgA->id, ['openid', 'profile'])->token;
+
+    $response = $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertOk()
+        ->assertJsonCount(2, 'organizations');
+
+    $orgs = collect($response->json('organizations'))->keyBy('id');
+    expect($orgs[$orgA->id]['name'])->toBe($orgA->name)
+        ->and($orgs[$orgA->id]['role'])->toBe('admin')
+        ->and($orgs[$orgB->id]['role'])->toBe('member');
+});
+
+it('omits organizations from UserInfo without the profile scope', function (): void {
+    $org = $this->makeOrganization();
+    app(Memberships::class)->add($org->id, 'alice', 'admin');
+
+    $registered = $this->makeClient(['openid']);
+    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['openid'])->token;
+
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertOk()
+        ->assertJsonMissingPath('organizations');
 });

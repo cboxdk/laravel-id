@@ -9,7 +9,10 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Enums\MembershipStatus;
+use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,6 +30,7 @@ final class UserInfoController
         private readonly Subjects $subjects,
         private readonly DpopResourceGuard $dpop,
         private readonly Organizations $organizations,
+        private readonly Memberships $memberships,
         private readonly AccessChecker $access,
     ) {}
 
@@ -85,6 +89,34 @@ final class UserInfoController
                 if (! $rbac->isEmpty()) {
                     $claims['roles'] = $rbac->roles;
                     $claims['permissions'] = $rbac->permissions;
+                }
+            }
+        }
+
+        // The organizations this subject belongs to — powers a client-side
+        // organization switcher (SDK maps this to `user.organizations`). Active
+        // memberships only, names batched (no N+1). Gated on `profile`, like the
+        // other profile claims, so a client must ask for it.
+        if ($token->hasScope('profile')) {
+            $memberships = $this->memberships->forUser($token->subject)
+                ->filter(fn (Membership $m): bool => $m->status === MembershipStatus::Active)
+                ->values();
+
+            if ($memberships->isNotEmpty()) {
+                $names = $this->organizations->findMany(
+                    $memberships->map(fn (Membership $m): string => $m->organization_id)->all()
+                );
+
+                $organizations = $memberships
+                    ->map(fn (Membership $m): ?array => isset($names[$m->organization_id])
+                        ? ['id' => $m->organization_id, 'name' => $names[$m->organization_id]->name, 'role' => $m->role]
+                        : null)
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if ($organizations !== []) {
+                    $claims['organizations'] = $organizations;
                 }
             }
         }
