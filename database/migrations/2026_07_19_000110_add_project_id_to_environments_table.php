@@ -31,7 +31,14 @@ return new class extends Migration
         });
 
         // Backfill a "Default" project per account, then repoint its environments.
+        // Idempotent: an account that already has a project (e.g. a re-run after a
+        // partial failure, or a rollback of only this migration) is skipped, so the
+        // unique (account_id, slug) constraint is never violated.
         foreach (DB::table('accounts')->get() as $account) {
+            if (DB::table('projects')->where('account_id', $account->id)->exists()) {
+                continue;
+            }
+
             $projectId = (string) Str::ulid();
             DB::table('projects')->insert([
                 'id' => $projectId,
@@ -47,6 +54,7 @@ return new class extends Migration
 
             DB::table('environments')
                 ->where('account_id', $account->id)
+                ->whereNull('project_id')
                 ->update(['project_id' => $projectId]);
         }
     }
