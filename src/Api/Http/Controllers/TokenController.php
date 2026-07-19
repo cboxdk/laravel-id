@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
+use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -228,11 +229,11 @@ final class TokenController
 
     private function idToken(string $clientId, AuthorizedGrant $grant, IssuedToken $access): string
     {
-        $issuer = config('cbox-id.issuer');
         $now = time();
 
         $claims = [
-            'iss' => is_string($issuer) && $issuer !== '' ? $issuer : 'cbox-id',
+            // Per-environment issuer — matches discovery + the access-token `iss`.
+            'iss' => ServerMetadata::issuer(),
             'sub' => $grant->userId,
             'aud' => $clientId,
             'org' => $grant->organizationId,

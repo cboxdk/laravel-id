@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
@@ -176,9 +177,8 @@ final class DeviceAuthorizationService implements DeviceAuthorization
 
     private function verificationUri(): string
     {
-        $issuer = config('cbox-id.issuer');
-        $base = is_string($issuer) && $issuer !== '' ? rtrim($issuer, '/') : rtrim((string) url('/'), '/');
-
-        return $base.'/device';
+        // Per-environment issuer host, so the device verification URL is on the same
+        // tenant host the user is already talking to.
+        return app(IssuerResolver::class)->issuer().'/device';
     }
 }

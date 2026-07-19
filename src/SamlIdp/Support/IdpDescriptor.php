@@ -4,26 +4,25 @@ declare(strict_types=1);
 
 namespace Cbox\Id\SamlIdp\Support;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+
 /**
- * The IdP's stable identifiers and endpoint URLs, derived from the platform issuer
- * so metadata, the SSO endpoint and the SLO endpoint always agree. The EntityID
- * defaults to `{issuer}/sso/saml/idp` and is overridable via
- * `config('cbox-id.saml_idp.entity_id')` (an EntityID is an opaque URI and must
- * stay stable once SPs have imported it).
+ * The IdP's stable identifiers and endpoint URLs, derived from the per-environment
+ * issuer so metadata, the SSO endpoint and the SLO endpoint always agree with the
+ * host (and the per-env signing cert). The EntityID defaults to `{issuer}/sso/saml/idp`
+ * and is overridable via `config('cbox-id.saml_idp.entity_id')` (an EntityID is an
+ * opaque URI and must stay stable once SPs have imported it).
  */
 final class IdpDescriptor
 {
     /**
-     * The issuer base URL (no trailing slash) — the same value the OAuth/OIDC layer
-     * publishes, so one deployment presents one identity.
+     * The environment's issuer base URL (no trailing slash) — the same value the
+     * OAuth/OIDC layer publishes for this environment, so one tenant presents one
+     * identity on its own host.
      */
     public static function issuer(): string
     {
-        $configured = config('cbox-id.issuer');
-
-        return is_string($configured) && $configured !== ''
-            ? rtrim($configured, '/')
-            : rtrim(url('/'), '/');
+        return app(IssuerResolver::class)->issuer();
     }
 
     public static function entityId(): string

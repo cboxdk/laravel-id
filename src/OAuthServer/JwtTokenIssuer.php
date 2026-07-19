@@ -12,6 +12,7 @@ use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -50,6 +51,7 @@ final class JwtTokenIssuer implements TokenIssuer
         private readonly ActionPipeline $actions,
         private readonly Organizations $organizations,
         private readonly AccessChecker $access,
+        private readonly IssuerResolver $issuers,
         private readonly int $accessTokenTtl = self::DEFAULT_TTL_SECONDS,
     ) {}
 
@@ -135,7 +137,7 @@ final class JwtTokenIssuer implements TokenIssuer
         $issuedAt = time();
 
         $claims = [
-            'iss' => 'cbox-id',
+            'iss' => $this->issuers->issuer(),
             'sub' => $subject,
             'client_id' => $client->client_id,
             'jti' => $jti,

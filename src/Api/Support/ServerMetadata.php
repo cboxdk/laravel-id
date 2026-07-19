@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Support;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+
 /**
  * The authorization-server metadata document, shared by the OIDC discovery
  * endpoint (`/.well-known/openid-configuration`) and the OAuth 2.0 Authorization
@@ -14,11 +16,9 @@ final class ServerMetadata
 {
     public static function issuer(): string
     {
-        $configured = config('cbox-id.issuer');
-
-        return is_string($configured) && $configured !== ''
-            ? rtrim($configured, '/')
-            : rtrim(url('/'), '/');
+        // Per-environment: discovery served at a tenant subdomain must advertise that
+        // host as the issuer (and thus its jwks_uri), matching its per-env signing key.
+        return app(IssuerResolver::class)->issuer();
     }
 
     /**
