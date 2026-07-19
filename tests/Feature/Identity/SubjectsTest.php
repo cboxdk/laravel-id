@@ -21,6 +21,18 @@ it('creates a subject and finds it by email or id', function (): void {
         ->and($subjects->find($subject->id)?->id)->toBe($subject->id);
 });
 
+it('reports email verification on the subject so relying parties can trust the address', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('carol@example.com', 'Carol');
+
+    // A fresh subject is unverified — a relying party must not adopt/link on this.
+    expect($subjects->find($subject->id)?->emailVerified)->toBeFalse();
+
+    $subjects->markEmailVerified($subject->id, 'carol@example.com');
+
+    expect($subjects->find($subject->id)?->emailVerified)->toBeTrue();
+});
+
 it('verifies passwords with a real hash', function (): void {
     $subjects = app(Subjects::class);
     $subject = $subjects->create('bob@example.com', null, 'correct-horse-battery');

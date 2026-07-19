@@ -21,5 +21,6 @@ final readonly class Subject
         public string $id,
         public ?string $email = null,
         public ?string $name = null,
+        public bool $emailVerified = false,
     ) {}
 }

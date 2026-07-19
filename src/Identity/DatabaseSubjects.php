@@ -390,6 +390,7 @@ class DatabaseSubjects implements Subjects
             id: $this->keyOf($model),
             email: $this->stringAttribute($model, 'email'),
             name: $this->stringAttribute($model, 'name'),
+            emailVerified: $model->getAttribute('email_verified_at') !== null,
         );
     }
 

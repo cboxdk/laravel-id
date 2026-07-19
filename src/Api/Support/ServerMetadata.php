@@ -57,12 +57,15 @@ final class ServerMetadata
             'code_challenge_methods_supported' => ['S256'],
             // RFC 9449: sender-constrained (DPoP) access tokens.
             'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
-            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access'],
+            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access', 'organizations'],
             'subject_types_supported' => ['public'],
             // The claims the id_token / UserInfo actually carry — honest, not aspirational.
+            // Includes the non-standard federation claims (email_verified is standard;
+            // roles/permissions/organizations are extensions a client can rely on).
             'claims_supported' => [
                 'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr',
-                'at_hash', 'email', 'name', 'org', 'org_name',
+                'at_hash', 'email', 'email_verified', 'name', 'org', 'org_name',
+                'roles', 'permissions', 'organizations',
             ],
             // The authentication context class references this IdP asserts: aal1 (a
             // single factor) and aal2 (a second factor was used at login).

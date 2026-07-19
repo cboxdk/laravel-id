@@ -62,6 +62,9 @@ final class UserInfoController
         if ($subject !== null) {
             if ($token->hasScope('email') && $subject->email !== null) {
                 $claims['email'] = $subject->email;
+                // OIDC standard claim — lets a relying party refuse to trust the
+                // address (e.g. for account linking) when it isn't verified.
+                $claims['email_verified'] = $subject->emailVerified;
             }
 
             if ($token->hasScope('profile') && $subject->name !== null) {
@@ -95,9 +98,11 @@ final class UserInfoController
 
         // The organizations this subject belongs to — powers a client-side
         // organization switcher (SDK maps this to `user.organizations`). Active
-        // memberships only, names batched (no N+1). Gated on `profile`, like the
-        // other profile claims, so a client must ask for it.
-        if ($token->hasScope('profile')) {
+        // memberships only, names batched (no N+1). Gated on a DEDICATED `organizations`
+        // scope (least-disclosure): this exposes every org the user belongs to — across
+        // unrelated customers/apps — so a plain `profile` login must NOT leak it. Only a
+        // relying party that explicitly needs the switcher opts in.
+        if ($token->hasScope('organizations')) {
             $memberships = $this->memberships->forUser($token->subject)
                 ->filter(fn (Membership $m): bool => $m->status === MembershipStatus::Active)
                 ->values();

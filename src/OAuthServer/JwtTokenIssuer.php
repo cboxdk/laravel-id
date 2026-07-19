@@ -157,12 +157,13 @@ final class JwtTokenIssuer implements TokenIssuer
             }
         }
 
-        // RFC 8707 / 9068: bind the token to the requested resource server so it
-        // can verify the token was minted for it (confused-deputy defense, which
-        // the MCP authorization model depends on).
-        if ($resource !== null) {
-            $claims['aud'] = $resource;
-        }
+        // RFC 8707 / 9068: bind the token to the requested resource server so it can
+        // verify the token was minted for it (confused-deputy defense, which the MCP
+        // authorization model depends on). RFC 9068 §2.2 REQUIRES `aud` on an
+        // `at+jwt`, so a token minted without an explicit resource still carries the
+        // issuer as its audience — a strict resource server won't reject our own API
+        // tokens for a missing `aud`.
+        $claims['aud'] = $resource ?? $this->issuers->issuer();
 
         // RFC 9449: sender-constrain the token to the client's DPoP key. A resource
         // server compares this jkt to the thumbprint of the proof presented with the

@@ -99,14 +99,32 @@ it('omits the RBAC claims from UserInfo when the user holds no roles for the app
         ->assertJsonMissingPath('roles');
 });
 
-it('lists the subject active organizations on UserInfo when the profile scope is granted', function (): void {
+it("does not leak one app's roles into another app's UserInfo response", function (): void {
+    // Cross-app isolation on the UserInfo path (the JWT path is covered above): alice
+    // holds billing-admin in app A; app B's token must never surface it.
+    $org = $this->makeOrganization();
+    $appA = $this->makeClient(['openid']);
+    $appB = $this->makeClient(['openid']);
+    declareBilling($appA->client->client_id);
+    $role = Role::query()->where('client_id', $appA->client->client_id)->where('key', 'billing-admin')->firstOrFail();
+    app(Roles::class)->assign($org->id, 'alice', $role->id);
+
+    $tokenB = app(TokenIssuer::class)->issueForUser($appB->client, 'alice', $org->id, ['openid'])->token;
+
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$tokenB])
+        ->assertOk()
+        ->assertJsonMissingPath('roles')
+        ->assertJsonMissingPath('permissions');
+});
+
+it('lists the subject active organizations on UserInfo when the organizations scope is granted', function (): void {
     $orgA = $this->makeOrganization();
     $orgB = $this->makeOrganization();
     app(Memberships::class)->add($orgA->id, 'alice', 'admin');
     app(Memberships::class)->add($orgB->id, 'alice', 'member');
 
-    $registered = $this->makeClient(['openid', 'profile']);
-    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $orgA->id, ['openid', 'profile'])->token;
+    $registered = $this->makeClient(['openid', 'organizations']);
+    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $orgA->id, ['openid', 'organizations'])->token;
 
     $response = $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
         ->assertOk()
@@ -118,12 +136,14 @@ it('lists the subject active organizations on UserInfo when the profile scope is
         ->and($orgs[$orgB->id]['role'])->toBe('member');
 });
 
-it('omits organizations from UserInfo without the profile scope', function (): void {
+it('does NOT leak organizations on a plain profile login (least disclosure)', function (): void {
+    // The org list spans unrelated customers/apps, so a profile-scoped login must not
+    // expose it — only a client that explicitly requests `organizations` gets it.
     $org = $this->makeOrganization();
     app(Memberships::class)->add($org->id, 'alice', 'admin');
 
-    $registered = $this->makeClient(['openid']);
-    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['openid'])->token;
+    $registered = $this->makeClient(['openid', 'profile']);
+    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['openid', 'profile'])->token;
 
     $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
         ->assertOk()

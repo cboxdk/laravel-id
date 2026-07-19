@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -71,7 +72,7 @@ it('rejects a malformed RFC 8707 resource with invalid_target', function (): voi
     ])->assertStatus(400)->assertJsonPath('error', 'invalid_target');
 });
 
-it('omits aud when no resource is requested', function (): void {
+it('defaults aud to the issuer when no resource is requested (RFC 9068 requires aud on at+jwt)', function (): void {
     $registered = $this->makeClient(['api.read']);
 
     $response = $this->postJson('/oauth/token', [
@@ -81,7 +82,7 @@ it('omits aud when no resource is requested', function (): void {
     ])->assertOk();
 
     $claims = app(TokenSigner::class)->verify($response->json('access_token'), [SigningAlg::RS256]);
-    expect($claims->get('aud'))->toBeNull();
+    expect($claims->get('aud'))->toBe(ServerMetadata::issuer());
 });
 
 it('adds at_hash, auth_time, amr and acr to the id_token', function (): void {
