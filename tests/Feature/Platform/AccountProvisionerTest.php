@@ -40,7 +40,36 @@ it('provisions an account with a member and a first environment', function (): v
         ->and($result->environment->name)->toBe('Production')
         ->and($result->environment->status)->toBe('active')
         // The environment is OWNED by the account…
-        ->and($result->environment->account_id)->toBe($result->account->id);
+        ->and($result->environment->account_id)->toBe($result->account->id)
+        // …through a first PROJECT (the account's first IdP product), named after
+        // the account and carrying the plan's environment allowance.
+        ->and($result->project->name)->toBe('Acme')
+        ->and($result->project->account_id)->toBe($result->account->id)
+        ->and($result->project->environment_limit)->toBe(2)
+        ->and($result->environment->project_id)->toBe($result->project->id);
+});
+
+it('lets one account own several independently-billed projects (IdP products)', function (): void {
+    $provisioner = app(AccountProvisioner::class);
+    $result = $provisioner->provision(accountBlueprint());
+
+    // A second product under the SAME account — no second login, own env allowance.
+    $second = $provisioner->addProject($result->account, 'Product Two', environmentLimit: 1);
+
+    expect($second->account_id)->toBe($result->account->id)
+        ->and($second->name)->toBe('Product Two')
+        ->and($second->slug)->toBe('product-two')
+        ->and($second->id)->not->toBe($result->project->id)
+        // Its environment allowance is its own (per-project billing), independent of
+        // the first project's.
+        ->and($second->environment_limit)->toBe(1);
+
+    // The second project's first environment routes off the PROJECT name, not the
+    // account name — so it doesn't collide with the first product's subdomain.
+    $env = $provisioner->addEnvironment($second, 'Production');
+    expect($env->slug)->toBe('product-two')
+        ->and($env->project_id)->toBe($second->id)
+        ->and($env->account_id)->toBe($result->account->id);
 });
 
 it('provisions the environment empty — the account plane never seeds tenants', function (): void {
@@ -82,7 +111,7 @@ it('provisions a production environment and can add a sandbox', function (): voi
     expect($result->environment->type)->toBe(EnvironmentType::Production)
         ->and($result->environment->isSandbox())->toBeFalse();
 
-    $sandbox = app(AccountProvisioner::class)->addEnvironment($result->account, 'Sandbox', null, EnvironmentType::Sandbox);
+    $sandbox = app(AccountProvisioner::class)->addEnvironment($result->project, 'Sandbox', null, EnvironmentType::Sandbox);
 
     expect($sandbox->type)->toBe(EnvironmentType::Sandbox)
         ->and($sandbox->isSandbox())->toBeTrue();
@@ -118,7 +147,7 @@ it('scopes a member to specific environments and resolves their access', functio
     $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
     $members = app(AccountMembers::class);
     $prod = $result->environment;
-    $staging = app(AccountProvisioner::class)->addEnvironment($result->account, 'Staging');
+    $staging = app(AccountProvisioner::class)->addEnvironment($result->project, 'Staging');
 
     $dev = $members->invite($result->account->id, 'dev@acme.test', AccountRole::Developer);
     // Restrict the developer to staging only (Stripe-style test-vs-prod access).
@@ -199,7 +228,7 @@ it('refuses to add an environment for a suspended account', function (): void {
     $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
     app(Accounts::class)->suspend($result->account->id);
 
-    expect(fn () => app(AccountProvisioner::class)->addEnvironment($result->account, 'Blocked'))
+    expect(fn () => app(AccountProvisioner::class)->addEnvironment($result->project, 'Blocked'))
         ->toThrow(AccountSuspended::class);
 });
 
@@ -211,18 +240,19 @@ it('renames an account', function (): void {
     expect(app(Accounts::class)->find($result->account->id)->name)->toBe('Renamed Co');
 });
 
-it('lets an account add environments up to its plan limit, then refuses', function (): void {
+it('lets a project add environments up to its plan limit, then refuses', function (): void {
     $provisioner = app(AccountProvisioner::class);
     $result = $provisioner->provision(accountBlueprint(limit: 2));
-    $account = $result->account;
+    $project = $result->project;
 
-    // Limit is 2, one used by provisioning → one more is allowed…
-    $staging = $provisioner->addEnvironment($account, 'Staging');
+    // The PROJECT's limit is 2, one used by provisioning → one more is allowed…
+    $staging = $provisioner->addEnvironment($project, 'Staging');
     expect($staging->slug)->toBe('acme-staging')
-        ->and($staging->account_id)->toBe($account->id)
-        ->and(app(Account::class)->newQuery()->find($account->id))->not->toBeNull();
+        ->and($staging->account_id)->toBe($result->account->id)
+        ->and($staging->project_id)->toBe($project->id)
+        ->and(app(Account::class)->newQuery()->find($result->account->id))->not->toBeNull();
 
     // …and the third is refused by the plan.
-    expect(fn () => $provisioner->addEnvironment($account, 'Dev'))
+    expect(fn () => $provisioner->addEnvironment($project, 'Dev'))
         ->toThrow(EnvironmentLimitReached::class);
 });

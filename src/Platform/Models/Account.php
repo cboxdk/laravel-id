@@ -49,6 +49,17 @@ final class Account extends Model
     }
 
     /**
+     * The IdP products (Clerk "Applications") this account owns. Environments nest
+     * under a project; the account owns environments transitively through them.
+     *
+     * @return HasMany<Project, $this>
+     */
+    public function projects(): HasMany
+    {
+        return $this->hasMany(Project::class);
+    }
+
+    /**
      * The login identities that administer this account.
      *
      * @return HasMany<AccountMember, $this>
