@@ -7,6 +7,8 @@ namespace Cbox\Id\Webhooks;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\EndpointStatus;
+use Cbox\Id\Webhooks\Enums\WebhookEventType;
+use Cbox\Id\Webhooks\Exceptions\UnknownWebhookEvent;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Cbox\Id\Webhooks\ValueObjects\RegisteredEndpoint;
@@ -21,6 +23,13 @@ final class DatabaseWebhookRegistry implements WebhookRegistry
     {
         // SSRF guard: refuse endpoints that point at non-public addresses.
         SafeWebhookUrl::assert($url);
+
+        // Deny-by-default: every subscription must name a catalogued event (or `*`).
+        foreach ($eventTypes as $eventType) {
+            if (! WebhookEventType::subscribable($eventType)) {
+                throw UnknownWebhookEvent::forType($eventType);
+            }
+        }
 
         $secret = bin2hex(random_bytes(32));
 
@@ -57,7 +66,8 @@ final class DatabaseWebhookRegistry implements WebhookRegistry
                 }
             })
             ->get()
-            ->filter(fn (WebhookEndpoint $endpoint): bool => in_array($eventType, $endpoint->event_types, true))
+            ->filter(fn (WebhookEndpoint $endpoint): bool => in_array($eventType, $endpoint->event_types, true)
+                || in_array(WebhookEventType::WILDCARD, $endpoint->event_types, true))
             ->values();
     }
 }

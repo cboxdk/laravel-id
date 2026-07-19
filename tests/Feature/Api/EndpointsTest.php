@@ -18,7 +18,11 @@ it('serves the OIDC discovery document', function (): void {
         ->assertOk()
         ->assertJsonStructure(['issuer', 'jwks_uri', 'token_endpoint', 'introspection_endpoint'])
         ->assertJsonPath('id_token_signing_alg_values_supported.0', 'RS256')
-        ->assertJsonPath('code_challenge_methods_supported.0', 'S256');
+        ->assertJsonPath('code_challenge_methods_supported.0', 'S256')
+        // Discovery polish: claims, ACRs, and response modes the OP actually honors.
+        ->assertJsonPath('claims_supported', fn (array $c): bool => in_array('acr', $c, true) && in_array('org', $c, true))
+        ->assertJsonPath('acr_values_supported', ['urn:cbox-id:aal1', 'urn:cbox-id:aal2'])
+        ->assertJsonPath('response_modes_supported', ['query', 'fragment']);
 });
 
 it('omits authorization_endpoint when the host has not configured one', function (): void {
@@ -48,7 +52,12 @@ it('introspects an active token over HTTP for an authenticated caller', function
         ->assertOk()
         ->assertJsonPath('active', true)
         ->assertJsonPath('sub', $registered->client->client_id)
-        ->assertJsonPath('scope', 'api.read');
+        ->assertJsonPath('scope', 'api.read')
+        // RFC 7662 §2.2: the response surfaces the token's type and lifetime.
+        ->assertJsonPath('token_type', 'Bearer')
+        ->assertJsonPath('iss', fn (mixed $v): bool => is_string($v) && $v !== '')
+        ->assertJsonPath('exp', fn (mixed $v): bool => is_int($v) && $v > time())
+        ->assertJsonPath('iat', fn (mixed $v): bool => is_int($v));
 });
 
 it('accepts HTTP Basic client authentication on introspection', function (): void {

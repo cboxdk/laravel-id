@@ -85,12 +85,62 @@ it('filters users by externalId eq', function (): void {
         ->assertJsonPath('totalResults', 0);
 });
 
+it('filters users by a compound `and` (Entra userName + active)', function (): void {
+    $headers = $this->scimHeaders;
+    provision($this, $headers, 'dana', 'okta|1', 'dana@corp.com');
+    provision($this, $headers, 'sam', 'okta|2', 'sam@corp.com');
+
+    // Both clauses hold for sam → 1 match.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "sam" and active eq true'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 1)
+        ->assertJsonPath('Resources.0.userName', 'sam');
+
+    // The second clause excludes everyone → 0, proving both are applied (not just the first).
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "sam" and active eq false'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 0);
+});
+
+it('filters users by a compound `or` grouped inside the directory scope', function (): void {
+    $headers = $this->scimHeaders;
+    provision($this, $headers, 'dana', 'okta|1', 'dana@corp.com');
+    provision($this, $headers, 'sam', 'okta|2', 'sam@corp.com');
+    provision($this, $headers, 'lee', 'okta|3', 'lee@corp.com');
+
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "dana" or userName eq "lee"'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 2);
+});
+
+it('refuses a filter that mixes `and` with `or` (ambiguous precedence)', function (): void {
+    $headers = $this->scimHeaders;
+
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "a" and active eq true or userName eq "b"'), $headers)
+        ->assertStatus(400)
+        ->assertJsonPath('scimType', 'invalidFilter');
+});
+
 it('rejects an unsupported filter with invalidFilter', function (): void {
     $headers = $this->scimHeaders;
 
     $this->getJson('/scim/v2/Users?filter='.urlencode('emails[type eq "work"] pr and userName sw "x"'), $headers)
         ->assertStatus(400)
         ->assertJsonPath('scimType', 'invalidFilter');
+});
+
+it('serves SCIM responses as application/scim+json (RFC 7644 §3.1)', function (): void {
+    $headers = $this->scimHeaders;
+    provision($this, $headers, 'dana', 'okta|1', 'dana@corp.com');
+
+    $this->getJson('/scim/v2/Users', $headers)
+        ->assertOk()
+        ->assertHeader('Content-Type', 'application/scim+json');
+
+    // Error bodies carry the SCIM media type too.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('bogus'), $headers)
+        ->assertStatus(400)
+        ->assertHeader('Content-Type', 'application/scim+json');
 });
 
 it('paginates with startIndex and count', function (): void {

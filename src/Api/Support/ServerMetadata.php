@@ -49,6 +49,9 @@ final class ServerMetadata
             // RFC 9207: the authorization response carries `iss` (mix-up defense).
             'authorization_response_iss_parameter_supported' => true,
             'response_types_supported' => ['code'],
+            // Code flow delivers the response on the redirect query; fragment is also
+            // valid. The interactive /authorize endpoint (host-owned) drives these.
+            'response_modes_supported' => ['query', 'fragment'],
             'grant_types_supported' => self::grantTypes(),
             'id_token_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
             'code_challenge_methods_supported' => ['S256'],
@@ -56,6 +59,17 @@ final class ServerMetadata
             'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
             'scopes_supported' => ['openid', 'profile', 'email', 'offline_access'],
             'subject_types_supported' => ['public'],
+            // The claims the id_token / UserInfo actually carry — honest, not aspirational.
+            'claims_supported' => [
+                'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr',
+                'at_hash', 'email', 'name', 'org', 'org_name',
+            ],
+            // The authentication context class references this IdP asserts: aal1 (a
+            // single factor) and aal2 (a second factor was used at login).
+            'acr_values_supported' => ['urn:cbox-id:aal1', 'urn:cbox-id:aal2'],
+            'claims_parameter_supported' => false,
+            'request_parameter_supported' => false,
+            'request_uri_parameter_supported' => false,
             'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none'],
             // RFC 7523 client-assertion signing algs (private_key_jwt).
             'token_endpoint_auth_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],

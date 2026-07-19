@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $url
  * @property string $secret_encrypted
  * @property array<int, string> $event_types
+ * @property int $last_sequence
  * @property EndpointStatus $status
  */
 final class WebhookEndpoint extends Model implements EnvironmentOwned
@@ -46,6 +47,7 @@ final class WebhookEndpoint extends Model implements EnvironmentOwned
     {
         return [
             'event_types' => 'array',
+            'last_sequence' => 'integer',
             'status' => EndpointStatus::class,
         ];
     }

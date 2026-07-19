@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\ValueObjects\Introspection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -37,11 +38,47 @@ final class IntrospectionController
             return response()->json(['active' => false]);
         }
 
-        return response()->json([
+        return response()->json($this->body($result));
+    }
+
+    /**
+     * The full RFC 7662 §2.2 introspection response, surfacing the token's
+     * lifetime and audience (`exp`/`iat`/`nbf`/`aud`/`iss`/`jti`) and its type —
+     * `DPoP` for a sender-constrained token (RFC 9449), else `Bearer`. Fields absent
+     * from the token are omitted rather than sent null.
+     *
+     * @return array<string, mixed>
+     */
+    private function body(Introspection $result): array
+    {
+        $claims = $result->claims;
+
+        $body = [
             'active' => true,
             'sub' => $result->subject,
             'client_id' => $result->clientId,
             'scope' => implode(' ', $result->scopes),
-        ]);
+            'token_type' => $result->confirmationThumbprint() !== null ? 'DPoP' : 'Bearer',
+        ];
+
+        foreach (['exp', 'iat', 'nbf'] as $timestamp) {
+            if (is_numeric($claims[$timestamp] ?? null)) {
+                $body[$timestamp] = (int) $claims[$timestamp];
+            }
+        }
+
+        foreach (['iss', 'jti'] as $string) {
+            if (is_string($claims[$string] ?? null) && $claims[$string] !== '') {
+                $body[$string] = $claims[$string];
+            }
+        }
+
+        // `aud` is a string or an array of audiences (JWT / RFC 7662).
+        $aud = $claims['aud'] ?? null;
+        if (is_string($aud) || (is_array($aud) && $aud !== [])) {
+            $body['aud'] = $aud;
+        }
+
+        return $body;
     }
 }

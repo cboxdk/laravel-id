@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $environment_id
  * @property string $endpoint_id
  * @property string $event_type
+ * @property int|null $sequence
  * @property array<string, mixed> $payload
  * @property int $attempt
  * @property DeliveryStatus $status
@@ -39,6 +40,7 @@ final class WebhookDelivery extends Model implements EnvironmentOwned
     {
         return [
             'payload' => 'array',
+            'sequence' => 'integer',
             'attempt' => 'integer',
             'status' => DeliveryStatus::class,
             'response_code' => 'integer',

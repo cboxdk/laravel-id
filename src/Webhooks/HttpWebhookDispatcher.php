@@ -29,10 +29,16 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
     public function dispatch(string $eventType, array $payload, ?string $organizationId = null): void
     {
         foreach ($this->registry->matching($organizationId, $eventType) as $endpoint) {
+            // Atomic per-endpoint sequence: the DB-level increment refreshes the
+            // model, so concurrent dispatches to one endpoint never collide on a
+            // number, and each subscriber sees a gap-detectable 1, 2, 3, … .
+            $endpoint->increment('last_sequence');
+
             $delivery = new WebhookDelivery;
             $delivery->fill([
                 'endpoint_id' => $endpoint->id,
                 'event_type' => $eventType,
+                'sequence' => $endpoint->last_sequence,
                 'payload' => $payload,
                 'attempt' => 0,
                 'status' => DeliveryStatus::Pending,
@@ -69,6 +75,7 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
     {
         $body = json_encode([
             'type' => $delivery->event_type,
+            'sequence' => $delivery->sequence,
             'data' => $delivery->payload,
             'delivery_id' => $delivery->id,
         ], JSON_THROW_ON_ERROR);

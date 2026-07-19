@@ -6,6 +6,8 @@ use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
+use Cbox\Id\Webhooks\Enums\WebhookEventType;
+use Cbox\Id\Webhooks\Exceptions\UnknownWebhookEvent;
 use Cbox\Id\Webhooks\Models\WebhookDelivery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -54,18 +56,18 @@ it('does not deliver to endpoints not subscribed to the event', function (): voi
 
 it('delivers platform-wide endpoints for org-scoped events', function (): void {
     Http::fake(['*' => Http::response('', 200)]);
-    $this->registerWebhook(null, 'https://global.test', ['x.y']);
+    $this->registerWebhook(null, 'https://global.test', ['domain.verified']);
 
-    app(WebhookDispatcher::class)->dispatch('x.y', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('domain.verified', [], 'org_a');
 
     Http::assertSentCount(1);
 });
 
 it('records a failure, schedules a retry, and succeeds on retry', function (): void {
     Http::fake(['*' => Http::sequence()->push('', 500)->push('', 200)]);
-    $this->registerWebhook('org_a', 'https://hook.test/x', ['e']);
+    $this->registerWebhook('org_a', 'https://hook.test/x', ['user.created']);
 
-    app(WebhookDispatcher::class)->dispatch('e', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('user.created', [], 'org_a');
 
     $delivery = WebhookDelivery::query()->firstOrFail();
     expect($delivery->status)->toBe(DeliveryStatus::Failed)
@@ -80,9 +82,9 @@ it('records a failure, schedules a retry, and succeeds on retry', function (): v
 it('dead-letters a delivery after the retry cap and never retries it again', function (): void {
     config(['cbox-id.webhooks.max_attempts' => 2]);
     Http::fake(['*' => Http::response('', 500)]);
-    $this->registerWebhook('org_a', 'https://hook.test/x', ['e']);
+    $this->registerWebhook('org_a', 'https://hook.test/x', ['user.created']);
 
-    app(WebhookDispatcher::class)->dispatch('e', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('user.created', [], 'org_a');
     $delivery = WebhookDelivery::query()->firstOrFail();
     expect($delivery->status)->toBe(DeliveryStatus::Failed)->and($delivery->attempt)->toBe(1);
 
@@ -104,10 +106,10 @@ it('refuses delivery to an endpoint that fails the SSRF guard', function (): voi
     // Register with the guard off (file-wide beforeEach), then enable it for the
     // delivery: blocked.test resolves to a non-public address, so the guarded
     // send is refused — nothing goes out and the delivery is retried.
-    $this->registerWebhook('org_a', 'https://blocked.test/x', ['e']);
+    $this->registerWebhook('org_a', 'https://blocked.test/x', ['user.created']);
     config(['cbox-id.webhooks.verify_url' => true]);
 
-    app(WebhookDispatcher::class)->dispatch('e', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('user.created', [], 'org_a');
 
     Http::assertNothingSent();
     expect(WebhookDelivery::query()->firstOrFail()->status)->toBe(DeliveryStatus::Failed);
@@ -115,9 +117,9 @@ it('refuses delivery to an endpoint that fails the SSRF guard', function (): voi
 
 it('fans a delivered domain event out to webhooks end-to-end', function (): void {
     Http::fake(['*' => Http::response('', 200)]);
-    $this->registerWebhook('org_a', 'https://hook.test/x', ['thing.happened']);
+    $this->registerWebhook('org_a', 'https://hook.test/x', ['user.created']);
 
-    app(EventBus::class)->emit(new DomainEvent('thing.happened', ['n' => 1], 'org_a'));
+    app(EventBus::class)->emit(new DomainEvent('user.created', ['n' => 1], 'org_a'));
     app(EventBus::class)->flushPending();
 
     Http::assertSentCount(1);
@@ -140,4 +142,41 @@ it('folds the event organization id into the delivered webhook payload', functio
             && ($body['data']['user_id'] ?? null) === 'user_1'
             && ($body['data']['organization_id'] ?? null) === 'org_a';
     });
+});
+
+it('refuses to subscribe an endpoint to an uncatalogued event type', function (): void {
+    expect(fn () => $this->registerWebhook('org_a', 'https://hook.test/x', ['not.a.real.event']))
+        ->toThrow(UnknownWebhookEvent::class);
+});
+
+it('delivers every catalogued event to a wildcard subscriber', function (): void {
+    Http::fake(['*' => Http::response('', 200)]);
+    $this->registerWebhook('org_a', 'https://hook.test/x', [WebhookEventType::WILDCARD]);
+
+    app(WebhookDispatcher::class)->dispatch('user.created', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('domain.verified', [], 'org_a');
+
+    Http::assertSentCount(2);
+});
+
+it('stamps a per-endpoint monotonic sequence into each delivery envelope', function (): void {
+    Http::fake(['*' => Http::response('', 200)]);
+    $this->registerWebhook('org_a', 'https://hook.test/x', [WebhookEventType::WILDCARD]);
+
+    app(WebhookDispatcher::class)->dispatch('user.created', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('user.updated', [], 'org_a');
+    app(WebhookDispatcher::class)->dispatch('user.deactivated', [], 'org_a');
+
+    $sequences = [];
+    Http::assertSent(function (Request $request) use (&$sequences): bool {
+        $body = json_decode($request->body(), true);
+        if (is_array($body) && is_int($body['sequence'] ?? null)) {
+            $sequences[] = $body['sequence'];
+        }
+
+        return true;
+    });
+
+    // A clean, gap-free 1, 2, 3 the receiver can order and gap-detect against.
+    expect($sequences)->toBe([1, 2, 3]);
 });

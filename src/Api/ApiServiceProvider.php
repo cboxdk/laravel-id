@@ -34,6 +34,7 @@ use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Controllers\UserInfoController;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
+use Cbox\Id\Api\Http\Middleware\ScimContentType;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -126,7 +127,7 @@ final class ApiServiceProvider extends ServiceProvider
             });
 
             // SCIM 2.0 provisioning, authenticated by the directory bearer token.
-            Route::middleware(['throttle:120,1', AuthenticateScim::class])->prefix('scim/v2')->group(function (): void {
+            Route::middleware(['throttle:120,1', ScimContentType::class, AuthenticateScim::class])->prefix('scim/v2')->group(function (): void {
                 // Discovery (RFC 7644 §4) — connectors probe these during setup.
                 Route::get('/ServiceProviderConfig', [ScimDiscoveryController::class, 'serviceProviderConfig']);
                 Route::get('/ResourceTypes', [ScimDiscoveryController::class, 'resourceTypes']);
