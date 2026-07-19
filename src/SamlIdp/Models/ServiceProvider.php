@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string $environment_id
  * @property string $entity_id
  * @property string $acs_url
+ * @property string|null $slo_url
  * @property NameIdFormat $name_id_format
  * @property string $name_id_attribute
  * @property array<string, string> $attribute_mappings

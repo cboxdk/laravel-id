@@ -24,6 +24,7 @@ final class ClientRegistryService implements ClientRegistry
             'name' => $input->name,
             'type' => $input->type,
             'redirect_uris' => $input->redirectUris,
+            'post_logout_redirect_uris' => $input->postLogoutRedirectUris,
             'grant_types' => $input->grantTypes,
             'scopes' => $input->scopes,
             'first_party' => $input->firstParty,

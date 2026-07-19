@@ -35,6 +35,8 @@ final class ServerMetadata
             'introspection_endpoint' => $issuer.'/oauth/introspect',
             'revocation_endpoint' => $issuer.'/oauth/revoke',
             'userinfo_endpoint' => $issuer.'/oauth/userinfo',
+            // OpenID Connect RP-Initiated Logout 1.0.
+            'end_session_endpoint' => $issuer.'/oauth/logout',
             // RFC 9126: pushed authorization requests.
             'pushed_authorization_request_endpoint' => $issuer.'/oauth/par',
             'require_pushed_authorization_requests' => (bool) config('cbox-id.oauth.require_par', false),

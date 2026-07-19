@@ -26,5 +26,6 @@ final readonly class NewServiceProvider
         public ?string $certificate = null,
         public bool $wantAuthnRequestsSigned = false,
         public ServiceProviderStatus $status = ServiceProviderStatus::Active,
+        public ?string $sloUrl = null,
     ) {}
 }

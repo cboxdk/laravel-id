@@ -28,6 +28,7 @@ final class FakeServiceProviders implements ServiceProviders
             'environment_id' => 'fake',
             'entity_id' => $serviceProvider->entityId,
             'acs_url' => $serviceProvider->acsUrl,
+            'slo_url' => $serviceProvider->sloUrl,
             'name_id_format' => $serviceProvider->nameIdFormat,
             'name_id_attribute' => $serviceProvider->nameIdAttribute,
             'attribute_mappings' => $serviceProvider->attributeMappings,

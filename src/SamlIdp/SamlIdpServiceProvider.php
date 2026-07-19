@@ -6,6 +6,7 @@ namespace Cbox\Id\SamlIdp;
 
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Contracts\SamlIdentityProvider;
+use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
 use Cbox\Id\SamlIdp\Contracts\ServiceProviders;
 use Illuminate\Support\ServiceProvider;
 
@@ -21,6 +22,7 @@ final class SamlIdpServiceProvider extends ServiceProvider
         $this->app->singleton(ServiceProviders::class, ServiceProviderRegistry::class);
         $this->app->singleton(IdpKeyMaterial::class, PlatformKeyMaterial::class);
         $this->app->singleton(SamlIdentityProvider::class, SamlIdentityProviderService::class);
+        $this->app->singleton(SamlSingleLogout::class, SamlSingleLogoutService::class);
 
         // The interactive "authenticate the subject, then resume the SSO" step is
         // the HOST app's responsibility — this module serves parse/issue/metadata

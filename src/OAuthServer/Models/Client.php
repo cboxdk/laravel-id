@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property ClientType $type
  * @property array<int, string> $redirect_uris
+ * @property array<int, string>|null $post_logout_redirect_uris
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
  * @property string|null $manifest_url
@@ -57,6 +58,7 @@ final class Client extends Model implements EnvironmentOwned
         return [
             'type' => ClientType::class,
             'redirect_uris' => 'array',
+            'post_logout_redirect_uris' => 'array',
             'grant_types' => 'array',
             'scopes' => 'array',
             'jwks' => 'array',

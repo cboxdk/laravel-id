@@ -9,6 +9,7 @@ use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
+use Cbox\Id\OAuthServer\Contracts\EndSession;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
@@ -39,6 +40,7 @@ final class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(PushedAuthorizationRequests::class, PushedAuthorizationService::class);
         $this->app->singleton(DeviceAuthorization::class, DeviceAuthorizationService::class);
         $this->app->singleton(BackchannelAuthentication::class, CibaAuthenticationService::class);
+        $this->app->singleton(EndSession::class, EndSessionService::class);
 
         // The /oauth/token endpoint (authorization_code + PKCE, client_credentials)
         // lives in the Api layer. The browser consent screen lands with the SaaS app.

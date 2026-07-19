@@ -72,7 +72,7 @@ Registered by the `Api` layer behind `ResolveEnvironment` + throttling:
 | --- | --- |
 | `GET /sso/saml/idp/metadata` | IdP metadata: EntityID, SSO/SLO endpoints, signing certificate (public). |
 | `GET\|POST /sso/saml/idp/sso` | SingleSignOnService: parse+validate the AuthnRequest; hand off to the host to authenticate; resume to mint + auto-POST. |
-| `GET\|POST /sso/saml/idp/slo` | SingleLogoutService: terminates the subject's local platform sessions. |
+| `GET\|POST /sso/saml/idp/slo` | SingleLogoutService: verifies a signed SP `LogoutRequest`, revokes the subject's local sessions, and returns a signed `LogoutResponse`. |
 
 The controllers are thin. The interactive "is a user logged in / log them in" step
 is the host's responsibility — exactly as the OAuth `/authorize` endpoint is. When
@@ -183,8 +183,10 @@ verification (redirect and POST bindings), IdP metadata.
 
 - **Assertion encryption** (`EncryptedAssertion`). Assertions are signed, not
   encrypted. SPs that mandate encrypted assertions are not yet supported.
-- **Full Single Logout.** The SLO endpoint terminates local platform sessions only;
-  it does not fan out signed `LogoutRequest`s to every federated SP, nor emit a
-  signed `LogoutResponse`.
+- **Front-channel logout fan-out.** SP-initiated Single Logout is supported: a
+  signed `LogoutRequest` is verified against the SP's certificate, the local session
+  is revoked, and a signed `LogoutResponse` is returned to the SP's SLO endpoint. The
+  IdP does **not** yet fan out `LogoutRequest`s to *other* federated SPs to end their
+  sessions in the same browser (global single logout).
 - **IdP-initiated (unsolicited) SSO.** The issued Response always carries
   `InResponseTo`; the SP-initiated flow is the supported path.

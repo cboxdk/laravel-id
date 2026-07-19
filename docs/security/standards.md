@@ -94,8 +94,10 @@ Deprovision / deactivation drops membership **and revokes sessions immediately**
 | SAML assertion replay protection (single-use assertion ids) | ✅ |
 | SAML SP metadata endpoint (importable EntityDescriptor: ACS + SLO) | ✅ |
 | SAML SP-initiated login (`AuthnRequest`, HTTP-Redirect, `InResponseTo` state, RelayState) | ✅ |
-| SAML Single Logout — IdP-initiated `LogoutRequest`, **signed-message enforced**, revokes the subject's sessions, returns a `LogoutResponse` | ✅ |
+| SAML Single Logout (SP role) — an upstream IdP's `LogoutRequest`, **signed-message enforced**, revokes the subject's sessions, returns a `LogoutResponse` | ✅ |
+| SAML Single Logout (IdP role) — a relying SP's `LogoutRequest`, signature verified against the SP cert (RSA-SHA256 pinned), revokes local sessions, returns a **signed** `LogoutResponse` to the SP's SLO endpoint | ✅ |
 | OIDC login (RP-initiated) — redirect + callback, code exchange, `id_token` verified (RS256-pinned), `state` CSRF + `nonce` replay defense | ✅ |
+| OIDC RP-Initiated Logout 1.0 — `end_session_endpoint`, verified `id_token_hint`, `post_logout_redirect_uri` allow-list (no open redirect), `state` round-trip | ✅ |
 
 ## Authentication & MFA
 

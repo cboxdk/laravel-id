@@ -23,6 +23,7 @@ final class ServiceProviderRegistry implements ServiceProviders
         return ServiceProvider::query()->create([
             'entity_id' => $serviceProvider->entityId,
             'acs_url' => $serviceProvider->acsUrl,
+            'slo_url' => $serviceProvider->sloUrl,
             'name_id_format' => $serviceProvider->nameIdFormat,
             'name_id_attribute' => $serviceProvider->nameIdAttribute,
             'attribute_mappings' => $serviceProvider->attributeMappings,

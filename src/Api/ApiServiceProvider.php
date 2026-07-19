@@ -9,6 +9,7 @@ use Cbox\Id\Api\Http\Controllers\BackchannelAuthenticationController;
 use Cbox\Id\Api\Http\Controllers\DecisionController;
 use Cbox\Id\Api\Http\Controllers\DeviceAuthorizationController;
 use Cbox\Id\Api\Http\Controllers\DiscoveryController;
+use Cbox\Id\Api\Http\Controllers\EndSessionController;
 use Cbox\Id\Api\Http\Controllers\HealthController;
 use Cbox\Id\Api\Http\Controllers\IntrospectionController;
 use Cbox\Id\Api\Http\Controllers\JwksController;
@@ -95,6 +96,11 @@ final class ApiServiceProvider extends ServiceProvider
             Route::middleware(['web', 'throttle:30,1'])->group(function (): void {
                 Route::get('/sso/oidc/{connection}/redirect', OidcRedirectController::class);
                 Route::get('/sso/oidc/{connection}/callback', OidcCallbackController::class);
+
+                // OIDC RP-Initiated Logout (end_session_endpoint) — browser redirect,
+                // so it needs the web session it is about to tear down. Both bindings
+                // (GET query params, POST form) are accepted.
+                Route::match(['get', 'post'], '/oauth/logout', EndSessionController::class);
 
                 // IdP-role endpoints (this platform AS the IdP a downstream SP
                 // federates to). Registered before the `{connection}` routes below so
