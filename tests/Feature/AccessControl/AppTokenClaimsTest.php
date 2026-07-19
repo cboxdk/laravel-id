@@ -68,3 +68,32 @@ it('carries no roles claim on a client-credentials token', function (): void {
     expect(claimsOf(app(TokenIssuer::class)->issueClientCredentials($registered->client, [])->token))
         ->not->toHaveKey('roles');
 });
+
+it('mirrors app-scoped roles + permissions on the UserInfo endpoint', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['openid']);
+    declareBilling($registered->client->client_id);
+    $role = Role::query()->where('client_id', $registered->client->client_id)->where('key', 'billing-admin')->firstOrFail();
+    app(Roles::class)->assign($org->id, 'alice', $role->id);
+
+    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['openid'])->token;
+
+    // The standard RP login flow reads id_token + UserInfo — the same RBAC signal
+    // the JWT carries must be available here, scoped to this app.
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertOk()
+        ->assertJsonPath('org', $org->id)
+        ->assertJsonPath('roles', ['billing-admin'])
+        ->assertJsonPath('permissions.0', 'invoices:create');
+});
+
+it('omits the RBAC claims from UserInfo when the user holds no roles for the app', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['openid']);
+
+    $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['openid'])->token;
+
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertOk()
+        ->assertJsonMissingPath('roles');
+});

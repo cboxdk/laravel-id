@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
@@ -26,6 +27,7 @@ final class UserInfoController
         private readonly Subjects $subjects,
         private readonly DpopResourceGuard $dpop,
         private readonly Organizations $organizations,
+        private readonly AccessChecker $access,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -71,6 +73,19 @@ final class UserInfoController
             $orgName = $this->organizations->find($orgId)?->name;
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
+            }
+
+            // RBAC (federated model): mirror the access token's `roles`/`permissions`
+            // claims here so a relying party that authenticates via id_token + UserInfo
+            // (the standard SDK login flow) receives the same signal a resource server
+            // reads from the JWT. Same scoping as issuance: the token's client's own
+            // declared roles plus org-wide roles, never another app's.
+            if ($token->clientId !== null) {
+                $rbac = $this->access->forToken($token->subject, $orgId, $token->clientId);
+                if (! $rbac->isEmpty()) {
+                    $claims['roles'] = $rbac->roles;
+                    $claims['permissions'] = $rbac->permissions;
+                }
             }
         }
 
