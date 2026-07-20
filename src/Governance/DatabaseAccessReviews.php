@@ -86,21 +86,28 @@ class DatabaseAccessReviews implements AccessReviews
         return $campaign;
     }
 
-    public function certify(string $itemId, string $reviewerId, ?string $note = null): CertificationItem
+    public function certify(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem
     {
-        return $this->decide($itemId, $reviewerId, ReviewDecision::Certified, 'governance.item_certified', $note);
+        return $this->decide($itemId, $reviewerId, $organizationId, ReviewDecision::Certified, 'governance.item_certified', $note);
     }
 
-    public function revoke(string $itemId, string $reviewerId, ?string $note = null): CertificationItem
+    public function revoke(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem
     {
-        return $this->decide($itemId, $reviewerId, ReviewDecision::Revoked, 'governance.item_revoked', $note);
+        return $this->decide($itemId, $reviewerId, $organizationId, ReviewDecision::Revoked, 'governance.item_revoked', $note);
     }
 
-    public function close(string $campaignId): CertificationCampaign
+    public function close(string $campaignId, string $organizationId): CertificationCampaign
     {
         $this->environments->requireEnvironment();
 
-        $campaign = CertificationCampaign::query()->whereKey($campaignId)->first();
+        // Scope the lookup to the acting org. Closing APPLIES every revoke against real
+        // memberships and roles, so a campaign id from another tenant would strip that
+        // tenant's access. Filtering in the query (rather than fetch-then-compare) means
+        // a foreign id is indistinguishable from a missing one.
+        $campaign = CertificationCampaign::query()
+            ->whereKey($campaignId)
+            ->where('organization_id', $organizationId)
+            ->first();
 
         if ($campaign === null) {
             throw UnknownCampaign::forId($campaignId);
@@ -187,7 +194,7 @@ class DatabaseAccessReviews implements AccessReviews
         $item->save();
     }
 
-    private function decide(string $itemId, string $reviewerId, ReviewDecision $decision, string $action, ?string $note): CertificationItem
+    private function decide(string $itemId, string $reviewerId, string $organizationId, ReviewDecision $decision, string $action, ?string $note): CertificationItem
     {
         $this->environments->requireEnvironment();
 
@@ -197,7 +204,12 @@ class DatabaseAccessReviews implements AccessReviews
             throw UnknownCertificationItem::forId($itemId);
         }
 
-        $campaign = CertificationCampaign::query()->whereKey($item->campaign_id)->first();
+        // The item's campaign must belong to the ACTING org — an item id alone is not
+        // authorization to decide it, and a decision here is applied on close.
+        $campaign = CertificationCampaign::query()
+            ->whereKey($item->campaign_id)
+            ->where('organization_id', $organizationId)
+            ->first();
 
         if ($campaign === null || $campaign->isClosed()) {
             throw CampaignClosed::forId($item->campaign_id);

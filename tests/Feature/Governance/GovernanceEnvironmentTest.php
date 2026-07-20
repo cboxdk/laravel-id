@@ -26,7 +26,7 @@ it('keeps campaigns invisible across environments', function (): void {
     // From env_b the campaign is structurally invisible, and close() cannot reach it.
     $this->runAsEnvironment('env_b', function () use ($campaignId): void {
         expect(CertificationCampaign::query()->whereKey($campaignId)->first())->toBeNull()
-            ->and(fn () => app(AccessReviews::class)->close($campaignId))
+            ->and(fn () => app(AccessReviews::class)->close($campaignId, 'acme'))
             ->toThrow(UnknownCampaign::class);
     });
 

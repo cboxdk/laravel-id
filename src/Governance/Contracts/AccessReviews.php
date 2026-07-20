@@ -46,7 +46,7 @@ interface AccessReviews
      * @throws UnknownCertificationItem
      * @throws CampaignClosed
      */
-    public function certify(string $itemId, string $reviewerId, ?string $note = null): CertificationItem;
+    public function certify(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem;
 
     /**
      * Revoke an item (the access should be removed). The actual removal happens when
@@ -55,7 +55,7 @@ interface AccessReviews
      * @throws UnknownCertificationItem
      * @throws CampaignClosed
      */
-    public function revoke(string $itemId, string $reviewerId, ?string $note = null): CertificationItem;
+    public function revoke(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem;
 
     /**
      * Close the campaign: apply every revoked item (and every pending item per the
@@ -66,7 +66,7 @@ interface AccessReviews
      *
      * @throws UnknownCampaign
      */
-    public function close(string $campaignId): CertificationCampaign;
+    public function close(string $campaignId, string $organizationId): CertificationCampaign;
 
     /**
      * The items of a campaign (the review worklist / evidence).

@@ -36,7 +36,7 @@ class CloseOverdueCampaignsCommand extends Command
             ->where('status', CampaignStatus::Open->value)
             ->whereNotNull('due_at')
             ->where('due_at', '<=', now())
-            ->get(['id', 'environment_id'])
+            ->get(['id', 'environment_id', 'organization_id'])
             ->all());
 
         $closed = 0;
@@ -46,7 +46,9 @@ class CloseOverdueCampaignsCommand extends Command
             // close() reads its items and applies revokes.
             $context->runAs(
                 GenericEnvironment::of($campaign->environment_id),
-                fn () => $reviews->close($campaign->id),
+                // Acts in each campaign's OWN org — the system closer is not exempt from
+                // the ownership check, it simply supplies the right scope per campaign.
+                fn () => $reviews->close($campaign->id, $campaign->organization_id),
             );
             $closed++;
         }
