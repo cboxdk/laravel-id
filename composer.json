@@ -30,8 +30,7 @@
         "illuminate/support": "^12.0 || ^13.0",
         "onelogin/php-saml": "^4.0",
         "robrichards/xmlseclibs": "^3.1.5",
-        "spomky-labs/cbor-php": "^3.0",
-        "cboxdk/license": "^0.1"
+        "spomky-labs/cbor-php": "^3.0"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",

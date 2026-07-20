@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:d3e02538-7ad7-4b81-a69f-815d285cae98",
+    "serialNumber": "urn:uuid:293b0dc8-af01-4836-bec6-704f75d776c7",
     "version": 1,
     "metadata": {
         "tools": [
@@ -75,22 +75,6 @@
             "version": "v1.1.0",
             "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.1.0",
             "description": "Cbox SSRF \u2014 a hardened, config-driven guard against server-side request forgery for outbound URLs in Laravel. Blocks private/reserved/cloud-metadata targets, pins DNS, and refuses redirects.",
-            "licenses": [
-                {
-                    "license": {
-                        "id": "MIT"
-                    }
-                }
-            ]
-        },
-        {
-            "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/license@v0.1.1",
-            "group": "cboxdk",
-            "name": "license",
-            "version": "v0.1.1",
-            "purl": "pkg:composer/cboxdk/license@v0.1.1",
-            "description": "Framework-agnostic, offline license core: mint and verify compact Ed25519-signed license artifacts (EdDSA JWTs) with entitlements, limits, deployment/domain binding, grace windows and signed revocation lists. The shared leaf both a billing issuer and a self-hosted verifier depend on.",
             "licenses": [
                 {
                     "license": {

@@ -21,8 +21,10 @@ How the platform is put together and the ideas you build against:
   entitlement decisions, the hot path, and the token hybrid.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
-- **[On-prem licensing](on-prem-licensing.md)** — a signed, offline-verifiable license
-  key unlocks paid entitlements on a self-hosted install, through the same gate.
+- **On-prem licensing** — the framework itself is free (MIT) and has no license gate.
+  Unlocking paid/enterprise entitlements from a signed, offline key is a separate
+  commercial plugin, `cboxdk/laravel-id-licensing`, that feeds the same entitlement
+  gate; install it only where the commercial tier is licensed.
 - **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters
   for analytics and future soft gates; local measurement, distinct from billing.
 - **[SIEM audit streaming](audit-streaming.md)** — mirror the hash-chained,
