@@ -16,8 +16,10 @@ use Illuminate\Support\Facades\Schema;
  * (DNS-TXT proof) sets it, and the issuer resolver trusts a custom domain ONLY when
  * it is set. An unverified domain still routes/brands but can never assert an issuer.
  *
- * Existing non-null domains are backfilled as verified — before this change the only
- * writer that mattered for the issuer was the DNS-verified promotion path.
+ * Existing non-null domains are backfilled as verified: they were written either by
+ * the DNS-verified promotion path or by trusted operator provisioning — both of which
+ * now stamp domain_verified_at going forward, so the invariant "domain set ⇒ verified"
+ * holds for every writer.
  */
 return new class extends Migration
 {

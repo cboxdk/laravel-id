@@ -13,7 +13,7 @@ use DateTimeImmutable;
  * This is the ONLY place the plaintext code travels after generation; it is passed
  * to the channel and then discarded. The channel must not persist or log it.
  */
-readonly class OtpDelivery
+final readonly class OtpDelivery
 {
     public function __construct(
         public string $challengeId,

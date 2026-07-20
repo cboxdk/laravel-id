@@ -20,6 +20,7 @@ use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
 use Cbox\Id\Platform\ValueObjects\ProvisionedAccount;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 /**
  * Self-serve provisioning of a whole account — the customer's workspace, their first
@@ -138,6 +139,22 @@ class AccountProvisioner
      */
     private function createEnvironment(Project $project, string $name, ?string $domain, string $slugSeed, EnvironmentType $type): Environment
     {
+        // An operator-supplied domain here is trusted (this is the operator provisioning
+        // path, not tenant self-serve), so stamp it verified — that keeps the invariant
+        // "domain set ⇒ verified" whole, so the env both ROUTES and ISSUES on the same
+        // host (no discovery iss/host mismatch). Tenant self-serve still goes through
+        // EnvironmentDomainService's DNS proof. A domain already owned by another env is
+        // refused rather than silently colliding.
+        $domain = $domain !== null && $domain !== '' ? strtolower(trim($domain)) : null;
+
+        if ($domain !== null) {
+            $owner = Environment::query()->where('domain', $domain)->value('id');
+
+            if ($owner !== null) {
+                throw new InvalidArgumentException("The domain [{$domain}] is already in use by another environment.");
+            }
+        }
+
         $environment = Environment::query()->create([
             'account_id' => $project->account_id,
             'project_id' => $project->id,
@@ -145,6 +162,7 @@ class AccountProvisioner
             'slug' => $this->uniqueSlug($slugSeed),
             'type' => $type,
             'domain' => $domain,
+            'domain_verified_at' => $domain !== null ? now() : null,
             'status' => 'active',
         ]);
 

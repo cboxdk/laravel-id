@@ -65,9 +65,18 @@ class EnvironmentIssuerResolver implements IssuerResolver
     {
         $configured = config('cbox-id.issuer');
 
-        return is_string($configured) && $configured !== ''
-            ? rtrim($configured, '/')
-            : rtrim(url('/'), '/');
+        if (is_string($configured) && $configured !== '') {
+            return rtrim($configured, '/');
+        }
+
+        // The fallback MUST be host-independent. `url('/')` reflects the request Host,
+        // so an environment whose (unverified) custom domain routed the request here
+        // would otherwise publish that very host as its issuer — re-opening the R1
+        // identity gap through the back door. app.url is operator-set, not attacker-
+        // controllable, so it is the safe deployment default.
+        $appUrl = config('app.url');
+
+        return is_string($appUrl) && $appUrl !== '' ? rtrim($appUrl, '/') : 'http://localhost';
     }
 
     private function baseDomain(): ?string

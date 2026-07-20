@@ -15,7 +15,7 @@ use DateTimeImmutable;
  * through the channel. The host keeps {@see $id} to later verify, and may show the
  * expiry / attempt budget in its UI.
  */
-readonly class OtpChallenge
+final readonly class OtpChallenge
 {
     public function __construct(
         public string $id,

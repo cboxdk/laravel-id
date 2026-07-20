@@ -35,6 +35,16 @@ it('does NOT trust an UNVERIFIED custom domain as the issuer (R1 — no identity
     expect(app(IssuerResolver::class)->forEnvironment($env->id))->toBe('https://acme.cboxid.com');
 });
 
+it('uses the operator-set app.url (not the request host) for the issuer fallback', function (): void {
+    // No configured issuer, no base domains, an UNVERIFIED custom domain: the fallback
+    // must be the operator-set app.url — NEVER url('/'), which would echo the request
+    // Host (the unverified domain that routed the request) and re-open the R1 gap.
+    config(['cbox-id.issuer' => null, 'cbox-id.environments.base_domains' => [], 'app.url' => 'https://cboxid.com']);
+    $env = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.victim.com', 'domain_verified_at' => null, 'is_default' => false]);
+
+    expect(app(IssuerResolver::class)->forEnvironment($env->id))->toBe('https://cboxid.com');
+});
+
 it('keeps the configured issuer for the platform-root environment', function (): void {
     $env = Environment::create(['name' => 'Root', 'slug' => 'root', 'is_default' => true]);
 
