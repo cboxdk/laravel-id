@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
+use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
+use Cbox\Id\AccessControl\Models\GroupRoleMapping;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
@@ -92,5 +94,35 @@ it('still assigns the org\'s own roles and environment-wide system roles', funct
 
         // A system role (organization_id null) is shared across the environment by design.
         expect($claims->roles)->toContain('billing-admin')->toContain('support');
+    });
+});
+
+/**
+ * @group isolation
+ *
+ * Found by the post-fix sweep, not the original review. RoleService::assign() blocks the
+ * escalation, but a directory group→role mapping reaches it only during reconciliation —
+ * after the mapping row is already committed, outside a transaction. A foreign role id
+ * therefore left a poison pill: the write stuck, reconciliation threw, and every later
+ * reconcile of that group threw on the same row, breaking directory sync for everyone in
+ * it. The mapping must refuse the role up front.
+ */
+it('refuses to map a directory group to another organization\'s role', function (): void {
+    $this->runAsEnvironment('env_a', function (): void {
+        $foreign = orgBPrivilegedRole();
+        $mappings = app(GroupRoleMappings::class);
+
+        expect(fn () => $mappings->map('org_a', 'group_1', $foreign->id))
+            ->toThrow(UnknownRole::class);
+
+        // No poison pill left behind…
+        expect(GroupRoleMapping::query()->where('role_id', $foreign->id)->exists())->toBeFalse();
+
+        // …so reconciliation still runs cleanly for that group afterwards.
+        $own = Role::create(['organization_id' => 'org_a', 'name' => 'support']);
+        $mappings->map('org_a', 'group_1', $own->id);
+        $mappings->reconcileGroup('group_1', 'org_a');
+
+        expect(GroupRoleMapping::query()->where('role_id', $own->id)->exists())->toBeTrue();
     });
 });

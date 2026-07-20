@@ -22,6 +22,17 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
 
     public function map(string $organizationId, string $groupId, string $roleId, int $priority = 0): GroupRoleMapping
     {
+        // Refuse a role this org may not assign BEFORE writing the mapping row.
+        //
+        // RoleService::assign() already blocks the escalation itself, but it is reached
+        // only during reconciliation — several statements after the mapping is committed,
+        // and outside any transaction. A foreign role id therefore left a poison-pill row
+        // behind: the write succeeded, reconciliation threw, and every later reconcile of
+        // that group (including ordinary directory syncs for unrelated members) threw
+        // again on the same row. Validating here keeps the failure at the point of the
+        // mistake instead of turning it into a permanently stuck sync.
+        $this->roles->assertAssignableIn($organizationId, $roleId);
+
         $mapping = GroupRoleMapping::query()->updateOrCreate(
             ['organization_id' => $organizationId, 'group_id' => $groupId, 'role_id' => $roleId],
             ['priority' => $priority],

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl\Contracts;
 
 use Cbox\Id\AccessControl\Enums\GrantSource;
+use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 
@@ -24,6 +25,18 @@ interface Roles
      * permission name is never silently duplicated across scopes.
      */
     public function grantPermission(string $organizationId, string $roleId, string $permission): void;
+
+    /**
+     * Assert a role may be assigned within this organization — its own, or an
+     * environment-wide system role. Throws UnknownRole otherwise.
+     *
+     * assign() applies this itself; it is exposed for callers that persist a role id
+     * somewhere else first (e.g. a directory group→role mapping) and must refuse an
+     * unusable one at the point of the write rather than at reconciliation.
+     *
+     * @throws UnknownRole
+     */
+    public function assertAssignableIn(string $organizationId, string $roleId): void;
 
     public function assign(
         string $organizationId,

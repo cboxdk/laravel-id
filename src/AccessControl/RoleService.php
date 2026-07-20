@@ -90,9 +90,13 @@ class RoleService implements Roles
      * A role belongs to this organization, or is a system role usable by any org in the
      * environment. Anything else is another tenant's policy and is refused.
      *
+     * Public so callers that write a role id somewhere OTHER than an assignment row —
+     * directory group→role mappings, for one — can refuse it up front rather than
+     * discovering it later during reconciliation.
+     *
      * @throws UnknownRole
      */
-    private function assertAssignableIn(string $organizationId, string $roleId): void
+    public function assertAssignableIn(string $organizationId, string $roleId): void
     {
         $assignable = Role::query()
             ->whereKey($roleId)
