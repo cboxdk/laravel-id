@@ -27,9 +27,17 @@ return new class extends Migration
             $table->timestamp('rotated_at')->nullable();
             $table->timestamps();
 
-            // A secret name is unique within an environment; env-first so the hard
-            // scope's WHERE environment_id lookups hit the index.
-            $table->unique(['environment_id', 'name']);
+            // A secret name is unique within an OWNER, not merely within an environment.
+            // An environment holds many organizations, so an env-wide unique name let one
+            // tenant squat a name every other tenant legitimately wants ("smtp",
+            // "github-token") — and the constraint violation told them the name was taken,
+            // an existence oracle across the tenant boundary. Env-first so the hard scope's
+            // WHERE environment_id lookups still hit the index.
+            //
+            // Deliberate caveat: SQL treats NULLs as distinct in a unique index, so this
+            // does not constrain unowned (platform) secrets against each other. That set is
+            // operator-managed and small; every tenant-facing path carries an owner.
+            $table->unique(['environment_id', 'owner_type', 'owner_id', 'name']);
             $table->index(['environment_id', 'owner_type', 'owner_id']);
         });
 

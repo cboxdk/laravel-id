@@ -10,6 +10,7 @@ use Cbox\Id\TokenVault\Exceptions\SecretNotFound;
 use Cbox\Id\TokenVault\Models\VaultGrant;
 use Cbox\Id\TokenVault\Models\VaultSecret;
 use Cbox\Id\TokenVault\ValueObjects\SecretLease;
+use Cbox\Id\TokenVault\ValueObjects\VaultOwner;
 use DateTimeInterface;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Assert;
@@ -38,8 +39,7 @@ class FakeTokenVault implements SecretVault
         string $name,
         string $provider,
         string $secret,
-        ?string $ownerType = null,
-        ?string $ownerId = null,
+        ?VaultOwner $owner = null,
         ?DateTimeInterface $expiresAt = null,
     ): VaultSecret {
         $model = new VaultSecret;
@@ -48,8 +48,8 @@ class FakeTokenVault implements SecretVault
             'name' => $name,
             'provider' => $provider,
             'key_version' => 1,
-            'owner_type' => $ownerType,
-            'owner_id' => $ownerId,
+            'owner_type' => $owner?->type->value,
+            'owner_id' => $owner?->id,
             'expires_at' => $expiresAt,
         ]);
 
@@ -58,7 +58,7 @@ class FakeTokenVault implements SecretVault
         return $model;
     }
 
-    public function rotate(string $secretId, string $newSecret): VaultSecret
+    public function rotate(string $secretId, string $newSecret, ?VaultOwner $owner = null): VaultSecret
     {
         $entry = $this->secrets[$secretId] ?? throw SecretNotFound::forId($secretId);
         $entry['model']->rotated_at = now();
@@ -67,13 +67,13 @@ class FakeTokenVault implements SecretVault
         return $entry['model'];
     }
 
-    public function revoke(string $secretId): void
+    public function revoke(string $secretId, ?VaultOwner $owner = null): void
     {
         $entry = $this->secrets[$secretId] ?? throw SecretNotFound::forId($secretId);
         $entry['model']->revoked_at = now();
     }
 
-    public function grant(string $secretId, string $clientId, ?int $maxTtlSeconds = null): VaultGrant
+    public function grant(string $secretId, string $clientId, ?VaultOwner $owner = null, ?int $maxTtlSeconds = null): VaultGrant
     {
         if (! isset($this->secrets[$secretId])) {
             throw SecretNotFound::forId($secretId);
@@ -92,12 +92,12 @@ class FakeTokenVault implements SecretVault
         return $grant;
     }
 
-    public function revokeGrant(string $secretId, string $clientId): void
+    public function revokeGrant(string $secretId, string $clientId, ?VaultOwner $owner = null): void
     {
         unset($this->grants[$secretId.'|'.$clientId]);
     }
 
-    public function lease(string $secretId, string $clientId, string $purpose): SecretLease
+    public function lease(string $secretId, string $clientId, string $purpose, ?VaultOwner $owner = null): SecretLease
     {
         $entry = $this->secrets[$secretId] ?? null;
         $grant = $this->grants[$secretId.'|'.$clientId] ?? null;

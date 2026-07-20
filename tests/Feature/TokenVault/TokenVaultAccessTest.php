@@ -23,7 +23,7 @@ it('refuses a lease with no grant', function (): void {
 it('refuses a lease after the grant is revoked', function (): void {
     $secret = $this->storeVaultSecret('openai', 'openai', 'sk-live-x');
     $this->grantVaultAccess($secret->id, 'agent-client-1');
-    app(SecretVault::class)->revokeGrant($secret->id, 'agent-client-1');
+    app(SecretVault::class)->revokeGrant($secret->id, 'agent-client-1', null);
 
     $this->leaseVaultSecret($secret->id, 'agent-client-1');
 })->throws(LeaseDenied::class);
@@ -45,7 +45,7 @@ it('refuses an unknown secret with the same uniform denial (no oracle)', functio
 it('re-granting a revoked pair restores access', function (): void {
     $secret = $this->storeVaultSecret('openai', 'openai', 'sk-live-x');
     $this->grantVaultAccess($secret->id, 'agent-client-1');
-    app(SecretVault::class)->revokeGrant($secret->id, 'agent-client-1');
+    app(SecretVault::class)->revokeGrant($secret->id, 'agent-client-1', null);
 
     // Grant again — the same (secret, client) pair is reactivated in place.
     $this->grantVaultAccess($secret->id, 'agent-client-1');
