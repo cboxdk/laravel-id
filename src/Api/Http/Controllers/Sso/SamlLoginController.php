@@ -25,7 +25,7 @@ use Throwable;
  * the SameSite=Lax session cookie is absent. `RelayState` carries the post-login
  * destination back through the round-trip.
  */
-final class SamlLoginController
+class SamlLoginController
 {
     /** Session key mirroring the last AuthnRequest id (best-effort UX only). */
     public const REQUEST_ID_KEY = 'cbox.saml_authn_request_id';

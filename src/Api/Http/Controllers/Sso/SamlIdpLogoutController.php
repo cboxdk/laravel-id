@@ -28,7 +28,7 @@ use Illuminate\Http\Response;
  * (unknown SP, bad signature, no SLO endpoint) is refused with 400 — never processed
  * on trust.
  */
-final class SamlIdpLogoutController
+class SamlIdpLogoutController
 {
     public function __construct(
         private readonly SessionManager $sessions,
@@ -39,13 +39,16 @@ final class SamlIdpLogoutController
     {
         $samlRequest = $this->param($request, 'SAMLRequest');
 
-        $this->terminate();
-
+        // A plain logout with no SAML message: revoke and done.
         if ($samlRequest === null) {
-            // A plain logout with no SAML message — session already revoked above.
+            $this->terminate();
+
             return new Response('Signed out.', 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
         }
 
+        // SP-initiated SLO: VALIDATE the (signed) LogoutRequest BEFORE touching the
+        // session. Terminating first would let a bogus SLO URL force-log-out whoever
+        // is signed in (a forced-logout via a cross-site GET) before the 400.
         try {
             $outcome = $this->singleLogout->process(new LogoutMessage(
                 samlRequest: $samlRequest,
@@ -56,6 +59,8 @@ final class SamlIdpLogoutController
         } catch (InvalidLogoutRequest) {
             return new Response('SLO rejected.', 400, ['Content-Type' => 'text/plain; charset=UTF-8']);
         }
+
+        $this->terminate();
 
         return new RedirectResponse($outcome->redirectUrl);
     }

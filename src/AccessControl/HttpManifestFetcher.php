@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Http;
  * guard (pinned resolution, no redirects), and parses it. Server-side, app-
  * controlled URL — hence the guard.
  */
-final class HttpManifestFetcher implements ManifestFetcher
+class HttpManifestFetcher implements ManifestFetcher
 {
     public function __construct(private readonly ManifestParser $parser) {}
 

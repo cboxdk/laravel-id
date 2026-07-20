@@ -16,7 +16,7 @@ use Illuminate\Support\Collection;
  * {@see BelongsToEnvironment} scope, so an SP is
  * only ever resolvable within the environment it was registered in.
  */
-final class ServiceProviderRegistry implements ServiceProviders
+class ServiceProviderRegistry implements ServiceProviders
 {
     public function register(NewServiceProvider $serviceProvider): ServiceProvider
     {

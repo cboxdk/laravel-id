@@ -33,7 +33,7 @@ use RuntimeException;
  *  - decorate {@see AuditLog} so every recorded entry is mirrored to the
  *    environment's streams inside the same transaction (transactional outbox).
  */
-final class AuditStreamingServiceProvider extends ServiceProvider
+class AuditStreamingServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

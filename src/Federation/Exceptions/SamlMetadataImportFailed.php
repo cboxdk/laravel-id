@@ -11,7 +11,7 @@ use RuntimeException;
  * prefill — malformed XML, no IDPSSODescriptor, or a descriptor missing the entity
  * id / SSO URL / signing certificate the assertion validator requires.
  */
-final class SamlMetadataImportFailed extends RuntimeException
+class SamlMetadataImportFailed extends RuntimeException
 {
     public static function make(string $reason): self
     {

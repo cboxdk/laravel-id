@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $occurred_at
  * @property Carbon|null $dispatched_at
  */
-final class Event extends Model
+class Event extends Model
 {
     use HasUlids;
 

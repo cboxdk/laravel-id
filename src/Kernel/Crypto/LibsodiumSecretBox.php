@@ -16,7 +16,7 @@ use Cbox\Id\Kernel\Crypto\Support\Base64Url;
  * tag over both the plaintext and the `context` (additional authenticated
  * data). Tampering with any byte, or opening with a different context, fails.
  */
-final class LibsodiumSecretBox implements SecretBox
+class LibsodiumSecretBox implements SecretBox
 {
     public function __construct(private readonly string $key)
     {

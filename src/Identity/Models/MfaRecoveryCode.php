@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $code_hash
  * @property Carbon|null $used_at
  */
-final class MfaRecoveryCode extends Model implements EnvironmentOwned
+class MfaRecoveryCode extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

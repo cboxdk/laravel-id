@@ -11,7 +11,7 @@ namespace Cbox\Id\Kernel\Crypto;
  * SHA-1, 30-second period, 6 digits — the interoperable defaults every
  * authenticator app supports.
  */
-final class TotpAuthenticator
+class TotpAuthenticator
 {
     private const PERIOD = 30;
 

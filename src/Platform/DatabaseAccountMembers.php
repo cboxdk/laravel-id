@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
  * above every environment — and the miss path is constant-cost so a missing or
  * suspended member is indistinguishable by timing from an active one.
  */
-final class DatabaseAccountMembers implements AccountMembers
+class DatabaseAccountMembers implements AccountMembers
 {
     public function __construct(
         private readonly Hasher $hasher,

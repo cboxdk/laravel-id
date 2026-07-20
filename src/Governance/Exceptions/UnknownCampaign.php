@@ -6,7 +6,7 @@ namespace Cbox\Id\Governance\Exceptions;
 
 use RuntimeException;
 
-final class UnknownCampaign extends RuntimeException
+class UnknownCampaign extends RuntimeException
 {
     public static function forId(string $campaignId): self
     {

@@ -9,7 +9,7 @@ use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\PushedAuthorizationRequest;
 use Illuminate\Support\Facades\DB;
 
-final class PushedAuthorizationService implements PushedAuthorizationRequests
+class PushedAuthorizationService implements PushedAuthorizationRequests
 {
     /** Pushed requests are short-lived — they only need to survive the redirect. */
     private const TTL_SECONDS = 90;

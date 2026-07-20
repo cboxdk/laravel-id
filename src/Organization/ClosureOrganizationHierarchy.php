@@ -9,7 +9,7 @@ use Cbox\Id\Organization\Exceptions\CannotReparent;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\Models\OrganizationClosure;
 
-final class ClosureOrganizationHierarchy implements OrganizationHierarchy
+class ClosureOrganizationHierarchy implements OrganizationHierarchy
 {
     public function attach(string $organizationId, ?string $parentId): void
     {

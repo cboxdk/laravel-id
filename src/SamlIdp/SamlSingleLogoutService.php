@@ -14,6 +14,7 @@ use Cbox\Id\SamlIdp\Support\RedirectBindingResponseSigner;
 use Cbox\Id\SamlIdp\Support\RedirectBindingSignature;
 use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
 use Cbox\Id\SamlIdp\ValueObjects\SamlLogoutOutcome;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use OneLogin\Saml2\LogoutRequest;
 use Throwable;
 
@@ -29,14 +30,20 @@ use Throwable;
  * SLO endpoint to answer. Parsing is delegated to onelogin (XXE-guarded `loadXML`);
  * the outbound signature to xmlseclibs — no hand-rolled XML or crypto.
  */
-final class SamlSingleLogoutService implements SamlSingleLogout
+class SamlSingleLogoutService implements SamlSingleLogout
 {
+    /** Reject a LogoutRequest whose IssueInstant is older/newer than this (clock skew). */
+    private const FRESHNESS_SECONDS = 300;
+
+    private const REPLAY_PREFIX = 'cbox:saml-slo:req:';
+
     public function __construct(
         private readonly ServiceProviders $serviceProviders,
         private readonly RedirectBindingSignature $inboundSignature,
         private readonly RedirectBindingResponseSigner $responseSigner,
         private readonly LogoutResponseBuilder $responses,
         private readonly IdpKeyMaterial $keyMaterial,
+        private readonly Cache $cache,
     ) {}
 
     public function process(LogoutMessage $message): SamlLogoutOutcome
@@ -83,6 +90,16 @@ final class SamlSingleLogoutService implements SamlSingleLogout
             throw InvalidLogoutRequest::make('the LogoutRequest is missing a NameID or ID');
         }
 
+        // Even a validly-signed request must be FRESH and used ONCE — otherwise a
+        // captured LogoutRequest could be replayed to force a logout at any later time.
+        if (! $this->fresh($xml)) {
+            throw InvalidLogoutRequest::make('the LogoutRequest is stale or its IssueInstant is unparseable');
+        }
+
+        if (! $this->consumeRequestId($spEntityId, $requestId)) {
+            throw InvalidLogoutRequest::make('the LogoutRequest has already been processed (replay)');
+        }
+
         $responseXml = $this->responses->build(IdpDescriptor::entityId(), $destination, $requestId);
 
         $redirectUrl = $this->responseSigner->sign(
@@ -93,6 +110,32 @@ final class SamlSingleLogoutService implements SamlSingleLogout
         );
 
         return new SamlLogoutOutcome($nameId, $redirectUrl);
+    }
+
+    /**
+     * The LogoutRequest's IssueInstant must be within the freshness window of now
+     * (both directions, for clock skew). An absent/unparseable instant fails closed.
+     */
+    private function fresh(string $xml): bool
+    {
+        if (preg_match('/IssueInstant="([^"]+)"/', $xml, $m) !== 1) {
+            return false;
+        }
+
+        $instant = strtotime($m[1]);
+
+        return $instant !== false && abs(time() - $instant) <= self::FRESHNESS_SECONDS;
+    }
+
+    /**
+     * Claim the request id once (scoped to the SP). A replay finds it already taken.
+     * Kept for twice the freshness window so a within-window replay is still caught.
+     */
+    private function consumeRequestId(string $spEntityId, string $requestId): bool
+    {
+        $key = self::REPLAY_PREFIX.hash('sha256', $spEntityId.':'.$requestId);
+
+        return $this->cache->add($key, true, self::FRESHNESS_SECONDS * 2);
     }
 
     /** Inflate the redirect-binding payload to XML, tolerating an already-decoded value. */

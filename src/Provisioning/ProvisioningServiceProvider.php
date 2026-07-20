@@ -24,7 +24,7 @@ use Illuminate\Support\ServiceProvider;
  * The mirror of {@see DirectoryServiceProvider} (inbound SCIM
  * server) — here the platform is the SCIM CLIENT pushing changes OUT.
  */
-final class ProvisioningServiceProvider extends ServiceProvider
+class ProvisioningServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

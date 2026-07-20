@@ -30,7 +30,7 @@ use function Laravel\Prompts\table;
  * `password` (plaintext), `email_verified`, `role`, plus any extra columns which
  * are carried through as attributes.
  */
-final class ImportUsersCommand extends Command
+class ImportUsersCommand extends Command
 {
     protected $signature = 'cbox-id:users:import
         {file : Path to the CSV or JSON file of users to import}

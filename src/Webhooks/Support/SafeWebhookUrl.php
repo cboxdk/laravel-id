@@ -15,7 +15,7 @@ use Cbox\Ssrf\Exceptions\BlockedUrl;
  * package. This adapter keeps the platform's own on/off toggle and domain
  * exception, so callers and their tests are unaffected.
  */
-final class SafeWebhookUrl
+class SafeWebhookUrl
 {
     public static function isSafe(string $url): bool
     {

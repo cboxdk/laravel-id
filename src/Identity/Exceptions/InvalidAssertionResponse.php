@@ -11,7 +11,7 @@ use RuntimeException;
  * wrong ceremony type, challenge/origin/RP-id mismatch, or a bad signature.
  * Never carries key material.
  */
-final class InvalidAssertionResponse extends RuntimeException
+class InvalidAssertionResponse extends RuntimeException
 {
     public static function make(string $reason): self
     {

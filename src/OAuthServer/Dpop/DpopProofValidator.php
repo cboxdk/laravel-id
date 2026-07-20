@@ -24,7 +24,7 @@ use UnexpectedValueException;
  * made for this exact method+URL (`htm`/`htu`), that it is fresh (`iat`), and that
  * its `jti` has not been seen before (single-use, replay-proof).
  */
-final class DpopProofValidator
+class DpopProofValidator
 {
     /** Asymmetric algs a proof may use — never a MAC, never `none`. */
     private const ALLOWED_ALGS = ['ES256', 'RS256', 'EdDSA'];

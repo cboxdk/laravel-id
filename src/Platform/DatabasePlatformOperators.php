@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
  * operators live above every environment by construction (the model is not
  * environment-owned), so these queries are global.
  */
-final class DatabasePlatformOperators implements PlatformOperators
+class DatabasePlatformOperators implements PlatformOperators
 {
     public function __construct(
         private readonly Hasher $hasher,

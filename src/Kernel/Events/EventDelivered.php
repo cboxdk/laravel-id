@@ -11,7 +11,7 @@ use Cbox\Id\Kernel\Events\Models\Event;
  * Downstream modules (webhooks, projections) listen for this. Delivery is
  * at-least-once, so listeners must be idempotent (use {@see Event::$id}).
  */
-final class EventDelivered
+class EventDelivered
 {
     public function __construct(public readonly Event $event) {}
 }

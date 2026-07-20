@@ -23,7 +23,7 @@ use Illuminate\Http\Request;
  * wraps this (or the {@see FederationFlow}) to
  * turn the session into a cookie and redirect the browser.
  */
-final class SamlAcsController
+class SamlAcsController
 {
     public function __construct(
         private readonly Connections $connections,

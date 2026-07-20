@@ -6,8 +6,8 @@ namespace Cbox\Id\OAuthServer\Contracts;
 
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
-use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\TokenExchangeRequest;
+use Cbox\Id\OAuthServer\ValueObjects\TokenExchangeResult;
 
 /**
  * RFC 8693 OAuth 2.0 Token Exchange. Exchanges a valid subject token for a new access
@@ -22,5 +22,5 @@ interface TokenExchange
      *                              token type is unsupported, or the requested scope
      *                              exceeds the subject token's scope.
      */
-    public function exchange(Client $client, TokenExchangeRequest $request): IssuedToken;
+    public function exchange(Client $client, TokenExchangeRequest $request): TokenExchangeResult;
 }

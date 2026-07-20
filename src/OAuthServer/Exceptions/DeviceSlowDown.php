@@ -6,4 +6,4 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class DeviceSlowDown extends RuntimeException {}
+class DeviceSlowDown extends RuntimeException {}

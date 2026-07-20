@@ -11,7 +11,7 @@ use RuntimeException;
  * a human-readable reason; the sync records it on the directory so an admin can see
  * why the last pull failed without exposing credentials.
  */
-final class DirectoryConnectionFailed extends RuntimeException
+class DirectoryConnectionFailed extends RuntimeException
 {
     public static function make(string $provider, string $reason): self
     {

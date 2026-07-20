@@ -16,7 +16,7 @@ use PHPUnit\Framework\Assert;
  * and the token hook can be tested without an HTTP endpoint. By default it continues
  * (allow, no enrichment); use {@see willEnrich()} / {@see willDeny()} to script a reply.
  */
-final class FakeActionTransport implements ActionTransport
+class FakeActionTransport implements ActionTransport
 {
     private ActionResult $result;
 

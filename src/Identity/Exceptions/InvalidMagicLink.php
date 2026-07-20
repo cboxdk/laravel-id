@@ -6,7 +6,7 @@ namespace Cbox\Id\Identity\Exceptions;
 
 use RuntimeException;
 
-final class InvalidMagicLink extends RuntimeException
+class InvalidMagicLink extends RuntimeException
 {
     public static function make(): self
     {

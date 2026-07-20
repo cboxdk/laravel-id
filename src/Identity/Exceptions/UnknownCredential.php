@@ -6,7 +6,7 @@ namespace Cbox\Id\Identity\Exceptions;
 
 use RuntimeException;
 
-final class UnknownCredential extends RuntimeException
+class UnknownCredential extends RuntimeException
 {
     public static function make(string $credentialId): self
     {

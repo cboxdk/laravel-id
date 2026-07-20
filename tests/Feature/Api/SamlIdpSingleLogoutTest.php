@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Contracts\ServiceProviders;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
 use Cbox\Id\SamlIdp\Support\IdpDescriptor;
 use Cbox\Id\SamlIdp\Support\RedirectBindingResponseSigner;
 use Cbox\Id\SamlIdp\ValueObjects\NewServiceProvider;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use OneLogin\Saml2\Utils as SamlUtils;
 
@@ -49,11 +51,11 @@ if (! function_exists('registerSp')) {
 }
 
 if (! function_exists('logoutRequestXml')) {
-    function logoutRequestXml(string $entityId, string $id): string
+    function logoutRequestXml(string $entityId, string $id, ?string $issueInstant = null): string
     {
         return '<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" '
             .'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="'.$id.'" Version="2.0" '
-            .'IssueInstant="'.gmdate('Y-m-d\TH:i:s\Z').'" Destination="https://id.test'.IDP_SLO_ENDPOINT.'">'
+            .'IssueInstant="'.($issueInstant ?? gmdate('Y-m-d\TH:i:s\Z')).'" Destination="https://id.test'.IDP_SLO_ENDPOINT.'">'
             .'<saml:Issuer>'.$entityId.'</saml:Issuer>'
             .'<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">alice@example.test</saml:NameID>'
             .'</samlp:LogoutRequest>';
@@ -107,6 +109,43 @@ it('processes a signed LogoutRequest and returns a signed LogoutResponse to the 
     expect($xml)->toContain('urn:oasis:names:tc:SAML:2.0:status:Success')
         ->and($xml)->toContain('InResponseTo="'.$requestId.'"')
         ->and($xml)->toContain('>'.IdpDescriptor::entityId().'</saml:Issuer>');
+});
+
+it('refuses a replayed LogoutRequest (one-time request id)', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $query = signedRedirectQuery(logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16))), $spPrivate, 'SAMLRequest');
+
+    // First use succeeds; the identical (validly-signed) request replayed is refused.
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
+});
+
+it('refuses a stale LogoutRequest (IssueInstant outside the freshness window)', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $stale = logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16)), gmdate('Y-m-d\TH:i:s\Z', time() - 3600));
+    $query = signedRedirectQuery($stale, $spPrivate, 'SAMLRequest');
+
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
+});
+
+it('does NOT terminate the session when the LogoutRequest is invalid (no forced logout)', function (): void {
+    $subject = $this->makeUser('victim@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($subject->id, null, ['pwd']);
+
+    // A bogus SAMLRequest from a "logged-in" victim must be rejected BEFORE any
+    // session teardown — otherwise a cross-site GET force-logs-them-out.
+    $this->actingAs(new GenericUser(['id' => $subject->id, 'remember_token' => '']))
+        ->get(IDP_SLO_ENDPOINT.'?'.http_build_query(['SAMLRequest' => base64_encode((string) gzdeflate('not xml'))]))
+        ->assertStatus(400);
+
+    expect($sessions->active($session->id))->not->toBeNull();
 });
 
 it('refuses an unsigned LogoutRequest (the request is the security boundary)', function (): void {

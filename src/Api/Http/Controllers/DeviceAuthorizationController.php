@@ -15,7 +15,7 @@ use Illuminate\Http\Request;
  * shows the returned `user_code` + `verification_uri` to the user, then polls the
  * token endpoint with the `device_code` until the user approves on a second device.
  */
-final class DeviceAuthorizationController
+class DeviceAuthorizationController
 {
     public function __construct(
         private readonly ClientRegistry $clients,

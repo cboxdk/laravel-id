@@ -6,7 +6,7 @@ namespace Cbox\Id\Kernel\Crypto\Exceptions;
 
 use RuntimeException;
 
-final class InvalidToken extends RuntimeException
+class InvalidToken extends RuntimeException
 {
     public static function verificationFailed(string $reason): self
     {

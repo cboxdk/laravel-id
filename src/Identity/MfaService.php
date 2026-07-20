@@ -15,7 +15,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Crypto\ValueObjects\TotpEnrollment;
 
-final class MfaService implements Mfa
+class MfaService implements Mfa
 {
     use FormatsRecoveryCodes;
 

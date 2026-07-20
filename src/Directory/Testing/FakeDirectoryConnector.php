@@ -13,7 +13,7 @@ use Cbox\Id\Directory\ValueObjects\ScimUser;
  * A controllable pull connector for testing sync orchestration without a real
  * provider — set the users/groups it returns, and flip {@see $verifies}.
  */
-final class FakeDirectoryConnector implements DirectoryConnector
+class FakeDirectoryConnector implements DirectoryConnector
 {
     /**
      * @param  list<ScimUser>  $users

@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
  * and is overridable via `config('cbox-id.saml_idp.entity_id')` (an EntityID is an
  * opaque URI and must stay stable once SPs have imported it).
  */
-final class IdpDescriptor
+class IdpDescriptor
 {
     /**
      * The environment's issuer base URL (no trailing slash) — the same value the

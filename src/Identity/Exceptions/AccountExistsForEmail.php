@@ -13,7 +13,7 @@ use RuntimeException;
  * link the new provider deliberately. This is what prevents account takeover via
  * a provider that returns someone else's (or an unverified) email.
  */
-final class AccountExistsForEmail extends RuntimeException
+class AccountExistsForEmail extends RuntimeException
 {
     public static function make(string $email): self
     {

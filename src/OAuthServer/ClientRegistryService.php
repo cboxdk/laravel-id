@@ -11,7 +11,7 @@ use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredClient;
 use Illuminate\Support\Str;
 
-final class ClientRegistryService implements ClientRegistry
+class ClientRegistryService implements ClientRegistry
 {
     public function register(NewClient $input): RegisteredClient
     {

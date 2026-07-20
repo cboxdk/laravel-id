@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $config_encrypted
  * @property array<string, mixed> $mappings
  */
-final class Connection extends Model implements EnvironmentOwned
+class Connection extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

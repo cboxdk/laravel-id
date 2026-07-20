@@ -15,7 +15,7 @@ use Cbox\Id\Directory\ValueObjects\DirectoryPage;
  * The default {@see DirectoryUsers} read model over the `directory_users` table:
  * SCIM filter translation and pagination live here, not in the HTTP controller.
  */
-final class DatabaseDirectoryUsers implements DirectoryUsers
+class DatabaseDirectoryUsers implements DirectoryUsers
 {
     private const MAX_PAGE = 200;
 

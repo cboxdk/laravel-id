@@ -23,7 +23,7 @@ use Illuminate\Http\Request;
  * token's granted scopes (`profile` → name, `email` → email). Requires the
  * `openid` scope.
  */
-final class UserInfoController
+class UserInfoController
 {
     public function __construct(
         private readonly TokenIntrospector $introspector,

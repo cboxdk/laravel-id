@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $verified_at
  * @property bool $capture
  */
-final class VerifiedDomain extends Model implements EnvironmentOwned
+class VerifiedDomain extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

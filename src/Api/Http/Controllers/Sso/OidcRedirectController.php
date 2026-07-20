@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  * Generates a `state` (CSRF) and `nonce` (replay defense), stashes them in the
  * session, and redirects the browser to the IdP's authorization endpoint.
  */
-final class OidcRedirectController
+class OidcRedirectController
 {
     public function __construct(
         private readonly Connections $connections,

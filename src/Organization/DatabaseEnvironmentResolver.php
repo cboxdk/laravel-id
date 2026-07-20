@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  * an abusive or non-paying tenant actually cuts the end-user plane, not just the
  * dashboard).
  */
-final class DatabaseEnvironmentResolver implements EnvironmentResolver
+class DatabaseEnvironmentResolver implements EnvironmentResolver
 {
     public function resolveForHost(string $host): ?Environment
     {
@@ -49,6 +49,14 @@ final class DatabaseEnvironmentResolver implements EnvironmentResolver
         }
 
         return $this->servable(EnvironmentModel::query()->where('slug', $label)->first());
+    }
+
+    public function forKey(string $environmentKey): ?Environment
+    {
+        // Unscoped by id — a stored key (e.g. an outbox event's environment_id) may
+        // be replayed with no ambient scope; liveness is NOT re-gated here because the
+        // caller is rehydrating context for a past event, not serving a live request.
+        return $environmentKey === '' ? null : EnvironmentModel::query()->find($environmentKey);
     }
 
     public function defaultEnvironment(): ?Environment

@@ -16,7 +16,7 @@ use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
  * so it can wrap the reader unconditionally (deny-by-default: unlicensed = base
  * entitlements only). It decorates only the read side; the writer is untouched.
  */
-final class LicenseAwareEntitlements implements EntitlementReader
+class LicenseAwareEntitlements implements EntitlementReader
 {
     /**
      * @param  array<string, EntitlementValue>  $grants  license grants, keyed by entitlement key

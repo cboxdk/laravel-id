@@ -25,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $max_ttl_seconds
  * @property Carbon|null $revoked_at
  */
-final class VaultGrant extends Model implements EnvironmentOwned
+class VaultGrant extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

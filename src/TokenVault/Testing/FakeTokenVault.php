@@ -21,7 +21,7 @@ use PHPUnit\Framework\Assert;
  * exercises honest authorization behaviour — the plaintext lives only in memory and
  * never touches a database.
  */
-final class FakeTokenVault implements SecretVault
+class FakeTokenVault implements SecretVault
 {
     private const DEFAULT_LEASE_TTL = 300;
 

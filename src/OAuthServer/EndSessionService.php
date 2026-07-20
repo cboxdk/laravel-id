@@ -24,7 +24,7 @@ use Cbox\Id\OAuthServer\ValueObjects\EndSessionResult;
  * own signing keys (alg-pinned). An unverifiable hint is treated as absent rather than
  * trusted — a forged hint can never widen the redirect allow-list.
  */
-final class EndSessionService implements EndSession
+class EndSessionService implements EndSession
 {
     /** id_token_hint is signed with the same asymmetric algs as our id/access tokens. */
     private const HINT_ALGS = [SigningAlg::RS256, SigningAlg::ES256, SigningAlg::EdDSA];
@@ -60,7 +60,11 @@ final class EndSessionService implements EndSession
         }
 
         try {
-            $claims = $this->signer->verify($hint, self::HINT_ALGS);
+            // The hint proves IDENTITY, not liveness — id_tokens are short-lived (15 min)
+            // and logout routinely happens after expiry, so verify the signature but not
+            // `exp` (OIDC RP-Initiated Logout §2/§4). Signature/alg pinning is unchanged,
+            // so a forged hint is still rejected → treated as absent.
+            $claims = $this->signer->verifyIgnoringExpiry($hint, self::HINT_ALGS);
         } catch (InvalidToken) {
             return ['sub' => null, 'aud' => null];
         }

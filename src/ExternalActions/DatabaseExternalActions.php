@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
  * a reveal-once 256-bit signing secret sealed at rest (SecretBox, bound to the row).
  * Everything is environment-owned and audited.
  */
-final class DatabaseExternalActions implements ExternalActions
+class DatabaseExternalActions implements ExternalActions
 {
     public function __construct(
         private readonly SecretBox $secretBox,

@@ -6,4 +6,4 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class DeviceExpired extends RuntimeException {}
+class DeviceExpired extends RuntimeException {}

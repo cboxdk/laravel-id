@@ -19,7 +19,7 @@ namespace Cbox\Id\Scim;
  * the request lifecycle, so both the server (framing responses) and the client
  * (framing request bodies) reuse it instead of duplicating URN literals.
  */
-final class ScimSchema
+class ScimSchema
 {
     /** RFC 7643 §4.1 core User resource schema URN. */
     public const USER_URN = 'urn:ietf:params:scim:schemas:core:2.0:User';

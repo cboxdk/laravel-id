@@ -9,7 +9,7 @@ use Cbox\Id\Kernel\Crypto\Exceptions\DecryptionFailed;
 /**
  * RFC 7515 base64url (unpadded) encoding — the encoding used throughout JOSE.
  */
-final class Base64Url
+class Base64Url
 {
     public static function encode(string $data): string
     {

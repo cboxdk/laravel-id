@@ -25,7 +25,7 @@ use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
  * The work is wrapped in the directory's OWN environment scope, so it is safe to
  * call from a scheduled command that has no ambient environment pinned.
  */
-final class DirectoryPullSync
+class DirectoryPullSync
 {
     public function __construct(
         private readonly DirectoryConnectors $connectors,

@@ -35,7 +35,7 @@ use Illuminate\Support\Str;
  * never silently dropped. Every decision and application is correlated by the
  * campaign id on the hash-chained audit trail.
  */
-final class DatabaseAccessReviews implements AccessReviews
+class DatabaseAccessReviews implements AccessReviews
 {
     public function __construct(
         private readonly Roles $roles,

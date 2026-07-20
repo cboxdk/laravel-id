@@ -28,7 +28,7 @@ use OpenSSLCertificateSigningRequest;
  * Reusing the one platform key keeps the deployment honest: metadata, JWKS and
  * SAML all present a single identity, and there is no second key store to rotate.
  */
-final class PlatformKeyMaterial implements IdpKeyMaterial
+class PlatformKeyMaterial implements IdpKeyMaterial
 {
     /** Self-signed certificate validity — long enough to outlive routine key rotation. */
     private const CERTIFICATE_DAYS = 3650;

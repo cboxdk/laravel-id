@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Thrown when a tenant is required but none is set in the current context.
  */
-final class TenantMissing extends RuntimeException
+class TenantMissing extends RuntimeException
 {
     public function __construct(string $message = 'No tenant is set in the current context.')
     {

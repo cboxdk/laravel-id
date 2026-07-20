@@ -14,7 +14,7 @@ use PHPUnit\Framework\Assert;
  * read methods by aggregating them, plus assertion helpers. Swap it in with
  * {@see InteractsWithUsage::fakeUsage()}.
  */
-final class FakeUsageMeter implements UsageMeter
+class FakeUsageMeter implements UsageMeter
 {
     /**
      * Every recorded increment, in order.

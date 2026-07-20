@@ -12,7 +12,7 @@ use RuntimeException;
  * the vault — never on the lease path, which fails uniformly (see {@see LeaseDenied})
  * so a partially-trusted agent cannot probe which secret ids exist.
  */
-final class SecretNotFound extends RuntimeException
+class SecretNotFound extends RuntimeException
 {
     public static function forId(string $secretId): self
     {

@@ -28,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property RoleSource $source
  * @property Carbon|null $orphaned_at
  */
-final class Role extends Model implements EnvironmentOwned
+class Role extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

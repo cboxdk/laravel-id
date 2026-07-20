@@ -11,7 +11,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
-final class WebhookServiceProvider extends ServiceProvider
+class WebhookServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

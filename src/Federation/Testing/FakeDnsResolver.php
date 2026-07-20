@@ -10,7 +10,7 @@ use Cbox\Id\Federation\Contracts\DnsResolver;
  * An in-memory {@see DnsResolver} for tests: publish TXT records for a host, then
  * assert domain verification succeeds or fails without touching real DNS.
  */
-final class FakeDnsResolver implements DnsResolver
+class FakeDnsResolver implements DnsResolver
 {
     /** @var array<string, list<string>> */
     private array $records = [];

@@ -188,11 +188,21 @@ it('detects refresh token reuse and revokes the whole family', function (): void
 });
 
 it('serves RFC 8414 authorization server metadata', function (): void {
+    // No host authorization_endpoint configured → the iss-param flag (a property of
+    // that host-owned endpoint, RFC 9207) is honestly OMITTED, not asserted true.
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
         ->assertJsonPath('grant_types_supported', ['authorization_code', 'client_credentials', 'refresh_token', 'urn:ietf:params:oauth:grant-type:device_code', 'urn:openid:params:grant-type:ciba', 'urn:ietf:params:oauth:grant-type:token-exchange'])
-        ->assertJsonPath('authorization_response_iss_parameter_supported', true)
+        ->assertJsonMissingPath('authorization_response_iss_parameter_supported')
         ->assertJsonStructure(['issuer', 'token_endpoint', 'jwks_uri', 'revocation_endpoint', 'code_challenge_methods_supported']);
+});
+
+it('advertises RFC 9207 iss-param only when the host authorization_endpoint is set', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint' => 'https://app.example.com/authorize']);
+
+    $this->getJson('/.well-known/oauth-authorization-server')
+        ->assertOk()
+        ->assertJsonPath('authorization_response_iss_parameter_supported', true);
 });
 
 it('serves RFC 9728 protected resource metadata', function (): void {

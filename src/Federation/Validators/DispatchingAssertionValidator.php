@@ -14,7 +14,7 @@ use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
  * (OIDC, SAML, …). A type with no registered validator is rejected rather than
  * silently trusted.
  */
-final class DispatchingAssertionValidator implements AssertionValidator
+class DispatchingAssertionValidator implements AssertionValidator
 {
     /**
      * @param  array<string, AssertionValidator>  $validators  keyed by ConnectionType value

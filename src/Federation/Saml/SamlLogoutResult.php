@@ -7,7 +7,7 @@ namespace Cbox\Id\Federation\Saml;
 /**
  * Outcome of processing an inbound SAML Single Logout message.
  */
-final readonly class SamlLogoutResult
+readonly class SamlLogoutResult
 {
     private function __construct(
         public bool $valid,

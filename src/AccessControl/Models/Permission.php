@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property bool $tenant_assignable
  * @property Carbon|null $orphaned_at
  */
-final class Permission extends Model
+class Permission extends Model
 {
     use HasUlids;
 

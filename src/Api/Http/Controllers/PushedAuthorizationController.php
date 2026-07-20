@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  * `/authorize` redirect. This keeps request parameters off the browser URL and
  * lets the AS fix them before user interaction — the foundation FAPI builds on.
  */
-final class PushedAuthorizationController
+class PushedAuthorizationController
 {
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,

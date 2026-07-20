@@ -7,7 +7,7 @@ namespace Cbox\Id\AuditQuery;
 use Cbox\Id\AuditQuery\Contracts\AuditReader;
 use Illuminate\Support\ServiceProvider;
 
-final class AuditQueryServiceProvider extends ServiceProvider
+class AuditQueryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

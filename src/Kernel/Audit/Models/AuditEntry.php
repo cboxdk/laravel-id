@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * @property string $hash
  * @property Carbon|null $recorded_at
  */
-final class AuditEntry extends Model
+class AuditEntry extends Model
 {
     use HasUlids;
 

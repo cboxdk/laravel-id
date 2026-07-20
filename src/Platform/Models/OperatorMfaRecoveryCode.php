@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string $code_hash
  * @property Carbon|null $used_at
  */
-final class OperatorMfaRecoveryCode extends Model
+class OperatorMfaRecoveryCode extends Model
 {
     use HasUlids;
 

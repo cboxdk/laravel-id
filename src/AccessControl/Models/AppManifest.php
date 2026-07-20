@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $checksum
  * @property Carbon $synced_at
  */
-final class AppManifest extends Model implements EnvironmentOwned
+class AppManifest extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

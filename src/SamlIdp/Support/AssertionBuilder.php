@@ -26,7 +26,7 @@ use RobRichards\XMLSecLibs\XMLSecurityKey;
  * Signing order matters: the Assertion is signed first, then embedded and the
  * Response signed over it, so neither signature invalidates the other.
  */
-final class AssertionBuilder
+class AssertionBuilder
 {
     private const NS_PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
 

@@ -19,7 +19,7 @@ use Illuminate\Http\Request;
  * matches this exact token — so a stolen bearer alone is worthless. For a plain
  * bearer token it is a no-op, preserving ordinary Bearer access.
  */
-final class DpopResourceGuard
+class DpopResourceGuard
 {
     public function __construct(private readonly DpopProofValidator $proofs) {}
 

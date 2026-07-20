@@ -32,7 +32,7 @@ use Illuminate\Contracts\Cache\Repository as Cache;
  * token is refused even within its short TTL. The burn record is held only as long as
  * the token could still be signature-valid (its remaining TTL), then expires with it.
  */
-final class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
+class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
 {
     private const PURPOSE = 'cbox.env-admin-handoff';
 

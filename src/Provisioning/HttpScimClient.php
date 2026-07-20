@@ -29,7 +29,7 @@ use Throwable;
  * {@see UnsafeScimUrl} carries only the URL reason, and a failed HTTP response is
  * reduced to its status + SCIM `detail`.
  */
-final class HttpScimClient implements ScimClient
+class HttpScimClient implements ScimClient
 {
     /**
      * Per-connection OAuth access-token cache, so a client-credentials grant is not

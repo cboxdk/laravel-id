@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
+use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class, InteractsWithTenancy::class);
 
@@ -33,4 +37,20 @@ it('never matches a platform-wide endpoint across environments', function (): vo
     $matchInA = $this->runAsEnvironment('env_a', fn () => app(WebhookRegistry::class)
         ->matching(null, 'user.created'));
     expect($matchInA)->toHaveCount(1);
+});
+
+it('flushes a pending event in ITS OWN environment, not the ambient one (R7a)', function (): void {
+    Http::fake(['*' => Http::response('', 200)]);
+
+    // A real environment row (forKey resolves it) with an endpoint scoped to it.
+    $envA = Environment::create(['name' => 'A', 'slug' => 'flush-a', 'is_default' => false]);
+    $this->runAsEnvironment($envA->id, fn () => app(WebhookRegistry::class)
+        ->register(null, 'https://a.example.com/hook', ['user.created']));
+
+    // Emit the event inside env A (stamps environment_id = envA), but FLUSH from a
+    // different ambient context — delivery must still fire for env A's endpoint.
+    $this->runAsEnvironment($envA->id, fn () => app(EventBus::class)->emit(new DomainEvent('user.created', ['n' => 1])));
+    $this->runAsEnvironment('unrelated-env', fn () => app(EventBus::class)->flushPending());
+
+    Http::assertSentCount(1);
 });

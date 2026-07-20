@@ -21,7 +21,7 @@ use Illuminate\Http\Response;
  * {@see EndSession} resolver. The endpoint only ever REVOKES a session and never
  * mints one, so an unauthenticated or forged request cannot gain anything.
  */
-final class EndSessionController
+class EndSessionController
 {
     public function __construct(
         private readonly EndSession $endSession,

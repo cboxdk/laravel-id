@@ -18,7 +18,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
  * verification is delegated to a {@see WebAuthnVerifier}; this service owns the
  * storage and the clone-detection / replay guard on the signature counter.
  */
-final class PasskeyService implements Passkeys
+class PasskeyService implements Passkeys
 {
     public function __construct(
         private readonly WebAuthnVerifier $verifier,

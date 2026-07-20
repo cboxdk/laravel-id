@@ -19,7 +19,7 @@ use OneLogin\Saml2\Settings;
  * SingleLogoutService) and `sp_sls_url` (defaults to the ACS URL with a trailing
  * `/acs` rewritten to `/slo`).
  */
-final class SamlSettings
+class SamlSettings
 {
     /**
      * @param  array<string, mixed>  $config

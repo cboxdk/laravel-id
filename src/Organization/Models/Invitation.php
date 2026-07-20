@@ -25,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $expires_at
  * @property Carbon|null $accepted_at
  */
-final class Invitation extends Model
+class Invitation extends Model
 {
     use HasUlids;
 

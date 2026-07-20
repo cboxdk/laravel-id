@@ -17,7 +17,7 @@ use Throwable;
  * after a deploy, or any time something feels off. You should not need to be an
  * identity expert to read the output.
  */
-final class DoctorCommand extends Command
+class DoctorCommand extends Command
 {
     protected $signature = 'cbox-id:doctor';
 

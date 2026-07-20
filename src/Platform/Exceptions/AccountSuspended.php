@@ -11,7 +11,7 @@ use RuntimeException;
  * (suspended/delinquent). The account's own auth surfaces already refuse it; this
  * is the defence-in-depth guard on the write path itself.
  */
-final class AccountSuspended extends RuntimeException
+class AccountSuspended extends RuntimeException
 {
     public static function make(string $accountId): self
     {

@@ -6,7 +6,7 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class InvalidGrant extends RuntimeException
+class InvalidGrant extends RuntimeException
 {
     public static function make(string $reason): self
     {

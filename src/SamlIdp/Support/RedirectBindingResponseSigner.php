@@ -21,7 +21,7 @@ use RuntimeException;
  * The RSA signing itself is delegated to xmlseclibs (openssl under the hood), with
  * the algorithm PINNED to RSA-SHA256 — never SHA-1, never inferred.
  */
-final class RedirectBindingResponseSigner
+class RedirectBindingResponseSigner
 {
     /**
      * @param  string  $type  the query parameter name — `SAMLResponse` or `SAMLRequest`

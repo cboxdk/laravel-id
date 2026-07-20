@@ -18,7 +18,7 @@ use Throwable;
  * only enforce policy: the algorithm is pinned to RSA-SHA256, so a SHA-1 or
  * unknown `SigAlg` is refused before any verification is attempted.
  */
-final class RedirectBindingSignature
+class RedirectBindingSignature
 {
     /**
      * @throws InvalidAuthnRequest unknown algorithm, missing certificate, or a

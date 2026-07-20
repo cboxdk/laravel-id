@@ -20,7 +20,7 @@ use Illuminate\Support\Str;
  * legitimate client and the attacker are racing on it — the safe response is to
  * revoke the entire family, forcing re-authentication.
  */
-final class RefreshTokenService implements RefreshTokens
+class RefreshTokenService implements RefreshTokens
 {
     private const TTL_DAYS = 30;
 

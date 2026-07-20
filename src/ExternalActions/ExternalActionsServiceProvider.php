@@ -10,7 +10,7 @@ use Cbox\Id\ExternalActions\Contracts\ActionTransport;
 use Cbox\Id\ExternalActions\Contracts\ExternalActions;
 use Illuminate\Support\ServiceProvider;
 
-final class ExternalActionsServiceProvider extends ServiceProvider
+class ExternalActionsServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

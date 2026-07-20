@@ -14,7 +14,7 @@ use PHPUnit\Framework\Assert;
  * In-memory {@see EventBus} for tests: captures emitted events and exposes
  * assertions, in the spirit of Laravel's `Event::fake()`.
  */
-final class FakeEventBus implements EventBus
+class FakeEventBus implements EventBus
 {
     /**
      * @var list<DomainEvent>

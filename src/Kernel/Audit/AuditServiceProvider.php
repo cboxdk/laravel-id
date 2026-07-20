@@ -7,7 +7,7 @@ namespace Cbox\Id\Kernel\Audit;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Illuminate\Support\ServiceProvider;
 
-final class AuditServiceProvider extends ServiceProvider
+class AuditServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

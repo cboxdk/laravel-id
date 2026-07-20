@@ -6,7 +6,7 @@ namespace Cbox\Id\Identity\Exceptions;
 
 use RuntimeException;
 
-final class InvalidEmailVerification extends RuntimeException
+class InvalidEmailVerification extends RuntimeException
 {
     public static function make(): self
     {

@@ -12,7 +12,7 @@ use RuntimeException;
  * private, link-local or reserved addresses (SSRF defense, e.g. cloud metadata at
  * 169.254.169.254).
  */
-final class UnsafeScimUrl extends RuntimeException
+class UnsafeScimUrl extends RuntimeException
 {
     public static function make(string $reason): self
     {

@@ -24,7 +24,7 @@ use Cbox\Id\Platform\Models\OperatorMfaRecoveryCode;
  * the recovery-code formatting trait — so the two subsystems can't drift on the
  * security-relevant parts while staying independent identity planes.
  */
-final class DatabaseOperatorMfa implements OperatorMfa
+class DatabaseOperatorMfa implements OperatorMfa
 {
     use FormatsRecoveryCodes;
 

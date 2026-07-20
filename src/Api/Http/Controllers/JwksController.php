@@ -10,7 +10,7 @@ use Illuminate\Http\JsonResponse;
 /**
  * `GET /.well-known/jwks.json` — the public JWK Set for verifying tokens.
  */
-final class JwksController
+class JwksController
 {
     public function __invoke(KeyManager $keys): JsonResponse
     {

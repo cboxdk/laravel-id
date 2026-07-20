@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $role_id
  * @property int $priority
  */
-final class GroupRoleMapping extends Model implements EnvironmentOwned
+class GroupRoleMapping extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

@@ -12,7 +12,7 @@ use RuntimeException;
  * certificate could not be generated. The IdP refuses to emit an unsigned or
  * weak-algorithm assertion rather than degrade.
  */
-final class SigningMaterialUnavailable extends RuntimeException
+class SigningMaterialUnavailable extends RuntimeException
 {
     public static function notRsa(string $alg): self
     {

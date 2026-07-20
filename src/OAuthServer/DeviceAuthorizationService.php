@@ -18,7 +18,7 @@ use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
 use Cbox\Id\OAuthServer\ValueObjects\PendingDeviceAuthorization;
 use Illuminate\Support\Facades\DB;
 
-final class DeviceAuthorizationService implements DeviceAuthorization
+class DeviceAuthorizationService implements DeviceAuthorization
 {
     private const TTL_SECONDS = 600;      // the user has 10 minutes to approve
 

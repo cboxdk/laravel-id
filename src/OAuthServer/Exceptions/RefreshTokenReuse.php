@@ -12,7 +12,7 @@ use RuntimeException;
  * rotation transaction unwinds — revoking inside the transaction would be rolled
  * back by the very exception that reports the reuse.
  */
-final class RefreshTokenReuse extends RuntimeException
+class RefreshTokenReuse extends RuntimeException
 {
     public function __construct(public readonly string $familyId)
     {

@@ -11,7 +11,7 @@ use RuntimeException;
  * this environment, or one whose status is not active. The IdP never mints an
  * assertion for an SP it does not know — deny-by-default.
  */
-final class UnknownServiceProvider extends RuntimeException
+class UnknownServiceProvider extends RuntimeException
 {
     public static function forEntityId(string $entityId): self
     {

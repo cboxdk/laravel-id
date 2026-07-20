@@ -25,7 +25,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $period
  * @property int $count
  */
-final class UsageCounter extends Model implements EnvironmentOwned
+class UsageCounter extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

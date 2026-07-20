@@ -13,7 +13,7 @@ use Illuminate\Http\JsonResponse;
  * always fall back to the OIDC discovery document), so it is served explicitly
  * from the same metadata as the OIDC endpoint.
  */
-final class AuthorizationServerMetadataController
+class AuthorizationServerMetadataController
 {
     public function __invoke(): JsonResponse
     {

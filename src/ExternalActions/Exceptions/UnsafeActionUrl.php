@@ -10,7 +10,7 @@ use RuntimeException;
  * A hook endpoint URL failed the SSRF guard at registration — it points at a
  * non-public, internal, or otherwise disallowed address and is refused.
  */
-final class UnsafeActionUrl extends RuntimeException
+class UnsafeActionUrl extends RuntimeException
 {
     public static function forUrl(string $url): self
     {

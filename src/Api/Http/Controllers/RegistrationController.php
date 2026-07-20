@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  * Gated by `cbox-id.oauth.dynamic_registration.mode`: `disabled` (403),
  * `protected` (requires the configured initial access token), or `open`.
  */
-final class RegistrationController
+class RegistrationController
 {
     public function __construct(private readonly DynamicClientRegistration $registrar) {}
 

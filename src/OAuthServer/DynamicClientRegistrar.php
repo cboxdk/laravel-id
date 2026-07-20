@@ -21,7 +21,7 @@ use Cbox\Id\OAuthServer\ValueObjects\NewClient;
  * and non-fragment (loopback http is permitted for native/CLI clients, which is
  * exactly the MCP case).
  */
-final class DynamicClientRegistrar implements DynamicClientRegistration
+class DynamicClientRegistrar implements DynamicClientRegistration
 {
     private const AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post'];
 

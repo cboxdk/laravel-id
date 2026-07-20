@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property OrganizationStatus $status
  * @property array<string, mixed> $settings
  */
-final class Organization extends Model implements EnvironmentOwned, Tenant
+class Organization extends Model implements EnvironmentOwned, Tenant
 {
     use BelongsToEnvironment;
     use HasUlids;

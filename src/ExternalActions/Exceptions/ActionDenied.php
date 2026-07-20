@@ -11,7 +11,7 @@ use RuntimeException;
  * could not be run). The reason is the deciding action's reason string; the caller
  * maps it to whatever its protocol requires (the token endpoint → `access_denied`).
  */
-final class ActionDenied extends RuntimeException
+class ActionDenied extends RuntimeException
 {
     public static function because(string $reason): self
     {

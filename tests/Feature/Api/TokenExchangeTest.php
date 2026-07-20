@@ -45,6 +45,67 @@ it('exchanges a subject token for a down-scoped access token (RFC 8693)', functi
         ->and($claims['scope'])->toBe('api.read');
 });
 
+it('echoes the granted scope in the response (RFC 8693 §2.2.1)', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['api.read', 'api.write']);
+    $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read', 'api.write'])->token;
+
+    // Empty scope request → inherits the subject scopes → scope MUST be echoed.
+    $this->postJson('/oauth/token', [
+        'grant_type' => TX_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'subject_token' => $subjectToken,
+        'subject_token_type' => TX_ACCESS,
+    ])->assertOk()->assertJsonPath('scope', 'api.read api.write');
+});
+
+it('refuses to exchange a token that was not issued to (nor names) the calling client', function (): void {
+    $org = $this->makeOrganization();
+    $appA = $this->makeClient(['api.read']);
+    $appB = $this->makeClient(['api.read']);
+    // A user token minted for app A; app B must not be able to launder it.
+    $subjectToken = app(TokenIssuer::class)->issueForUser($appA->client, 'alice', $org->id, ['api.read'])->token;
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => TX_GRANT,
+        'client_id' => $appB->client->client_id,
+        'client_secret' => $appB->secret,
+        'subject_token' => $subjectToken,
+        'subject_token_type' => TX_ACCESS,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
+it('rejects an unsupported requested_token_type', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['api.read']);
+    $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => TX_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'subject_token' => $subjectToken,
+        'subject_token_type' => TX_ACCESS,
+        'requested_token_type' => 'urn:ietf:params:oauth:token-type:refresh_token',
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_request');
+});
+
+it('rejects a malformed resource indicator (invalid_target)', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['api.read']);
+    $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => TX_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'subject_token' => $subjectToken,
+        'subject_token_type' => TX_ACCESS,
+        'resource' => 'not-an-absolute-uri',
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_target');
+});
+
 it('refuses to WIDEN scope in an exchange (down-scope only)', function (): void {
     $org = $this->makeOrganization();
     $registered = $this->makeClient(['api.read', 'api.write']);

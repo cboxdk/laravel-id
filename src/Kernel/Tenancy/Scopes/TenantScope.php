@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Scope;
  *
  * @implements Scope<Model>
  */
-final class TenantScope implements Scope
+class TenantScope implements Scope
 {
     public function apply(Builder $builder, Model $model): void
     {

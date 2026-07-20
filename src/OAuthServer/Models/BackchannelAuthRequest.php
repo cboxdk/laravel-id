@@ -31,7 +31,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $approved_at
  * @property Carbon $expires_at
  */
-final class BackchannelAuthRequest extends Model implements EnvironmentOwned
+class BackchannelAuthRequest extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

@@ -28,7 +28,7 @@ use Psr\Log\LoggerInterface;
  * Registered after the authorization kernel so it can re-point the EntitlementReader
  * alias to the license-aware decorator; the writer alias is left untouched.
  */
-final class LicensingServiceProvider extends ServiceProvider
+class LicensingServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

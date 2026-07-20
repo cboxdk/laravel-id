@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $external_id
  * @property string $display_name
  */
-final class DirectoryGroup extends Model implements EnvironmentOwned
+class DirectoryGroup extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

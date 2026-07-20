@@ -15,7 +15,7 @@ use Cbox\Ssrf\Exceptions\BlockedUrl;
  * package (the same guard the Webhooks and Federation egress paths use). This
  * adapter keeps the module's own on/off toggle so tests can run offline.
  */
-final class SafeScimUrl
+class SafeScimUrl
 {
     public static function isSafe(string $url): bool
     {

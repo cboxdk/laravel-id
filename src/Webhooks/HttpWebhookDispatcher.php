@@ -12,6 +12,7 @@ use Cbox\Id\Webhooks\Exceptions\UnsafeWebhookUrl;
 use Cbox\Id\Webhooks\Models\WebhookDelivery;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -19,7 +20,7 @@ use Throwable;
  * Delivers events over HTTP with an HMAC-SHA256 signature (secret opened from
  * the sealed store). Failures are recorded and retried with exponential backoff.
  */
-final class HttpWebhookDispatcher implements WebhookDispatcher
+class HttpWebhookDispatcher implements WebhookDispatcher
 {
     public function __construct(
         private readonly WebhookRegistry $registry,
@@ -29,16 +30,13 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
     public function dispatch(string $eventType, array $payload, ?string $organizationId = null): void
     {
         foreach ($this->registry->matching($organizationId, $eventType) as $endpoint) {
-            // Atomic per-endpoint sequence: the DB-level increment refreshes the
-            // model, so concurrent dispatches to one endpoint never collide on a
-            // number, and each subscriber sees a gap-detectable 1, 2, 3, … .
-            $endpoint->increment('last_sequence');
+            $sequence = $this->nextSequence($endpoint);
 
             $delivery = new WebhookDelivery;
             $delivery->fill([
                 'endpoint_id' => $endpoint->id,
                 'event_type' => $eventType,
-                'sequence' => $endpoint->last_sequence,
+                'sequence' => $sequence,
                 'payload' => $payload,
                 'attempt' => 0,
                 'status' => DeliveryStatus::Pending,
@@ -47,6 +45,26 @@ final class HttpWebhookDispatcher implements WebhookDispatcher
 
             $this->attempt($endpoint, $delivery);
         }
+    }
+
+    /**
+     * Allocate the next per-endpoint delivery sequence ATOMICALLY. A plain
+     * `increment()` bumps the DB correctly but sets the in-memory attribute
+     * optimistically (loaded + 1, no re-read), so two concurrent workers would stamp
+     * the SAME number — defeating the gap-detection the sequence exists for. A
+     * `lockForUpdate` read-modify-write serializes the workers so each gets a distinct,
+     * gap-free value; the unique (endpoint_id, sequence) index is the backstop.
+     */
+    private function nextSequence(WebhookEndpoint $endpoint): int
+    {
+        return DB::transaction(function () use ($endpoint): int {
+            $locked = WebhookEndpoint::query()->whereKey($endpoint->id)->lockForUpdate()->first();
+            $next = ($locked ?? $endpoint)->last_sequence + 1;
+
+            WebhookEndpoint::query()->whereKey($endpoint->id)->update(['last_sequence' => $next]);
+
+            return $next;
+        });
     }
 
     public function retryPending(int $limit = 50): int

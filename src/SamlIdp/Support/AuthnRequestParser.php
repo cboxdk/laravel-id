@@ -18,7 +18,7 @@ use Throwable;
  * and rejects any DOCTYPE/ENTITY (XXE/XEE defense) — the parser never touches a
  * raw `DOMDocument::loadXML()`. It only reads fields; it makes no trust decision.
  */
-final class AuthnRequestParser
+class AuthnRequestParser
 {
     private const NS_PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
 

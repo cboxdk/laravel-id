@@ -16,7 +16,7 @@ use Illuminate\Console\Command;
  * own environment before fetching or writing. Scheduled hourly by the provider, or
  * run by hand (optionally for a single app with `--client`).
  */
-final class SyncAppManifestsCommand extends Command
+class SyncAppManifestsCommand extends Command
 {
     protected $signature = 'cbox-id:app-manifests:sync {--client= : Only sync the app with this client_id}';
 

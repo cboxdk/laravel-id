@@ -14,7 +14,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Illuminate\Support\Facades\DB;
 
-final class PasswordResetService implements PasswordReset
+class PasswordResetService implements PasswordReset
 {
     private const TTL_MINUTES = 60;
 

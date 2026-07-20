@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $active
  * @property array<int, string> $role_ids
  */
-final class SodPolicy extends Model implements EnvironmentOwned
+class SodPolicy extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

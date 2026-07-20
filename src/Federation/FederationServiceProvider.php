@@ -17,7 +17,7 @@ use Cbox\Id\Federation\Validators\SamlAssertionValidator;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
-final class FederationServiceProvider extends ServiceProvider
+class FederationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

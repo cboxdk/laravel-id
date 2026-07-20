@@ -31,7 +31,7 @@ use Throwable;
  *      `signing_keys` — map of `kid` → PEM public key (JWKS-style, multi-key)
  *      `signing_key`  — a single PEM public key (used when the IdP omits `kid`)
  */
-final class OidcAssertionValidator implements AssertionValidator
+class OidcAssertionValidator implements AssertionValidator
 {
     private const ALG = 'RS256';
 

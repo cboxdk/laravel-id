@@ -27,7 +27,7 @@ use Illuminate\Http\Request;
  *
  * Body: `{ "permissions": [{"relation": "...", "resource": "type:id"}], "entitlements": ["plan", ...] }`
  */
-final class DecisionController
+class DecisionController
 {
     public function __construct(
         private readonly TokenIntrospector $introspector,

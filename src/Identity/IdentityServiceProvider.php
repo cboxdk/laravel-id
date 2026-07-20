@@ -23,7 +23,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\ServiceProvider;
 
-final class IdentityServiceProvider extends ServiceProvider
+class IdentityServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

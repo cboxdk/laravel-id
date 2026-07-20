@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $environment_limit Seed for the first project's allowance; NOT the enforced limit.
  * @property array<string, mixed> $settings
  */
-final class Account extends Model
+class Account extends Model
 {
     use HasUlids;
 

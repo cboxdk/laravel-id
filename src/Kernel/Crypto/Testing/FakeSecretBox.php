@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Crypto\Exceptions\DecryptionFailed;
  * throws {@see DecryptionFailed}), so tests exercise the same failure modes
  * without real crypto. NEVER use outside tests: the "ciphertext" is reversible.
  */
-final class FakeSecretBox implements SecretBox
+class FakeSecretBox implements SecretBox
 {
     public function seal(string $plaintext, string $context = ''): string
     {

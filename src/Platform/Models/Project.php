@@ -29,7 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $environment_limit
  * @property array<string, mixed> $settings
  */
-final class Project extends Model
+class Project extends Model
 {
     use HasUlids;
 

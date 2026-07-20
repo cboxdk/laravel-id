@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
  * by that hash — a wrong token simply doesn't match, so there is no verification
  * timing oracle to exploit (unlike a per-record password compare).
  */
-final class DatabaseAccountApiKeys implements AccountApiKeys
+class DatabaseAccountApiKeys implements AccountApiKeys
 {
     /**
      * Brand root `cbid` (Cbox ID) + plane marker `acc` (account management plane),

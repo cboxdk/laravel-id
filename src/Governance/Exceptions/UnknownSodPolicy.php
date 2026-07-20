@@ -6,7 +6,7 @@ namespace Cbox\Id\Governance\Exceptions;
 
 use RuntimeException;
 
-final class UnknownSodPolicy extends RuntimeException
+class UnknownSodPolicy extends RuntimeException
 {
     public static function forId(string $policyId): self
     {

@@ -10,7 +10,7 @@ use Cbox\Id\AuditQuery\ValueObjects\AuditQueryFilter;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Illuminate\Database\Eloquent\Builder;
 
-final class DatabaseAuditReader implements AuditReader
+class DatabaseAuditReader implements AuditReader
 {
     public function query(AuditQueryFilter $filter): AuditPage
     {

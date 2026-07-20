@@ -18,6 +18,13 @@ interface EnvironmentResolver
     public function resolveForHost(string $host): ?Environment;
 
     /**
+     * The environment for a given key (its id), unscoped, or null if unknown. Lets a
+     * kernel that only holds an environment KEY (e.g. the event outbox replaying a
+     * stored `environment_id`) rehydrate the context without reaching for a domain model.
+     */
+    public function forKey(string $environmentKey): ?Environment;
+
+    /**
      * The single-tenant / host-less fallback plane, or null when none is marked.
      * Read from durable storage (not an env var) so a horizontally-scaled,
      * stateless deployment resolves the same default across every replica.

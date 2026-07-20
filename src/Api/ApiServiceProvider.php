@@ -38,7 +38,7 @@ use Cbox\Id\Api\Http\Middleware\ScimContentType;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
-final class ApiServiceProvider extends ServiceProvider
+class ApiServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {

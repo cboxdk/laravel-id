@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\ClientAssertion;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Models\Client;
 use Firebase\JWT\JWK;
@@ -23,15 +24,19 @@ use Throwable;
  * unexpired assertion (firebase's decoder enforces `exp`), and a single-use `jti`
  * (replay-guarded in the shared cache — no second table).
  */
-final class ClientAssertionValidator
+class ClientAssertionValidator implements ClientAssertion
 {
-    /** RFC 7521 client-assertion type for a JWT bearer assertion. */
-    public const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
-
     /** Asymmetric signing algs a client assertion may use. */
     private const ALLOWED_ALGS = ['RS256', 'ES256', 'EdDSA'];
 
     private const REPLAY_PREFIX = 'cbox:client-assertion:jti:';
+
+    /**
+     * The longest lifetime a client assertion may claim. RFC 7523 assertions are
+     * one-shot proofs, not sessions — a short cap bounds both the replay window and
+     * how long the single-use `jti` must be remembered.
+     */
+    private const MAX_LIFETIME_SECONDS = 300;
 
     public function __construct(
         private readonly ClientRegistry $clients,
@@ -82,7 +87,42 @@ final class ClientAssertionValidator
             return null;
         }
 
+        // RFC 7523 §3: `exp` is REQUIRED. firebase only enforces `exp` when present,
+        // so require it explicitly — an assertion with no (or an over-long) lifetime
+        // would otherwise get a ~1-second replay guard and be replayable. Bound the
+        // lifetime so the single-use `jti` window is always meaningful.
+        if (! $this->lifetimeValid($verified)) {
+            return null;
+        }
+
         return $this->consumeJti($sub, $verified) ? $client : null;
+    }
+
+    /**
+     * A conformant assertion carries a numeric, still-future `exp` and `iat`, and a
+     * lifetime no longer than {@see MAX_LIFETIME_SECONDS}.
+     *
+     * @param  array<array-key, mixed>  $claims
+     */
+    private function lifetimeValid(array $claims): bool
+    {
+        $exp = $claims['exp'] ?? null;
+        $iat = $claims['iat'] ?? null;
+
+        if (! is_numeric($exp) || ! is_numeric($iat)) {
+            return false;
+        }
+
+        $exp = (int) $exp;
+        $iat = (int) $iat;
+        $now = time();
+
+        // `exp` still in the future (firebase already rejected a past one, but be
+        // explicit), `iat` not from the future, and a bounded lifetime.
+        return $exp > $now
+            && $iat <= $now + 60
+            && $exp - $iat > 0
+            && $exp - $iat <= self::MAX_LIFETIME_SECONDS;
     }
 
     /** The assertion's audience must name THIS authorization server (issuer or token endpoint). */

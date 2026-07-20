@@ -18,7 +18,7 @@ use Symfony\Component\HttpFoundation\Response;
  * (`cbox-id.environments.default`) for single-tenant / on-prem deployments;
  * otherwise an unknown host is refused rather than served the wrong plane.
  */
-final class ResolveEnvironment
+class ResolveEnvironment
 {
     public function __construct(
         private readonly EnvironmentResolver $resolver,

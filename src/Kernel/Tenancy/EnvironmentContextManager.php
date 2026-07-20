@@ -14,7 +14,7 @@ use Closure;
  * environment is stable for the duration of a request or queued job. Suspension
  * is reference-counted to support safe nesting of {@see withoutScope()}.
  */
-final class EnvironmentContextManager implements EnvironmentContext
+class EnvironmentContextManager implements EnvironmentContext
 {
     private ?Environment $current = null;
 

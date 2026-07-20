@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $expires_at
  * @property Carbon|null $consumed_at
  */
-final class PushedAuthorizationRequest extends Model implements EnvironmentOwned
+class PushedAuthorizationRequest extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

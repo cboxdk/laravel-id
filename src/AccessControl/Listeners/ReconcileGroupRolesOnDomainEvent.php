@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Events\EventDelivered;
  * Directory layer emits, this AccessControl listener reacts — so the dependency runs
  * one way (AccessControl → Directory) with no cycle.
  */
-final class ReconcileGroupRolesOnDomainEvent
+class ReconcileGroupRolesOnDomainEvent
 {
     public function __construct(private readonly GroupRoleMappings $mappings) {}
 

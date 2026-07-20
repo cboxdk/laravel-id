@@ -40,7 +40,7 @@ use Illuminate\Support\ServiceProvider;
  * Each module registers its bindings via a dedicated module provider, wired up
  * here in dependency order (kernels first).
  */
-final class IdServiceProvider extends ServiceProvider
+class IdServiceProvider extends ServiceProvider
 {
     /**
      * Module providers, in dependency order (kernels before domain modules).

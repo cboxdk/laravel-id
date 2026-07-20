@@ -12,7 +12,7 @@ use RuntimeException;
  * `invalid_client_metadata`, or `invalid_software_statement` — surfaced verbatim in
  * the 400 response body.
  */
-final class InvalidClientMetadata extends RuntimeException
+class InvalidClientMetadata extends RuntimeException
 {
     public function __construct(public readonly string $error, string $description)
     {

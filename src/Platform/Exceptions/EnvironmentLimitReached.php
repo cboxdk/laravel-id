@@ -13,7 +13,7 @@ use RuntimeException;
  * (billing lives on the project), not something the provisioning path decides — so
  * it is refused here rather than silently exceeded.
  */
-final class EnvironmentLimitReached extends RuntimeException
+class EnvironmentLimitReached extends RuntimeException
 {
     public static function make(string $projectId, int $limit): self
     {

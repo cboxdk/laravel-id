@@ -21,7 +21,7 @@ use Illuminate\Http\Response;
  * lives behind the {@see DirectoryGroups} contract; the controller validates and
  * maps SCIM only.
  */
-final class GroupController
+class GroupController
 {
     public function __construct(private readonly DirectoryGroups $groups) {}
 

@@ -14,7 +14,7 @@ use Throwable;
  * X.509 certificate. An SP administrator imports this URL during federation setup.
  * Public by design — metadata carries no secrets (only the public certificate).
  */
-final class SamlIdpMetadataController
+class SamlIdpMetadataController
 {
     public function __construct(private readonly SamlIdentityProvider $idp) {}
 

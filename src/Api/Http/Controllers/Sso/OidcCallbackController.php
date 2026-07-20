@@ -22,7 +22,7 @@ use Illuminate\Http\Request;
  * against the session (replay defense), then completes the login. Like the SAML
  * ACS it returns the session identifiers for the hosting app to turn into a cookie.
  */
-final class OidcCallbackController
+class OidcCallbackController
 {
     public function __construct(
         private readonly Connections $connections,

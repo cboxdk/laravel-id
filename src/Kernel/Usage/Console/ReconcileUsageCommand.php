@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
  * net beneath the at-least-once metering outbox. Runs in the current environment
  * scope — schedule it per environment if you host several.
  */
-final class ReconcileUsageCommand extends Command
+class ReconcileUsageCommand extends Command
 {
     protected $signature = 'cbox-id:reconcile-usage {--org= : Reconcile only this organization id}';
 

@@ -11,7 +11,7 @@ use RuntimeException;
  * currently active — the environment boundary is absolute and never crossed by a
  * mutation (there is no roll-up or elevation across environments).
  */
-final class CrossEnvironmentAccess extends RuntimeException
+class CrossEnvironmentAccess extends RuntimeException
 {
     public static function forWrite(string $model, string $actual, string $expected): self
     {

@@ -15,7 +15,7 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-final class DatabaseAuditLog implements AuditLog
+class DatabaseAuditLog implements AuditLog
 {
     private const SYSTEM_SCOPE = '__system__';
 

@@ -14,7 +14,7 @@ namespace Cbox\Id\AccessControl\Manifest;
  * custom role. Lets an app expose a safe subset for self-serve while keeping
  * privileged permissions app-only.
  */
-final readonly class DeclaredPermission
+readonly class DeclaredPermission
 {
     public function __construct(
         public string $key,

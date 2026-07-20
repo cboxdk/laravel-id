@@ -13,7 +13,7 @@ use RuntimeException;
  * secret does not exist" and use the vault as an enumeration oracle. The precise
  * reason is recorded on the audit trail (`vault.lease.denied`), not returned here.
  */
-final class LeaseDenied extends RuntimeException
+class LeaseDenied extends RuntimeException
 {
     public static function make(): self
     {

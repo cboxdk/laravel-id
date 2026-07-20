@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $descendant_id
  * @property int $depth
  */
-final class OrganizationClosure extends Model implements EnvironmentOwned
+class OrganizationClosure extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

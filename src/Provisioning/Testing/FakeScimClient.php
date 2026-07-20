@@ -20,7 +20,7 @@ use Illuminate\Support\Str;
  * (`failWith`, `failTransport`) and remote records dropped (`dropRemote`) to
  * exercise reconcile and retry paths.
  */
-final class FakeScimClient implements ScimClient
+class FakeScimClient implements ScimClient
 {
     /**
      * Remote store: connectionId => (remoteId => resource).

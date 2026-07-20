@@ -181,6 +181,36 @@ it('rejects an expired assertion', function (): void {
     ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
 });
 
+it('rejects an assertion with no exp (RFC 7523 §3 requires it — closes the ~1s replay window)', function (): void {
+    $key = pkjRsaKey();
+    $registered = pkjRegister($key);
+
+    // exp => null makes the claim effectively absent; firebase would not enforce a
+    // lifetime, and the jti replay-guard would lapse in ~1s.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_assertion_type' => ASSERTION_TYPE,
+        'client_assertion' => pkjAssertion($registered->client->client_id, $key, 'RS256', ['exp' => null]),
+        'scope' => 'api.read',
+    ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
+});
+
+it('rejects an assertion whose lifetime exceeds the cap (jti must stay memorable)', function (): void {
+    $key = pkjRsaKey();
+    $registered = pkjRegister($key);
+
+    // iat now, exp 400s out → 400s lifetime > 300s cap.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_assertion_type' => ASSERTION_TYPE,
+        'client_assertion' => pkjAssertion($registered->client->client_id, $key, 'RS256', [
+            'iat' => time(),
+            'exp' => time() + 400,
+        ]),
+        'scope' => 'api.read',
+    ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
+});
+
 it('rejects an assertion whose audience is not this authorization server', function (): void {
     $key = pkjRsaKey();
     $registered = pkjRegister($key);

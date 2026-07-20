@@ -28,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $activated_at
  * @property Carbon|null $retired_at
  */
-final class SigningKey extends Model implements EnvironmentOwned
+class SigningKey extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

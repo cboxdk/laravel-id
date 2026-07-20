@@ -16,7 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $assertion_id
  * @property Carbon $expires_at
  */
-final class ConsumedAssertion extends Model
+class ConsumedAssertion extends Model
 {
     use HasUlids;
 

@@ -13,7 +13,7 @@ use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Support\ServiceProvider;
 
-final class OrganizationServiceProvider extends ServiceProvider
+class OrganizationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

@@ -18,7 +18,7 @@ use Illuminate\Console\Command;
  * directory is synced in its own environment scope; a connection failure on one
  * directory is recorded and never stops the others.
  */
-final class DirectorySyncCommand extends Command
+class DirectorySyncCommand extends Command
 {
     protected $signature = 'cbox-id:directory:sync {--directory= : Sync only this directory id}';
 

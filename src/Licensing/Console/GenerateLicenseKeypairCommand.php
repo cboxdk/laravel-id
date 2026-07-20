@@ -13,7 +13,7 @@ use Illuminate\Console\Command;
  * the SECRET key goes only into the issuer's vault (the billing service) and mints
  * the keys. The private key never ships with the app.
  */
-final class GenerateLicenseKeypairCommand extends Command
+class GenerateLicenseKeypairCommand extends Command
 {
     protected $signature = 'id:license:keygen';
 

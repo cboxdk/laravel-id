@@ -15,7 +15,7 @@ use Illuminate\Support\Str;
  * the SAML IdP without a database. Bind it in a test:
  * `app()->instance(ServiceProviders::class, new FakeServiceProviders())`.
  */
-final class FakeServiceProviders implements ServiceProviders
+class FakeServiceProviders implements ServiceProviders
 {
     /** @var array<string, ServiceProvider> keyed by model id */
     private array $providers = [];

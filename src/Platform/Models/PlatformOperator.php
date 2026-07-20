@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property Carbon|null $last_login_at
  */
-final class PlatformOperator extends Model
+class PlatformOperator extends Model
 {
     use HasUlids;
 

@@ -11,7 +11,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
 use Illuminate\Support\ServiceProvider;
 
-final class CryptoServiceProvider extends ServiceProvider
+class CryptoServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

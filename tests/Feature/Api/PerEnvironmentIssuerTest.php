@@ -21,10 +21,18 @@ it('resolves a tenant environment issuer from its {slug}.{base_domain}', functio
     expect(app(IssuerResolver::class)->forEnvironment($env->id))->toBe('https://acme.cboxid.com');
 });
 
-it('prefers a custom domain as the issuer when set', function (): void {
-    $env = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.acme.com', 'is_default' => false]);
+it('prefers a VERIFIED custom domain as the issuer', function (): void {
+    $env = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.acme.com', 'domain_verified_at' => now(), 'is_default' => false]);
 
     expect(app(IssuerResolver::class)->forEnvironment($env->id))->toBe('https://id.acme.com');
+});
+
+it('does NOT trust an UNVERIFIED custom domain as the issuer (R1 — no identity hijack)', function (): void {
+    // A domain set by a routing/branding path without DNS proof must never become the
+    // issuer — the env falls back to its {slug}.{base_domain} host.
+    $env = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.victim.com', 'domain_verified_at' => null, 'is_default' => false]);
+
+    expect(app(IssuerResolver::class)->forEnvironment($env->id))->toBe('https://acme.cboxid.com');
 });
 
 it('keeps the configured issuer for the platform-root environment', function (): void {

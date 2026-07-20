@@ -12,7 +12,7 @@ use RuntimeException;
  * deactivated account must never be able to establish a new session — revoking
  * existing sessions is not enough if the login paths don't also refuse.
  */
-final class AccountInactive extends RuntimeException
+class AccountInactive extends RuntimeException
 {
     public static function make(string $subjectId): self
     {

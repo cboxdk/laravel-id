@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Scope;
  *
  * @implements Scope<Model>
  */
-final class EnvironmentScope implements Scope
+class EnvironmentScope implements Scope
 {
     public function apply(Builder $builder, Model $model): void
     {

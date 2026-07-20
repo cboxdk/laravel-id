@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property Carbon|null $retired_at
  */
-final class ServiceAccount extends Model implements EnvironmentOwned
+class ServiceAccount extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\DB;
  * membership (Organization), and — critically — revokes sessions the instant a
  * user is deactivated or deprovisioned.
  */
-final class DatabaseDirectorySync implements DirectorySync
+class DatabaseDirectorySync implements DirectorySync
 {
     public function __construct(
         private readonly Subjects $subjects,

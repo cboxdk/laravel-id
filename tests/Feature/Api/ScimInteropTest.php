@@ -209,3 +209,20 @@ it('applies a remove operation by clearing the targeted attribute', function ():
         ->assertJsonPath('displayName', null)
         ->assertJsonPath('userName', 'dana'); // required attribute untouched
 });
+
+it('refuses a PUT whose body externalId names a different resource (no IDOR)', function (): void {
+    $headers = $this->scimHeaders;
+    $idA = provision($this, $headers, 'anna', 'okta|A', 'anna@corp.com');
+    provision($this, $headers, 'bob', 'okta|B', 'bob@corp.com');
+
+    // PUT /Users/{A} with the body claiming externalId B must be refused, not silently
+    // mutate/create B while leaving A intact.
+    $this->putJson("/scim/v2/Users/{$idA}", [
+        'userName' => 'anna', 'externalId' => 'okta|B',
+        'emails' => [['value' => 'anna@corp.com', 'primary' => true]], 'active' => true,
+    ], $headers)->assertStatus(400)->assertJsonPath('scimType', 'mutability');
+
+    // A still resolves by its own externalId, unchanged.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('externalId eq "okta|A"'), $headers)
+        ->assertOk()->assertJsonPath('totalResults', 1);
+});

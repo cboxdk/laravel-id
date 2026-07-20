@@ -17,7 +17,7 @@ use Illuminate\Support\ServiceProvider;
  * inside a `withoutScope()` block must not carry a leaked suspension into the
  * next request, which would collapse deny-by-default scoping platform-wide.
  */
-final class TenancyServiceProvider extends ServiceProvider implements DeferrableProvider
+class TenancyServiceProvider extends ServiceProvider implements DeferrableProvider
 {
     public function register(): void
     {

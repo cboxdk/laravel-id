@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Http;
  * (`accountEnabled=false`) arrive as inactive users, so the reconciliation
  * deprovisions them downstream.
  */
-final class MicrosoftEntraConnector implements DirectoryConnector
+class MicrosoftEntraConnector implements DirectoryConnector
 {
     private const GRAPH = 'https://graph.microsoft.com/v1.0';
 

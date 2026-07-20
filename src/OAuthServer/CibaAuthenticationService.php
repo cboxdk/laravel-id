@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  * `login_hint` up front and approves out-of-band, so the notification/approval
  * surface is the host's (driven by the emitted domain event).
  */
-final class CibaAuthenticationService implements BackchannelAuthentication
+class CibaAuthenticationService implements BackchannelAuthentication
 {
     private const DEFAULT_TTL_SECONDS = 300;
 

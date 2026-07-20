@@ -10,7 +10,7 @@ use RuntimeException;
  * The presented signature counter did not increase — the authenticator may have
  * been cloned. The assertion is refused.
  */
-final class ClonedAuthenticator extends RuntimeException
+class ClonedAuthenticator extends RuntimeException
 {
     public static function make(string $credentialId): self
     {

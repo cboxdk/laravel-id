@@ -15,7 +15,7 @@ use DOMDocument;
  * SLO endpoint via `Destination`). Kept tiny and deterministic; the crypto lives
  * entirely in the signer.
  */
-final class LogoutResponseBuilder
+class LogoutResponseBuilder
 {
     private const NS_PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
 

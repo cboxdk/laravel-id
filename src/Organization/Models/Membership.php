@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property MembershipStatus $status
  * @property string|null $invited_by
  */
-final class Membership extends Model implements EnvironmentOwned, TenantOwned
+class Membership extends Model implements EnvironmentOwned, TenantOwned
 {
     use BelongsToEnvironment;
     use BelongsToTenant;

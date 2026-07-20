@@ -24,7 +24,7 @@ use Illuminate\Support\Collection;
  * exact same signature/clone/replay checks as the subject plane without forking
  * security code or coupling the verifier to two models.
  */
-final class DatabaseAccountPasskeys implements AccountPasskeys
+class DatabaseAccountPasskeys implements AccountPasskeys
 {
     public function __construct(
         private readonly WebAuthnVerifier $verifier,

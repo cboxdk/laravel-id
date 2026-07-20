@@ -16,7 +16,7 @@ use Cbox\Id\OAuthServer\Models\Client;
  * and by an on-demand "Sync now" in the console. Runs inside the caller's
  * environment; sync writes to that environment's catalog.
  */
-final class AppManifestPuller
+class AppManifestPuller
 {
     public function __construct(
         private readonly ManifestFetcher $fetcher,

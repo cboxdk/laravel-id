@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $subject_id
  * @property string|null $subject_relation
  */
-final class RelationshipTuple extends Model implements EnvironmentOwned, TenantOwned
+class RelationshipTuple extends Model implements EnvironmentOwned, TenantOwned
 {
     use BelongsToEnvironment;
     use BelongsToTenant;

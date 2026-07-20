@@ -18,7 +18,7 @@ use Cbox\Id\Organization\Models\Environment;
  * Resolutions are memoized per request (the binding is a singleton) so repeated token
  * minting / metadata reads cost at most one Environment lookup per key.
  */
-final class EnvironmentIssuerResolver implements IssuerResolver
+class EnvironmentIssuerResolver implements IssuerResolver
 {
     /** @var array<string, string> */
     private array $cache = [];
@@ -46,7 +46,11 @@ final class EnvironmentIssuerResolver implements IssuerResolver
             return $this->fallback();
         }
 
-        if (is_string($environment->domain) && $environment->domain !== '') {
+        // A custom domain is the ISSUER identity, so trust it ONLY when DNS control
+        // was proven ({@see EnvironmentDomainService::verify} stamps domain_verified_at).
+        // An unverified domain — one set by a routing/branding path — must never assert
+        // an issuer for a host that was not shown to be controlled.
+        if (is_string($environment->domain) && $environment->domain !== '' && $environment->domain_verified_at !== null) {
             return 'https://'.$environment->domain;
         }
 

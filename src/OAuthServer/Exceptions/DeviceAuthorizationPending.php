@@ -6,4 +6,4 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class DeviceAuthorizationPending extends RuntimeException {}
+class DeviceAuthorizationPending extends RuntimeException {}

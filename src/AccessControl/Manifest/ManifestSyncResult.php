@@ -9,7 +9,7 @@ namespace Cbox\Id\AccessControl\Manifest;
  * trail) can report it. `unchanged` is true when the manifest checksum matched the
  * last sync and nothing was touched.
  */
-final readonly class ManifestSyncResult
+readonly class ManifestSyncResult
 {
     /**
      * @param  list<string>  $orphanedRoleKeys  Roles previously declared, now dropped — kept + flagged, not deleted.

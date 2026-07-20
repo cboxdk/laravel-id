@@ -17,7 +17,7 @@ use Cbox\Id\Provisioning\Contracts\ProvisioningService;
  * It runs inside the delivering environment, so the operations it writes are
  * env-stamped and the drain later reconstructs that same environment.
  */
-final class ProvisionOnDomainEvent
+class ProvisionOnDomainEvent
 {
     public function __construct(private readonly ProvisioningService $provisioning) {}
 

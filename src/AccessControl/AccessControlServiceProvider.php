@@ -16,7 +16,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
-final class AccessControlServiceProvider extends ServiceProvider
+class AccessControlServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

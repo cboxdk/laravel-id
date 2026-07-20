@@ -15,7 +15,7 @@ use Illuminate\Support\ServiceProvider;
  * contract so a host can override the SP registry or key source, and so the
  * fakes in {@see Testing} can stand in during tests.
  */
-final class SamlIdpServiceProvider extends ServiceProvider
+class SamlIdpServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

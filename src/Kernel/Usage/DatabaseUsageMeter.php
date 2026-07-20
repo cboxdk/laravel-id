@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
  * transaction retry serialise a raced create (the house pattern, SQLite-portable), so
  * a concurrent increment is never lost.
  */
-final class DatabaseUsageMeter implements UsageMeter
+class DatabaseUsageMeter implements UsageMeter
 {
     public function __construct(private readonly bool $enabled = true) {}
 

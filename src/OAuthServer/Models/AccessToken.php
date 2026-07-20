@@ -25,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $expires_at
  * @property Carbon|null $revoked_at
  */
-final class AccessToken extends Model implements EnvironmentOwned
+class AccessToken extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

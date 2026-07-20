@@ -14,7 +14,7 @@ use Illuminate\Contracts\Foundation\Application;
  * Deny-by-default: a hook point with no configured classes runs nothing, and a
  * configured entry that is not a real {@see Action} is dropped, never trusted.
  */
-final class ConfigActionRegistry implements ActionRegistry
+class ConfigActionRegistry implements ActionRegistry
 {
     public function __construct(private readonly Application $app) {}
 

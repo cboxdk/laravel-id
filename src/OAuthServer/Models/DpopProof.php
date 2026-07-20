@@ -16,7 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $jti
  * @property Carbon $expires_at
  */
-final class DpopProof extends Model
+class DpopProof extends Model
 {
     use HasUlids;
 

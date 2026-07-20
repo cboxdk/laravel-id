@@ -6,7 +6,7 @@ namespace Cbox\Id\Kernel\Audit\Exceptions;
 
 use RuntimeException;
 
-final class CannotCheckpointEmptyScope extends RuntimeException
+class CannotCheckpointEmptyScope extends RuntimeException
 {
     public static function make(string $scope): self
     {

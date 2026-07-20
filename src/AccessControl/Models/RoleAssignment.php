@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property GrantSource $source
  * @property string|null $source_ref
  */
-final class RoleAssignment extends Model implements EnvironmentOwned
+class RoleAssignment extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

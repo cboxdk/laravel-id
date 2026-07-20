@@ -24,7 +24,7 @@ use Illuminate\Support\Str;
  * Management calls that arrive without an ambient environment (issue/list/revoke
  * from the account console) run inside the target environment via {@see runAs}.
  */
-final class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
+class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
 {
     /**
      * Brand root `cbid` + plane marker `env`, so a leaked key is identifiable at a

@@ -14,7 +14,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Authenticates a SCIM request by its directory bearer token and stashes the
  * resolved directory on the request.
  */
-final class AuthenticateScim
+class AuthenticateScim
 {
     public function __construct(private readonly Directories $directories) {}
 

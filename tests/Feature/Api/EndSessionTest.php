@@ -68,6 +68,17 @@ it('identifies the client from the id_token_hint audience (no explicit client_id
     ]))->assertRedirect(POST_LOGOUT_URI);
 });
 
+it('honors an EXPIRED id_token_hint (identity, not liveness — OIDC RP-logout §4)', function (): void {
+    $client = logoutClient();
+
+    // id_tokens live ~15 min; a real logout usually happens after expiry. The hint
+    // must still identify the client so the RP gets its post-logout redirect.
+    $this->get('/oauth/logout?'.http_build_query([
+        'id_token_hint' => idTokenHint($client->client->client_id, ['iat' => time() - 7200, 'exp' => time() - 3600]),
+        'post_logout_redirect_uri' => POST_LOGOUT_URI,
+    ]))->assertRedirect(POST_LOGOUT_URI);
+});
+
 it('refuses to redirect to an unregistered uri (no open redirect)', function (): void {
     $client = logoutClient();
 

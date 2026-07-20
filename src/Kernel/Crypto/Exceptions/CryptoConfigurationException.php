@@ -6,7 +6,7 @@ namespace Cbox\Id\Kernel\Crypto\Exceptions;
 
 use RuntimeException;
 
-final class CryptoConfigurationException extends RuntimeException
+class CryptoConfigurationException extends RuntimeException
 {
     public static function missingKey(): self
     {

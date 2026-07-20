@@ -6,7 +6,7 @@ namespace Cbox\Id\Kernel\Crypto\Exceptions;
 
 use RuntimeException;
 
-final class DecryptionFailed extends RuntimeException
+class DecryptionFailed extends RuntimeException
 {
     public static function malformed(): self
     {

@@ -17,7 +17,7 @@ use Illuminate\Http\Response;
  * endpoint. Every operation is authenticated by the registration access token
  * issued at registration; the token scopes access to exactly one client.
  */
-final class RegisteredClientController
+class RegisteredClientController
 {
     public function __construct(private readonly DynamicClientRegistration $registrar) {}
 

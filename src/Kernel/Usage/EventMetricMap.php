@@ -12,7 +12,7 @@ use Cbox\Id\Kernel\Usage\Enums\UsageMetric;
  * (local analytics) AND by any downstream bridge that forwards the same events to
  * billing — so both meter the same events under the same shared vocabulary.
  */
-final class EventMetricMap
+class EventMetricMap
 {
     /**
      * @var array<string, UsageMetric>

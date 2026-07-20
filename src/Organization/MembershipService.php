@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  * kernel auto-fills `organization_id` and guarantees reads/writes never cross
  * into another org — the service dogfoods the isolation kernel.
  */
-final class MembershipService implements Memberships
+class MembershipService implements Memberships
 {
     public function __construct(
         private readonly TenantContext $tenant,

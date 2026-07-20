@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  * rather than deletes — anything the app stops declaring, so a bad deploy can't
  * silently revoke someone's access.
  */
-final class ManifestSyncService implements AppManifests
+class ManifestSyncService implements AppManifests
 {
     public function __construct(
         private readonly EventBus $events,

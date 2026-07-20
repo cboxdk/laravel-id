@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
  * `or` are out of scope and return null, so the caller surfaces `invalidFilter`
  * rather than silently mis-matching.
  */
-final readonly class ScimUserFilter
+readonly class ScimUserFilter
 {
     private const ATTRIBUTES = [
         'username' => 'resource->userName',

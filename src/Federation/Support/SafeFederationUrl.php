@@ -16,7 +16,7 @@ use Cbox\Ssrf\Exceptions\BlockedUrl;
  * cloud-metadata blocking, and DNS pinning — exactly like {@see SafeWebhookUrl},
  * keeping the platform's own on/off toggle so callers and their tests are unaffected.
  */
-final class SafeFederationUrl
+class SafeFederationUrl
 {
     public static function assert(string $url): void
     {

@@ -16,7 +16,7 @@ use Closure;
  * of a request or queued job. Suspension is reference-counted to support safe
  * nesting of {@see withoutScope()}.
  */
-final class TenantContextManager implements TenantContext
+class TenantContextManager implements TenantContext
 {
     private ?Tenant $current = null;
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Support;
 
-use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
+use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Http\Request;
@@ -22,11 +22,11 @@ use Illuminate\Http\Request;
  * verified in constant time by the {@see ClientRegistry}; public clients (no secret,
  * `none`) authenticate by `client_id` alone where the endpoint allows it.
  */
-final class ClientAuthenticator
+class ClientAuthenticator
 {
     public function __construct(
         private readonly ClientRegistry $clients,
-        private readonly ClientAssertionValidator $assertions,
+        private readonly ClientAssertion $assertions,
     ) {}
 
     /**
@@ -97,7 +97,7 @@ final class ClientAuthenticator
      */
     private function assertionClient(Request $request): ?Client
     {
-        if ($request->string('client_assertion_type')->toString() !== ClientAssertionValidator::ASSERTION_TYPE) {
+        if ($request->string('client_assertion_type')->toString() !== ClientAssertion::ASSERTION_TYPE) {
             return null;
         }
 

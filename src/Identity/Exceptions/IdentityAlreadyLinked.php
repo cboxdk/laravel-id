@@ -10,7 +10,7 @@ use RuntimeException;
  * Thrown when explicitly linking a provider identity that is already linked to a
  * DIFFERENT account. A given external identity can belong to exactly one subject.
  */
-final class IdentityAlreadyLinked extends RuntimeException
+class IdentityAlreadyLinked extends RuntimeException
 {
     public static function make(string $provider): self
     {

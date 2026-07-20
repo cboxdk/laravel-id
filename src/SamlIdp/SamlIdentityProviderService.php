@@ -32,7 +32,7 @@ use Throwable;
  * only ever minted for a registered, active SP, delivered only to that SP's
  * exact registered ACS, and (when required) only in answer to a signed request.
  */
-final class SamlIdentityProviderService implements SamlIdentityProvider
+class SamlIdentityProviderService implements SamlIdentityProvider
 {
     private const NS_PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
 

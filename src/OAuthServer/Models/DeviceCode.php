@@ -25,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_polled_at
  * @property Carbon $expires_at
  */
-final class DeviceCode extends Model implements EnvironmentOwned
+class DeviceCode extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

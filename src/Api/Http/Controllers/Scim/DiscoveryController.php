@@ -12,7 +12,7 @@ use Illuminate\Http\JsonResponse;
  * to learn what the server supports, so publishing them removes setup friction and
  * mis-detection.
  */
-final class DiscoveryController
+class DiscoveryController
 {
     /** RFC 7643 §4.3 Enterprise User extension schema URN. */
     private const ENTERPRISE_URN = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';

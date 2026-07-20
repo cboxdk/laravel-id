@@ -10,7 +10,7 @@ use RuntimeException;
  * A manifest URL was refused by the SSRF guard — it resolved to a private,
  * reserved, loopback, or cloud-metadata address, so the platform will not fetch it.
  */
-final class UnsafeManifestUrl extends RuntimeException
+class UnsafeManifestUrl extends RuntimeException
 {
     public static function make(string $reason): self
     {

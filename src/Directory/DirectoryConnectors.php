@@ -12,7 +12,7 @@ use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
  * The registry of API-pull directory connectors, keyed by provider. Deny-by-default:
  * a provider with no registered connector is refused, never silently skipped.
  */
-final class DirectoryConnectors
+class DirectoryConnectors
 {
     /** @var array<string, DirectoryConnector> */
     private array $connectors = [];

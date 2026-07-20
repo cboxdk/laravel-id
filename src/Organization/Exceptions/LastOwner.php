@@ -10,7 +10,7 @@ use RuntimeException;
  * Guards the invariant that an organization always has at least one owner: the
  * sole owner cannot be demoted or removed (that would orphan the org).
  */
-final class LastOwner extends RuntimeException
+class LastOwner extends RuntimeException
 {
     public static function make(string $organizationId): self
     {

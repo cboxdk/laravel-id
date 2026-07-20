@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $user_id
  * @property bool $active
  */
-final class DirectoryUser extends Model implements EnvironmentOwned
+class DirectoryUser extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

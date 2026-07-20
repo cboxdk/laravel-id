@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_synced_at
  * @property string|null $last_sync_error
  */
-final class Directory extends Model implements EnvironmentOwned
+class Directory extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

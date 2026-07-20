@@ -20,7 +20,7 @@ use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredClient;
 use Illuminate\Support\Facades\DB;
 
-final class ServiceAccountService implements ServiceAccounts
+class ServiceAccountService implements ServiceAccounts
 {
     public function __construct(
         private readonly ClientRegistry $clients,

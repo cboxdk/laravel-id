@@ -20,7 +20,7 @@ use Throwable;
  * unlicensed result (deny-by-default) with a logged reason, never an exception into
  * a request: an install with no/invalid key simply runs the free single-tenant tier.
  */
-final class LicenseState
+class LicenseState
 {
     private ?VerificationResult $result = null;
 

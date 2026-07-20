@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $expires_at
  * @property Carbon|null $revoked_at
  */
-final class Session extends Model implements EnvironmentOwned
+class Session extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

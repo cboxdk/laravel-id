@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * is visible on the model. Mutations are staged on the model; the caller persists.
  * Mirrors the proven laravel-siem breaker, on this module's own columns.
  */
-final class ConnectionCircuitBreaker
+class ConnectionCircuitBreaker
 {
     /** True while the breaker is open and its cooldown has not yet elapsed. */
     public function isOpen(ProvisioningConnection $connection): bool

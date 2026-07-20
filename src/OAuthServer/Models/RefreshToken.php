@@ -28,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $revoked_at
  * @property Carbon $expires_at
  */
-final class RefreshToken extends Model implements EnvironmentOwned
+class RefreshToken extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

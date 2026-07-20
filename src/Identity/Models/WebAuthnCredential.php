@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property array<int, string> $transports
  * @property string|null $name
  */
-final class WebAuthnCredential extends Model implements EnvironmentOwned
+class WebAuthnCredential extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

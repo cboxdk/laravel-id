@@ -30,7 +30,7 @@ use Illuminate\Support\Str;
  * veto throws {@see ActionDenied} before any `jti` is recorded — so a denied token
  * leaves no trace.
  */
-final class JwtTokenIssuer implements TokenIssuer
+class JwtTokenIssuer implements TokenIssuer
 {
     /**
      * Fallback access-token lifetime when none is configured. Short by design: the

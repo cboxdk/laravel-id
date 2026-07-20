@@ -11,7 +11,7 @@ use InvalidArgumentException;
  * referencing a permission it never declared. Rejected whole; a partial catalog is
  * never persisted.
  */
-final class InvalidManifest extends InvalidArgumentException
+class InvalidManifest extends InvalidArgumentException
 {
     public static function make(string $reason): self
     {

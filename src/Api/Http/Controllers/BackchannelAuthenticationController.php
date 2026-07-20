@@ -17,7 +17,7 @@ use Illuminate\Http\Request;
  * `login_hint`; the user approves out-of-band, and the client then polls the token
  * endpoint with the returned `auth_req_id`.
  */
-final class BackchannelAuthenticationController
+class BackchannelAuthenticationController
 {
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,

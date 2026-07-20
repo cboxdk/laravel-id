@@ -25,7 +25,7 @@ use Illuminate\Http\Response;
  * validates and maps SCIM; the directory read/query and provisioning is delegated
  * to the {@see DirectoryUsers} and {@see DirectorySync} contracts.
  */
-final class UserController
+class UserController
 {
     public function __construct(
         private readonly DirectoryUsers $users,
@@ -63,9 +63,19 @@ final class UserController
     public function replace(Request $request, string $id): JsonResponse
     {
         $directory = $this->directory($request);
+        $target = $this->users->find($directory, $id);
 
-        if ($this->users->find($directory, $id) === null) {
+        if ($target === null) {
             return $this->notFound();
+        }
+
+        // The URL identifies the resource; provisioning keys by externalId. A body
+        // whose externalId names a DIFFERENT resource must not be honored — otherwise
+        // `PUT /Users/A` with `externalId=B` would mutate/create B and leave A intact
+        // (an IDOR). Bind the replace to the located row: reject a mismatch.
+        $bodyExternalId = $request->string('externalId')->toString();
+        if ($bodyExternalId !== '' && $bodyExternalId !== $target->external_id) {
+            return $this->error('400', 'externalId does not match the target resource.', 'mutability');
         }
 
         // Full replace (PUT): re-provision from the submitted resource, keeping

@@ -10,7 +10,7 @@ use RuntimeException;
  * Thrown when a role operation targets a role that does not belong to the
  * organization it is scoped to — prevents cross-tenant policy tampering.
  */
-final class UnknownRole extends RuntimeException
+class UnknownRole extends RuntimeException
 {
     public static function make(string $roleId): self
     {

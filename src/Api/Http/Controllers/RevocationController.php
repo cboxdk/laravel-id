@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  * to invalidate. Per §2.2 the endpoint returns 200 regardless of whether the
  * token existed, so it is not an existence oracle.
  */
-final class RevocationController
+class RevocationController
 {
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,

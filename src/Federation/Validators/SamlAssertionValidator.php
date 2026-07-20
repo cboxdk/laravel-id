@@ -35,7 +35,7 @@ use Throwable;
  *
  * `$rawResponse` is the base64-encoded `SAMLResponse` as received at the ACS.
  */
-final class SamlAssertionValidator implements AssertionValidator
+class SamlAssertionValidator implements AssertionValidator
 {
     /** Common attribute names an IdP uses for email / display name. */
     private const EMAIL_CLAIMS = [

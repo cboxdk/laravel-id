@@ -13,7 +13,7 @@ use RuntimeException;
  * LogoutRequest is the security boundary for Single Logout, so an unverifiable one
  * is refused outright — never processed on trust. Never carries the raw payload.
  */
-final class InvalidLogoutRequest extends RuntimeException
+class InvalidLogoutRequest extends RuntimeException
 {
     public static function make(string $reason): self
     {

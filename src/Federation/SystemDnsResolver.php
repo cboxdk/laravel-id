@@ -11,7 +11,7 @@ use Cbox\Id\Federation\Contracts\DnsResolver;
  * Failures (NXDOMAIN, timeouts) return no records rather than throwing, so a
  * missing challenge record simply reads as "not verified".
  */
-final class SystemDnsResolver implements DnsResolver
+class SystemDnsResolver implements DnsResolver
 {
     public function txtRecords(string $host): array
     {

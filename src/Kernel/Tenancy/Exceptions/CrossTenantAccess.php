@@ -10,7 +10,7 @@ use RuntimeException;
  * Thrown when an operation would cross the tenant isolation boundary — e.g.
  * persisting a row for a tenant other than the one currently in context.
  */
-final class CrossTenantAccess extends RuntimeException
+class CrossTenantAccess extends RuntimeException
 {
     public static function forWrite(string $model, string $rowTenant, string $currentTenant): self
     {

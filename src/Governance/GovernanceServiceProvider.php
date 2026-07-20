@@ -10,7 +10,7 @@ use Cbox\Id\Governance\Contracts\SegregationOfDuties;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
-final class GovernanceServiceProvider extends ServiceProvider
+class GovernanceServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

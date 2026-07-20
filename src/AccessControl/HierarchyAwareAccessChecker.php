@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
  * Resolves RBAC permissions across the org and its ancestors, so a role granted
  * at a reseller/parent rolls down to the descendants it manages.
  */
-final class HierarchyAwareAccessChecker implements AccessChecker
+class HierarchyAwareAccessChecker implements AccessChecker
 {
     public function __construct(private readonly OrganizationHierarchy $hierarchy) {}
 

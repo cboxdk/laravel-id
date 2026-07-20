@@ -35,7 +35,7 @@ use Illuminate\Support\Str;
  *  - ACCOUNTABLE — store / rotate / revoke / grant / lease are all recorded on the
  *    hash-chained audit trail, with the acting client and the stated purpose.
  */
-final class DatabaseSecretVault implements SecretVault
+class DatabaseSecretVault implements SecretVault
 {
     public function __construct(
         private readonly SecretBox $secretBox,

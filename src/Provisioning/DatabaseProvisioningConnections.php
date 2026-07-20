@@ -16,7 +16,7 @@ use Cbox\Id\Provisioning\ValueObjects\RegisteredConnection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
-final class DatabaseProvisioningConnections implements ProvisioningConnections
+class DatabaseProvisioningConnections implements ProvisioningConnections
 {
     public function __construct(
         private readonly SecretBox $secretBox,

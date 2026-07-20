@@ -23,7 +23,7 @@ use Illuminate\Contracts\Cache\Repository as Cache;
  * org's current version, so a write (which increments the version) simply routes
  * the next read to a fresh key — atomic, and correct even across cache nodes.
  */
-final class CachedEntitlements implements EntitlementReader, EntitlementWriter
+class CachedEntitlements implements EntitlementReader, EntitlementWriter
 {
     /** A backstop TTL; correctness comes from the version bump, not expiry. */
     private const TTL_SECONDS = 300;

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
  * single `and`/`or` in {@see ScimUserFilter}. Each clause applies itself with an
  * explicit boolean so the compound query nests correctly.
  */
-final readonly class ScimFilterClause
+readonly class ScimFilterClause
 {
     public function __construct(
         public string $column,
@@ -35,7 +35,9 @@ final readonly class ScimFilterClause
             'eq' => $this->column === 'active'
                 ? $query->where('active', '=', filter_var($value, FILTER_VALIDATE_BOOLEAN), $boolean)
                 : $query->where($this->column, '=', $value, $boolean),
-            'ne' => $query->where($this->column, '!=', $value, $boolean),
+            'ne' => $this->column === 'active'
+                ? $query->where('active', '!=', filter_var($value, FILTER_VALIDATE_BOOLEAN), $boolean)
+                : $query->where($this->column, '!=', $value, $boolean),
             'co' => $query->where($this->column, 'like', '%'.$like.'%', $boolean),
             'sw' => $query->where($this->column, 'like', $like.'%', $boolean),
             'ew' => $query->where($this->column, 'like', '%'.$like, $boolean),

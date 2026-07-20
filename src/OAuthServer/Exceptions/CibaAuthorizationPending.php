@@ -6,4 +6,4 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class CibaAuthorizationPending extends RuntimeException {}
+class CibaAuthorizationPending extends RuntimeException {}

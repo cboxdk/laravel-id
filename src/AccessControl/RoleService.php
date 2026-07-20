@@ -17,7 +17,7 @@ use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Illuminate\Support\Facades\DB;
 
-final class RoleService implements Roles
+class RoleService implements Roles
 {
     public function __construct(
         private readonly EventBus $events,

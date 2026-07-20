@@ -31,4 +31,15 @@ interface TokenSigner
      * @throws InvalidToken
      */
     public function verify(string $jwt, array $allowed): TokenClaims;
+
+    /**
+     * Like {@see verify()} but does NOT enforce `exp` — for a token used as proof of
+     * IDENTITY rather than liveness (e.g. an OIDC `id_token_hint` at logout, which is
+     * routinely already expired). Signature + algorithm pinning are unchanged.
+     *
+     * @param  list<SigningAlg>  $allowed  at least one algorithm; an empty list is rejected
+     *
+     * @throws InvalidToken
+     */
+    public function verifyIgnoringExpiry(string $jwt, array $allowed): TokenClaims;
 }

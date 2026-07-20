@@ -17,7 +17,7 @@ use Throwable;
  * hand-copying that causes misconfiguration. Public by design: metadata is not
  * secret and contains no credentials.
  */
-final class SamlMetadataController
+class SamlMetadataController
 {
     public function __construct(private readonly Connections $connections) {}
 

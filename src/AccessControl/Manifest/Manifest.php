@@ -10,7 +10,7 @@ namespace Cbox\Id\AccessControl\Manifest;
  * `/.well-known/cbox-authz` document, a management-API POST, or manual console
  * entry, it lands here as a {@see Manifest} and is synced identically.
  */
-final readonly class Manifest
+readonly class Manifest
 {
     /**
      * @param  list<DeclaredPermission>  $permissions

@@ -6,7 +6,7 @@ namespace Cbox\Id\Governance\Exceptions;
 
 use RuntimeException;
 
-final class UnknownCertificationItem extends RuntimeException
+class UnknownCertificationItem extends RuntimeException
 {
     public static function forId(string $itemId): self
     {

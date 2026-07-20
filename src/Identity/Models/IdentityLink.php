@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $connection_id
  * @property array<string, mixed> $raw
  */
-final class IdentityLink extends Model implements EnvironmentOwned
+class IdentityLink extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

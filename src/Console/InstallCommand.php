@@ -28,7 +28,7 @@ use function Laravel\Prompts\warning;
  * signing key. You should be able to go from a fresh app to a working identity
  * platform without knowing the internals — that's the whole point.
  */
-final class InstallCommand extends Command
+class InstallCommand extends Command
 {
     protected $signature = 'cbox-id:install';
 

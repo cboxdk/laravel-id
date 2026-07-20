@@ -25,7 +25,7 @@ use Throwable;
  * has no matching key and is rejected — the algorithm is never trusted from the
  * token header.
  */
-final class JwtTokenSigner implements TokenSigner
+class JwtTokenSigner implements TokenSigner
 {
     public function __construct(
         private readonly KeyManager $keys,
@@ -53,6 +53,27 @@ final class JwtTokenSigner implements TokenSigner
 
     public function verify(string $jwt, array $allowed): TokenClaims
     {
+        return $this->decode($jwt, $allowed, ignoreExpiry: false);
+    }
+
+    /**
+     * Verify signature + algorithm but NOT `exp` — for cases where the token is used
+     * as a proof of IDENTITY, not liveness (e.g. an OIDC `id_token_hint` at logout,
+     * which is routinely already expired). Signature/alg pinning is unchanged, so a
+     * forged token is still rejected; only the expiry clock is ignored.
+     */
+    public function verifyIgnoringExpiry(string $jwt, array $allowed): TokenClaims
+    {
+        return $this->decode($jwt, $allowed, ignoreExpiry: true);
+    }
+
+    /**
+     * @param  list<SigningAlg>  $allowed
+     *
+     * @throws InvalidToken
+     */
+    private function decode(string $jwt, array $allowed, bool $ignoreExpiry): TokenClaims
+    {
         if ($allowed === []) {
             throw InvalidToken::emptyAllowList();
         }
@@ -73,10 +94,20 @@ final class JwtTokenSigner implements TokenSigner
             $keySet[$candidate->kid] = new Key($candidate->public_key, $candidate->alg->value);
         }
 
+        // firebase has no per-call "ignore exp" flag — only the static leeway. Set it
+        // wide enough to cover any expiry, then restore it in `finally` so the global
+        // is never left mutated (signature verification is unaffected by leeway).
+        $previousLeeway = JWT::$leeway;
+        if ($ignoreExpiry) {
+            JWT::$leeway = 315_360_000; // ~10 years
+        }
+
         try {
             $decoded = JWT::decode($jwt, $keySet);
         } catch (Throwable $exception) {
             throw InvalidToken::verificationFailed($exception->getMessage());
+        } finally {
+            JWT::$leeway = $previousLeeway;
         }
 
         // JWT payload keys are always strings (JSON object members).

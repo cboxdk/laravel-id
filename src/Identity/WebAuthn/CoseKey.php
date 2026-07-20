@@ -14,7 +14,7 @@ use Cbox\Id\Identity\Exceptions\UnsupportedCredential;
  * Supported key types: EC2 / P-256 (ES256, `alg -7`) and RSA (RS256, `alg -257`),
  * which together cover Apple, Android, Windows Hello and the major security keys.
  */
-final class CoseKey
+class CoseKey
 {
     // COSE key-type and algorithm identifiers (RFC 8152 / IANA COSE registry).
     private const KTY_EC2 = 2;

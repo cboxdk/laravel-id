@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $root_hash
  * @property string $signature
  */
-final class AuditCheckpoint extends Model
+class AuditCheckpoint extends Model
 {
     use HasUlids;
 

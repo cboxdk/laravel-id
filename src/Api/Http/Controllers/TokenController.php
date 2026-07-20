@@ -43,7 +43,7 @@ use Illuminate\Http\Request;
  * signed by the Crypto kernel. Tokens can be audience-bound via the RFC 8707
  * `resource` parameter.
  */
-final class TokenController
+class TokenController
 {
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,
@@ -347,22 +347,26 @@ final class TokenController
         }
 
         try {
-            $issued = $this->exchange->exchange($client, new TokenExchangeRequest(
+            $result = $this->exchange->exchange($client, new TokenExchangeRequest(
                 subjectToken: $subjectToken,
                 subjectTokenType: $subjectTokenType,
                 requestedScopes: $this->scopes($request),
                 resource: $this->resource($request),
                 dpopJkt: $dpopJkt,
+                requestedTokenType: $request->string('requested_token_type')->toString() ?: null,
             ));
         } catch (InvalidTokenExchange $e) {
             return $this->error($e->error, 400);
         }
 
         return new JsonResponse([
-            'access_token' => $issued->token,
+            'access_token' => $result->token->token,
             'issued_token_type' => TokenExchangeRequest::ACCESS_TOKEN_TYPE,
-            'token_type' => $issued->tokenType,
-            'expires_in' => $issued->expiresIn,
+            'token_type' => $result->token->tokenType,
+            'expires_in' => $result->token->expiresIn,
+            // RFC 8693 §2.2.1: echo the granted scope (REQUIRED when it differs from
+            // the request — e.g. an empty request that inherited the subject scopes).
+            'scope' => implode(' ', $result->scopes),
         ]);
     }
 

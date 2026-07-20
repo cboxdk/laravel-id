@@ -9,7 +9,7 @@ namespace Cbox\Id\AccessControl\Manifest;
  * permission keys it grants. The app owns what the role means; Cbox ID only assigns
  * it to people and stamps it into their token.
  */
-final readonly class DeclaredRole
+readonly class DeclaredRole
 {
     /**
      * @param  list<string>  $permissions  Permission keys this role grants.

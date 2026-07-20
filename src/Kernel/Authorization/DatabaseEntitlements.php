@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * Database-backed entitlement projection. Reads and writes the current state;
  * every write is versioned, appended to history, emitted as an event and audited.
  */
-final class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
+class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
 {
     public function __construct(
         private readonly TenantContext $tenant,

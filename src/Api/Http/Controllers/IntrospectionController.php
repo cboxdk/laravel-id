@@ -15,7 +15,7 @@ use Illuminate\Http\Request;
  * protected: the caller must authenticate as a registered client (RFC 7662 §2.1),
  * otherwise it becomes an open oracle for probing token validity.
  */
-final class IntrospectionController
+class IntrospectionController
 {
     public function __construct(private readonly ClientAuthenticator $clientAuth) {}
 
@@ -53,13 +53,21 @@ final class IntrospectionController
     {
         $claims = $result->claims;
 
+        $thumbprint = $result->confirmationThumbprint();
+
         $body = [
             'active' => true,
             'sub' => $result->subject,
             'client_id' => $result->clientId,
             'scope' => implode(' ', $result->scopes),
-            'token_type' => $result->confirmationThumbprint() !== null ? 'DPoP' : 'Bearer',
+            'token_type' => $thumbprint !== null ? 'DPoP' : 'Bearer',
         ];
+
+        // A sender-constrained (DPoP) token carries its confirmation thumbprint so an
+        // introspecting resource server can enforce the binding (RFC 9449 §8 / RFC 7662).
+        if ($thumbprint !== null) {
+            $body['cnf'] = ['jkt' => $thumbprint];
+        }
 
         foreach (['exp', 'iat', 'nbf'] as $timestamp) {
             if (is_numeric($claims[$timestamp] ?? null)) {

@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $confirmed_at
  * @property int|null $last_used_step
  */
-final class MfaFactor extends Model implements EnvironmentOwned
+class MfaFactor extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
@@ -18,7 +20,7 @@ use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Illuminate\Support\ServiceProvider;
 
-final class OAuthServerServiceProvider extends ServiceProvider
+class OAuthServerServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
@@ -41,6 +43,7 @@ final class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(DeviceAuthorization::class, DeviceAuthorizationService::class);
         $this->app->singleton(BackchannelAuthentication::class, CibaAuthenticationService::class);
         $this->app->singleton(EndSession::class, EndSessionService::class);
+        $this->app->singleton(ClientAssertion::class, ClientAssertionValidator::class);
 
         // The /oauth/token endpoint (authorization_code + PKCE, client_credentials)
         // lives in the Api layer. The browser consent screen lands with the SaaS app.

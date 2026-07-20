@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $name
  * @property Carbon|null $created_at
  */
-final class AccountWebAuthnCredential extends Model
+class AccountWebAuthnCredential extends Model
 {
     use HasUlids;
 

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  * ("pushed") assignments in sync with group membership. Manual/system assignments
  * are never touched, so an admin's hand-granted role always survives a directory sync.
  */
-final class DatabaseGroupRoleMappings implements GroupRoleMappings
+class DatabaseGroupRoleMappings implements GroupRoleMappings
 {
     public function __construct(private readonly Roles $roles) {}
 

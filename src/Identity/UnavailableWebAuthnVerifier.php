@@ -15,7 +15,7 @@ use RuntimeException;
  * MUST wrap a vetted library (e.g. web-auth/webauthn-lib), so the platform does
  * not ship a hand-rolled default.
  */
-final class UnavailableWebAuthnVerifier implements WebAuthnVerifier
+class UnavailableWebAuthnVerifier implements WebAuthnVerifier
 {
     public function verifyRegistration(string $challenge, string $clientResponseJson): VerifiedRegistration
     {

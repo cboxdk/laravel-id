@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * @property int $session_version
  * @property Carbon|null $last_login_at
  */
-final class AccountMember extends Model
+class AccountMember extends Model
 {
     use HasUlids;
 

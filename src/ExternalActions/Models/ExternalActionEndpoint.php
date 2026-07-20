@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $secret_encrypted
  * @property ActionEndpointStatus $status
  */
-final class ExternalActionEndpoint extends Model implements EnvironmentOwned
+class ExternalActionEndpoint extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

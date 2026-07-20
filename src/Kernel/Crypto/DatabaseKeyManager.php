@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 /**
  * Stores signing keys in the database; private keys sealed via {@see SecretBox}.
  */
-final class DatabaseKeyManager implements KeyManager
+class DatabaseKeyManager implements KeyManager
 {
     public function __construct(private readonly SecretBox $secretBox) {}
 

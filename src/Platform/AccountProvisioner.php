@@ -35,7 +35,7 @@ use Illuminate\Support\Str;
  * Everything is one transaction: a failed step never leaves a half-born account or a
  * routable-but-orphaned environment.
  */
-final class AccountProvisioner
+class AccountProvisioner
 {
     public function __construct(
         private readonly EnvironmentContext $context,

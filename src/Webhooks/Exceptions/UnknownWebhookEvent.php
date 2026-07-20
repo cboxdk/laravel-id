@@ -13,7 +13,7 @@ use InvalidArgumentException;
  * Subscriptions are deny-by-default so a typo is caught at registration, not left
  * to surface as silently-missing deliveries.
  */
-final class UnknownWebhookEvent extends InvalidArgumentException
+class UnknownWebhookEvent extends InvalidArgumentException
 {
     public static function forType(string $eventType): self
     {

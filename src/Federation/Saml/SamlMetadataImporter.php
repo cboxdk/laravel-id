@@ -25,7 +25,7 @@ use Throwable;
  * ({@see SafeFederationUrl}, DNS-pinned) as every other admin-configured IdP URL —
  * a metadata URL cannot be aimed at the cloud metadata endpoint or an internal host.
  */
-final class SamlMetadataImporter
+class SamlMetadataImporter
 {
     public function fromXml(string $xml): ImportedIdpMetadata
     {

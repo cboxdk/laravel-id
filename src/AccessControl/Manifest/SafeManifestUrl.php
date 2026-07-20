@@ -15,7 +15,7 @@ use Cbox\Ssrf\Exceptions\BlockedUrl;
  * scheme/credential checks, dual-stack resolution, private/reserved/cloud-metadata
  * blocking, and DNS pinning — exactly like {@see SafeFederationUrl}.
  */
-final class SafeManifestUrl
+class SafeManifestUrl
 {
     /**
      * Validate the URL and return Guzzle options pinning the connection to the exact

@@ -10,7 +10,7 @@ use Illuminate\Http\JsonResponse;
 /**
  * `GET /.well-known/openid-configuration` — OIDC discovery document.
  */
-final class DiscoveryController
+class DiscoveryController
 {
     public function __invoke(): JsonResponse
     {

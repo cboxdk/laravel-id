@@ -28,7 +28,7 @@ use Throwable;
  * `external_actions.fail_open`); the transport enforces the same policy for external
  * calls internally.
  */
-final class DefaultActionPipeline implements ActionPipeline
+class DefaultActionPipeline implements ActionPipeline
 {
     public function __construct(
         private readonly ActionRegistry $registry,

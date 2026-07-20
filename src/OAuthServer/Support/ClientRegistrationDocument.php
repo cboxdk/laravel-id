@@ -12,7 +12,7 @@ use Cbox\Id\OAuthServer\Models\Client;
  * Secrets (client_secret, registration_access_token) are added by the caller and
  * only on creation — this document is safe to return on every read.
  */
-final class ClientRegistrationDocument
+class ClientRegistrationDocument
 {
     /**
      * @return array<string, mixed>

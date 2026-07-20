@@ -12,7 +12,7 @@ use InvalidArgumentException;
  * domain or its subdomains), or one already claimed by another environment.
  * Deny-by-default — the IdP never advertises an issuer host it has not validated.
  */
-final class InvalidCustomDomain extends InvalidArgumentException
+class InvalidCustomDomain extends InvalidArgumentException
 {
     public static function malformed(string $domain): self
     {

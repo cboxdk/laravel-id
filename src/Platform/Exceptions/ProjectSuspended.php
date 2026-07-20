@@ -11,7 +11,7 @@ use RuntimeException;
  * project that is not active — its own billing/plan state has suspended it. The
  * defence-in-depth guard on the write path, alongside {@see AccountSuspended}.
  */
-final class ProjectSuspended extends RuntimeException
+class ProjectSuspended extends RuntimeException
 {
     public static function make(string $projectId): self
     {

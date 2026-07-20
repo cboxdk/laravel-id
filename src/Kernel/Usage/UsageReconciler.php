@@ -28,7 +28,7 @@ use Cbox\Id\Organization\Enums\MembershipStatus;
  * correction out to downstream stores (billing), so both converge on truth. Every
  * reconciliation with a non-zero drift is recorded in the tamper-evident audit log.
  */
-final class UsageReconciler
+class UsageReconciler
 {
     public function __construct(
         private readonly Memberships $memberships,

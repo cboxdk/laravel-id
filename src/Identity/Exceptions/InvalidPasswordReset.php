@@ -6,7 +6,7 @@ namespace Cbox\Id\Identity\Exceptions;
 
 use RuntimeException;
 
-final class InvalidPasswordReset extends RuntimeException
+class InvalidPasswordReset extends RuntimeException
 {
     public static function make(): self
     {

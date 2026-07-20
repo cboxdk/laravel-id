@@ -16,7 +16,7 @@ use Cbox\Id\Kernel\Tenancy\GenericTenant;
  * expanded at most once — a crafted dense/cyclic graph resolves in O(V+E)
  * rather than exploding combinatorially (the depth cap is a secondary guard).
  */
-final class DatabaseRelationshipStore implements RelationshipStore
+class DatabaseRelationshipStore implements RelationshipStore
 {
     private const MAX_DEPTH = 12;
 

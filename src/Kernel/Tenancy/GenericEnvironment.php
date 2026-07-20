@@ -12,7 +12,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\Environment;
  * payload) and don't need the full Environment model. The Environment model is
  * the production implementation.
  */
-final readonly class GenericEnvironment implements Environment
+readonly class GenericEnvironment implements Environment
 {
     public function __construct(private string $key) {}
 

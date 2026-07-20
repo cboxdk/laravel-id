@@ -16,7 +16,7 @@ use Illuminate\Console\Command;
  * every 90 days and retire `Rotating` keys older than the longest token TTL, so a
  * compromised or simply aged key stops signing without breaking in-flight tokens.
  */
-final class RotateKeysCommand extends Command
+class RotateKeysCommand extends Command
 {
     protected $signature = 'cbox-id:keys:rotate {--alg=RS256 : Signing algorithm (RS256|ES256|EdDSA)} {--retire-after= : Retire Rotating keys older than this many hours}';
 

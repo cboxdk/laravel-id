@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $confirmed_at
  * @property int|null $last_used_step
  */
-final class OperatorMfaFactor extends Model
+class OperatorMfaFactor extends Model
 {
     use HasUlids;
 

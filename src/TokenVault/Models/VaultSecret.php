@@ -36,7 +36,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $revoked_at
  * @property Carbon|null $rotated_at
  */
-final class VaultSecret extends Model implements EnvironmentOwned
+class VaultSecret extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

@@ -12,7 +12,7 @@ use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Contracts\DirectoryUsers;
 use Illuminate\Support\ServiceProvider;
 
-final class DirectoryServiceProvider extends ServiceProvider
+class DirectoryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

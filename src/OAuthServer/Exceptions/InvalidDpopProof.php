@@ -6,7 +6,7 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class InvalidDpopProof extends RuntimeException
+class InvalidDpopProof extends RuntimeException
 {
     public static function make(string $reason): self
     {

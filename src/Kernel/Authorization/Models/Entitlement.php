@@ -28,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $effective_at
  * @property Carbon|null $expires_at
  */
-final class Entitlement extends Model implements EnvironmentOwned, TenantOwned
+class Entitlement extends Model implements EnvironmentOwned, TenantOwned
 {
     use BelongsToEnvironment;
     use BelongsToTenant;

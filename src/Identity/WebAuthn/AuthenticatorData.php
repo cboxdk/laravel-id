@@ -17,7 +17,7 @@ use Throwable;
  * This is fixed-layout binary parsing, not cryptography. The embedded credential
  * public key (COSE) is decoded with the vetted CBOR library.
  */
-final readonly class AuthenticatorData
+readonly class AuthenticatorData
 {
     private const FLAG_USER_PRESENT = 0x01;
 

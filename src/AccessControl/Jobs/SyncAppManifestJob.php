@@ -22,7 +22,7 @@ use Throwable;
  * is never crossed. A failure for one app is reported and swallowed — it never
  * blocks another app's sync.
  */
-final class SyncAppManifestJob implements ShouldQueue
+class SyncAppManifestJob implements ShouldQueue
 {
     use Dispatchable;
     use InteractsWithQueue;

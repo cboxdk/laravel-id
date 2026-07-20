@@ -29,7 +29,7 @@ use Throwable;
  * `none` and self-attestation `packed`; any other format is rejected rather than
  * trusted (a caller wanting full attestation-chain validation binds its own).
  */
-final class NativeWebAuthnVerifier implements WebAuthnVerifier
+class NativeWebAuthnVerifier implements WebAuthnVerifier
 {
     public function __construct(
         private readonly string $rpId,

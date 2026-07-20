@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  * metered exactly once: an `insertOrIgnore` into `usage_metered_events` keyed on the
  * event id is the guard — only the first delivery (the insert that took) records.
  */
-final class RecordUsageOnDomainEvent
+class RecordUsageOnDomainEvent
 {
     public function __construct(private readonly UsageMeter $meter) {}
 

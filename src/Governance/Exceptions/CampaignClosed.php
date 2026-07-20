@@ -10,7 +10,7 @@ use RuntimeException;
  * A certify/revoke decision was attempted on a campaign that is already closed —
  * decisions are only accepted while the campaign is open.
  */
-final class CampaignClosed extends RuntimeException
+class CampaignClosed extends RuntimeException
 {
     public static function forId(string $campaignId): self
     {

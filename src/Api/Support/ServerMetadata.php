@@ -12,7 +12,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
  * Server Metadata endpoint (RFC 8414, `/.well-known/oauth-authorization-server`)
  * that MCP clients fetch. Both serve the same document.
  */
-final class ServerMetadata
+class ServerMetadata
 {
     public static function issuer(): string
     {
@@ -46,8 +46,6 @@ final class ServerMetadata
             'backchannel_authentication_endpoint' => $issuer.'/oauth/backchannel_authentication',
             'backchannel_token_delivery_modes_supported' => ['poll'],
             'backchannel_user_code_parameter_supported' => false,
-            // RFC 9207: the authorization response carries `iss` (mix-up defense).
-            'authorization_response_iss_parameter_supported' => true,
             'response_types_supported' => ['code'],
             // Code flow delivers the response on the redirect query; fragment is also
             // valid. The interactive /authorize endpoint (host-owned) drives these.
@@ -85,6 +83,11 @@ final class ServerMetadata
 
         if (is_string($authorizationEndpoint) && $authorizationEndpoint !== '') {
             $document['authorization_endpoint'] = $authorizationEndpoint;
+            // RFC 9207 (`iss` on the authorization response, a mix-up defense) is a
+            // property of that host-owned /authorize endpoint — only claim it when the
+            // endpoint exists, so a mix-up-hardened client isn't promised an `iss` the
+            // framework can't guarantee the host appends.
+            $document['authorization_response_iss_parameter_supported'] = true;
         }
 
         // Advertise DCR only when it is actually enabled.

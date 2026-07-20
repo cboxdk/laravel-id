@@ -12,7 +12,7 @@ use RuntimeException;
  * requests to loopback, private, link-local or reserved addresses (SSRF defense,
  * e.g. cloud metadata at 169.254.169.254).
  */
-final class UnsafeFederationUrl extends RuntimeException
+class UnsafeFederationUrl extends RuntimeException
 {
     public static function make(string $reason): self
     {

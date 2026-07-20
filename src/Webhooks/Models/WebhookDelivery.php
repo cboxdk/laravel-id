@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $next_retry_at
  * @property Carbon|null $delivered_at
  */
-final class WebhookDelivery extends Model implements EnvironmentOwned
+class WebhookDelivery extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

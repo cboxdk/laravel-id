@@ -11,14 +11,16 @@ use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\ValueObjects\Introspection;
 use Throwable;
 
-final class JwtTokenIntrospector implements TokenIntrospector
+class JwtTokenIntrospector implements TokenIntrospector
 {
     public function __construct(private readonly TokenSigner $signer) {}
 
     public function introspect(string $token): Introspection
     {
         try {
-            $claims = $this->signer->verify($token, [SigningAlg::RS256, SigningAlg::ES256]);
+            // Accept every alg the metadata advertises for signing (RS256/ES256/EdDSA),
+            // so an EdDSA-signed token isn't silently un-introspectable/un-exchangeable.
+            $claims = $this->signer->verify($token, [SigningAlg::RS256, SigningAlg::ES256, SigningAlg::EdDSA]);
         } catch (Throwable) {
             return Introspection::inactive();
         }

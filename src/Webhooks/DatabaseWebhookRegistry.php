@@ -15,7 +15,7 @@ use Cbox\Id\Webhooks\ValueObjects\RegisteredEndpoint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
-final class DatabaseWebhookRegistry implements WebhookRegistry
+class DatabaseWebhookRegistry implements WebhookRegistry
 {
     public function __construct(private readonly SecretBox $secretBox) {}
 

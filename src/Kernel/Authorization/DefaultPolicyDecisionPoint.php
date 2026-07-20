@@ -16,7 +16,7 @@ use Cbox\Id\Kernel\Authorization\ValueObjects\Subject;
  * Deny-by-default decision point over the relationship store and entitlement
  * projection. The only source of "allow" is an explicit relationship grant.
  */
-final class DefaultPolicyDecisionPoint implements PolicyDecisionPoint
+class DefaultPolicyDecisionPoint implements PolicyDecisionPoint
 {
     public function __construct(
         private readonly RelationshipStore $relationships,

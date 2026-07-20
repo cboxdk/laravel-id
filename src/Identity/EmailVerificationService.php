@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Illuminate\Support\Facades\DB;
 
-final class EmailVerificationService implements EmailVerification
+class EmailVerificationService implements EmailVerification
 {
     private const TTL_MINUTES = 1440; // 24 hours
 

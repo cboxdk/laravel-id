@@ -11,4 +11,4 @@ use RuntimeException;
  * The endpoint is client-authenticated, so surfacing this (as the CIBA-spec
  * `unknown_user_id` error) leaks existence only to already-trusted clients.
  */
-final class UnknownUserHint extends RuntimeException {}
+class UnknownUserHint extends RuntimeException {}

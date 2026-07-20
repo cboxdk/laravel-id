@@ -11,7 +11,7 @@ use RuntimeException;
  * beneath itself or beneath one of its own descendants (that would loop the
  * management tree).
  */
-final class CannotReparent extends RuntimeException
+class CannotReparent extends RuntimeException
 {
     public static function intoOwnSubtree(string $organizationId, string $parentId): self
     {

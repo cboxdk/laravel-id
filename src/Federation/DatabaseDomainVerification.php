@@ -19,7 +19,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
  * scope (the model is environment-owned), so a domain verified in one environment
  * never routes a login in another.
  */
-final class DatabaseDomainVerification implements DomainVerification
+class DatabaseDomainVerification implements DomainVerification
 {
     public function __construct(
         private readonly DnsResolver $dns,

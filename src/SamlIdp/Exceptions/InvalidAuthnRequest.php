@@ -13,7 +13,7 @@ use RuntimeException;
  * unknown signature algorithm, or a signature that fails to verify. Never carries
  * the raw request payload.
  */
-final class InvalidAuthnRequest extends RuntimeException
+class InvalidAuthnRequest extends RuntimeException
 {
     public static function make(string $reason): self
     {

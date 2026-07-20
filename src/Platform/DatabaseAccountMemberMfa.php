@@ -22,7 +22,7 @@ use Cbox\Id\Platform\Models\AccountMfaRecoveryCode;
  * {@see TotpAuthenticator}, {@see SecretBox} for sealing secrets, the recovery-code
  * formatting trait — so the planes can't drift on the security-relevant parts.
  */
-final class DatabaseAccountMemberMfa implements AccountMemberMfa
+class DatabaseAccountMemberMfa implements AccountMemberMfa
 {
     use FormatsRecoveryCodes;
 

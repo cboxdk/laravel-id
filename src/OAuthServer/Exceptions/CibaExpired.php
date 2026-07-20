@@ -6,4 +6,4 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class CibaExpired extends RuntimeException {}
+class CibaExpired extends RuntimeException {}

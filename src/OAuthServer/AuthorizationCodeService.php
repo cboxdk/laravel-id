@@ -11,7 +11,7 @@ use Cbox\Id\OAuthServer\Models\AuthorizationCode;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Illuminate\Support\Facades\DB;
 
-final class AuthorizationCodeService implements AuthorizationCodes
+class AuthorizationCodeService implements AuthorizationCodes
 {
     private const TTL_SECONDS = 60;
 

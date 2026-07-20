@@ -22,7 +22,7 @@ use Throwable;
  * optional `customer_id` (default `my_customer`). Read-only scope; suspended Google
  * accounts arrive inactive so the reconciliation deprovisions them.
  */
-final class GoogleWorkspaceConnector implements DirectoryConnector
+class GoogleWorkspaceConnector implements DirectoryConnector
 {
     private const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 

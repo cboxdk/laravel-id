@@ -11,7 +11,7 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Illuminate\Support\Str;
 
-final class ConnectionService implements Connections
+class ConnectionService implements Connections
 {
     public function __construct(private readonly SecretBox $secretBox) {}
 

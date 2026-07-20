@@ -18,7 +18,7 @@ use Illuminate\Http\Response;
  * `LogoutResponse` redirect back to the IdP. Unauthenticated by design — the
  * message signature is the authentication.
  */
-final class SamlLogoutController
+class SamlLogoutController
 {
     public function __construct(
         private readonly Connections $connections,

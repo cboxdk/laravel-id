@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
  * Eloquent-backed projects. No environment scope is ever applied — a project owns
  * environments, it does not live inside one — so these queries are global.
  */
-final class DatabaseProjects implements Projects
+class DatabaseProjects implements Projects
 {
     public function find(string $id): ?Project
     {

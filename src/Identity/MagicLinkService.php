@@ -15,7 +15,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Illuminate\Support\Facades\DB;
 
-final class MagicLinkService implements MagicLink
+class MagicLinkService implements MagicLink
 {
     private const TTL_MINUTES = 15;
 

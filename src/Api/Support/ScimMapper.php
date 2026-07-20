@@ -13,7 +13,7 @@ use Illuminate\Http\Request;
  * Translates between the SCIM 2.0 User schema on the wire and the platform's
  * {@see ScimUser} value object / {@see DirectoryUser} model.
  */
-final class ScimMapper
+class ScimMapper
 {
     /**
      * RFC 7643 §4.3 Enterprise User extension schema URN. Aliased to the shared

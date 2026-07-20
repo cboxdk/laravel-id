@@ -9,7 +9,7 @@ use Illuminate\Http\JsonResponse;
 /**
  * `GET /up` — liveness probe used by deployments and the DAST pipeline.
  */
-final class HealthController
+class HealthController
 {
     public function __invoke(): JsonResponse
     {

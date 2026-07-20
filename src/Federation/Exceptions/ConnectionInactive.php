@@ -6,7 +6,7 @@ namespace Cbox\Id\Federation\Exceptions;
 
 use RuntimeException;
 
-final class ConnectionInactive extends RuntimeException
+class ConnectionInactive extends RuntimeException
 {
     public static function make(string $connectionId): self
     {

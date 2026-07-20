@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $created_by
  * @property Carbon|null $closed_at
  */
-final class CertificationCampaign extends Model implements EnvironmentOwned
+class CertificationCampaign extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

@@ -17,7 +17,7 @@ use Cbox\Id\Organization\ValueObjects\DomainChallenge;
  * success the domain is promoted to the `domain` column (the issuer host) and the
  * pending state cleared. TLS is out of scope by design — see {@see EnvironmentDomains}.
  */
-final class EnvironmentDomainService implements EnvironmentDomains
+class EnvironmentDomainService implements EnvironmentDomains
 {
     private const SETTINGS_KEY = 'custom_domain';
 
@@ -81,6 +81,8 @@ final class EnvironmentDomainService implements EnvironmentDomains
         unset($settings[self::SETTINGS_KEY]);
         $environment->settings = $settings;
         $environment->domain = $pending['domain'];
+        // Stamp the proof: the issuer resolver trusts a custom domain ONLY when this is set.
+        $environment->domain_verified_at = now();
         $environment->save();
 
         return $this->toChallenge($pending['domain'], $pending['token'], verified: true);
@@ -94,6 +96,7 @@ final class EnvironmentDomainService implements EnvironmentDomains
         unset($settings[self::SETTINGS_KEY]);
         $environment->settings = $settings;
         $environment->domain = null;
+        $environment->domain_verified_at = null;
         $environment->save();
     }
 

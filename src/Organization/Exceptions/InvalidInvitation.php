@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Thrown when an invitation token is unknown, already used, revoked, or expired.
  */
-final class InvalidInvitation extends RuntimeException
+class InvalidInvitation extends RuntimeException
 {
     public static function make(): self
     {

@@ -11,7 +11,7 @@ use Cbox\Id\Kernel\Usage\Listeners\RecordUsageOnDomainEvent;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
-final class UsageServiceProvider extends ServiceProvider
+class UsageServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

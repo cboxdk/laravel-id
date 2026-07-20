@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\Tenant;
  * a webhook) and don't need the full Organization model — and as a zero-friction
  * convenience in tests. The Organization model is the production {@see Tenant}.
  */
-final readonly class GenericTenant implements Tenant
+readonly class GenericTenant implements Tenant
 {
     public function __construct(private string $key) {}
 

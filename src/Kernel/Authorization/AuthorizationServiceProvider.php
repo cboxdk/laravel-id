@@ -12,7 +12,7 @@ use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
-final class AuthorizationServiceProvider extends ServiceProvider
+class AuthorizationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

@@ -11,7 +11,7 @@ use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\ValueObjects\RegisteredDirectory;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 
-final class DirectoryService implements Directories
+class DirectoryService implements Directories
 {
     public function __construct(private readonly SecretBox $secretBox) {}
 

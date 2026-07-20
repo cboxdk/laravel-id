@@ -12,7 +12,7 @@ use Cbox\Id\AccessControl\Exceptions\InvalidManifest;
  * format, a duplicate, or a role referencing an undeclared permission — is rejected
  * whole, never partially applied.
  */
-final class ManifestParser
+class ManifestParser
 {
     /** A `feature:action` (or bare `feature`) slug — lowercase, dot/colon/underscore/dash segments. */
     private const KEY_PATTERN = '/^[a-z][a-z0-9_-]*(?:[.:][a-z0-9_-]+)*$/';

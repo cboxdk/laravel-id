@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string $change
  * @property Carbon $recorded_at
  */
-final class EntitlementChange extends Model implements EnvironmentOwned, TenantOwned
+class EntitlementChange extends Model implements EnvironmentOwned, TenantOwned
 {
     use BelongsToEnvironment;
     use BelongsToTenant;

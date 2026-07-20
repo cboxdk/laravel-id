@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $last_sequence
  * @property EndpointStatus $status
  */
-final class WebhookEndpoint extends Model implements EnvironmentOwned
+class WebhookEndpoint extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

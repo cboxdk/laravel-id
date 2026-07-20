@@ -19,7 +19,7 @@ use Cbox\Id\Organization\ValueObjects\PendingInvitation;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
-final class InvitationService implements Invitations
+class InvitationService implements Invitations
 {
     private const TTL_DAYS = 7;
 

@@ -24,7 +24,7 @@ use Illuminate\Http\Response;
  * and drive {@see SamlIdentityProvider::parseAuthnRequest()} /
  * {@see SamlIdentityProvider::issueResponse()} itself.
  */
-final class SamlIdpSsoController
+class SamlIdpSsoController
 {
     public function __construct(
         private readonly SamlIdentityProvider $idp,

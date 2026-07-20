@@ -6,7 +6,7 @@ namespace Cbox\Id\OAuthServer\Exceptions;
 
 use RuntimeException;
 
-final class UnknownServiceAccount extends RuntimeException
+class UnknownServiceAccount extends RuntimeException
 {
     public static function make(string $clientId): self
     {

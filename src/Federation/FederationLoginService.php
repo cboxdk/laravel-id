@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  * {@see AssertionValidator} has produced a trusted
  * principal.
  */
-final class FederationLoginService implements FederationFlow
+class FederationLoginService implements FederationFlow
 {
     public function __construct(
         private readonly Subjects $subjects,

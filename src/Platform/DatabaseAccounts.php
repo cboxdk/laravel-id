@@ -12,7 +12,7 @@ use Cbox\Id\Platform\Models\Account;
  * Eloquent-backed accounts. No environment scope is ever applied — an account
  * owns environments, it does not live inside one — so these queries are global.
  */
-final class DatabaseAccounts implements Accounts
+class DatabaseAccounts implements Accounts
 {
     public function find(string $id): ?Account
     {

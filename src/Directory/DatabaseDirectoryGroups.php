@@ -21,7 +21,7 @@ use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
  * Membership-changing operations emit `directory.group.membership_changed` so the
  * access-control layer can reconcile group→role assignments — the SCIM→role bridge.
  */
-final class DatabaseDirectoryGroups implements DirectoryGroups
+class DatabaseDirectoryGroups implements DirectoryGroups
 {
     private const MAX_PAGE = 200;
 

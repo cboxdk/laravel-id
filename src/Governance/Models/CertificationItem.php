@@ -38,7 +38,7 @@ use Illuminate\Support\Carbon;
  * @property bool $applied
  * @property string|null $application_note
  */
-final class CertificationItem extends Model implements EnvironmentOwned
+class CertificationItem extends Model implements EnvironmentOwned
 {
     use BelongsToEnvironment;
     use HasUlids;

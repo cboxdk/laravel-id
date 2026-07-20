@@ -23,7 +23,7 @@ use Illuminate\Support\Str;
  * a subject's DIRECT role assignments at the organization (via the {@see Roles}
  * read surface), so it acts on exactly the grants that are made and revoked there.
  */
-final class DatabaseSegregationOfDuties implements SegregationOfDuties
+class DatabaseSegregationOfDuties implements SegregationOfDuties
 {
     public function __construct(
         private readonly Roles $roles,

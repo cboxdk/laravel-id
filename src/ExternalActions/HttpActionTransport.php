@@ -26,7 +26,7 @@ use Throwable;
  * signed HMAC-SHA256 over `"{timestamp}.{body}"` with `X-Cbox-Signature: t=..,v1=..`,
  * the same scheme (and same receiver verification) as webhooks.
  */
-final class HttpActionTransport implements ActionTransport
+class HttpActionTransport implements ActionTransport
 {
     private const DEFAULT_TIMEOUT = 3;
 

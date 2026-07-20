@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Http;
  *  - `client_secret` — the confidential client secret
  *  - `scopes` (optional) — defaults to `openid email profile`
  */
-final class OidcClient
+class OidcClient
 {
     public function __construct(private readonly Connections $connections) {}
 

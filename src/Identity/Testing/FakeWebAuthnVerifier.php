@@ -13,7 +13,7 @@ use Cbox\Id\Identity\ValueObjects\VerifiedRegistration;
  * A controllable WebAuthnVerifier for testing passkey orchestration without a
  * real authenticator. Set the counters to exercise the clone-detection guard.
  */
-final class FakeWebAuthnVerifier implements WebAuthnVerifier
+class FakeWebAuthnVerifier implements WebAuthnVerifier
 {
     public function __construct(
         public string $credentialId = 'cred_1',

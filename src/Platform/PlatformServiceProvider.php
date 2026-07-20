@@ -28,7 +28,7 @@ use Illuminate\Support\ServiceProvider;
 /**
  * Wires the platform layer — the identities that stand above every environment.
  */
-final class PlatformServiceProvider extends ServiceProvider
+class PlatformServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

@@ -10,7 +10,7 @@ use RuntimeException;
  * A domain can back at most one organization within an environment — otherwise
  * two tenants could both claim `acme.com` and fight over home-realm routing.
  */
-final class DomainAlreadyClaimed extends RuntimeException
+class DomainAlreadyClaimed extends RuntimeException
 {
     public static function make(string $domain): self
     {

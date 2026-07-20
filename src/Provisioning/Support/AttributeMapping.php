@@ -20,7 +20,7 @@ use Cbox\Id\Scim\ScimSchema;
  * (see docs/extension-points/custom-scim-attribute-mapping.md); nothing here is
  * hard-coded to the platform's own user shape beyond the default fallback.
  */
-final class AttributeMapping
+class AttributeMapping
 {
     /**
      * The default mapping when a connection defines none — the attributes every

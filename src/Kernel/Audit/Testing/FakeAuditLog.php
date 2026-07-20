@@ -16,7 +16,7 @@ use PHPUnit\Framework\Assert;
  * In-memory {@see AuditLog} for tests: records events without touching the
  * database and exposes assertions, in the spirit of Laravel's `Event::fake()`.
  */
-final class FakeAuditLog implements AuditLog
+class FakeAuditLog implements AuditLog
 {
     /**
      * @var list<AuditEvent>

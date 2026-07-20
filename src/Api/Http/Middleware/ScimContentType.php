@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Only JSON responses are retagged; a 204 No Content (a successful DELETE) keeps
  * its empty body and no content type.
  */
-final class ScimContentType
+class ScimContentType
 {
     /**
      * @param  Closure(Request): Response  $next

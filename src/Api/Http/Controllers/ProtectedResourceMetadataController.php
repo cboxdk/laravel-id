@@ -13,7 +13,7 @@ use Illuminate\Http\JsonResponse;
  * client, on receiving a 401 from a resource server, can discover which
  * authorization server issues tokens for it.
  */
-final class ProtectedResourceMetadataController
+class ProtectedResourceMetadataController
 {
     public function __invoke(): JsonResponse
     {
@@ -22,7 +22,7 @@ final class ProtectedResourceMetadataController
         return response()->json([
             'resource' => $issuer,
             'authorization_servers' => [$issuer],
-            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access'],
+            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access', 'organizations'],
             'bearer_methods_supported' => ['header'],
         ]);
     }

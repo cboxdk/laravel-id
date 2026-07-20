@@ -35,7 +35,7 @@ use Cbox\Id\Scim\ScimSchema;
  * (update), and it is reconciled on a 409 (match the existing remote by
  * `externalId`) or a 404 (recreate).
  */
-final class OutboxProvisioningService implements ProvisioningService
+class OutboxProvisioningService implements ProvisioningService
 {
     /**
      * Domain event → SCIM operation. An event outside this map enqueues nothing.

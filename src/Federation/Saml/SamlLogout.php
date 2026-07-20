@@ -26,7 +26,7 @@ use Throwable;
  * the actual query parameters for the duration of the call, exactly as the ACS
  * validator pins the request URL.
  */
-final class SamlLogout
+class SamlLogout
 {
     public function __construct(
         private readonly Connections $connections,

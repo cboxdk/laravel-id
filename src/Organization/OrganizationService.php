@@ -17,7 +17,7 @@ use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Illuminate\Support\Facades\DB;
 
-final class OrganizationService implements Organizations
+class OrganizationService implements Organizations
 {
     public function __construct(
         private readonly OrganizationHierarchy $hierarchy,

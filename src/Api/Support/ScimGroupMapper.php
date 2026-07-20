@@ -10,7 +10,7 @@ use Cbox\Id\Directory\Models\DirectoryGroup;
  * Maps between the SCIM 2.0 Group representation (RFC 7643 §4.2) and the
  * {@see DirectoryGroup} model.
  */
-final class ScimGroupMapper
+class ScimGroupMapper
 {
     public const SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
 

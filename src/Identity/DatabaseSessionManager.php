@@ -12,7 +12,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 
-final class DatabaseSessionManager implements SessionManager
+class DatabaseSessionManager implements SessionManager
 {
     private const DEFAULT_TTL_MINUTES = 60 * 24;
 
