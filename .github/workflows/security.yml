@@ -65,6 +65,6 @@ jobs:
       # on the file existing so a scan that produced nothing cannot fail the upload.
       - name: upload SARIF
         if: hashFiles('semgrep.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
