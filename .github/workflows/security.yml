@@ -16,7 +16,7 @@ jobs:
   dependencies:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
@@ -31,7 +31,7 @@ jobs:
   secrets:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: TruffleHog
@@ -47,7 +47,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Semgrep runs via `docker run`, NOT as a job-level `container:`. A container job
       # makes the runner inject an ALPINE node to execute JS actions (checkout,
       # upload-sarif); this runner ships only glibc node24, so every step died on
