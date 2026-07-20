@@ -15,6 +15,7 @@ use Cbox\Id\TokenVault\Exceptions\SecretNotFound;
 use Cbox\Id\TokenVault\Models\VaultGrant;
 use Cbox\Id\TokenVault\Models\VaultSecret;
 use Cbox\Id\TokenVault\ValueObjects\SecretLease;
+use Cbox\Id\TokenVault\ValueObjects\VaultOwner;
 use DateTimeInterface;
 use Illuminate\Support\Str;
 
@@ -48,8 +49,7 @@ class DatabaseSecretVault implements SecretVault
         string $name,
         string $provider,
         string $secret,
-        ?string $ownerType = null,
-        ?string $ownerId = null,
+        ?VaultOwner $owner = null,
         ?DateTimeInterface $expiresAt = null,
     ): VaultSecret {
         $this->environments->requireEnvironment();
@@ -62,8 +62,8 @@ class DatabaseSecretVault implements SecretVault
             'name' => $name,
             'provider' => $provider,
             'key_version' => 1,
-            'owner_type' => $ownerType,
-            'owner_id' => $ownerId,
+            'owner_type' => $owner?->type->value,
+            'owner_id' => $owner?->id,
             'expires_at' => $expiresAt,
         ]);
         $model->secret_encrypted = $this->secretBox->seal($secret, $model->secretContext());
@@ -80,11 +80,11 @@ class DatabaseSecretVault implements SecretVault
         return $model;
     }
 
-    public function rotate(string $secretId, string $newSecret): VaultSecret
+    public function rotate(string $secretId, string $newSecret, ?VaultOwner $owner): VaultSecret
     {
         $this->environments->requireEnvironment();
 
-        $secret = VaultSecret::query()->whereKey($secretId)->first();
+        $secret = $this->ownedSecret($secretId, $owner);
 
         if ($secret === null) {
             throw SecretNotFound::forId($secretId);
@@ -107,11 +107,11 @@ class DatabaseSecretVault implements SecretVault
         return $secret;
     }
 
-    public function revoke(string $secretId): void
+    public function revoke(string $secretId, ?VaultOwner $owner): void
     {
         $this->environments->requireEnvironment();
 
-        $secret = VaultSecret::query()->whereKey($secretId)->first();
+        $secret = $this->ownedSecret($secretId, $owner);
 
         if ($secret === null) {
             throw SecretNotFound::forId($secretId);
@@ -132,13 +132,13 @@ class DatabaseSecretVault implements SecretVault
         ));
     }
 
-    public function grant(string $secretId, string $clientId, ?int $maxTtlSeconds = null): VaultGrant
+    public function grant(string $secretId, string $clientId, ?VaultOwner $owner, ?int $maxTtlSeconds = null): VaultGrant
     {
         $this->environments->requireEnvironment();
 
         // Deny-by-default: you can only grant access to a secret that exists in
         // this environment.
-        $secret = VaultSecret::query()->whereKey($secretId)->first();
+        $secret = $this->ownedSecret($secretId, $owner);
 
         if ($secret === null) {
             throw SecretNotFound::forId($secretId);
@@ -171,9 +171,15 @@ class DatabaseSecretVault implements SecretVault
         return $grant;
     }
 
-    public function revokeGrant(string $secretId, string $clientId): void
+    public function revokeGrant(string $secretId, string $clientId, ?VaultOwner $owner): void
     {
         $this->environments->requireEnvironment();
+
+        // Resolve the secret under the caller's own ownership first: revoking a grant on
+        // a secret you do not own is another tenant's business.
+        if ($this->ownedSecret($secretId, $owner) === null) {
+            return;
+        }
 
         $grant = VaultGrant::query()
             ->where('secret_id', $secretId)
@@ -197,11 +203,11 @@ class DatabaseSecretVault implements SecretVault
         ));
     }
 
-    public function lease(string $secretId, string $clientId, string $purpose): SecretLease
+    public function lease(string $secretId, string $clientId, string $purpose, ?VaultOwner $owner): SecretLease
     {
         $this->environments->requireEnvironment();
 
-        $secret = VaultSecret::query()->whereKey($secretId)->first();
+        $secret = $this->ownedSecret($secretId, $owner);
         $grant = $secret === null
             ? null
             : VaultGrant::query()
@@ -258,6 +264,29 @@ class DatabaseSecretVault implements SecretVault
      * The effective lease window: the vault-wide default, which a per-grant cap can
      * only shorten (never extend past the ceiling).
      */
+    /**
+     * The secret AS OWNED BY the caller's scope, or null.
+     *
+     * Secrets are environment-scoped by the tenancy kernel, but an environment holds many
+     * organizations — so the environment alone does not separate two tenants' credentials.
+     * Filtering in the QUERY (rather than fetching then comparing) means a foreign id is
+     * indistinguishable from a missing one: callers learn nothing about what exists
+     * outside their own scope. A null owner addresses only unowned (platform) secrets.
+     */
+    private function ownedSecret(string $secretId, ?VaultOwner $owner): ?VaultSecret
+    {
+        return VaultSecret::query()
+            ->whereKey($secretId)
+            ->when(
+                $owner === null,
+                fn ($query) => $query->whereNull('owner_type')->whereNull('owner_id'),
+                fn ($query) => $query
+                    ->where('owner_type', $owner?->type->value)
+                    ->where('owner_id', $owner?->id),
+            )
+            ->first();
+    }
+
     private function leaseTtlSeconds(?int $grantMax): int
     {
         if ($grantMax === null) {

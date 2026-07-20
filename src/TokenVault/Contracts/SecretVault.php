@@ -9,6 +9,7 @@ use Cbox\Id\TokenVault\Exceptions\SecretNotFound;
 use Cbox\Id\TokenVault\Models\VaultGrant;
 use Cbox\Id\TokenVault\Models\VaultSecret;
 use Cbox\Id\TokenVault\ValueObjects\SecretLease;
+use Cbox\Id\TokenVault\ValueObjects\VaultOwner;
 use DateTimeInterface;
 
 /**
@@ -36,8 +37,7 @@ interface SecretVault
         string $name,
         string $provider,
         string $secret,
-        ?string $ownerType = null,
-        ?string $ownerId = null,
+        ?VaultOwner $owner = null,
         ?DateTimeInterface $expiresAt = null,
     ): VaultSecret;
 
@@ -47,14 +47,14 @@ interface SecretVault
      *
      * @throws SecretNotFound
      */
-    public function rotate(string $secretId, string $newSecret): VaultSecret;
+    public function rotate(string $secretId, string $newSecret, ?VaultOwner $owner): VaultSecret;
 
     /**
      * Revoke a secret immediately and permanently: no future lease can open it.
      *
      * @throws SecretNotFound
      */
-    public function revoke(string $secretId): void;
+    public function revoke(string $secretId, ?VaultOwner $owner): void;
 
     /**
      * Authorize an agent client to lease a secret, optionally capping how long a
@@ -63,12 +63,12 @@ interface SecretVault
      *
      * @throws SecretNotFound
      */
-    public function grant(string $secretId, string $clientId, ?int $maxTtlSeconds = null): VaultGrant;
+    public function grant(string $secretId, string $clientId, ?VaultOwner $owner, ?int $maxTtlSeconds = null): VaultGrant;
 
     /**
      * Revoke an agent's authorization. A no-op if no live grant exists.
      */
-    public function revokeGrant(string $secretId, string $clientId): void;
+    public function revokeGrant(string $secretId, string $clientId, ?VaultOwner $owner): void;
 
     /**
      * Broker the credential to an authorized agent for immediate use. Deny-by-default:
@@ -78,5 +78,5 @@ interface SecretVault
      *
      * @throws LeaseDenied
      */
-    public function lease(string $secretId, string $clientId, string $purpose): SecretLease;
+    public function lease(string $secretId, string $clientId, string $purpose, ?VaultOwner $owner): SecretLease;
 }

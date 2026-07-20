@@ -25,7 +25,7 @@ it('leases the rotated value after rotation', function (): void {
     $secret = $this->storeVaultSecret('github', 'github', 'ghp_old');
     $this->grantVaultAccess($secret->id, 'agent-client-1');
 
-    app(SecretVault::class)->rotate($secret->id, 'ghp_new');
+    app(SecretVault::class)->rotate($secret->id, 'ghp_new', null);
 
     $lease = $this->leaseVaultSecret($secret->id, 'agent-client-1');
     expect($lease->secret)->toBe('ghp_new');
@@ -35,7 +35,7 @@ it('refuses to lease a revoked secret', function (): void {
     $secret = $this->storeVaultSecret('stripe', 'stripe', 'sk_live_x');
     $this->grantVaultAccess($secret->id, 'agent-client-1');
 
-    app(SecretVault::class)->revoke($secret->id);
+    app(SecretVault::class)->revoke($secret->id, null);
 
     $this->leaseVaultSecret($secret->id, 'agent-client-1');
 })->throws(LeaseDenied::class);
@@ -64,5 +64,5 @@ it('caps the lease window by the per-grant max, never above the vault ceiling', 
 });
 
 it('rotating an unknown secret is a management error, not a uniform denial', function (): void {
-    app(SecretVault::class)->rotate('01VAULTNONEXISTENT000000000', 'x');
+    app(SecretVault::class)->rotate('01VAULTNONEXISTENT000000000', 'x', null);
 })->throws(SecretNotFound::class);

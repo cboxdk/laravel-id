@@ -8,6 +8,7 @@ use Cbox\Id\TokenVault\Contracts\SecretVault;
 use Cbox\Id\TokenVault\Models\VaultGrant;
 use Cbox\Id\TokenVault\Models\VaultSecret;
 use Cbox\Id\TokenVault\ValueObjects\SecretLease;
+use Cbox\Id\TokenVault\ValueObjects\VaultOwner;
 
 /**
  * Drop-in test ergonomics for the token vault, shipped with the package so
@@ -30,19 +31,18 @@ trait InteractsWithTokenVault
         string $name,
         string $provider,
         string $secret,
-        ?string $ownerType = null,
-        ?string $ownerId = null,
+        ?VaultOwner $owner = null,
     ): VaultSecret {
-        return app(SecretVault::class)->store($name, $provider, $secret, $ownerType, $ownerId);
+        return app(SecretVault::class)->store($name, $provider, $secret, $owner);
     }
 
-    protected function grantVaultAccess(string $secretId, string $clientId, ?int $maxTtlSeconds = null): VaultGrant
+    protected function grantVaultAccess(string $secretId, string $clientId, ?int $maxTtlSeconds = null, ?VaultOwner $owner = null): VaultGrant
     {
-        return app(SecretVault::class)->grant($secretId, $clientId, $maxTtlSeconds);
+        return app(SecretVault::class)->grant($secretId, $clientId, $owner, $maxTtlSeconds);
     }
 
-    protected function leaseVaultSecret(string $secretId, string $clientId, string $purpose = 'test'): SecretLease
+    protected function leaseVaultSecret(string $secretId, string $clientId, string $purpose = 'test', ?VaultOwner $owner = null): SecretLease
     {
-        return app(SecretVault::class)->lease($secretId, $clientId, $purpose);
+        return app(SecretVault::class)->lease($secretId, $clientId, $purpose, $owner);
     }
 }
