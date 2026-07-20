@@ -46,15 +46,25 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    container:
-      image: semgrep/semgrep
     steps:
       - uses: actions/checkout@v4
+      # Semgrep runs via `docker run`, NOT as a job-level `container:`. A container job
+      # makes the runner inject an ALPINE node to execute JS actions (checkout,
+      # upload-sarif); this runner ships only glibc node24, so every step died on
+      # `/__e/node24_alpine/bin/node: no such file` before any scanning happened.
+      # Keeping the job on the host lets the JS actions run; semgrep stays pinned to
+      # its own image.
       - name: semgrep scan
-        run: semgrep scan --config=p/php --config=p/security-audit --config=p/secrets --sarif --output=semgrep.sarif
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+            semgrep/semgrep semgrep scan \
+              --config=p/php --config=p/security-audit --config=p/secrets \
+              --sarif --output=semgrep.sarif
         continue-on-error: true
+      # Findings are triaged in the Security tab rather than failing the build. Guard
+      # on the file existing so a scan that produced nothing cannot fail the upload.
       - name: upload SARIF
+        if: hashFiles('semgrep.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
-        if: always()

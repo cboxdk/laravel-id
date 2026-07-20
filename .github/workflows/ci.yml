@@ -3,6 +3,9 @@ name: ci
 on:
   push:
     branches: [main]
+    # Release tags too, so the SBOM freshness gate below actually runs where an
+    # accurate supply-chain record matters.
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -41,14 +44,26 @@ jobs:
         run: composer audit --no-dev
       - name: License compliance
         run: composer license-check
-      # The SBOM is derived from composer.lock, which differs per Laravel major,
-      # so only assert freshness on the canonical cell (latest major).
-      - name: SBOM is up to date
+      # The SBOM is derived from composer.lock, which differs per Laravel major, so it
+      # is only generated on the canonical cell (latest major).
+      - name: SBOM
         if: matrix.php == '8.4' && matrix.testbench == '^11.0'
+        run: composer sbom
+      # An SBOM documents a RELEASE, so the hard gate lives on tags. This is a library
+      # (composer.lock is intentionally not committed), so CI resolves with
+      # `composer update` — an exact-match gate on every push therefore fails on any
+      # upstream patch release through no fault of the change (guzzle 7.15.0 -> 7.15.1
+      # did exactly this). Strict where provenance matters; informational otherwise.
+      - name: SBOM is up to date (release tags)
+        if: matrix.php == '8.4' && matrix.testbench == '^11.0' && startsWith(github.ref, 'refs/tags/')
         run: |
-          composer sbom
           git diff --exit-code sbom.json \
-            || (echo "::error::sbom.json is stale — run 'composer sbom' and commit the result." && exit 1)
+            || (echo "::error::sbom.json is stale — run 'composer sbom' and commit before tagging." && exit 1)
+      - name: SBOM drift (informational)
+        if: matrix.php == '8.4' && matrix.testbench == '^11.0' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          git diff --quiet sbom.json \
+            || echo "::notice::sbom.json drifted from the current resolve (usually an upstream patch release). Run 'composer sbom' before the next tag."
       - name: Upload SBOM
         if: matrix.php == '8.4' && matrix.testbench == '^11.0'
         uses: actions/upload-artifact@v4
