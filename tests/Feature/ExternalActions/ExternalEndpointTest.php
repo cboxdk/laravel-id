@@ -57,7 +57,7 @@ it('does not call a paused endpoint', function (): void {
     config()->set('cbox-id.external_actions.verify_url', false);
     $transport = $this->fakeActionTransport();
     $registered = $this->registerActionEndpoint(HookPoint::TokenMinting, 'https://hook.example.test');
-    app(ExternalActions::class)->pause($registered->endpoint->id);
+    app(ExternalActions::class)->pause($registered->endpoint->id, null);
 
     app(ActionPipeline::class)->run(HookPoint::TokenMinting, new ActionContext(HookPoint::TokenMinting, []));
 
@@ -71,6 +71,47 @@ it('is environment-scoped — an endpoint is invisible to another environment', 
 
     $this->runAsEnvironment('env_b', function () use ($id): void {
         expect(ExternalActionEndpoint::query()->whereKey($id)->first())->toBeNull()
-            ->and(app(ExternalActions::class)->active(HookPoint::TokenMinting))->toHaveCount(0);
+            ->and(app(ExternalActions::class)->active(HookPoint::TokenMinting, null))->toHaveCount(0);
     });
 })->group('isolation');
+
+/**
+ * @group isolation
+ *
+ * Hooks are environment-scoped, but two orgs share an environment — so org ownership is
+ * the boundary that matters here. A token_minting hook receives the subject, user, org
+ * and the fully-assembled claims, and its veto denies issuance: firing one tenant's hook
+ * for another tenant is both an exfiltration channel and a denial-of-service.
+ */
+it('fires a tenant hook only for its own organization', function (): void {
+    config()->set('cbox-id.external_actions.verify_url', false);
+    $transport = $this->fakeActionTransport();
+
+    $orgA = app(ExternalActions::class)->register(HookPoint::TokenMinting, 'https://a.example.test', 'org_a');
+    app(ExternalActions::class)->register(HookPoint::TokenMinting, 'https://b.example.test', 'org_b');
+    // The environment's own policy hook applies to everyone by design.
+    app(ExternalActions::class)->register(HookPoint::TokenMinting, 'https://env.example.test', null);
+
+    $forOrgA = app(ExternalActions::class)->active(HookPoint::TokenMinting, 'org_a');
+
+    expect($forOrgA->pluck('url')->all())
+        ->toContain('https://a.example.test')
+        ->toContain('https://env.example.test')
+        ->not->toContain('https://b.example.test');
+
+    // A run for org B must not reach org A's endpoint.
+    app(ActionPipeline::class)->run(
+        HookPoint::TokenMinting,
+        new ActionContext(HookPoint::TokenMinting, ['organization_id' => 'org_b']),
+    );
+
+    expect($transport->sentTo('https://a.example.test'))->toBeFalse();
+
+    // …and org B cannot pause, activate or delete org A's hook.
+    app(ExternalActions::class)->pause($orgA->endpoint->id, 'org_b');
+    app(ExternalActions::class)->remove($orgA->endpoint->id, 'org_b');
+
+    $survivor = ExternalActionEndpoint::query()->whereKey($orgA->endpoint->id)->first();
+    expect($survivor)->not->toBeNull()
+        ->and($survivor->status->value)->toBe('active');
+});

@@ -25,17 +25,25 @@ interface ExternalActions
      */
     public function register(HookPoint $hookPoint, string $url, ?string $organizationId = null): RegisteredActionEndpoint;
 
-    public function pause(string $endpointId): void;
+    /*
+     * Management takes the ACTING organization and matches it exactly: a tenant admin
+     * manages only their own hooks, and the environment's own (organization_id null)
+     * hooks belong to the operator. Pass null to act as the environment. A mismatch is
+     * a silent no-op rather than an error — the caller was not entitled to learn the
+     * endpoint exists.
+     */
+    public function pause(string $endpointId, ?string $organizationId): void;
 
-    public function activate(string $endpointId): void;
+    public function activate(string $endpointId, ?string $organizationId): void;
 
-    public function remove(string $endpointId): void;
+    public function remove(string $endpointId, ?string $organizationId): void;
 
     /**
      * The ACTIVE endpoints for a hook point (what the pipeline will call), in
-     * registration order.
+     * registration order, for the organization the pipeline is running FOR: that org's
+     * own hooks plus the environment-wide ones. Never another tenant's.
      *
      * @return Collection<int, ExternalActionEndpoint>
      */
-    public function active(HookPoint $hookPoint): Collection;
+    public function active(HookPoint $hookPoint, ?string $organizationId): Collection;
 }

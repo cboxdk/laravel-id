@@ -95,18 +95,18 @@ class CibaAuthenticationService implements BackchannelAuthentication
         );
     }
 
-    public function approve(string $requestId, ?string $organizationId = null): bool
+    public function approve(string $requestId, string $subjectId, ?string $organizationId = null): bool
     {
-        return $this->transitionPending($requestId, [
+        return $this->transitionPending($requestId, $subjectId, [
             'status' => 'approved',
             'organization_id' => $organizationId,
             'approved_at' => now(),
         ]);
     }
 
-    public function deny(string $requestId): bool
+    public function deny(string $requestId, string $subjectId): bool
     {
-        return $this->transitionPending($requestId, ['status' => 'denied']);
+        return $this->transitionPending($requestId, $subjectId, ['status' => 'denied']);
     }
 
     public function redeem(string $clientId, string $authReqId): AuthorizedGrant
@@ -174,10 +174,16 @@ class CibaAuthenticationService implements BackchannelAuthentication
     /**
      * @param  array<string, mixed>  $attributes
      */
-    private function transitionPending(string $requestId, array $attributes): bool
+    private function transitionPending(string $requestId, string $subjectId, array $attributes): bool
     {
         return (bool) BackchannelAuthRequest::query()
             ->whereKey($requestId)
+            // The approving subject MUST be the one the request was raised for. CIBA
+            // approval IS the consent step for an agent acting on a user's behalf, so
+            // without this any user who learns a request id could consent on another
+            // user's behalf — and the redeemed token is minted for THAT user. Required
+            // rather than optional so no caller can omit it, matching the device flow.
+            ->where('user_id', $subjectId)
             ->where('status', 'pending')
             ->where('expires_at', '>', now())
             ->update($attributes);

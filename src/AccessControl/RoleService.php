@@ -67,6 +67,15 @@ class RoleService implements Roles
         string $roleId,
         GrantSource $source = GrantSource::Manual,
     ): RoleAssignment {
+        // The role must be assignable IN this organization — either its own, or a system
+        // role (organization_id null) shared across the environment. This is the chokepoint
+        // every caller funnels through — console toggles, directory group→role mapping and
+        // invitation grants all land here — so validating once closes all of them. Without
+        // it a caller can name ANOTHER tenant's role id and have it written under their own
+        // org, and the read path would then surface that role's permissions in this org's
+        // tokens. Mirrors the ownership check grantPermission() has always had.
+        $this->assertAssignableIn($organizationId, $roleId);
+
         $assignment = RoleAssignment::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'user_id' => $userId, 'role_id' => $roleId],
             ['source' => $source],
@@ -75,6 +84,26 @@ class RoleService implements Roles
         $this->emitAndAudit($organizationId, $userId, $roleId, 'role.assigned');
 
         return $assignment;
+    }
+
+    /**
+     * A role belongs to this organization, or is a system role usable by any org in the
+     * environment. Anything else is another tenant's policy and is refused.
+     *
+     * @throws UnknownRole
+     */
+    private function assertAssignableIn(string $organizationId, string $roleId): void
+    {
+        $assignable = Role::query()
+            ->whereKey($roleId)
+            ->where(fn ($query) => $query
+                ->whereNull('organization_id')
+                ->orWhere('organization_id', $organizationId))
+            ->exists();
+
+        if (! $assignable) {
+            throw UnknownRole::make($roleId);
+        }
     }
 
     public function unassign(string $organizationId, string $userId, string $roleId): void

@@ -51,7 +51,9 @@ class DefaultActionPipeline implements ActionPipeline
             $enrichment = array_merge($enrichment, $result->enrichment);
         }
 
-        foreach ($this->endpoints->active($hookPoint) as $endpoint) {
+        // Scope the fan-out to the org this run is FOR, so a tenant's hook only ever sees
+        // its own tenant's context (plus the environment's own hooks, which apply to all).
+        foreach ($this->endpoints->active($hookPoint, $context->string('organization_id')) as $endpoint) {
             $result = $this->transport->send($endpoint, $context);
 
             if (! $result->allowed) {
