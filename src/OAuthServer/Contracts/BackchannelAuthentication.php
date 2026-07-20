@@ -52,14 +52,23 @@ interface BackchannelAuthentication
     /**
      * Approve a pending request by its INTERNAL id (from the host's approval
      * surface, never the client's auth_req_id), optionally binding an organization
-     * context. Returns false if the request is unknown, expired or not pending.
+     * context.
+     *
+     * `$subjectId` is the subject DOING the approving, and must match the user the
+     * request was raised for: approval is the consent step for an agent acting on
+     * that user's behalf, and the redeemed token is minted for them. It is required
+     * rather than derived from ambient auth so a host cannot forget to bind it.
+     *
+     * Returns false if the request is unknown, expired, not pending, or belongs to
+     * a different subject.
      */
-    public function approve(string $requestId, ?string $organizationId = null): bool;
+    public function approve(string $requestId, string $subjectId, ?string $organizationId = null): bool;
 
     /**
-     * Deny a pending request by its internal id. Returns false if unknown/expired.
+     * Deny a pending request by its internal id, acting as `$subjectId`. Returns
+     * false if unknown/expired or the request belongs to a different subject.
      */
-    public function deny(string $requestId): bool;
+    public function deny(string $requestId, string $subjectId): bool;
 
     /**
      * Poll for the token (CIBA poll mode). Returns the approved grant, or throws.

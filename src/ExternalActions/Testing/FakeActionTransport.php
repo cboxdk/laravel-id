@@ -61,4 +61,21 @@ class FakeActionTransport implements ActionTransport
     {
         Assert::assertSame([], $this->sent, 'Expected no external action calls.');
     }
+
+    /** Was a specific endpoint URL called? For asserting per-tenant fan-out boundaries. */
+    public function sentTo(string $url): bool
+    {
+        foreach ($this->sent as $call) {
+            if ($call['url'] === $url) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function assertNotSentTo(string $url): void
+    {
+        Assert::assertFalse($this->sentTo($url), "Expected no external action call to [{$url}], but one was made.");
+    }
 }

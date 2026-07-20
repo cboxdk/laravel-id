@@ -108,6 +108,17 @@ class HierarchyAwareAccessChecker implements AccessChecker
             RoleAssignment::query()
                 ->where('user_id', $userId)
                 ->whereIn('organization_id', $scopes)
+                // Defense in depth: trust the ROLE's own owner, not just the assignment
+                // row's. An assignment naming another tenant's role — however the row came
+                // to exist — must never surface that role's permissions here. RoleService
+                // refuses to write such a row; this makes reading one harmless too, and it
+                // covers all three entry points (can, permissionsFor, forToken) at once.
+                // Role is environment-scoped, so the subquery also keeps the env boundary.
+                ->whereIn('role_id', Role::query()
+                    ->select('id')
+                    ->where(fn ($query) => $query
+                        ->whereNull('organization_id')
+                        ->orWhereIn('organization_id', $scopes)))
                 ->get()
                 ->map(fn (RoleAssignment $assignment): string => $assignment->role_id)
                 ->all()

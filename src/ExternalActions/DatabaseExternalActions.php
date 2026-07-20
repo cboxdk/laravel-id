@@ -64,30 +64,52 @@ class DatabaseExternalActions implements ExternalActions
         return new RegisteredActionEndpoint($endpoint, $secret);
     }
 
-    public function pause(string $endpointId): void
+    public function pause(string $endpointId, ?string $organizationId): void
     {
-        ExternalActionEndpoint::query()->whereKey($endpointId)->first()
-            ?->update(['status' => ActionEndpointStatus::Paused]);
+        $this->owned($endpointId, $organizationId)?->update(['status' => ActionEndpointStatus::Paused]);
     }
 
-    public function activate(string $endpointId): void
+    public function activate(string $endpointId, ?string $organizationId): void
     {
-        ExternalActionEndpoint::query()->whereKey($endpointId)->first()
-            ?->update(['status' => ActionEndpointStatus::Active]);
+        $this->owned($endpointId, $organizationId)?->update(['status' => ActionEndpointStatus::Active]);
     }
 
-    public function remove(string $endpointId): void
+    public function remove(string $endpointId, ?string $organizationId): void
     {
-        ExternalActionEndpoint::query()->whereKey($endpointId)->delete();
+        $this->owned($endpointId, $organizationId)?->delete();
     }
 
-    public function active(HookPoint $hookPoint): Collection
+    public function active(HookPoint $hookPoint, ?string $organizationId): Collection
     {
         return ExternalActionEndpoint::query()
             ->where('hook_point', $hookPoint->value)
             ->where('status', ActionEndpointStatus::Active->value)
+            // A hook sees only the org it belongs to. Environment-level hooks
+            // (organization_id null) are the operator's own policy and DO apply to every
+            // org — that is their purpose — but a tenant's hook must never fire for
+            // another tenant, or it receives that tenant's subject/claims on every token
+            // and its veto denies issuance environment-wide.
+            ->where(fn ($query) => $organizationId === null
+                ? $query->whereNull('organization_id')
+                : $query->whereNull('organization_id')->orWhere('organization_id', $organizationId))
             ->orderBy('created_at')
             ->get();
+    }
+
+    /**
+     * The endpoint as owned by exactly this organization — an EXACT match, not the
+     * "or environment-wide" form used for firing. A tenant admin may manage only their
+     * own hooks; the environment's own (organization_id null) hooks are the operator's
+     * and stay read-only to tenants, so their ids being listable is harmless.
+     */
+    private function owned(string $endpointId, ?string $organizationId): ?ExternalActionEndpoint
+    {
+        return ExternalActionEndpoint::query()
+            ->whereKey($endpointId)
+            ->where(fn ($query) => $organizationId === null
+                ? $query->whereNull('organization_id')
+                : $query->where('organization_id', $organizationId))
+            ->first();
     }
 
     /**

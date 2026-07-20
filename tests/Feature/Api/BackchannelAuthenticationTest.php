@@ -47,7 +47,7 @@ it('polls pending, then issues access + id_token once the user approves', functi
     ])->assertStatus(400)->assertJsonPath('error', 'authorization_pending');
 
     // The user approves out-of-band, via the host's approval surface (internal id).
-    expect($ciba->approve($result->requestId, 'org-1'))->toBeTrue();
+    expect($ciba->approve($result->requestId, $user->id, 'org-1'))->toBeTrue();
 
     // Skip the polling interval so the next poll isn't slow_down'd.
     BackchannelAuthRequest::query()->update(['last_polled_at' => now()->subMinute()]);
@@ -89,7 +89,7 @@ it('reports denial and expiry', function (): void {
     $ciba = app(BackchannelAuthentication::class);
 
     $denied = $ciba->request($registered->client, ['openid'], $user->id);
-    $ciba->deny($denied->requestId);
+    $ciba->deny($denied->requestId, $user->id);
     $this->postJson('/oauth/token', [
         'grant_type' => CIBA_GRANT, 'client_id' => $registered->client->client_id,
         'client_secret' => $registered->secret, 'auth_req_id' => $denied->authReqId,
@@ -108,7 +108,7 @@ it('mints a token only once per auth_req_id (single-use)', function (): void {
     $user = $this->makeUser('erin@example.test');
     $ciba = app(BackchannelAuthentication::class);
     $result = $ciba->request($registered->client, ['openid'], $user->id);
-    $ciba->approve($result->requestId);
+    $ciba->approve($result->requestId, $user->id);
 
     $poll = fn () => $this->postJson('/oauth/token', [
         'grant_type' => CIBA_GRANT,
@@ -174,4 +174,41 @@ it('advertises the CIBA endpoint, delivery mode and grant type in metadata', fun
             'urn:ietf:params:oauth:grant-type:device_code', CIBA_GRANT,
             'urn:ietf:params:oauth:grant-type:token-exchange',
         ]]);
+});
+
+/**
+ * @group isolation
+ *
+ * CIBA approval IS the consent step: the token that follows is minted for the user the
+ * request names, so approving is an act only that user may perform. The approval surface
+ * lists only your own pending requests, but the id is the whole authorization — it also
+ * travels in the oauth.backchannel_authentication_requested domain event to environment
+ * webhooks, so it must not be the only thing standing between an agent and a token.
+ */
+it('refuses to approve or deny another subject\'s request', function (): void {
+    $registered = $this->makeClient(['openid']);
+    $victim = $this->makeUser('victim@example.test');
+    $attacker = $this->makeUser('attacker@example.test');
+    $ciba = app(BackchannelAuthentication::class);
+
+    $pending = $ciba->request($registered->client, ['openid'], $victim->id);
+
+    expect($ciba->approve($pending->requestId, $attacker->id, 'org-attacker'))->toBeFalse()
+        ->and($ciba->deny($pending->requestId, $attacker->id))->toBeFalse();
+
+    // Untouched: still pending, still unbound to the attacker's org.
+    $row = BackchannelAuthRequest::query()->whereKey($pending->requestId)->firstOrFail();
+    expect($row->status)->toBe('pending')
+        ->and($row->organization_id)->toBeNull();
+
+    // And no token can be redeemed off the back of the attempt.
+    $this->postJson('/oauth/token', [
+        'grant_type' => CIBA_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'auth_req_id' => $pending->authReqId,
+    ])->assertStatus(400)->assertJsonPath('error', 'authorization_pending');
+
+    // The rightful subject still can.
+    expect($ciba->approve($pending->requestId, $victim->id))->toBeTrue();
 });
