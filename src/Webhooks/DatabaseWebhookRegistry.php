@@ -21,6 +21,9 @@ class DatabaseWebhookRegistry implements WebhookRegistry
 
     public function register(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
     {
+        // NOTE on organizationId === null: that is PLATFORM-wide coverage — matching()
+        // delivers every org's events to it. Only an operator-plane caller may pass null;
+        // the tenant console always supplies its own org. See the console call sites.
         // SSRF guard: refuse endpoints that point at non-public addresses.
         SafeWebhookUrl::assert($url);
 
@@ -51,9 +54,18 @@ class DatabaseWebhookRegistry implements WebhookRegistry
         return new RegisteredEndpoint($endpoint, $secret);
     }
 
-    public function pause(string $endpointId): void
+    public function pause(string $endpointId, ?string $organizationId): void
     {
-        $endpoint = WebhookEndpoint::query()->whereKey($endpointId)->first();
+        // Exact owner match, like the inline-hook registry. Resolving by id alone let an
+        // org admin who learned another org's endpoint id disable that org's webhooks —
+        // and pass null to act as the environment, so a tenant cannot silence the
+        // operator's own platform-wide endpoints either.
+        $endpoint = WebhookEndpoint::query()
+            ->whereKey($endpointId)
+            ->where(fn ($query) => $organizationId === null
+                ? $query->whereNull('organization_id')
+                : $query->where('organization_id', $organizationId))
+            ->first();
 
         $endpoint?->update(['status' => EndpointStatus::Paused]);
     }

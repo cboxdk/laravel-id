@@ -15,7 +15,11 @@ interface WebhookRegistry
      */
     public function register(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint;
 
-    public function pause(string $endpointId): void;
+    /**
+     * Pause an endpoint OWNED by this organization (null = the environment's own).
+     * A mismatch is a silent no-op: the caller was not entitled to learn it exists.
+     */
+    public function pause(string $endpointId, ?string $organizationId): void;
 
     /**
      * Active endpoints (org-scoped or platform-wide) subscribed to the event type.

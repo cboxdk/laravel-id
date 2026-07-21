@@ -87,9 +87,14 @@ class ProvisioningConnection extends Model implements EnvironmentOwned
         return array_values(array_filter($ids, is_string(...)));
     }
 
+    /**
+     * Environment-wide coverage is a PLATFORM capability. A tenant-owned connection with
+     * an empty scope is a mis-registration, not a licence to receive every org's data —
+     * reading it as environment-wide is how org A's endpoint came to see org B's users.
+     */
     public function isEnvironmentWide(): bool
     {
-        return $this->scopeOrganizationIds() === [];
+        return $this->organization_id === null && $this->scopeOrganizationIds() === [];
     }
 
     /** The `/Users` collection endpoint (base URL without a trailing slash). */
