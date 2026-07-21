@@ -14,6 +14,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 class DatabaseEventBus implements EventBus
@@ -156,11 +157,30 @@ class DatabaseEventBus implements EventBus
 
             $events = $query->get();
 
-            if ($events->isNotEmpty()) {
-                Event::query()->whereIn('id', $events->modelKeys())->update(['claimed_at' => now()]);
+            if ($events->isEmpty()) {
+                return $events;
             }
 
-            return $events;
+            // Claim with a TOKEN, then re-select by it. Updating by id alone was correct
+            // only where SKIP LOCKED applies (pgsql/mysql); on SQLite — and on any future
+            // driver outside that list — two relays could read the same rows and both
+            // proceed. SQLite usually raises SQLITE_BUSY rather than duplicating, but that
+            // is an accident of the engine, not a guarantee from this code. Re-asserting
+            // the pending predicate in the UPDATE makes the claim atomic everywhere.
+            $token = (string) Str::ulid();
+
+            Event::query()
+                ->whereIn('id', $events->modelKeys())
+                ->whereNull('dispatched_at')
+                ->where(fn ($q) => $q->whereNull('claimed_at')->orWhere('claimed_at', '<', $staleBefore))
+                ->update(['claimed_at' => now(), 'claim_token' => $token]);
+
+            // Only the rows THIS relay actually won.
+            return Event::query()
+                ->withoutGlobalScopes()
+                ->where('claim_token', $token)
+                ->orderBy('occurred_at')
+                ->get();
         });
     }
 

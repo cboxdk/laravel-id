@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
+use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -28,6 +29,13 @@ class DeviceAuthorizationController
 
         if ($client === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401);
+        }
+
+        // Enforce the registered grant at INITIATION, not only at redemption: otherwise a
+        // client that can never complete this flow still creates its state and puts a
+        // prompt in front of a user.
+        if (! GrantPolicy::allows($client, 'urn:ietf:params:oauth:grant-type:device_code')) {
+            return new JsonResponse(['error' => 'unauthorized_client'], 400);
         }
 
         $scope = $request->string('scope')->toString();

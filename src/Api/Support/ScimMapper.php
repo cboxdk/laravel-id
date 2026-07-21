@@ -318,7 +318,22 @@ class ScimMapper
         // Fully-qualified single attribute: "urn:...:User:department"
         $prefix = self::ENTERPRISE_URN.':';
         if (str_starts_with($path, $prefix)) {
-            $enterprise[substr($path, strlen($prefix))] = $value;
+            $attribute = substr($path, strlen($prefix));
+
+            // Same split as the core schema: an attribute of the extension we simply do
+            // not persist is TOLERATED (accepted, ignored), but one that is not part of
+            // the extension at all is refused. Previously every unsupported attribute
+            // returned 200 and was then silently dropped by normalizeEnterprise() — the
+            // IdP recorded a write that never happened.
+            // ENTERPRISE_ATTRIBUTES already IS the full RFC 7643 §4.3 set, so anything
+            // else is genuinely undefined by the schema — refuse it. Previously any
+            // unsupported attribute returned 200 and was then silently dropped by
+            // normalizeEnterprise(), so the IdP recorded a write that never happened.
+            if (! in_array($attribute, self::ENTERPRISE_ATTRIBUTES, true)) {
+                return false;
+            }
+
+            $enterprise[$attribute] = $value;
             $attributes['enterprise'] = self::normalizeEnterprise($enterprise);
 
             return true;
