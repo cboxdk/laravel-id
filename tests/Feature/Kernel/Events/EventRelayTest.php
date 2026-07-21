@@ -90,3 +90,52 @@ it('reclaims a stale claim but leaves a fresh one alone', function (): void {
 
     expect(Event::query()->whereNull('dispatched_at')->count())->toBe(0);
 });
+
+/**
+ * A poison listener must not take the batch with it. An uncaught throw used to abort the
+ * pass: the rest of the claimed events sat undelivered for the whole reclaim window, and
+ * the failing event — whose earlier listeners HAD already run — was re-delivered on
+ * reclaim, reintroducing the double-send this design exists to prevent.
+ */
+it('isolates a failing listener and still delivers the rest of the batch', function (): void {
+    $seen = [];
+
+    LaravelEvent::listen(EventDelivered::class, function (EventDelivered $delivered) use (&$seen): void {
+        $seen[] = $delivered->event->type;
+
+        if ($delivered->event->type === 'poison') {
+            throw new RuntimeException('listener exploded');
+        }
+    });
+
+    $bus = app(EventBus::class);
+    $bus->emit(new DomainEvent('first'));
+    $bus->emit(new DomainEvent('poison'));
+    $bus->emit(new DomainEvent('third'));
+
+    // Two delivered; the poison one is not counted.
+    expect($bus->flushPending())->toBe(2)
+        ->and($seen)->toBe(['first', 'poison', 'third']);
+
+    // The failing event is left UNDELIVERED and its claim released, so it retries
+    // promptly rather than being stranded for the reclaim window.
+    $poison = Event::query()->where('type', 'poison')->firstOrFail();
+
+    expect($poison->dispatched_at)->toBeNull()
+        ->and($poison->claimed_at)->toBeNull();
+
+    // …and the healthy ones are done.
+    expect(Event::query()->whereNull('dispatched_at')->count())->toBe(1);
+});
+
+it('honours reclaim_after_seconds when it arrives as a string from env', function (): void {
+    $bus = app(EventBus::class);
+    $bus->emit(new DomainEvent('user.created'));
+
+    Event::query()->update(['claimed_at' => now()->subSeconds(30), 'dispatched_at' => null]);
+
+    // env() yields a STRING; is_int() alone silently ignored the knob.
+    config(['cbox-id.events.reclaim_after_seconds' => '10']);
+
+    expect($bus->flushPending())->toBe(1);
+});
