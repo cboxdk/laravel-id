@@ -13,11 +13,15 @@ use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Cbox\Id\Federation\Saml\SamlSettings;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use OneLogin\Saml2\Response as SamlResponse;
 use OneLogin\Saml2\Settings;
 use OneLogin\Saml2\Utils as SamlUtils;
+use RobRichards\XMLSecLibs\XMLSecurityDSig;
+use RobRichards\XMLSecLibs\XMLSecurityKey;
 use Throwable;
 
 /**
@@ -191,6 +195,11 @@ class SamlAssertionValidator implements AssertionValidator
             throw InvalidAssertion::make($reason instanceof Throwable ? $reason->getMessage() : 'SAML response is not valid');
         }
 
+        // onelogin verifies the signature cryptographically but still accepts a
+        // deprecated RSA-SHA1 / SHA-1 pair; refuse anything but RSA-SHA256 / SHA-256
+        // so the RP consume side is no weaker than this codebase's own IdP signing.
+        $this->assertPinnedSignatureAlgorithms($response);
+
         // Single-use: a captured, still-valid assertion cannot be replayed.
         $this->guardReplay($response->getAssertionId(), $response->getAssertionNotOnOrAfter());
 
@@ -261,6 +270,73 @@ class SamlAssertionValidator implements AssertionValidator
                 }
             }
         }
+    }
+
+    /**
+     * Reject any XML signature that isn't RSA-SHA256 with a SHA-256 digest.
+     *
+     * onelogin cryptographically verifies the signature but still accepts the
+     * deprecated RSA-SHA1 / SHA-1 pair (its Utils::isSupportedSigningAlgorithm
+     * lists RSA_SHA1, and validateSign reads the algorithm from the incoming XML).
+     * A SHA-1 chosen-prefix collision against a benign assertion the IdP will sign
+     * is a realistic downgrade, so — exactly as the IdP side already pins
+     * RSA-SHA256 — inspect every signature in the validated document and refuse
+     * anything weaker.
+     */
+    private function assertPinnedSignatureAlgorithms(SamlResponse $response): void
+    {
+        $document = $response->encrypted ? $response->decryptedDocument : $response->document;
+
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ds', 'http://www.w3.org/2000/09/xmldsig#');
+
+        $signatures = $xpath->query('//ds:Signature');
+
+        // wantAssertionsSigned guarantees a verified signature reached this point;
+        // if none is visible here the document isn't the one that was validated, so
+        // fail closed rather than pass an unpinned response.
+        if ($signatures === false || $signatures->length === 0) {
+            throw InvalidAssertion::make('SAML response signature could not be inspected');
+        }
+
+        foreach ($signatures as $signature) {
+            if (! $signature instanceof DOMElement) {
+                continue;
+            }
+
+            $method = $this->dsigAlgorithm($xpath, $signature, './ds:SignedInfo/ds:SignatureMethod');
+            if ($method !== XMLSecurityKey::RSA_SHA256) {
+                throw InvalidAssertion::make('unsupported SAML signature algorithm (RSA-SHA256 required)');
+            }
+
+            $digests = $xpath->query('.//ds:Reference/ds:DigestMethod', $signature);
+            if ($digests === false || $digests->length === 0) {
+                throw InvalidAssertion::make('SAML signature is missing a digest method');
+            }
+
+            foreach ($digests as $digest) {
+                if (! $digest instanceof DOMElement || $digest->getAttribute('Algorithm') !== XMLSecurityDSig::SHA256) {
+                    throw InvalidAssertion::make('unsupported SAML digest algorithm (SHA-256 required)');
+                }
+            }
+        }
+    }
+
+    /**
+     * The `Algorithm` attribute of the first node matched by $expression under
+     * $context, or '' when absent.
+     */
+    private function dsigAlgorithm(DOMXPath $xpath, DOMElement $context, string $expression): string
+    {
+        $nodes = $xpath->query($expression, $context);
+
+        if ($nodes === false) {
+            return '';
+        }
+
+        $node = $nodes->item(0);
+
+        return $node instanceof DOMElement ? $node->getAttribute('Algorithm') : '';
     }
 
     /**

@@ -212,8 +212,19 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         // A private-use ("custom") URI scheme is allowed for native apps
         // (RFC 8252 §7.1), in both the authority form (com.example.app://cb) and
         // the canonical path form (com.example.app:/cb) — the latter has no host,
-        // so it must be accepted before the http(s) host requirement below.
+        // so it is handled before the http(s) host requirement below.
+        //
+        // RFC 8252 §7.1 requires the scheme to be a domain name the app controls in
+        // reverse order (com.example.app), which always contains a dot. Enforcing that
+        // both follows the spec and refuses the dangerous single-word schemes a renderer
+        // may execute — javascript:, data:, vbscript:, file:, blob: — which would
+        // otherwise be stored and become XSS in the AS origin if the host app ever
+        // rendered a redirect_uri as a link.
         if ($scheme !== 'http' && $scheme !== 'https') {
+            if (! str_contains($scheme, '.')) {
+                throw InvalidClientMetadata::redirectUri("redirect_uri custom scheme must be a reverse-domain name (e.g. com.example.app): {$uri}");
+            }
+
             return;
         }
 

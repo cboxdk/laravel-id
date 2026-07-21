@@ -102,7 +102,7 @@ it('overlap-rotates a service account: the successor works while the old still d
     $original = $this->makeServiceAccount($org->id, ['api.read', 'api.write']);
     $oldToken = $issuer->issueClientCredentials($original->client);
 
-    $successor = $accounts->rotate($original->client->client_id);
+    $successor = $accounts->rotate($org->id, $original->client->client_id);
 
     // A distinct credential with the same privileges, linked to its predecessor.
     expect($successor->client->client_id)->not->toBe($original->client->client_id)
@@ -126,10 +126,10 @@ it('retires the old account after cutover: it cannot mint tokens and its tokens 
 
     $original = $this->makeServiceAccount($org->id, ['api.read']);
     $oldToken = $issuer->issueClientCredentials($original->client);
-    $successor = $accounts->rotate($original->client->client_id);
+    $successor = $accounts->rotate($org->id, $original->client->client_id);
     $newToken = $issuer->issueClientCredentials($successor->client);
 
-    $accounts->retire($original->client->client_id);
+    $accounts->retire($org->id, $original->client->client_id);
 
     expect(app(ClientRegistry::class)->byClientId($original->client->client_id))->toBeNull() // no new tokens
         ->and($introspect->introspect($oldToken->token)->active)->toBeFalse()               // existing revoked
@@ -137,10 +137,26 @@ it('retires the old account after cutover: it cannot mint tokens and its tokens 
         ->and(ServiceAccount::query()->where('client_id', $original->client->client_id)->value('status'))->toBe('retired');
 
     // Retiring again is a no-op, not an error.
-    $accounts->retire($original->client->client_id);
+    $accounts->retire($org->id, $original->client->client_id);
+});
+
+it('refuses to rotate or retire a service account owned by another org', function (): void {
+    $orgA = $this->makeOrganization();
+    $orgB = $this->makeOrganization();
+    $accounts = app(ServiceAccounts::class);
+
+    $victim = $this->makeServiceAccount($orgB->id, ['api.read']);
+
+    // org A cannot touch org B's account even knowing its client_id, and the
+    // refusal is indistinguishable from "no such account".
+    expect(fn () => $accounts->rotate($orgA->id, $victim->client->client_id))->toThrow(UnknownServiceAccount::class)
+        ->and(fn () => $accounts->retire($orgA->id, $victim->client->client_id))->toThrow(UnknownServiceAccount::class);
+
+    // org B still owns it.
+    expect($accounts->rotate($orgB->id, $victim->client->client_id)->client->client_id)->not->toBe($victim->client->client_id);
 });
 
 it('rejects rotating or retiring an unknown service account', function (): void {
-    expect(fn () => app(ServiceAccounts::class)->rotate('unknown'))->toThrow(UnknownServiceAccount::class)
-        ->and(fn () => app(ServiceAccounts::class)->retire('unknown'))->toThrow(UnknownServiceAccount::class);
+    expect(fn () => app(ServiceAccounts::class)->rotate('org_unknown', 'unknown'))->toThrow(UnknownServiceAccount::class)
+        ->and(fn () => app(ServiceAccounts::class)->retire('org_unknown', 'unknown'))->toThrow(UnknownServiceAccount::class);
 });

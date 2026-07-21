@@ -41,6 +41,36 @@ final readonly class Introspection
     }
 
     /**
+     * Whether this token was minted for $expected — its `aud` (RFC 7519) names that
+     * audience. A token with no `aud` is treated as first-party (nothing to enforce);
+     * a token audienced for a *different* resource (an RFC 8707 resource indicator)
+     * does not match, so a first-party endpoint can refuse a token minted for someone
+     * else's API.
+     */
+    public function isAudience(string $expected): bool
+    {
+        $aud = $this->claims['aud'] ?? null;
+
+        if ($aud === null || $aud === '') {
+            return true;
+        }
+
+        if (is_string($aud)) {
+            return hash_equals($aud, $expected);
+        }
+
+        if (is_array($aud)) {
+            foreach ($aud as $entry) {
+                if (is_string($entry) && hash_equals($entry, $expected)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The DPoP confirmation thumbprint (`cnf.jkt`, RFC 9449) this token is
      * sender-constrained to, or null for a plain bearer token.
      */

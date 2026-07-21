@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -37,6 +38,17 @@ class PushedAuthorizationController
 
         if (($params['response_type'] ?? null) !== 'code') {
             return $this->error('invalid_request', 400);
+        }
+
+        // PKCE is mandatory for public clients (OAuth 2.1 / RFC 9700). Enforce it on
+        // the back channel too — a public client that pushes without an S256
+        // code_challenge is refused here, not only at /authorize.
+        if ($client->type === ClientType::Public) {
+            $challenge = $params['code_challenge'] ?? null;
+
+            if (! is_string($challenge) || $challenge === '' || ($params['code_challenge_method'] ?? 'S256') !== 'S256') {
+                return $this->error('invalid_request', 400);
+            }
         }
 
         $pushed = $this->par->push($client, $params);

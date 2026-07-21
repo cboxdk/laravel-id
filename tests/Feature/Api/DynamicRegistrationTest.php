@@ -130,6 +130,23 @@ it('registers a native app with private-use URI scheme redirects (both forms)', 
         ->assertJsonPath('token_endpoint_auth_method', 'none');
 });
 
+it('rejects a dangerous or dotless custom redirect scheme', function (): void {
+    openDcr();
+
+    // A single-word scheme a browser may execute (javascript:/data:/file:) or a
+    // non-reverse-domain custom scheme (app:) must never register — the former would
+    // become stored XSS in the AS origin, the latter violates RFC 8252 §7.1.
+    foreach (['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', 'app:/cb'] as $uri) {
+        $this->postJson('/oauth/register', [
+            'token_endpoint_auth_method' => 'none',
+            'grant_types' => ['authorization_code'],
+            'redirect_uris' => [$uri],
+        ])
+            ->assertStatus(400)
+            ->assertJsonPath('error', 'invalid_redirect_uri');
+    }
+});
+
 it('rejects a redirect_uri containing a fragment', function (): void {
     openDcr();
 

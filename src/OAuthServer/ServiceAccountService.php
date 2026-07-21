@@ -63,13 +63,17 @@ class ServiceAccountService implements ServiceAccounts
         });
     }
 
-    public function rotate(string $clientId): RegisteredClient
+    public function rotate(string $organizationId, string $clientId): RegisteredClient
     {
-        return DB::transaction(function () use ($clientId): RegisteredClient {
+        return DB::transaction(function () use ($organizationId, $clientId): RegisteredClient {
             $account = ServiceAccount::query()->where('client_id', $clientId)->first();
             $client = $this->clients->byClientId($clientId);
 
-            if ($account === null || $client === null) {
+            // Bind to the caller's org: a service account is env- but not org-scoped,
+            // so without this one org could rotate another's credential by client_id.
+            // Answer "unknown" (not "forbidden") so the check never confirms an account
+            // exists in another org.
+            if ($account === null || $client === null || ! hash_equals($account->organization_id, $organizationId)) {
                 throw UnknownServiceAccount::make($clientId);
             }
 
@@ -109,12 +113,12 @@ class ServiceAccountService implements ServiceAccounts
         });
     }
 
-    public function retire(string $clientId): void
+    public function retire(string $organizationId, string $clientId): void
     {
-        DB::transaction(function () use ($clientId): void {
+        DB::transaction(function () use ($organizationId, $clientId): void {
             $account = ServiceAccount::query()->where('client_id', $clientId)->first();
 
-            if ($account === null) {
+            if ($account === null || ! hash_equals($account->organization_id, $organizationId)) {
                 throw UnknownServiceAccount::make($clientId);
             }
 

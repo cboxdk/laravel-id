@@ -195,3 +195,21 @@ it('refuses when the SP registered no SLO endpoint to answer', function (): void
 it('does a plain local logout when no SAMLRequest is present', function (): void {
     $this->get(IDP_SLO_ENDPOINT)->assertOk()->assertSee('Signed out', false);
 });
+
+it('revokes the named subject sessions on a valid SP-initiated SLO', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    // Alice (the NameID in the request) has a live session. The browser hitting the
+    // SLO endpoint is NOT logged in as Alice — the IdP must still revoke HER session,
+    // keyed off the verified NameID, not auth()->id().
+    $alice = $this->makeUser('alice@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($alice->id, null, ['pwd']);
+
+    $query = signedRedirectQuery(logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16))), $spPrivate, 'SAMLRequest');
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
+
+    expect($sessions->active($session->id))->toBeNull();
+});

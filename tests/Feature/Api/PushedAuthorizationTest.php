@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\PushedAuthorizationRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -80,6 +81,22 @@ it('rejects an unauthenticated confidential client and a non-code response_type'
         'client_secret' => $registered->secret,
         'response_type' => 'token',
     ]))->assertStatus(400)->assertJsonPath('error', 'invalid_request');
+});
+
+it('requires an S256 code_challenge from a public client', function (): void {
+    $public = $this->makeClient(['openid', 'profile'], ClientType::Public);
+
+    // A public client (no secret) must prove PKCE at PAR time.
+    $params = parRequest($public->client->client_id);
+    unset($params['code_challenge'], $params['code_challenge_method']);
+
+    $this->postJson('/oauth/par', $params)
+        ->assertStatus(400)
+        ->assertJsonPath('error', 'invalid_request');
+
+    // With the S256 challenge present it is accepted.
+    $this->postJson('/oauth/par', parRequest($public->client->client_id))
+        ->assertStatus(201);
 });
 
 it('advertises the PAR endpoint in the authorization-server metadata', function (): void {

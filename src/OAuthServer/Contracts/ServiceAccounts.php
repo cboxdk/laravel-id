@@ -24,16 +24,22 @@ interface ServiceAccounts
      * separately, only after the successor is confirmed working ({@see retire}).
      * Returns the new credential (secret revealed once).
      *
+     * The caller's organization id is required and must own the account —
+     * rotating by client_id alone would let one org rotate another's credential
+     * in a shared environment.
+     *
      * @throws UnknownServiceAccount
      */
-    public function rotate(string $clientId): RegisteredClient;
+    public function rotate(string $organizationId, string $clientId): RegisteredClient;
 
     /**
      * Retire a service account once its successor has taken over: it can mint no
      * further tokens (its client is removed) and every outstanding access token
      * it issued is revoked. Idempotent for an already-retired account.
      *
+     * The caller's organization id is required and must own the account.
+     *
      * @throws UnknownServiceAccount
      */
-    public function retire(string $clientId): void;
+    public function retire(string $organizationId, string $clientId): void;
 }

@@ -225,6 +225,22 @@ it('returns userinfo for a valid bearer token with openid scope', function (): v
         ->assertJsonStructure(['sub']);
 });
 
+it('refuses userinfo for a token audienced for another resource (RFC 8707)', function (): void {
+    $registered = $this->makeClient(['openid', 'email', 'profile'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
+    $token = $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid email profile',
+        'resource' => 'https://mcp.example.com',
+    ])->json('access_token');
+
+    // The token's aud is the MCP resource, not this issuer — it must not be
+    // replayable at UserInfo to harvest identity claims.
+    $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
+        ->assertStatus(401);
+});
+
 it('refuses userinfo without a bearer token', function (): void {
     $this->getJson('/oauth/userinfo')->assertStatus(401);
 });

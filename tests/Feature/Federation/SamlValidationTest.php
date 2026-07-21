@@ -45,6 +45,7 @@ final class SamlIdp
         bool $sign = true,
         bool $tamper = false,
         ?string $inResponseTo = null,
+        bool $sha1 = false,
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
@@ -85,7 +86,7 @@ XML;
         $doc->loadXML($xml);
 
         if ($sign) {
-            $this->signAssertion($doc);
+            $this->signAssertion($doc, $sha1);
         }
 
         $signedXml = (string) $doc->saveXML();
@@ -103,7 +104,7 @@ XML;
         return base64_encode($signedXml);
     }
 
-    private function signAssertion(DOMDocument $doc): void
+    private function signAssertion(DOMDocument $doc, bool $sha1 = false): void
     {
         $assertion = $doc->getElementsByTagName('Assertion')->item(0);
 
@@ -111,12 +112,12 @@ XML;
         $dsig->setCanonicalMethod(XMLSecurityDSig::EXC_C14N);
         $dsig->addReference(
             $assertion,
-            XMLSecurityDSig::SHA256,
+            $sha1 ? XMLSecurityDSig::SHA1 : XMLSecurityDSig::SHA256,
             ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', XMLSecurityDSig::EXC_C14N],
             ['id_name' => 'ID', 'overwrite' => false],
         );
 
-        $key = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
+        $key = new XMLSecurityKey($sha1 ? XMLSecurityKey::RSA_SHA1 : XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
         $key->loadKey($this->privatePem, false);
         $dsig->sign($key);
         $dsig->add509Cert($this->certPem, true);
@@ -174,6 +175,15 @@ it('rejects a SAML response with a tampered signature', function (): void {
     $connection = samlConnection($idp);
 
     app(AssertionValidator::class)->validate($connection, $idp->response(tamper: true));
+})->throws(InvalidAssertion::class);
+
+it('rejects a SAML response signed with RSA-SHA1 (algorithm downgrade)', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    // A genuinely-signed response, but with the deprecated RSA-SHA1 / SHA-1 pair
+    // onelogin still accepts. The RP must pin RSA-SHA256 and refuse it.
+    app(AssertionValidator::class)->validate($connection, $idp->response(sha1: true));
 })->throws(InvalidAssertion::class);
 
 it('rejects an unsigned SAML response (wantAssertionsSigned)', function (): void {

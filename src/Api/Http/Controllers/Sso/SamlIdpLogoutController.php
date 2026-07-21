@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
 use Cbox\Id\SamlIdp\Exceptions\InvalidLogoutRequest;
 use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
+use Cbox\Id\SamlIdp\ValueObjects\SamlLogoutOutcome;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -33,6 +35,7 @@ class SamlIdpLogoutController
     public function __construct(
         private readonly SessionManager $sessions,
         private readonly SamlSingleLogout $singleLogout,
+        private readonly Subjects $subjects,
     ) {}
 
     public function __invoke(Request $request): RedirectResponse|Response
@@ -60,18 +63,35 @@ class SamlIdpLogoutController
             return new Response('SLO rejected.', 400, ['Content-Type' => 'text/plain; charset=UTF-8']);
         }
 
-        $this->terminate();
+        $this->terminateSubject($outcome);
 
         return new RedirectResponse($outcome->redirectUrl);
     }
 
-    /** Revoke every session for the currently-authenticated subject. */
+    /** Revoke every session for the currently-authenticated subject (plain logout). */
     private function terminate(): void
     {
         $subjectId = auth()->id();
 
         if (is_string($subjectId) || is_int($subjectId)) {
             $this->sessions->revokeAllForUser((string) $subjectId);
+        }
+    }
+
+    /**
+     * Revoke every session for the subject the SP asked to log out — identified by the
+     * VERIFIED NameID from the signed request, not by auth()->id(). An SP-initiated SLO
+     * may arrive on a connection with no local session, or one signed in as a different
+     * subject, so revoking the current browser's user would log out the wrong person (or
+     * nobody). The NameID is the subject id or, per the SP's NameID format, their email.
+     */
+    private function terminateSubject(SamlLogoutOutcome $outcome): void
+    {
+        $subject = $this->subjects->find($outcome->nameId)
+            ?? $this->subjects->findByEmail($outcome->nameId);
+
+        if ($subject !== null) {
+            $this->sessions->revokeAllForUser($subject->id);
         }
     }
 

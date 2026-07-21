@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
@@ -32,6 +33,7 @@ class UserInfoController
         private readonly Organizations $organizations,
         private readonly Memberships $memberships,
         private readonly AccessChecker $access,
+        private readonly IssuerResolver $issuers,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -46,6 +48,13 @@ class UserInfoController
 
         if (! $token->active || ! $token->hasScope('openid') || $token->subject === null) {
             return $this->challenge('the access token is invalid or lacks the openid scope');
+        }
+
+        // Least-privilege: a token minted for a specific resource (RFC 8707) must not
+        // be replayable at UserInfo to harvest identity claims. Accept only a token
+        // audienced for this issuer (or one carrying no explicit audience).
+        if (! $token->isAudience($this->issuers->issuer())) {
+            return $this->challenge('the access token was not issued for this endpoint');
         }
 
         // A sender-constrained (cnf.jkt) token requires a valid DPoP proof over
