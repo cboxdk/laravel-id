@@ -65,7 +65,16 @@ class ClientAuthenticator
         //
         // An assertion, if one was presented, is handled above; reaching here means a
         // confidential client must prove itself with a secret.
-        if ($client->type === ClientType::Confidential
+        // Require proof when the client is Confidential OR still holds a secret.
+        //
+        // Keying on type ALONE re-opened the hole from the other side: RFC 7592 lets a
+        // client rewrite its own token_endpoint_auth_method to "none" via
+        // PUT /oauth/register/{client}, which flips type to Public WITHOUT clearing
+        // secret_hash — so anyone holding a registration access token could downgrade a
+        // confidential client and then authenticate on client_id alone. The disjunction
+        // covers both the private_key_jwt case (type set, no secret) and the downgrade
+        // case (secret still set, type cleared).
+        if (($client->type === ClientType::Confidential || $client->secret_hash !== null)
             && ($client->secret_hash === null || ! $this->clients->verifySecret($client, $secret))) {
             return null;
         }
