@@ -18,6 +18,10 @@ function samlAcsConnection(SamlIdp $idp, string $organizationId, bool $active = 
     $connections = app(Connections::class);
 
     $connection = $connections->create($organizationId, ConnectionType::Saml, 'Okta', [
+        // This fixture posts an UNSOLICITED assertion (no InResponseTo), which is now
+        // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
+        // keeps exercising the IdP-initiated path deliberately rather than by default.
+        'allow_idp_initiated' => true,
         'idp_entity_id' => $idp->entityId,
         'idp_sso_url' => 'https://idp.example.test/sso',
         'idp_x509cert' => $idp->certPem,
