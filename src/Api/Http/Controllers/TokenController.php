@@ -65,8 +65,8 @@ class TokenController
         // into whichever grant runs.
         try {
             $jkt = $this->dpopBinding($request);
-        } catch (InvalidDpopProof) {
-            return $this->error('invalid_dpop_proof', 400);
+        } catch (InvalidDpopProof $e) {
+            return $this->error('invalid_dpop_proof', 400, $e->getMessage());
         }
 
         // RFC 8707 §2: a present-but-malformed `resource` is an error, not a token
@@ -144,8 +144,11 @@ class TokenController
                 $request->string('redirect_uri')->toString(),
                 $request->string('code_verifier')->toString(),
             );
-        } catch (InvalidGrant) {
-            return $this->error('invalid_grant', 400);
+        } catch (InvalidGrant $e) {
+            // The reason already exists on the exception; discarding it collapsed
+            // expired-code, wrong-redirect_uri, PKCE-mismatch, replayed-code and
+            // unknown-refresh-token into one five-word body with no signal.
+            return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
         $resource = $this->resource($request);
@@ -184,8 +187,11 @@ class TokenController
             return $this->error('access_denied', 400);
         } catch (DeviceExpired) {
             return $this->error('expired_token', 400);
-        } catch (InvalidGrant) {
-            return $this->error('invalid_grant', 400);
+        } catch (InvalidGrant $e) {
+            // The reason already exists on the exception; discarding it collapsed
+            // expired-code, wrong-redirect_uri, PKCE-mismatch, replayed-code and
+            // unknown-refresh-token into one five-word body with no signal.
+            return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
         return $this->tokenResponse(
@@ -217,8 +223,11 @@ class TokenController
             return $this->error('access_denied', 400);
         } catch (CibaExpired) {
             return $this->error('expired_token', 400);
-        } catch (InvalidGrant) {
-            return $this->error('invalid_grant', 400);
+        } catch (InvalidGrant $e) {
+            // The reason already exists on the exception; discarding it collapsed
+            // expired-code, wrong-redirect_uri, PKCE-mismatch, replayed-code and
+            // unknown-refresh-token into one five-word body with no signal.
+            return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
         // CIBA is OpenID Connect: the token response carries an id_token bound to
@@ -243,8 +252,11 @@ class TokenController
 
         try {
             $rotated = $this->refreshTokens->rotate($client->client_id, $request->string('refresh_token')->toString(), $dpopJkt);
-        } catch (InvalidGrant) {
-            return $this->error('invalid_grant', 400);
+        } catch (InvalidGrant $e) {
+            // The reason already exists on the exception; discarding it collapsed
+            // expired-code, wrong-redirect_uri, PKCE-mismatch, replayed-code and
+            // unknown-refresh-token into one five-word body with no signal.
+            return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
         return $this->tokenResponse($this->accessFromRefresh($client, $rotated, $dpopJkt), null, $rotated->refreshToken);
@@ -386,10 +398,12 @@ class TokenController
                 requestedTokenType: $request->string('requested_token_type')->toString() ?: null,
             ));
         } catch (InvalidTokenExchange $e) {
-            return $this->error($e->error, 400);
+            // e.g. "The requested scope exceeds the subject token scope." — already
+            // written, previously discarded.
+            return $this->error($e->error, 400, $e->getMessage());
         }
 
-        return new JsonResponse([
+        return self::noStore(new JsonResponse([
             'access_token' => $result->token->token,
             'issued_token_type' => TokenExchangeRequest::ACCESS_TOKEN_TYPE,
             'token_type' => $result->token->tokenType,
@@ -397,7 +411,7 @@ class TokenController
             // RFC 8693 §2.2.1: echo the granted scope (REQUIRED when it differs from
             // the request — e.g. an empty request that inherited the subject scopes).
             'scope' => implode(' ', $result->scopes),
-        ]);
+        ]));
     }
 
     private function tokenResponse(IssuedToken $token, ?string $idToken, ?string $refreshToken = null): JsonResponse
@@ -416,7 +430,19 @@ class TokenController
             $body['refresh_token'] = $refreshToken;
         }
 
-        return new JsonResponse($body);
+        // RFC 6749 §5.1 makes these a MUST on any response carrying credentials: a
+        // shared proxy, a CDN that caches POSTs, or a browser back-button replay could
+        // otherwise serve someone else's access/refresh token.
+        return self::noStore(new JsonResponse($body));
+    }
+
+    /** RFC 6749 §5.1 / RFC 7662 §2.2: never let a credential-bearing response be cached. */
+    public static function noStore(JsonResponse $response): JsonResponse
+    {
+        return $response->withHeaders([
+            'Cache-Control' => 'no-store',
+            'Pragma' => 'no-cache',
+        ]);
     }
 
     /**
@@ -442,8 +468,31 @@ class TokenController
         return in_array($grantType, $registered, true);
     }
 
-    private function error(string $error, int $status): JsonResponse
+    /**
+     * An RFC 6749 §5.2 error response.
+     *
+     * `$description` is free text for a human debugging an integration; the `error` code
+     * itself stays strictly spec-valued. Never put anything in the description that
+     * distinguishes "no such client" from "wrong secret" — that turns the endpoint into
+     * a client-enumeration oracle.
+     */
+    private function error(string $error, int $status, ?string $description = null): JsonResponse
     {
-        return new JsonResponse(['error' => $error], $status);
+        $body = ['error' => $error];
+
+        if ($description !== null && $description !== '') {
+            $body['error_description'] = $description;
+        }
+
+        $response = self::noStore(new JsonResponse($body, $status));
+
+        // RFC 6749 §5.2: when the client attempted to authenticate via the Authorization
+        // header, a 401 MUST carry a challenge. Clients that drive re-authentication off
+        // it (curl --anyauth, several Java/Go OAuth libraries) treat a bare 401 as fatal.
+        if ($status === 401 && request()->getUser() !== null) {
+            $response->headers->set('WWW-Authenticate', 'Basic realm="token"');
+        }
+
+        return $response;
     }
 }

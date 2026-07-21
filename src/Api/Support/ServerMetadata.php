@@ -79,7 +79,17 @@ class ServerMetadata
         // The interactive `/authorize` endpoint is the host app's responsibility;
         // advertise it only when the host has told us where it lives. Omitting the
         // key is valid per RFC 8414 rather than advertising a route we don't serve.
-        $authorizationEndpoint = config('cbox-id.oauth.authorization_endpoint');
+        //
+        // Prefer the PATH form: it is joined to the per-environment issuer, so a tenant
+        // on its own host advertises its OWN authorize endpoint. A single absolute URL
+        // cannot — under multi-tenancy it pins every environment to one host, which is
+        // both wrong and, because RFC 9207 is advertised alongside it, actively breaks
+        // mix-up-hardened clients. The absolute form stays for hosts that serve
+        // /authorize somewhere genuinely fixed.
+        $authorizationPath = config('cbox-id.oauth.authorization_endpoint_path');
+        $authorizationEndpoint = is_string($authorizationPath) && $authorizationPath !== ''
+            ? $issuer.'/'.ltrim($authorizationPath, '/')
+            : config('cbox-id.oauth.authorization_endpoint');
 
         if (is_string($authorizationEndpoint) && $authorizationEndpoint !== '') {
             $document['authorization_endpoint'] = $authorizationEndpoint;

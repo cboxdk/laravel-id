@@ -240,6 +240,14 @@ return [
         'authorization_endpoint' => env('CBOX_ID_AUTHORIZATION_ENDPOINT'),
 
         /*
+         * Preferred over the absolute form above: a PATH, joined to the per-environment
+         * issuer, so every tenant advertises its own authorize endpoint on its own host.
+         * An absolute URL pins all environments to one host — wrong under multi-tenancy,
+         * and it breaks mix-up-hardened clients because RFC 9207 is advertised with it.
+         */
+        'authorization_endpoint_path' => env('CBOX_ID_AUTHORIZATION_ENDPOINT_PATH'),
+
+        /*
          * FAPI baseline: require every authorization request to be pushed
          * (RFC 9126) so parameters never ride the browser URL. Turning this on is
          * one of the switches in the FAPI hardening profile — see docs/fapi.md.
