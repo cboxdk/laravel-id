@@ -33,6 +33,7 @@ use Cbox\Id\Api\Http\Controllers\Sso\SamlMetadataController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Controllers\UserInfoController;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
+use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
 use Cbox\Id\Api\Http\Middleware\ScimContentType;
 use Illuminate\Support\Facades\Route;
@@ -73,8 +74,11 @@ class ApiServiceProvider extends ServiceProvider
             Route::middleware('throttle:600,1')->post('/oauth/decisions', DecisionController::class);
 
             // Credential-bearing endpoints — throttled to blunt secret/token brute
-            // force (secrets are 256-bit, so this is a backstop, not the only guard).
-            Route::middleware('throttle:30,1')->group(function (): void {
+            // force (secrets are 256-bit, so this is a backstop, not the only guard),
+            // and no-store so a proxy/CDN/back-button can never re-serve a token
+            // (RFC 6749 §5.1, RFC 7662 §2.2). On the GROUP so a newly added endpoint
+            // inherits it rather than being one forgotten line from caching credentials.
+            Route::middleware(['throttle:30,1', NoStore::class])->group(function (): void {
                 Route::post('/oauth/token', TokenController::class);
                 Route::post('/oauth/introspect', IntrospectionController::class);
                 Route::post('/oauth/revoke', RevocationController::class);

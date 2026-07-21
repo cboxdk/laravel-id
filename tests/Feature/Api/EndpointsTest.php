@@ -107,3 +107,56 @@ it('reports a bad token as inactive for an authenticated caller', function (): v
 it('responds to the health probe', function (): void {
     $this->getJson('/up')->assertOk();
 });
+
+/**
+ * A single absolute authorization_endpoint pins every environment to one host. Because
+ * RFC 9207 (`iss` on the authorization response) is advertised alongside it, a
+ * mix-up-hardened RP — node openid-client v5+, Spring Security 6, AppAuth, any FAPI
+ * client — then compares the callback's `iss` against discovery and aborts the login.
+ * The path form derives from the per-environment issuer instead.
+ */
+it('derives authorization_endpoint from the per-environment issuer', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize']);
+
+    $document = $this->getJson('/.well-known/openid-configuration')->assertOk()->json();
+
+    expect($document['authorization_endpoint'])->toBe($document['issuer'].'/oauth/authorize')
+        ->and($document['authorization_response_iss_parameter_supported'])->toBeTrue();
+});
+
+it('prefers the path form over a fixed absolute endpoint', function (): void {
+    config([
+        'cbox-id.oauth.authorization_endpoint' => 'https://apex.example.com/authorize',
+        'cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize',
+    ]);
+
+    $document = $this->getJson('/.well-known/openid-configuration')->assertOk()->json();
+
+    expect($document['authorization_endpoint'])->toBe($document['issuer'].'/oauth/authorize');
+});
+
+/**
+ * The regression guard that makes the omission visible to CI. authorization_endpoint is
+ * REQUIRED by OpenID Connect Discovery 1.0 §3, and every conformant client throws at
+ * discover() before a single redirect when it is missing — which is what a
+ * docs-following deployment served.
+ */
+it('serves every field OpenID Connect Discovery marks REQUIRED', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize']);
+
+    $document = $this->getJson('/.well-known/openid-configuration')->assertOk()->json();
+
+    $required = [
+        'issuer',
+        'authorization_endpoint',
+        'token_endpoint',
+        'jwks_uri',
+        'response_types_supported',
+        'subject_types_supported',
+        'id_token_signing_alg_values_supported',
+    ];
+
+    $missing = array_values(array_diff($required, array_keys($document)));
+
+    expect($missing)->toBe([], 'Discovery is missing REQUIRED field(s): '.implode(', ', $missing));
+});
