@@ -138,3 +138,31 @@ it('explains an invalid_grant instead of returning five opaque words', function 
         ->and($body)->toHaveKey('error_description')
         ->and($body['error_description'])->not->toBe('');
 });
+
+/**
+ * Don't mint what you won't accept. The code path issues a refresh token whenever
+ * offline_access is granted, without consulting the registered set — so a client
+ * registered for authorization_code alone (DCR's own default) received a refresh token
+ * that every rotation then rejected with unauthorized_client. Users were silently signed
+ * out at access-token expiry with nothing to explain it.
+ */
+it('accepts a refresh token from a client registered only for authorization_code', function (): void {
+    $registered = app(ClientRegistry::class)->register(new NewClient(
+        'Code-only client',
+        ClientType::Confidential,
+        redirectUris: ['https://app.test/cb'],
+        grantTypes: ['authorization_code'],
+        scopes: ['openid', 'offline_access'],
+    ));
+
+    // The grant policy must treat refresh_token as implied by authorization_code.
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'refresh_token' => 'rt_not_a_real_token',
+    ])->assertStatus(400)->json();
+
+    // invalid_grant (the token is bogus) — NOT unauthorized_client (the grant is allowed).
+    expect($body['error'])->toBe('invalid_grant');
+});

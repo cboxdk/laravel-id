@@ -280,9 +280,71 @@ it('refuses an unmapped PATCH path instead of reporting a write it did not make'
 
     $this->patchJson('/scim/v2/Users/'.$id, [
         'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
-        'Operations' => [['op' => 'replace', 'path' => 'nickName', 'value' => 'Dee']],
+        // NOT nickName: that is a schema-defined attribute this server simply does not
+        // store, so tolerating it is correct. invalidPath is for a path we cannot
+        // interpret at all.
+        'Operations' => [['op' => 'replace', 'path' => 'notAScimAttribute', 'value' => 'x']],
     ], $headers)
         ->assertStatus(400)
         ->assertJsonPath('scimType', 'invalidPath')
         ->assertJsonPath('schemas.0', 'urn:ietf:params:scim:api:messages:2.0:Error');
+});
+
+/**
+ * The invalidPath fix traded a silent no-op for a HARD FAILURE on the operations that
+ * matter. applyPatch throws mid-loop, so one unmapped attribute 400s the whole request —
+ * and Entra's default mapping ships phoneNumbers alongside `active`. A deprovision was
+ * therefore rejected outright and the user was never deactivated.
+ */
+it('deactivates a user even when the push carries attributes we do not store', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'leaver@corp.com', 'entra|9', 'leaver@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [
+            ['op' => 'replace', 'path' => 'active', 'value' => false],
+            ['op' => 'replace', 'path' => 'phoneNumbers[type eq "mobile"].value', 'value' => '+45 12 34 56 78'],
+            ['op' => 'replace', 'path' => 'title', 'value' => 'Former VP'],
+        ],
+    ], $headers)
+        ->assertOk()
+        // The operation that MATTERS must have landed.
+        ->assertJsonPath('active', false);
+});
+
+it('still refuses a path it cannot interpret at all', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana2', 'okta|11', 'dana2@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'path' => 'notAScimAttribute', 'value' => 'x']],
+    ], $headers)
+        ->assertStatus(400)
+        ->assertJsonPath('scimType', 'invalidPath');
+});
+
+/**
+ * A single-part name PATCH must MERGE with the stored other part. build() previously
+ * persisted only the composed displayName, so composing from the patch alone silently
+ * dropped whichever part was not sent.
+ */
+it('keeps the other name part when only one is patched', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana3@corp.com', 'okta|21', 'dana3@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [
+            ['op' => 'replace', 'path' => 'name.givenName', 'value' => 'Dana'],
+            ['op' => 'replace', 'path' => 'name.familyName', 'value' => 'Rivera'],
+        ],
+    ], $headers)->assertOk()->assertJsonPath('displayName', 'Dana Rivera');
+
+    // A surname change alone must not erase the given name.
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'path' => 'name.familyName', 'value' => 'Okonkwo']],
+    ], $headers)->assertOk()->assertJsonPath('displayName', 'Dana Okonkwo');
 });
