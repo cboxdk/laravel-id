@@ -12,6 +12,9 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Audit\ValueObjects\ChainVerification;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Scopes\EnvironmentScope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -19,9 +22,48 @@ class DatabaseAuditLog implements AuditLog
 {
     private const SYSTEM_SCOPE = '__system__';
 
+    /**
+     * The environment key used for entries recorded OUTSIDE any environment — the
+     * account-management plane deliberately runs without one.
+     *
+     * A literal sentinel rather than NULL, because SQL treats NULLs as distinct in a
+     * unique index: with NULL, the (environment_id, scope, sequence) key never fired,
+     * every platform-plane entry was written at sequence 1 with the genesis hash, and
+     * the highest-privilege audit trail silently stopped being a chain at all.
+     */
+    public const PLATFORM_ENVIRONMENT = '__platform__';
+
     private const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
-    public function __construct(private readonly TokenSigner $signer) {}
+    public function __construct(
+        private readonly TokenSigner $signer,
+        private readonly EnvironmentContext $environments,
+    ) {}
+
+    /**
+     * The chain's environment dimension, resolved EXPLICITLY.
+     *
+     * Never taken from the global scope: a chain head read through an ambient scope
+     * returns null when no environment is set (EnvironmentScope emits `1 = 0`), which
+     * restarts the chain on every write instead of extending it.
+     */
+    private function environmentKey(): string
+    {
+        return $this->environments->current()?->environmentKey() ?? self::PLATFORM_ENVIRONMENT;
+    }
+
+    /**
+     * A chain query that ignores the ambient environment scope and states its own.
+     *
+     * @return Builder<AuditEntry>
+     */
+    private function chain(string $scope): Builder
+    {
+        return AuditEntry::query()
+            ->withoutGlobalScope(EnvironmentScope::class)
+            ->where('environment_id', $this->environmentKey())
+            ->where('scope', $scope);
+    }
 
     public function record(AuditEvent $event): AuditEntry
     {
@@ -43,6 +85,9 @@ class DatabaseAuditLog implements AuditLog
 
             $entry = new AuditEntry;
             $entry->fill([
+                // Stamped explicitly: BelongsToEnvironment's saving hook returns early
+                // when no environment is in context, which left this NULL.
+                'environment_id' => $this->environmentKey(),
                 'scope' => $scope,
                 'organization_id' => $event->organizationId,
                 'sequence' => $sequence,
@@ -68,8 +113,7 @@ class DatabaseAuditLog implements AuditLog
         $scope = $this->scopeFor($organizationId);
         $from = max(1, $fromSequence);
 
-        $query = AuditEntry::query()
-            ->where('scope', $scope)
+        $query = $this->chain($scope)
             ->where('sequence', '>=', $from)
             ->orderBy('sequence');
 
@@ -125,6 +169,8 @@ class DatabaseAuditLog implements AuditLog
     private function verifyCheckpointAnchor(string $scope): ?ChainVerification
     {
         $checkpoint = AuditCheckpoint::query()
+            ->withoutGlobalScope(EnvironmentScope::class)
+            ->where('environment_id', $this->environmentKey())
             ->where('scope', $scope)
             ->orderByDesc('up_to_sequence')
             ->first();
@@ -178,6 +224,7 @@ class DatabaseAuditLog implements AuditLog
         ]);
 
         $checkpoint = new AuditCheckpoint;
+        $checkpoint->environment_id = $this->environmentKey();
         $checkpoint->fill([
             'scope' => $scope,
             'organization_id' => $organizationId,
@@ -192,7 +239,7 @@ class DatabaseAuditLog implements AuditLog
 
     private function headEntry(string $scope, bool $lock): ?AuditEntry
     {
-        $query = AuditEntry::query()->where('scope', $scope)->orderByDesc('sequence');
+        $query = $this->chain($scope)->orderByDesc('sequence');
 
         if ($lock) {
             $query->lockForUpdate();
@@ -203,8 +250,7 @@ class DatabaseAuditLog implements AuditLog
 
     private function entryAt(string $scope, int $sequence): ?AuditEntry
     {
-        return AuditEntry::query()
-            ->where('scope', $scope)
+        return $this->chain($scope)
             ->where('sequence', $sequence)
             ->first();
     }
@@ -223,6 +269,10 @@ class DatabaseAuditLog implements AuditLog
     {
         $payload = [
             'sequence' => $entry->sequence,
+            // The chain is defined per (environment, scope), so the environment must be
+            // INSIDE the hash — otherwise a row can be moved between environments with a
+            // plain UPDATE and verifyChain() still reports it intact.
+            'environment_id' => $entry->environment_id,
             'scope' => $entry->scope,
             'organization_id' => $entry->organization_id,
             'actor_type' => $entry->actor_type->value,
