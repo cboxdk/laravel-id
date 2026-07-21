@@ -14,6 +14,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class DatabaseEventBus implements EventBus
 {
@@ -82,10 +83,34 @@ class DatabaseEventBus implements EventBus
             // scheduler/queue with no ambient context would otherwise match nothing —
             // or, worse, match a stale worker's environment. A platform (null-env)
             // event dispatches unscoped.
-            if ($environment !== null) {
-                $this->environments->runAs($environment, fn () => $this->dispatcher->dispatch(new EventDelivered($event)));
-            } else {
-                $this->dispatcher->dispatch(new EventDelivered($event));
+            try {
+                if ($environment !== null) {
+                    $this->environments->runAs($environment, fn () => $this->dispatcher->dispatch(new EventDelivered($event)));
+                } else {
+                    $this->dispatcher->dispatch(new EventDelivered($event));
+                }
+            } catch (Throwable $e) {
+                // Isolate the failure. An uncaught listener throw used to abort the whole
+                // pass: the rest of the claimed batch sat undelivered for the full reclaim
+                // window, and the throwing event — whose earlier listeners HAD run — was
+                // re-delivered on reclaim, reintroducing exactly the double-send this
+                // design exists to prevent, forever, since nothing counted attempts.
+                //
+                // Release the claim so it retries promptly, and keep going.
+                //
+                // A query update, NOT $event->save(): the models were fetched BEFORE
+                // claim() stamped claimed_at, so in memory it is already null and Eloquent
+                // would see no change and write nothing — leaving the row claimed for the
+                // whole reclaim window. (The test caught exactly that.)
+                Event::query()->whereKey($event->id)->update(['claimed_at' => null]);
+
+                Log::error('cbox-id: outbox event delivery failed; releasing the claim.', [
+                    'event_id' => $event->id,
+                    'type' => $event->type,
+                    'reason' => $e->getMessage(),
+                ]);
+
+                continue;
             }
 
             $event->forceFill(['dispatched_at' => now()])->save();
@@ -143,6 +168,8 @@ class DatabaseEventBus implements EventBus
     {
         $configured = config('cbox-id.events.reclaim_after_seconds', 300);
 
-        return is_int($configured) && $configured > 0 ? $configured : 300;
+        // env() yields a STRING for a numeric variable, so is_int() alone silently
+        // ignored the knob whenever it was actually configured.
+        return is_numeric($configured) && (int) $configured > 0 ? (int) $configured : 300;
     }
 }
