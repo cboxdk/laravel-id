@@ -23,6 +23,28 @@ class DatabaseProvisioningConnections implements ProvisioningConnections
         private readonly Memberships $memberships,
     ) {}
 
+    /**
+     * The organizations a connection may provision.
+     *
+     * A TENANT-owned connection is confined to its owner: an empty list used to mean
+     * "environment-wide", and explicit foreign ids were accepted outright — so org A
+     * could register a connection that received org B's user email and name over SCIM on
+     * every membership change. Environment-wide coverage is a PLATFORM capability
+     * (organization_id null), not something a tenant can ask for.
+     *
+     * @param  list<string>  $requested
+     * @return list<string>
+     */
+    private static function resolveScope(?string $organizationId, array $requested): array
+    {
+        if ($organizationId === null) {
+            return $requested;
+        }
+
+        // Confine to the owner, whatever was asked for.
+        return [$organizationId];
+    }
+
     public function register(
         ?string $organizationId,
         string $name,
@@ -46,7 +68,7 @@ class DatabaseProvisioningConnections implements ProvisioningConnections
             'auth_scheme' => $authScheme,
             'auth_config' => $authConfig,
             'attribute_mapping' => $attributeMapping,
-            'scope' => ['organization_ids' => $organizationIds],
+            'scope' => ['organization_ids' => self::resolveScope($organizationId, $organizationIds)],
             'deprovision_policy' => $deprovisionPolicy,
             'status' => ConnectionStatus::Active,
             'consecutive_failures' => 0,
