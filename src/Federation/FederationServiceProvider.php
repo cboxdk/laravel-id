@@ -29,6 +29,7 @@ class FederationServiceProvider extends ServiceProvider
         // Enterprise SSO onboarding: parse an IdP's SAML metadata (paste or URL)
         // into a connection prefill via the vetted onelogin parser.
         $this->app->singleton(SamlMetadataImporter::class);
+        $this->app->singleton(OidcDiscovery::class);
 
         // Per-type signature validation, each wrapping a vetted library: OIDC
         // (id_token / JWS via firebase/php-jwt, RS256-pinned) and SAML (XML-DSig
