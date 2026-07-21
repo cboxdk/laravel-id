@@ -12,7 +12,7 @@ uses(RefreshDatabase::class);
 const CIBA_GRANT = 'urn:openid:params:grant-type:ciba';
 
 it('starts a CIBA flow and returns only the client-facing auth_req_id', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
     $user = $this->makeUser('alice@example.test');
 
     $response = $this->postJson('/oauth/backchannel_authentication', [
@@ -32,7 +32,7 @@ it('starts a CIBA flow and returns only the client-facing auth_req_id', function
 });
 
 it('polls pending, then issues access + id_token once the user approves', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
     $user = $this->makeUser('bob@example.test');
 
     $ciba = app(BackchannelAuthentication::class);
@@ -68,7 +68,7 @@ it('polls pending, then issues access + id_token once the user approves', functi
 });
 
 it('returns slow_down when polling faster than the interval', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
     $user = $this->makeUser('carol@example.test');
     $result = app(BackchannelAuthentication::class)->request($registered->client, ['openid'], $user->id);
 
@@ -84,7 +84,7 @@ it('returns slow_down when polling faster than the interval', function (): void 
 });
 
 it('reports denial and expiry', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
     $user = $this->makeUser('dave@example.test');
     $ciba = app(BackchannelAuthentication::class);
 
@@ -104,7 +104,7 @@ it('reports denial and expiry', function (): void {
 });
 
 it('mints a token only once per auth_req_id (single-use)', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
     $user = $this->makeUser('erin@example.test');
     $ciba = app(BackchannelAuthentication::class);
     $result = $ciba->request($registered->client, ['openid'], $user->id);
@@ -126,7 +126,7 @@ it('mints a token only once per auth_req_id (single-use)', function (): void {
 });
 
 it('rejects an unknown auth_req_id', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
 
     $this->postJson('/oauth/token', [
         'grant_type' => CIBA_GRANT, 'client_id' => $registered->client->client_id,
@@ -135,7 +135,7 @@ it('rejects an unknown auth_req_id', function (): void {
 });
 
 it('rejects a login_hint that resolves to no user', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
 
     $this->postJson('/oauth/backchannel_authentication', [
         'client_id' => $registered->client->client_id,
@@ -146,7 +146,7 @@ it('rejects a login_hint that resolves to no user', function (): void {
 });
 
 it('rejects a backchannel request with no login_hint', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
 
     $this->postJson('/oauth/backchannel_authentication', [
         'client_id' => $registered->client->client_id,
@@ -186,7 +186,7 @@ it('advertises the CIBA endpoint, delivery mode and grant type in metadata', fun
  * webhooks, so it must not be the only thing standing between an agent and a token.
  */
 it('refuses to approve or deny another subject\'s request', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
     $victim = $this->makeUser('victim@example.test');
     $attacker = $this->makeUser('attacker@example.test');
     $ciba = app(BackchannelAuthentication::class);

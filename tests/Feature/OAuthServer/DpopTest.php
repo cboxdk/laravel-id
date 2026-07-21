@@ -152,7 +152,7 @@ it('rejects a stale proof and one signed by a mismatched key', function (): void
 });
 
 it('sender-constrains an access token issued at the token endpoint', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $key = dpopKey();
     $url = 'http://localhost/oauth/token';
 
@@ -174,7 +174,7 @@ it('sender-constrains an access token issued at the token endpoint', function ()
 });
 
 it('rejects a bad DPoP proof at the token endpoint', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
@@ -204,7 +204,7 @@ function mintBoundToken(object $test, object $registered, array $key): string
 
 it('rejects a sender-constrained token presented as a plain bearer at the resource', function (): void {
     $key = dpopKey();
-    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $token = mintBoundToken($this, $this->makeClient(['openid'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']), $key);
 
     // A stolen bound token, replayed as a bearer with no proof of possession.
     $this->getJson('/oauth/userinfo', ['Authorization' => 'Bearer '.$token])
@@ -213,7 +213,7 @@ it('rejects a sender-constrained token presented as a plain bearer at the resour
 
 it('accepts a sender-constrained token with a matching DPoP proof at the resource', function (): void {
     $key = dpopKey();
-    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $token = mintBoundToken($this, $this->makeClient(['openid'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']), $key);
     $url = 'http://localhost/oauth/userinfo';
 
     $proof = dpopProof($key, 'GET', $url, ['ath' => base64url(hash('sha256', $token, true))]);
@@ -224,7 +224,7 @@ it('accepts a sender-constrained token with a matching DPoP proof at the resourc
 
 it('rejects a resource proof that omits the ath token binding', function (): void {
     $key = dpopKey();
-    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $token = mintBoundToken($this, $this->makeClient(['openid'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']), $key);
     $url = 'http://localhost/oauth/userinfo';
 
     // Correct key + request, but no ath — a proof captured for a different call
@@ -238,7 +238,7 @@ it('rejects a resource proof that omits the ath token binding', function (): voi
 it('rejects a resource proof signed by a key other than the token binding', function (): void {
     $key = dpopKey();
     $attacker = dpopKey();
-    $token = mintBoundToken($this, $this->makeClient(['openid']), $key);
+    $token = mintBoundToken($this, $this->makeClient(['openid'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']), $key);
     $url = 'http://localhost/oauth/userinfo';
 
     // Attacker holds the stolen token and forges a fresh proof with THEIR key —
@@ -250,7 +250,7 @@ it('rejects a resource proof signed by a key other than the token binding', func
 });
 
 it('still serves a plain (unbound) bearer token at the resource', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $token = $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
         'client_id' => $registered->client->client_id,
@@ -290,7 +290,7 @@ function boundRefreshToken(object $test, string $clientId, array $key): string
 
 it('binds a refresh token to the DPoP key and rotates it only with a matching proof', function (): void {
     $key = dpopKey();
-    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $refresh = boundRefreshToken($this, $clientId, $key);
     $tokenUrl = 'http://localhost/oauth/token';
 
@@ -305,7 +305,7 @@ it('binds a refresh token to the DPoP key and rotates it only with a matching pr
 
 it('refuses to rotate a DPoP-bound refresh token without a proof', function (): void {
     $key = dpopKey();
-    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $refresh = boundRefreshToken($this, $clientId, $key);
 
     // A stolen bound token, replayed with no DPoP header at all.
@@ -319,7 +319,7 @@ it('refuses to rotate a DPoP-bound refresh token without a proof', function (): 
 it('refuses to rotate a DPoP-bound refresh token with a different key', function (): void {
     $key = dpopKey();
     $attacker = dpopKey();
-    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $refresh = boundRefreshToken($this, $clientId, $key);
 
     // Attacker holds the stolen token but can only prove their OWN key.

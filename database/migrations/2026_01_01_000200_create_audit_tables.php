@@ -12,6 +12,11 @@ return new class extends Migration
     {
         Schema::create('audit_logs', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            // The hash chain is per (environment, scope). Without the environment the
+            // '__system__' scope was ONE global chain shared by every tenant — operator
+            // and environment-level entries from unrelated customers interleaved in it,
+            // and every writer contended on the same chain head.
+            $table->ulid('environment_id')->nullable()->index();
             $table->string('scope');                 // organization key, or '__system__'
             $table->ulid('organization_id')->nullable();
             $table->unsignedBigInteger('sequence');
@@ -26,12 +31,22 @@ return new class extends Migration
             $table->char('hash', 64);
             $table->timestamp('recorded_at');
 
-            $table->unique(['scope', 'sequence']);   // one entry per position per chain
-            $table->index(['scope', 'sequence']);
+            // One entry per position per chain, and the chain is environment-scoped.
+            // (The former duplicate index on the same columns is gone — a unique index
+            // already serves those reads, and the second B-tree was pure write
+            // amplification on the highest-write table in the system.)
+            $table->unique(['environment_id', 'scope', 'sequence']);
+
+            // The console reads: newest-first within an org.
+            $table->index(['environment_id', 'organization_id', 'sequence']);
         });
 
         Schema::create('audit_checkpoints', function (Blueprint $table): void {
             $table->ulid('id')->primary();
+            // A checkpoint anchors ONE chain, and a chain is per (environment, scope) —
+            // so the checkpoint carries the environment too, or one tenant's checkpoint
+            // would appear to anchor another's chain.
+            $table->ulid('environment_id')->nullable()->index();
             $table->string('scope')->index();
             $table->ulid('organization_id')->nullable();
             $table->unsignedBigInteger('up_to_sequence');

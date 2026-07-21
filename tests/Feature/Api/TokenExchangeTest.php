@@ -23,7 +23,7 @@ const TX_ACCESS = 'urn:ietf:params:oauth:token-type:access_token';
 
 it('exchanges a subject token for a down-scoped access token (RFC 8693)', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read', 'api.write']);
+    $registered = $this->makeClient(['api.read', 'api.write'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read', 'api.write'])->token;
 
     $response = $this->postJson('/oauth/token', [
@@ -47,7 +47,7 @@ it('exchanges a subject token for a down-scoped access token (RFC 8693)', functi
 
 it('echoes the granted scope in the response (RFC 8693 §2.2.1)', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read', 'api.write']);
+    $registered = $this->makeClient(['api.read', 'api.write'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read', 'api.write'])->token;
 
     // Empty scope request → inherits the subject scopes → scope MUST be echoed.
@@ -62,8 +62,8 @@ it('echoes the granted scope in the response (RFC 8693 §2.2.1)', function (): v
 
 it('refuses to exchange a token that was not issued to (nor names) the calling client', function (): void {
     $org = $this->makeOrganization();
-    $appA = $this->makeClient(['api.read']);
-    $appB = $this->makeClient(['api.read']);
+    $appA = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
+    $appB = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     // A user token minted for app A; app B must not be able to launder it.
     $subjectToken = app(TokenIssuer::class)->issueForUser($appA->client, 'alice', $org->id, ['api.read'])->token;
 
@@ -78,7 +78,7 @@ it('refuses to exchange a token that was not issued to (nor names) the calling c
 
 it('rejects an unsupported requested_token_type', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
 
     $this->postJson('/oauth/token', [
@@ -93,7 +93,7 @@ it('rejects an unsupported requested_token_type', function (): void {
 
 it('rejects a malformed resource indicator (invalid_target)', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
 
     $this->postJson('/oauth/token', [
@@ -108,7 +108,7 @@ it('rejects a malformed resource indicator (invalid_target)', function (): void 
 
 it('refuses to WIDEN scope in an exchange (down-scope only)', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read', 'api.write']);
+    $registered = $this->makeClient(['api.read', 'api.write'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
 
     $this->postJson('/oauth/token', [
@@ -122,7 +122,7 @@ it('refuses to WIDEN scope in an exchange (down-scope only)', function (): void 
 });
 
 it('refuses an inactive / unknown subject token', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
 
     $this->postJson('/oauth/token', [
         'grant_type' => TX_GRANT,
@@ -135,7 +135,7 @@ it('refuses an inactive / unknown subject token', function (): void {
 
 it('refuses an unsupported subject_token_type', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
 
     $this->postJson('/oauth/token', [
@@ -149,7 +149,7 @@ it('refuses an unsupported subject_token_type', function (): void {
 
 it('requires client authentication for token exchange', function (): void {
     $org = $this->makeOrganization();
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
     $subjectToken = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['api.read'])->token;
 
     $this->postJson('/oauth/token', [

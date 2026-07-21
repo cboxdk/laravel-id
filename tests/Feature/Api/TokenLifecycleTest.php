@@ -38,7 +38,7 @@ function issueCode(string $clientId, array $scopes): string
 }
 
 it('binds the access token audience to the RFC 8707 resource', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     $response = $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
@@ -52,7 +52,7 @@ it('binds the access token audience to the RFC 8707 resource', function (): void
 });
 
 it('rejects a malformed RFC 8707 resource with invalid_target', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     // A relative/opaque value is not an absolute URI — the token must not be
     // issued unbound (which would over-scope it to every audience).
@@ -73,7 +73,7 @@ it('rejects a malformed RFC 8707 resource with invalid_target', function (): voi
 });
 
 it('defaults aud to the issuer when no resource is requested (RFC 9068 requires aud on at+jwt)', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     $response = $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
@@ -86,7 +86,7 @@ it('defaults aud to the issuer when no resource is requested (RFC 9068 requires 
 });
 
 it('adds at_hash, auth_time, amr and acr to the id_token', function (): void {
-    $clientId = $this->makeClient(['openid'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid']);
 
     $response = $this->postJson('/oauth/token', [
@@ -105,7 +105,7 @@ it('adds at_hash, auth_time, amr and acr to the id_token', function (): void {
 });
 
 it('issues a refresh token only when offline_access is granted', function (): void {
-    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid', 'offline_access']);
 
     $response = $this->postJson('/oauth/token', [
@@ -120,7 +120,7 @@ it('issues a refresh token only when offline_access is granted', function (): vo
 });
 
 it('does not issue a refresh token without offline_access', function (): void {
-    $clientId = $this->makeClient(['openid'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid']);
 
     $response = $this->postJson('/oauth/token', [
@@ -135,7 +135,7 @@ it('does not issue a refresh token without offline_access', function (): void {
 });
 
 it('rotates a refresh token and issues a fresh access token', function (): void {
-    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid', 'offline_access']);
 
     $first = $this->postJson('/oauth/token', [
@@ -160,7 +160,7 @@ it('rotates a refresh token and issues a fresh access token', function (): void 
 });
 
 it('detects refresh token reuse and revokes the whole family', function (): void {
-    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid', 'offline_access']);
 
     $refresh = $this->postJson('/oauth/token', [
@@ -212,7 +212,7 @@ it('serves RFC 9728 protected resource metadata', function (): void {
 });
 
 it('returns userinfo for a valid bearer token with openid scope', function (): void {
-    $registered = $this->makeClient(['openid', 'email', 'profile']);
+    $registered = $this->makeClient(['openid', 'email', 'profile'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $token = $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
         'client_id' => $registered->client->client_id,
@@ -230,7 +230,7 @@ it('refuses userinfo without a bearer token', function (): void {
 });
 
 it('revokes an access token via RFC 7009 for an authenticated client', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $token = $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
         'client_id' => $registered->client->client_id,
@@ -263,8 +263,8 @@ it('refuses revocation from an unauthenticated caller', function (): void {
 });
 
 it('does not let one client introspect or revoke another client\'s token', function (): void {
-    $owner = $this->makeClient(['api.read']);
-    $other = $this->makeClient(['api.read']);
+    $owner = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
+    $other = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     $token = $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
@@ -295,8 +295,8 @@ it('does not let one client introspect or revoke another client\'s token', funct
 });
 
 it('does not let one client revoke another client\'s refresh-token family', function (): void {
-    $owner = $this->makeClient(['openid', 'offline_access'], ClientType::Public)->client->client_id;
-    $other = $this->makeClient(['api.read']);
+    $owner = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
+    $other = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $code = issueCode($owner, ['openid', 'offline_access']);
 
     $refresh = $this->postJson('/oauth/token', [

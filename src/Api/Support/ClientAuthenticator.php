@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Support;
 
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Http\Request;
 
@@ -54,9 +55,18 @@ class ClientAuthenticator
             return null;
         }
 
-        // Confidential clients (those holding a secret) must verify it; public
-        // clients (no stored secret) need none.
-        if ($client->secret_hash !== null && ! $this->clients->verifySecret($client, $secret)) {
+        // Key the bypass on the client's TYPE, not on whether a secret happens to be
+        // stored. A confidential client authenticating by private_key_jwt has
+        // secret_hash === null BY DESIGN (a secret is minted only when no JWKS is
+        // registered), so the old `secret_hash !== null` test skipped verification
+        // entirely and returned the client on the strength of a client_id alone. Anyone
+        // holding such a client's refresh token or authorization code could redeem it
+        // with no assertion — collapsing private_key_jwt to a bearer model.
+        //
+        // An assertion, if one was presented, is handled above; reaching here means a
+        // confidential client must prove itself with a secret.
+        if ($client->type === ClientType::Confidential
+            && ($client->secret_hash === null || ! $this->clients->verifySecret($client, $secret))) {
             return null;
         }
 
