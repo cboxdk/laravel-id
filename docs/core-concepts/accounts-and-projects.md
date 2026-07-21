@@ -1,6 +1,6 @@
 ---
 title: Accounts, projects & the platform plane
-description: The self-serve hierarchy above environments — one login, many independently-billed IdP products (the Clerk "Applications" model)
+description: The self-serve hierarchy above environments — one login, many independently-billed IdP products
 weight: 2
 ---
 
@@ -21,8 +21,8 @@ Account  →  Project  →  Environment  →  Organization  →  Subject
   environment allowance (`environment_limit`), and (with GA) the subscription live
   here. One account can own several projects, each **billed independently** — so a
   customer runs "Product 1" and "Product 2" from one login without a second email.
-  This is exactly the **Clerk "Application"** (and Auth0 "Tenant") model. (WorkOS,
-  by contrast, bills at the account level — so this goes a layer beyond it.)
+  Billing is anchored on the **project**, not the account, so one customer's two
+  products are separately metered and separately invoiced.
 - **Environment** — a project's isolated stage (production, sandbox). Each has its own
   keys, users, connections and sign-in, routed by host. See
   [Environments & the isolation model](environments.md).

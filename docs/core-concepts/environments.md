@@ -1,6 +1,6 @@
 ---
 title: Environments & the isolation model
-description: The hard identity boundary above organizations — staging/prod and white-label, WorkOS-style
+description: The hard identity boundary above organizations — staging/prod and white-label
 weight: 2
 ---
 
@@ -8,9 +8,9 @@ weight: 2
 
 An **environment** is the platform's hard isolation boundary: its own user pool,
 signing keys, issuer and organization tree. It is the layer *above* the
-organization (tenant) — the same concept WorkOS calls an *Environment*, Auth0 a
-*Tenant*, and Okta an *Org*. Use it to separate **staging from production**, or to
-give a product / white-label reseller a fully isolated plane.
+organization (tenant) — the boundary other identity providers variously call an
+*environment*, a *tenant*, or an *org*. Use it to separate **staging from
+production**, or to give a product / white-label reseller a fully isolated plane.
 
 ## The hierarchy
 
@@ -27,7 +27,7 @@ Directory's nested OUs than to the usually-flat "Organizations" of other IdPs.
 Delegated administration and role inheritance run down that tree, but always
 **bounded by the environment**.
 
-| This platform | Active Directory | WorkOS / Auth0 / Okta |
+| This platform | Active Directory |
 |---|---|---|
 | **Environment** | Forest / Domain | Environment / Tenant / Org |
 | **Organization** (closure-tree) | OU tree | Organizations |

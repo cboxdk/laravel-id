@@ -37,7 +37,7 @@ Token Vault, and app-manifest publishing:
 | JavaScript / TypeScript | `@cboxdk/id-js` | any JS runtime — the core client |
 | React | `@cboxdk/id-react` | React apps (`UserButton`, `SignInButton`, hooks) |
 | Vue / Nuxt | `@cboxdk/id-vue`, `@cboxdk/id-nuxt` | Vue and Nuxt apps |
-| Python | `cboxdk-id` | Python services |
+| Python | `cbox-id-client` | Python services |
 | Go | `github.com/cboxdk/id-go` | Go services |
 | Laravel / PHP | `cboxdk/laravel-id-client` | Laravel apps consuming a Cbox ID instance |
 

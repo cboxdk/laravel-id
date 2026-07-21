@@ -167,8 +167,7 @@ POST /oauth/decisions              Authorization: Bearer <access token>
 
 ### The hybrid: live by default, coarse in the token by choice
 
-`EnforcementMode` picks how each gate propagates — and the platform, like WorkOS,
-supports both:
+`EnforcementMode` picks how each gate propagates — both are supported:
 
 | Mode | Propagation | Where it lives | Use for |
 |---|---|---|---|

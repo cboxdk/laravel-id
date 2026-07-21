@@ -14,7 +14,7 @@ How the platform is put together and the ideas you build against:
   environment: who provisions planes and can step into any one of them.
 - **[Accounts, projects & the platform plane](accounts-and-projects.md)** — the
   self-serve hierarchy above environments: one login, many independently-billed IdP
-  products (the Clerk "Applications" model), with billing anchored on the project.
+  products, with billing anchored on the project.
 - **[Environments & the isolation model](environments.md)** — the hard boundary
   above organizations (staging/prod, white-label).
 - **[Authorization & the decision plane](authorization.md)** — live permission and

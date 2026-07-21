@@ -8,8 +8,8 @@ weight: 14
 
 Inline hooks (`Cbox\Id\ExternalActions\`) are **synchronous** extension points: at a
 named point in a flow, the platform pauses and consults registered logic that can
-**enrich** the operation (add data) or **veto** it (deny). This is the Okta-inline-hook
-/ Auth0-Actions capability.
+**enrich** the operation (add data) or **veto** it (deny) — an inline-hook capability:
+your code runs inside the auth pipeline, not after it.
 
 It is deliberately different from [webhooks](audit-streaming.md): a webhook *notifies*
 asynchronously and cannot change the outcome; a hook *participates* in-band and can.

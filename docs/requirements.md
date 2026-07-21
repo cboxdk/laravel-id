@@ -36,6 +36,9 @@ Pulled in automatically by `composer require cboxdk/laravel-id`:
 | `firebase/php-jwt` | `^7.0` | JWT signing/verification (access tokens, DPoP, id_token). |
 | `onelogin/php-saml` | `^4.0` | SAML 2.0 response validation (signatures, XSW/XXE defense). |
 | `spomky-labs/cbor-php` | `^3.0` | CBOR decoding for WebAuthn/passkey attestation. |
+| `cboxdk/laravel-siem` | `^0.1` | Delivery engine for SIEM audit streaming. |
+| `cboxdk/siem` | `^0.1` | SIEM payload formats (Splunk HEC, ECS, GELF, CEF). |
+| `robrichards/xmlseclibs` | `^3.1.5` | XML-DSig signing for SAML IdP assertions and metadata. |
 
 ## Storage
 

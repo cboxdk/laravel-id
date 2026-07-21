@@ -1,6 +1,6 @@
 ---
 title: Platform operators
-description: The identity above every environment — who administers the planes, WorkOS team-member style
+description: The identity above every environment — who administers the planes
 weight: 3
 ---
 
@@ -8,15 +8,15 @@ weight: 3
 
 An **environment** is the hard isolation boundary. A **platform operator** is the
 identity that stands *above* it — the person who provisions environments and can
-step into any one of them to run its console. It is the same role WorkOS calls a
-**team member** (the dashboard/developer account), distinct from the end users who
-live *inside* an environment.
+step into any one of them to run its console. This is the dashboard/developer
+account — the staff identity — and it is distinct from the end users who live
+*inside* an environment.
 
-| Concept | Cbox ID | WorkOS | Auth0 | Okta |
-| --- | --- | --- | --- | --- |
-| Boundary | Environment | Environment | Tenant | Org |
-| Identity inside it | User | User | User | User |
-| Identity above it | **Platform operator** | Team member | Dashboard admin | Super admin |
+| Concept | Cbox ID |
+| --- | --- |
+| Boundary | Environment |
+| Identity inside it | User |
+| Identity above it | **Platform operator** |
 
 ## Why it is not environment-owned
 

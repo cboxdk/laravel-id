@@ -87,10 +87,10 @@ they are always current.
 
 ## The hybrid — coarse entitlements in the token
 
-Like WorkOS (which splits its live FGA check from RBAC/entitlement *claims* in the
-session), Cbox ID lets you embed the **coarse, slow-changing** entitlements in the
-access token for a stateless per-request check, while keeping the instant-critical
-ones live. This is the per-entitlement `EnforcementMode`:
+A live relationship check and a claim carried in the session answer different
+questions, so Cbox ID lets you embed the **coarse, slow-changing** entitlements in
+the access token for a stateless per-request check, while keeping the
+instant-critical ones live. This is the per-entitlement `EnforcementMode`:
 
 - `DecisionApi` **(default)** — resolved live; instant on change; never in a token.
 - `Claims` — embedded in the token as the `ent` claim (with `ent_ver` for staleness
