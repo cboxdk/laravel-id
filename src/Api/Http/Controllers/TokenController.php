@@ -465,6 +465,15 @@ class TokenController
             return $grantType === 'authorization_code';
         }
 
+        // refresh_token is implied by authorization_code. The code path mints a refresh
+        // token whenever offline_access is granted, without consulting this — so a client
+        // registered for authorization_code alone (which is DCR's default) was handed a
+        // refresh token it could never redeem, and its users were silently signed out at
+        // access-token expiry with no client-side error to explain it.
+        if ($grantType === 'refresh_token' && in_array('authorization_code', $registered, true)) {
+            return true;
+        }
+
         return in_array($grantType, $registered, true);
     }
 

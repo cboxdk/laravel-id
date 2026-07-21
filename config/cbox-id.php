@@ -225,7 +225,19 @@ return [
             'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),
             'initial_access_token' => env('CBOX_ID_DCR_INITIAL_ACCESS_TOKEN'),
             'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access'],
-            'allowed_grant_types' => ['authorization_code', 'refresh_token', 'client_credentials'],
+            /*
+             * Grants a DYNAMICALLY registered client may ask for. device_code, CIBA and
+             * token-exchange were advertised in discovery but absent here, so no
+             * DCR-registered client could ever use them — advertised and unreachable.
+             */
+            'allowed_grant_types' => [
+                'authorization_code',
+                'refresh_token',
+                'client_credentials',
+                'urn:ietf:params:oauth:grant-type:device_code',
+                'urn:openid:params:grant-type:ciba',
+                'urn:ietf:params:oauth:grant-type:token-exchange',
+            ],
         ],
 
         /*

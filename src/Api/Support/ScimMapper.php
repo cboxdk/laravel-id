@@ -65,6 +65,11 @@ class ScimMapper
     {
         $resource = $existing->resource;
         $attributes = [
+            // Seeded from the stored parts: without them a PATCH that sets only
+            // familyName composed from that one alone — "Dana Rivera" + {familyName:
+            // "Okonkwo"} silently became "Okonkwo".
+            'givenName' => self::nullableStr($resource['givenName'] ?? null),
+            'familyName' => self::nullableStr($resource['familyName'] ?? null),
             'userName' => self::str($resource['userName'] ?? null),
             'externalId' => $existing->external_id,
             'email' => self::nullableStr($resource['email'] ?? null),
@@ -121,7 +126,7 @@ class ScimMapper
         // which for an Okta-provisioned user is their email address (the fallback in
         // build()). So a later givenName/familyName push would never take effect and the
         // user would keep an email address as their name forever.
-        $patchedParts = array_key_exists('givenName', $attributes) || array_key_exists('familyName', $attributes);
+        $patchedParts = in_array('name.givenname', $touched, true) || in_array('name.familyname', $touched, true);
         $patchedDisplayName = in_array('displayname', $touched, true) || in_array('name.formatted', $touched, true);
 
         if ($patchedParts && ! $patchedDisplayName) {
@@ -139,6 +144,8 @@ class ScimMapper
             self::nullableStr($attributes['displayName']),
             (bool) $attributes['active'],
             self::normalizeEnterprise($attributes['enterprise']),
+            self::nullableStr($attributes['givenName'] ?? null),
+            self::nullableStr($attributes['familyName'] ?? null),
         );
     }
 
@@ -183,7 +190,9 @@ class ScimMapper
 
                 return true;
             default:
-                return false;
+                // Same tolerated set as setAttribute: removing an attribute we never
+                // stored is a no-op by definition, not a protocol error.
+                return self::isTolerated(self::canonicalPath($path));
         }
     }
 
@@ -248,8 +257,45 @@ class ScimMapper
 
                 return true;
             default:
-                return false;
+                return self::isTolerated(self::canonicalPath($path));
         }
+    }
+
+    /**
+     * Attributes this server knowingly does not persist, but must not REFUSE.
+     *
+     * RFC 7644 §3.5.2's invalidPath is about a path the SCHEMA does not define — not an
+     * attribute the server chooses not to store. Throwing for these turned a silent
+     * no-op into a hard failure on the operations that matter most: Entra's default
+     * mapping ships phoneNumbers, and applyPatch throws mid-loop, so a deprovision push
+     * of [{active:false},{phoneNumbers…}] returned 400 and the user was NEVER
+     * DEACTIVATED. Entra then quarantines the provisioning job after repeated failures.
+     *
+     * So: accept and ignore what we understand but don't keep; refuse only what we
+     * cannot interpret at all.
+     */
+    private static function isTolerated(string $canonicalPath): bool
+    {
+        return in_array($canonicalPath, [
+            'phonenumbers',
+            'addresses',
+            'photos',
+            'ims',
+            'roles',
+            'groups',
+            'entitlements',
+            'x509certificates',
+            'title',
+            'usertype',
+            'nickname',
+            'profileurl',
+            'preferredlanguage',
+            'locale',
+            'timezone',
+            'name.middlename',
+            'name.honorificprefix',
+            'name.honorificsuffix',
+        ], true);
     }
 
     /**
@@ -324,7 +370,7 @@ class ScimMapper
     /**
      * @param  array<string, mixed>  $enterprise
      */
-    private static function build(string $externalId, string $userName, ?string $email, ?string $displayName, bool $active, array $enterprise = []): ScimUser
+    private static function build(string $externalId, string $userName, ?string $email, ?string $displayName, bool $active, array $enterprise = [], ?string $givenName = null, ?string $familyName = null): ScimUser
     {
         $raw = [
             'userName' => $userName,
@@ -333,6 +379,16 @@ class ScimMapper
             'displayName' => $displayName,
             'active' => $active,
         ];
+
+        // Persist the name PARTS, not just the composed display name. Without them a
+        // later PATCH of one part has nothing to merge with and silently drops the other.
+        if ($givenName !== null) {
+            $raw['givenName'] = $givenName;
+        }
+
+        if ($familyName !== null) {
+            $raw['familyName'] = $familyName;
+        }
 
         if ($enterprise !== []) {
             $raw['enterprise'] = $enterprise;
