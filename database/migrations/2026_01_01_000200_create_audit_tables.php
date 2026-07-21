@@ -16,7 +16,12 @@ return new class extends Migration
             // '__system__' scope was ONE global chain shared by every tenant — operator
             // and environment-level entries from unrelated customers interleaved in it,
             // and every writer contended on the same chain head.
-            $table->ulid('environment_id')->nullable()->index();
+            // NOT nullable, and defaulted to the platform sentinel. SQL treats NULLs as
+            // distinct in a unique index, so a nullable column made the
+            // (environment_id, scope, sequence) key silently inert for every entry
+            // recorded outside an environment — the account plane restarted its chain on
+            // every write. A sentinel makes the constraint real.
+            $table->string('environment_id')->default('__platform__')->index();
             $table->string('scope');                 // organization key, or '__system__'
             $table->ulid('organization_id')->nullable();
             $table->unsignedBigInteger('sequence');
@@ -46,7 +51,7 @@ return new class extends Migration
             // A checkpoint anchors ONE chain, and a chain is per (environment, scope) —
             // so the checkpoint carries the environment too, or one tenant's checkpoint
             // would appear to anchor another's chain.
-            $table->ulid('environment_id')->nullable()->index();
+            $table->string('environment_id')->default('__platform__')->index();
             $table->string('scope')->index();
             $table->ulid('organization_id')->nullable();
             $table->unsignedBigInteger('up_to_sequence');
