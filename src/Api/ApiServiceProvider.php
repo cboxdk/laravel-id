@@ -124,10 +124,17 @@ class ApiServiceProvider extends ServiceProvider
 
                 // Dynamic Client Registration (RFC 7591) + management (RFC 7592). The
                 // controller enforces the configured mode (disabled/protected/open).
-                Route::post('/oauth/register', RegistrationController::class);
-                Route::get('/oauth/register/{client}', [RegisteredClientController::class, 'show']);
-                Route::put('/oauth/register/{client}', [RegisteredClientController::class, 'update']);
-                Route::delete('/oauth/register/{client}', [RegisteredClientController::class, 'destroy']);
+                //
+                // no-store: registration returns client_secret and
+                // registration_access_token, which RFC 7591 §5 makes a MUST. These sit
+                // outside the credential group above, which is exactly the "one
+                // forgotten line" the middleware exists to prevent.
+                Route::middleware(NoStore::class)->group(function (): void {
+                    Route::post('/oauth/register', RegistrationController::class);
+                    Route::get('/oauth/register/{client}', [RegisteredClientController::class, 'show']);
+                    Route::put('/oauth/register/{client}', [RegisteredClientController::class, 'update']);
+                    Route::delete('/oauth/register/{client}', [RegisteredClientController::class, 'destroy']);
+                });
             });
 
             // SCIM 2.0 provisioning, authenticated by the directory bearer token.

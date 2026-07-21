@@ -7,6 +7,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Exceptions\UnknownUserHint;
+use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,6 +32,13 @@ class BackchannelAuthenticationController
 
         if ($client === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401);
+        }
+
+        // Enforce the registered grant at INITIATION, not only at redemption: otherwise a
+        // client that can never complete this flow still creates its state and puts a
+        // prompt in front of a user.
+        if (! GrantPolicy::allows($client, 'urn:openid:params:grant-type:ciba')) {
+            return new JsonResponse(['error' => 'unauthorized_client'], 400);
         }
 
         $loginHint = trim($request->string('login_hint')->toString());

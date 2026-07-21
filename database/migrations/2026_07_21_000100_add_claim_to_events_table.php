@@ -22,6 +22,10 @@ return new class extends Migration
             // stale — whereas an early dispatched_at would silently lose the event.
             $table->timestamp('claimed_at')->nullable()->after('dispatched_at');
 
+            // The claim's owner. Claiming by id alone was atomic only where SKIP LOCKED
+            // applies; re-selecting by a token makes it correct on every driver.
+            $table->string('claim_token', 40)->nullable()->index();
+
             // The relay's own query: pending rows, oldest first. Without this it is a
             // scan of an append-only table that only grows.
             $table->index(['dispatched_at', 'claimed_at', 'occurred_at'], 'events_relay_idx');

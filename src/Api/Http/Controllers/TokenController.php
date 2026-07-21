@@ -28,6 +28,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
@@ -445,36 +446,10 @@ class TokenController
         ]);
     }
 
-    /**
-     * May this client use this grant?
-     *
-     * `grant_types` was stored at registration, echoed back in the registration
-     * document, and enforced NOWHERE — the token endpoint dispatched purely on the
-     * grant_type the caller asked for, so an authorization-code-only client could
-     * request client_credentials and be issued a token. The registered policy was
-     * decorative.
-     *
-     * An empty list means the client predates the field; treat that as
-     * authorization_code only rather than as "anything", so the default is closed.
-     */
+    /** @see GrantPolicy — shared with the flow-initiation endpoints. */
     private function grantAllowed(Client $client, string $grantType): bool
     {
-        $registered = $client->grant_types;
-
-        if ($registered === []) {
-            return $grantType === 'authorization_code';
-        }
-
-        // refresh_token is implied by authorization_code. The code path mints a refresh
-        // token whenever offline_access is granted, without consulting this — so a client
-        // registered for authorization_code alone (which is DCR's default) was handed a
-        // refresh token it could never redeem, and its users were silently signed out at
-        // access-token expiry with no client-side error to explain it.
-        if ($grantType === 'refresh_token' && in_array('authorization_code', $registered, true)) {
-            return true;
-        }
-
-        return in_array($grantType, $registered, true);
+        return GrantPolicy::allows($client, $grantType);
     }
 
     /**

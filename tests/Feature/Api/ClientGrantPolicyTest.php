@@ -166,3 +166,30 @@ it('accepts a refresh token from a client registered only for authorization_code
     // invalid_grant (the token is bogus) — NOT unauthorized_client (the grant is allowed).
     expect($body['error'])->toBe('invalid_grant');
 });
+
+/**
+ * Enforce at INITIATION, not only at redemption. A client that can never complete a
+ * device or CIBA flow could still create its state and put a prompt in front of a user —
+ * unauthorized flow state and prompt spam, refused only at the very end.
+ */
+it('refuses to start a flow the client is not registered for', function (): void {
+    $registered = app(ClientRegistry::class)->register(new NewClient(
+        'Code-only client',
+        ClientType::Confidential,
+        redirectUris: ['https://app.test/cb'],
+        grantTypes: ['authorization_code'],
+        scopes: ['openid'],
+    ));
+
+    $this->postJson('/oauth/device_authorization', [
+        'client_id' => $registered->client->client_id,
+        'scope' => 'openid',
+    ])->assertStatus(400)->assertJsonPath('error', 'unauthorized_client');
+
+    $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid',
+        'login_hint' => 'someone@example.test',
+    ])->assertStatus(400)->assertJsonPath('error', 'unauthorized_client');
+});

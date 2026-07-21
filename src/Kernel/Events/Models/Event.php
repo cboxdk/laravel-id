@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $occurred_at
  * @property Carbon|null $dispatched_at
  * @property Carbon|null $claimed_at
+ * @property string|null $claim_token
  */
 class Event extends Model
 {
