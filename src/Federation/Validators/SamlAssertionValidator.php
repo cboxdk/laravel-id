@@ -90,6 +90,26 @@ class SamlAssertionValidator implements AssertionValidator
         $inResponseTo = $this->extractInResponseTo($rawResponse);
 
         if ($inResponseTo === null) {
+            // UNSOLICITED (IdP-initiated). Opt-in per connection, and off by default.
+            //
+            // Accepting it unconditionally made the ACS a login-CSRF sink: an attacker
+            // with a legitimate account at the customer's IdP obtains their OWN valid
+            // assertion, auto-POSTs it from a page the victim visits, and — because the
+            // ACS is necessarily CSRF-exempt — the victim's browser is issued a session
+            // as the ATTACKER. Everything the victim then creates lands in the attacker's
+            // account. Assertion replay protection does not help: the attacker never
+            // redeems the assertion themselves.
+            //
+            // A solicited response is bound to a request WE issued, so this is the
+            // difference between "someone asked for this login" and "anyone can post one".
+            $config = $this->connections->config($connection);
+
+            if (($config['allow_idp_initiated'] ?? false) !== true) {
+                throw InvalidAssertion::make(
+                    'unsolicited SAML response refused: this connection does not allow IdP-initiated sign-in'
+                );
+            }
+
             return null;
         }
 

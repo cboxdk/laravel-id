@@ -19,6 +19,10 @@ function samlConnectionFor(SamlIdp $idp, string $organizationId): string
 {
     $connections = app(Connections::class);
     $connection = $connections->create($organizationId, ConnectionType::Saml, 'Okta', [
+        // This fixture posts an UNSOLICITED assertion (no InResponseTo), which is now
+        // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
+        // keeps exercising the IdP-initiated path deliberately rather than by default.
+        'allow_idp_initiated' => true,
         'idp_entity_id' => $idp->entityId,
         'idp_sso_url' => IDP_SSO,
         'idp_slo_url' => IDP_SLO,
@@ -44,6 +48,10 @@ function samlSpConnection(string $organizationId, bool $active = true, array $ex
     $connections = app(Connections::class);
 
     $connection = $connections->create($organizationId, ConnectionType::Saml, 'Okta', array_merge([
+        // This fixture posts an UNSOLICITED assertion (no InResponseTo), which is now
+        // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
+        // keeps exercising the IdP-initiated path deliberately rather than by default.
+        'allow_idp_initiated' => true,
         'idp_entity_id' => $idp->entityId,
         'idp_sso_url' => IDP_SSO,
         'idp_x509cert' => $idp->certPem,

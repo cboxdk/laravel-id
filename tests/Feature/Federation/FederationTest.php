@@ -20,6 +20,10 @@ it('creates a connection with sealed config that round-trips', function (): void
     $connections = app(Connections::class);
 
     $connection = $connections->create($org->id, ConnectionType::Saml, 'Okta', [
+        // This fixture posts an UNSOLICITED assertion (no InResponseTo), which is now
+        // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
+        // keeps exercising the IdP-initiated path deliberately rather than by default.
+        'allow_idp_initiated' => true,
         'idp_entity_id' => 'http://www.okta.com/exk1',
         'idp_cert' => '-----BEGIN CERTIFICATE-----...',
     ]);

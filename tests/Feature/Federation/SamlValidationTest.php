@@ -131,6 +131,10 @@ function samlConnection(SamlIdp $idp): Connection
     $connections = app(Connections::class);
 
     $connection = $connections->create((string) Str::ulid(), ConnectionType::Saml, 'Okta', [
+        // This fixture posts an UNSOLICITED assertion (no InResponseTo), which is now
+        // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
+        // keeps exercising the IdP-initiated path deliberately rather than by default.
+        'allow_idp_initiated' => true,
         'idp_entity_id' => IDP_ENTITY,
         'idp_sso_url' => 'https://idp.example.test/sso',
         'idp_x509cert' => $idp->certPem,
@@ -278,3 +282,36 @@ it('rejects a response answering an expired request', function (): void {
 
     app(AssertionValidator::class)->validate($connection, $idp->response(inResponseTo: $requestId));
 })->throws(InvalidAssertion::class);
+
+/**
+ * @group isolation
+ *
+ * An unsolicited (IdP-initiated) assertion is a login-CSRF sink: an attacker with a
+ * legitimate account at the customer's IdP obtains their OWN valid assertion and
+ * auto-POSTs it from a page the victim visits. The ACS is necessarily CSRF-exempt, so the
+ * victim's browser is issued a session as the ATTACKER, and everything they then create
+ * lands in the attacker's account. Assertion replay protection does not help — the
+ * attacker never redeems it themselves.
+ *
+ * So it is opt-in per connection, and off by default.
+ */
+it('refuses an unsolicited assertion unless the connection opts in', function (): void {
+    $idp = new SamlIdp;
+
+    // Same fixture as samlConnection(), MINUS the opt-in.
+    $connections = app(Connections::class);
+    $connection = $connections->create((string) Str::ulid(), ConnectionType::Saml, 'Okta', [
+        'idp_entity_id' => IDP_ENTITY,
+        'idp_sso_url' => 'https://idp.example.test/sso',
+        'idp_x509cert' => $idp->certPem,
+        'sp_entity_id' => SP_ENTITY,
+        'sp_acs_url' => SP_ACS,
+    ]);
+    $connections->activate($connection->organization_id, $connection->id);
+
+    // A genuinely valid, correctly signed assertion — with NO InResponseTo.
+    $response = $idp->response('victim@corp.test');
+
+    expect(fn () => app(AssertionValidator::class)->validate($connection->refresh(), $response))
+        ->toThrow(InvalidAssertion::class);
+});
