@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Organization\Contracts;
 
 use Cbox\Id\Organization\Models\Membership;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
 interface Memberships
@@ -23,6 +24,14 @@ interface Memberships
      * @return Collection<int, Membership>
      */
     public function forOrganization(string $organizationId): Collection;
+
+    /**
+     * A single page of an organization's memberships, ordered oldest-first, for admin
+     * consoles that must not hydrate an unbounded roster into one request.
+     *
+     * @return LengthAwarePaginator<int, Membership>
+     */
+    public function paginateForOrganization(string $organizationId, int $perPage = 25): LengthAwarePaginator;
 
     /**
      * Every organization a subject belongs to — a legitimate cross-tenant

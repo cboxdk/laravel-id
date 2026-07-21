@@ -15,6 +15,7 @@ use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipStatus;
 use Cbox\Id\Organization\Exceptions\LastOwner;
 use Cbox\Id\Organization\Models\Membership;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -110,6 +111,14 @@ class MembershipService implements Memberships
         return $this->tenant->runAs(
             GenericTenant::of($organizationId),
             fn (): Collection => Membership::query()->orderBy('created_at')->get(),
+        );
+    }
+
+    public function paginateForOrganization(string $organizationId, int $perPage = 25): LengthAwarePaginator
+    {
+        return $this->tenant->runAs(
+            GenericTenant::of($organizationId),
+            fn (): LengthAwarePaginator => Membership::query()->orderBy('created_at')->paginate($perPage),
         );
     }
 

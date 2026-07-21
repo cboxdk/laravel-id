@@ -82,3 +82,19 @@ it('refuses to demote or remove the sole owner', function (): void {
     $memberships->changeRole($org->id, 'owner_1', 'member');
     expect($memberships->of($org->id, 'owner_1')?->role)->toBe('member');
 });
+
+it('paginates an organization roster without hydrating every member', function (): void {
+    $org = $this->makeOrganization();
+    $memberships = app(Memberships::class);
+    foreach (range(1, 5) as $i) {
+        $memberships->add($org->id, "user_{$i}", 'member');
+    }
+
+    $page = $memberships->paginateForOrganization($org->id, 2);
+
+    expect($page->total())->toBe(5)
+        ->and($page->perPage())->toBe(2)
+        ->and($page->count())->toBe(2)
+        ->and($page->lastPage())->toBe(3)
+        ->and($page->items()[0]->user_id)->toBe('user_1'); // oldest-first
+});
