@@ -12,7 +12,7 @@ uses(RefreshDatabase::class);
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
 it('starts a device grant with a user_code and verification URI', function (): void {
-    $registered = $this->makeClient(['openid', 'profile']);
+    $registered = $this->makeClient(['openid', 'profile'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
 
     $response = $this->postJson('/oauth/device_authorization', [
         'client_id' => $registered->client->client_id,
@@ -29,7 +29,7 @@ it('starts a device grant with a user_code and verification URI', function (): v
 });
 
 it('resolves a live request by user_code for the verification screen (never the device_code)', function (): void {
-    $registered = $this->makeClient(['openid', 'profile']);
+    $registered = $this->makeClient(['openid', 'profile'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
     $device = app(DeviceAuthorization::class);
     $result = $device->request($registered->client, ['openid', 'profile']);
 
@@ -49,7 +49,7 @@ it('resolves a live request by user_code for the verification screen (never the 
 });
 
 it('polls pending, then issues a token once the user approves', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
     $device = app(DeviceAuthorization::class);
     $result = $device->request($registered->client, ['openid']);
 
@@ -80,7 +80,7 @@ it('polls pending, then issues a token once the user approves', function (): voi
 });
 
 it('returns slow_down when polling faster than the interval', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
     $result = app(DeviceAuthorization::class)->request($registered->client, ['openid']);
 
     $poll = fn () => $this->postJson('/oauth/token', [
@@ -95,7 +95,7 @@ it('returns slow_down when polling faster than the interval', function (): void 
 });
 
 it('reports denial and expiry', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
     $device = app(DeviceAuthorization::class);
 
     $denied = $device->request($registered->client, ['openid']);
@@ -114,7 +114,7 @@ it('reports denial and expiry', function (): void {
 });
 
 it('mints a token only once per device_code (single-use)', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
     $device = app(DeviceAuthorization::class);
     $result = $device->request($registered->client, ['openid']);
     $device->approve($result->userCode, 'user-1', null);
@@ -135,7 +135,7 @@ it('mints a token only once per device_code (single-use)', function (): void {
 });
 
 it('rejects an unknown device_code', function (): void {
-    $registered = $this->makeClient(['openid']);
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
 
     $this->postJson('/oauth/token', [
         'grant_type' => DEVICE_GRANT, 'client_id' => $registered->client->client_id,

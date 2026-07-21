@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Audit\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -13,14 +15,16 @@ use Illuminate\Database\Eloquent\Model;
  * for a tamper-*proof* guarantee.
  *
  * @property string $id
+ * @property string|null $environment_id
  * @property string $scope
  * @property string|null $organization_id
  * @property int $up_to_sequence
  * @property string $root_hash
  * @property string $signature
  */
-class AuditCheckpoint extends Model
+class AuditCheckpoint extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'audit_checkpoints';

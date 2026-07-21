@@ -110,6 +110,11 @@ class TokenController
             return $this->error('invalid_client', 401);
         }
 
+        // RFC 6749 §5.2: a client may only use the grants it registered for.
+        if (! $this->grantAllowed($client, 'client_credentials')) {
+            return $this->error('unauthorized_client', 400);
+        }
+
         return $this->tokenResponse(
             $this->issuer->issueClientCredentials($client, $this->scopes($request), $this->resource($request), $dpopJkt),
             null,
@@ -125,6 +130,11 @@ class TokenController
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
+        }
+
+        // RFC 6749 §5.2: a client may only use the grants it registered for.
+        if (! $this->grantAllowed($client, 'authorization_code')) {
+            return $this->error('unauthorized_client', 400);
         }
 
         try {
@@ -159,6 +169,11 @@ class TokenController
             return $this->error('invalid_client', 401);
         }
 
+        // RFC 6749 §5.2: a client may only use the grants it registered for.
+        if (! $this->grantAllowed($client, 'urn:ietf:params:oauth:grant-type:device_code')) {
+            return $this->error('unauthorized_client', 400);
+        }
+
         try {
             $grant = $this->device->redeem($client->client_id, $request->string('device_code')->toString());
         } catch (DeviceAuthorizationPending) {
@@ -185,6 +200,11 @@ class TokenController
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
+        }
+
+        // RFC 6749 §5.2: a client may only use the grants it registered for.
+        if (! $this->grantAllowed($client, 'urn:openid:params:grant-type:ciba')) {
+            return $this->error('unauthorized_client', 400);
         }
 
         try {
@@ -214,6 +234,11 @@ class TokenController
 
         if ($client === null) {
             return $this->error('invalid_client', 401);
+        }
+
+        // RFC 6749 §5.2: a client may only use the grants it registered for.
+        if (! $this->grantAllowed($client, 'refresh_token')) {
+            return $this->error('unauthorized_client', 400);
         }
 
         try {
@@ -339,6 +364,11 @@ class TokenController
             return $this->error('invalid_client', 401);
         }
 
+        // RFC 6749 §5.2: a client may only use the grants it registered for.
+        if (! $this->grantAllowed($client, 'urn:ietf:params:oauth:grant-type:token-exchange')) {
+            return $this->error('unauthorized_client', 400);
+        }
+
         $subjectToken = $request->string('subject_token')->toString();
         $subjectTokenType = $request->string('subject_token_type')->toString();
 
@@ -387,6 +417,29 @@ class TokenController
         }
 
         return new JsonResponse($body);
+    }
+
+    /**
+     * May this client use this grant?
+     *
+     * `grant_types` was stored at registration, echoed back in the registration
+     * document, and enforced NOWHERE — the token endpoint dispatched purely on the
+     * grant_type the caller asked for, so an authorization-code-only client could
+     * request client_credentials and be issued a token. The registered policy was
+     * decorative.
+     *
+     * An empty list means the client predates the field; treat that as
+     * authorization_code only rather than as "anything", so the default is closed.
+     */
+    private function grantAllowed(Client $client, string $grantType): bool
+    {
+        $registered = $client->grant_types;
+
+        if ($registered === []) {
+            return $grantType === 'authorization_code';
+        }
+
+        return in_array($grantType, $registered, true);
     }
 
     private function error(string $error, int $status): JsonResponse

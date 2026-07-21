@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Audit\Models;
 
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -25,12 +27,14 @@ use Illuminate\Support\Carbon;
  * @property string|null $target_id
  * @property array<string, mixed> $context
  * @property string|null $ip
+ * @property string|null $environment_id
  * @property string $prev_hash
  * @property string $hash
  * @property Carbon|null $recorded_at
  */
-class AuditEntry extends Model
+class AuditEntry extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     public $timestamps = false;

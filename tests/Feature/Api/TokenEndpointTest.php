@@ -12,7 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('issues an access token via client_credentials', function (): void {
-    $registered = $this->makeClient(['api.read', 'api.write']);
+    $registered = $this->makeClient(['api.read', 'api.write'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
@@ -26,7 +26,7 @@ it('issues an access token via client_credentials', function (): void {
 });
 
 it('rejects client_credentials with a bad secret', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     $this->postJson('/oauth/token', [
         'grant_type' => 'client_credentials',
@@ -38,7 +38,7 @@ it('rejects client_credentials with a bad secret', function (): void {
 });
 
 it('completes the authorization_code + PKCE flow and returns an id_token', function (): void {
-    $registered = $this->makeClient(['openid', 'profile'], ClientType::Public);
+    $registered = $this->makeClient(['openid', 'profile'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 
@@ -72,7 +72,7 @@ it('completes the authorization_code + PKCE flow and returns an id_token', funct
 
 it('carries the org name in the id_token, access token and userinfo', function (): void {
     $org = $this->makeOrganization('Northwind Traders');
-    $registered = $this->makeClient(['openid', 'profile'], ClientType::Public);
+    $registered = $this->makeClient(['openid', 'profile'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 
@@ -110,7 +110,7 @@ it('carries the org name in the id_token, access token and userinfo', function (
 });
 
 it('echoes the OIDC nonce from the authorize request into the id_token', function (): void {
-    $registered = $this->makeClient(['openid'], ClientType::Public);
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 
@@ -138,7 +138,7 @@ it('echoes the OIDC nonce from the authorize request into the id_token', functio
 });
 
 it('omits nonce from the id_token when the authorize request had none', function (): void {
-    $registered = $this->makeClient(['openid'], ClientType::Public);
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 
@@ -164,7 +164,7 @@ it('omits nonce from the id_token when the authorize request had none', function
 });
 
 it('rejects the authorization_code grant with a bad PKCE verifier', function (): void {
-    $registered = $this->makeClient(['openid'], ClientType::Public);
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 
@@ -195,7 +195,7 @@ it('rejects an unsupported grant_type', function (): void {
 });
 
 it('requires a confidential client to present its secret on authorization_code', function (): void {
-    $registered = $this->makeClient(['openid'], ClientType::Confidential);
+    $registered = $this->makeClient(['openid'], ClientType::Confidential, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 
@@ -222,7 +222,7 @@ it('requires a confidential client to present its secret on authorization_code',
 });
 
 it('authenticates a confidential client via HTTP Basic (client_secret_basic)', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     // RFC 6749 §2.3.1: credentials in the Authorization header, not the body.
     $this->withBasicAuth($registered->client->client_id, $registered->secret)
@@ -236,7 +236,7 @@ it('authenticates a confidential client via HTTP Basic (client_secret_basic)', f
 });
 
 it('rejects combining HTTP Basic and body client credentials (RFC 6749 §2.3.1)', function (): void {
-    $registered = $this->makeClient(['api.read']);
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
 
     // A client MUST NOT use more than one authentication mechanism per request.
     $this->withBasicAuth($registered->client->client_id, $registered->secret)
@@ -251,7 +251,7 @@ it('rejects combining HTTP Basic and body client credentials (RFC 6749 §2.3.1)'
 });
 
 it('accepts a confidential client on authorization_code with the correct secret', function (): void {
-    $registered = $this->makeClient(['openid'], ClientType::Confidential);
+    $registered = $this->makeClient(['openid'], ClientType::Confidential, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
     $verifier = 'a-sufficiently-long-code-verifier-1234567890';
     $challenge = Base64Url::encode(hash('sha256', $verifier, true));
 

@@ -226,3 +226,63 @@ it('refuses a PUT whose body externalId names a different resource (no IDOR)', f
     $this->getJson('/scim/v2/Users?filter='.urlencode('externalId eq "okta|A"'), $headers)
         ->assertOk()->assertJsonPath('totalResults', 1);
 });
+
+/**
+ * Recorded-shape tests for the two IdPs that actually matter. The suite previously
+ * exercised PATCH only through paths WE chose, so it proved the mapper agreed with
+ * itself — the one thing a spec misreading cannot fail.
+ */
+it('applies an Okta-shaped name PATCH (givenName/familyName)', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana@corp.com', 'okta|1', 'dana@corp.com');
+
+    // Okta's default profile sends the name PARTS — never name.formatted, never
+    // displayName. These used to fall through to a silent no-op, so every Okta user
+    // kept their email address as their display name, permanently and invisibly.
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [
+            ['op' => 'replace', 'path' => 'name.givenName', 'value' => 'Dana'],
+            ['op' => 'replace', 'path' => 'name.familyName', 'value' => 'Rivera'],
+        ],
+    ], $headers)
+        ->assertOk()
+        ->assertJsonPath('displayName', 'Dana Rivera');
+});
+
+it('applies an Entra-shaped email PATCH whatever the value filter looks like', function (): void {
+    $headers = $this->scimHeaders;
+
+    // Entra sends a value-filter path. Only ONE exact spelling used to be recognised;
+    // any variation in quoting, casing or type fell through to a silent no-op.
+    $variants = [
+        'emails[type eq "work"].value',
+        'emails[type EQ "work"].value',
+        "emails[type eq 'work'].value",
+        'emails[primary eq true].value',
+    ];
+
+    foreach ($variants as $i => $path) {
+        $id = provision($this, $headers, "user{$i}", "entra|{$i}", "old{$i}@corp.com");
+
+        $this->patchJson('/scim/v2/Users/'.$id, [
+            'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+            'Operations' => [['op' => 'replace', 'path' => $path, 'value' => "new{$i}@corp.com"]],
+        ], $headers)
+            ->assertOk()
+            ->assertJsonPath('emails.0.value', "new{$i}@corp.com");
+    }
+});
+
+it('refuses an unmapped PATCH path instead of reporting a write it did not make', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana', 'okta|9', 'dana@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'path' => 'nickName', 'value' => 'Dee']],
+    ], $headers)
+        ->assertStatus(400)
+        ->assertJsonPath('scimType', 'invalidPath')
+        ->assertJsonPath('schemas.0', 'urn:ietf:params:scim:api:messages:2.0:Error');
+});

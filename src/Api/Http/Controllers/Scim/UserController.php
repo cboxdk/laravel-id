@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers\Scim;
 
+use Cbox\Id\Api\Exceptions\UnsupportedScimPath;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Contracts\DirectoryUsers;
@@ -108,7 +109,15 @@ class UserController
         // Apply the PATCH operations onto the current resource and re-provision.
         // Re-provisioning with active=false deactivates: drops membership and
         // revokes sessions immediately.
-        $result = $this->provision($directory->id, ScimMapper::applyPatch($directoryUser, $request));
+        try {
+            $patched = ScimMapper::applyPatch($directoryUser, $request);
+        } catch (UnsupportedScimPath $e) {
+            // RFC 7644 §3.5.2: an unmatched target is an error. Answering 200 would make
+            // the IdP record a write that never happened and never retry it.
+            return $this->error('400', $e->getMessage(), 'invalidPath');
+        }
+
+        $result = $this->provision($directory->id, $patched);
 
         return $result instanceof JsonResponse
             ? $result
