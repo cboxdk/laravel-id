@@ -76,6 +76,21 @@ return [
      * registers a per-minute task that redelivers due failures; disable it if you
      * drive `retryPending()` yourself.
      */
+    /*
+     * The domain-event outbox (src/Kernel/Events/). Emitting writes a row; nothing is
+     * delivered until the relay runs, so `schedule_relay` is what makes webhooks,
+     * usage metering, outbound provisioning and every host listener actually fire.
+     * Turn it off only if you drive EventBus::flushPending() yourself.
+     *
+     * `reclaim_after_seconds` is how long a claimed-but-undelivered event waits before
+     * another relay may take it — i.e. how long we assume a relay that died mid-pass
+     * might still be running.
+     */
+    'events' => [
+        'schedule_relay' => env('CBOX_ID_EVENTS_SCHEDULE_RELAY', true),
+        'reclaim_after_seconds' => env('CBOX_ID_EVENTS_RECLAIM_AFTER_SECONDS', 300),
+    ],
+
     'webhooks' => [
         'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
         'max_attempts' => env('CBOX_ID_WEBHOOKS_MAX_ATTEMPTS', 12),

@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $payload
  * @property Carbon $occurred_at
  * @property Carbon|null $dispatched_at
+ * @property Carbon|null $claimed_at
  */
 class Event extends Model
 {
@@ -40,6 +41,7 @@ class Event extends Model
             'payload' => 'array',
             'occurred_at' => 'datetime',
             'dispatched_at' => 'datetime',
+            'claimed_at' => 'datetime',
         ];
     }
 }
