@@ -7,10 +7,8 @@ namespace Cbox\Id\Kernel\Crypto;
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
-use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Exceptions\InvalidToken;
-use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\ValueObjects\TokenClaims;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
@@ -80,18 +78,15 @@ class JwtTokenSigner implements TokenSigner
 
         $allowedValues = array_map(static fn (SigningAlg $alg): string => $alg->value, $allowed);
 
-        $candidates = SigningKey::query()
-            ->whereIn('status', [KeyStatus::Active->value, KeyStatus::Rotating->value])
-            ->whereIn('alg', $allowedValues)
-            ->get();
-
-        if ($candidates->isEmpty()) {
-            throw InvalidToken::noVerificationKeys();
+        $keySet = [];
+        foreach ($this->keys->verificationKeys() as $candidate) {
+            if (in_array($candidate->alg->value, $allowedValues, true)) {
+                $keySet[$candidate->kid] = new Key($candidate->publicKey, $candidate->alg->value);
+            }
         }
 
-        $keySet = [];
-        foreach ($candidates as $candidate) {
-            $keySet[$candidate->kid] = new Key($candidate->public_key, $candidate->alg->value);
+        if ($keySet === []) {
+            throw InvalidToken::noVerificationKeys();
         }
 
         // firebase has no per-call "ignore exp" flag — only the static leeway. Set it

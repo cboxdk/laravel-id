@@ -6,6 +6,7 @@ namespace Cbox\Id\Kernel\Crypto\Contracts;
 
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
+use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
 
 /**
  * Manages the platform's asymmetric signing keys and publishes them as JWKS.
@@ -39,4 +40,14 @@ interface KeyManager
      * @return array{keys: list<array<string, string>>}
      */
     public function jwks(): array;
+
+    /**
+     * The active + rotating PUBLIC verification keys for the current environment,
+     * keyed by `kid`. Public material only — safe to cache, so the signature
+     * verification hot path (introspection, every protected request) avoids a
+     * database read per call. Invalidated on {@see rotate()} / {@see retire()}.
+     *
+     * @return array<string, VerificationKey>
+     */
+    public function verificationKeys(): array;
 }

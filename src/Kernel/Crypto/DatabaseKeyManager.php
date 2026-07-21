@@ -11,6 +11,9 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
@@ -18,16 +21,37 @@ use Illuminate\Support\Str;
  */
 class DatabaseKeyManager implements KeyManager
 {
-    public function __construct(private readonly SecretBox $secretBox) {}
+    private const CACHE_TTL = 3600;
+
+    /**
+     * Per-request memo of the active key by "{environmentId}:{alg}", so one request
+     * (e.g. an auth-code exchange that signs an access token AND an id_token) loads and
+     * decrypts the active key once, not per sign. Keyed by environment so a long-lived
+     * worker never serves one environment's key to another; cleared on any key mutation.
+     *
+     * @var array<string, SigningKey>
+     */
+    private array $activeKeyMemo = [];
+
+    public function __construct(
+        private readonly SecretBox $secretBox,
+        private readonly EnvironmentContext $environment,
+    ) {}
 
     public function activeSigningKey(SigningAlg $alg = SigningAlg::RS256): SigningKey
     {
+        $memoKey = $this->envId().':'.$alg->value;
+
+        if (isset($this->activeKeyMemo[$memoKey])) {
+            return $this->activeKeyMemo[$memoKey];
+        }
+
         $existing = SigningKey::query()
             ->where('alg', $alg->value)
             ->where('status', KeyStatus::Active->value)
             ->first();
 
-        return $existing ?? $this->generate($alg);
+        return $this->activeKeyMemo[$memoKey] = $existing ?? $this->generate($alg);
     }
 
     public function rotate(SigningAlg $alg = SigningAlg::RS256): SigningKey
@@ -36,6 +60,8 @@ class DatabaseKeyManager implements KeyManager
             ->where('alg', $alg->value)
             ->where('status', KeyStatus::Active->value)
             ->update(['status' => KeyStatus::Rotating->value]);
+
+        $this->flushCaches();
 
         return $this->generate($alg);
     }
@@ -48,18 +74,49 @@ class DatabaseKeyManager implements KeyManager
                 'status' => KeyStatus::Retired->value,
                 'retired_at' => now(),
             ]);
+
+        $this->flushCaches();
     }
 
     public function jwks(): array
     {
-        $keys = SigningKey::query()
-            ->whereIn('status', [KeyStatus::Active->value, KeyStatus::Rotating->value])
-            ->orderByDesc('activated_at')
-            ->get();
+        /** @var array{keys: list<array<string, string>>} $jwks */
+        $jwks = Cache::remember($this->cacheKey('jwks'), self::CACHE_TTL, function (): array {
+            $keys = SigningKey::query()
+                ->whereIn('status', [KeyStatus::Active->value, KeyStatus::Rotating->value])
+                ->orderByDesc('activated_at')
+                ->get();
 
-        return [
-            'keys' => array_values($keys->map(fn (SigningKey $key): array => $this->jwkFor($key))->all()),
-        ];
+            return [
+                'keys' => array_values($keys->map(fn (SigningKey $key): array => $this->jwkFor($key))->all()),
+            ];
+        });
+
+        return $jwks;
+    }
+
+    public function verificationKeys(): array
+    {
+        /** @var list<array{kid: string, public_key: string, alg: string}> $rows */
+        $rows = Cache::remember($this->cacheKey('verification-keys'), self::CACHE_TTL, function (): array {
+            return SigningKey::query()
+                ->whereIn('status', [KeyStatus::Active->value, KeyStatus::Rotating->value])
+                ->orderByDesc('activated_at')
+                ->get()
+                ->map(fn (SigningKey $key): array => [
+                    'kid' => $key->kid,
+                    'public_key' => $key->public_key,
+                    'alg' => $key->alg->value,
+                ])
+                ->all();
+        });
+
+        $keys = [];
+        foreach ($rows as $row) {
+            $keys[$row['kid']] = new VerificationKey($row['kid'], $row['public_key'], SigningAlg::from($row['alg']));
+        }
+
+        return $keys;
     }
 
     private function generate(SigningAlg $alg): SigningKey
@@ -67,7 +124,7 @@ class DatabaseKeyManager implements KeyManager
         [$publicPem, $privatePem] = $this->generateKeyPair($alg);
         $kid = (string) Str::ulid();
 
-        return SigningKey::query()->create([
+        $key = SigningKey::query()->create([
             'kid' => $kid,
             'alg' => $alg,
             'public_key' => $publicPem,
@@ -75,6 +132,28 @@ class DatabaseKeyManager implements KeyManager
             'status' => KeyStatus::Active,
             'activated_at' => now(),
         ]);
+
+        // A newly-minted key must appear in JWKS / verification immediately.
+        $this->flushCaches();
+
+        return $key;
+    }
+
+    private function flushCaches(): void
+    {
+        $this->activeKeyMemo = [];
+        Cache::forget($this->cacheKey('jwks'));
+        Cache::forget($this->cacheKey('verification-keys'));
+    }
+
+    private function cacheKey(string $suffix): string
+    {
+        return 'cbox-id:crypto:'.$this->envId().':'.$suffix;
+    }
+
+    private function envId(): string
+    {
+        return $this->environment->current()?->environmentKey() ?? 'global';
     }
 
     /**

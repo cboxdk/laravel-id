@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Exceptions\InvalidToken;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -105,4 +106,25 @@ it('retires a key so it leaves the JWKS and no longer verifies tokens', function
     // A token signed by the retired key is now rejected.
     expect(fn () => $signer->verify($token, [SigningAlg::RS256]))
         ->toThrow(InvalidToken::class);
+});
+
+it('serves JWKS and verification keys from cache and reloads after rotation', function (): void {
+    $keys = app(KeyManager::class);
+    $keys->activeSigningKey(); // ensure an active key exists
+
+    // Warm both caches, then a second call must touch the database zero times.
+    $keys->jwks();
+    $keys->verificationKeys();
+
+    DB::enableQueryLog();
+    $keys->jwks();
+    $keys->verificationKeys();
+    $warmQueries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect($warmQueries)->toBeEmpty();
+
+    // Rotation invalidates the caches: the new key appears in a freshly-served JWKS.
+    $new = $keys->rotate();
+    expect(array_column($keys->jwks()['keys'], 'kid'))->toContain($new->kid);
 });
