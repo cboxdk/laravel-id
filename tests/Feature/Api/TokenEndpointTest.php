@@ -7,6 +7,7 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Models\AuthorizationCode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -272,4 +273,64 @@ it('accepts a confidential client on authorization_code with the correct secret'
         'redirect_uri' => 'https://app.test/cb',
         'code_verifier' => $verifier,
     ])->assertOk()->assertJsonStructure(['access_token', 'id_token']);
+});
+
+it('rejects an expired authorization code', function (): void {
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
+    $verifier = 'a-sufficiently-long-code-verifier-1234567890';
+    $challenge = Base64Url::encode(hash('sha256', $verifier, true));
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id, 'user_42', 'org_a', 'https://app.test/cb', ['openid'], $challenge,
+    );
+
+    // Force the stored code past its TTL — a leaked-but-old code must not redeem.
+    AuthorizationCode::query()->update(['expires_at' => now()->subMinute()]);
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => $verifier,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
+it('rejects a replayed authorization code over HTTP (single-use)', function (): void {
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
+    $verifier = 'a-sufficiently-long-code-verifier-1234567890';
+    $challenge = Base64Url::encode(hash('sha256', $verifier, true));
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id, 'user_42', 'org_a', 'https://app.test/cb', ['openid'], $challenge,
+    );
+
+    $payload = [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => $verifier,
+    ];
+
+    $this->postJson('/oauth/token', $payload)->assertOk();
+    $this->postJson('/oauth/token', $payload)->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
+it('rejects an authorization_code exchange with a mismatched redirect_uri over HTTP', function (): void {
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);
+    $verifier = 'a-sufficiently-long-code-verifier-1234567890';
+    $challenge = Base64Url::encode(hash('sha256', $verifier, true));
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id, 'user_42', 'org_a', 'https://app.test/cb', ['openid'], $challenge,
+    );
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'code' => $code,
+        'redirect_uri' => 'https://attacker.test/cb',
+        'code_verifier' => $verifier,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
 });
