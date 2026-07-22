@@ -24,6 +24,16 @@ class RefreshTokenService implements RefreshTokens
 {
     private const TTL_DAYS = 30;
 
+    /**
+     * Grace window for a re-presented, already-rotated refresh token. A token seen
+     * again within this many seconds is treated as benign concurrency (parallel
+     * requests refreshing the same token near expiry — SSR fan-out, multiple tabs)
+     * and gets its own successor; only a later replay is treated as theft and revokes
+     * the family. This is the standard rotation-overlap mitigation for the
+     * refresh-on-read pattern.
+     */
+    private const REUSE_GRACE_SECONDS = 10;
+
     public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null): string
     {
         return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt);
@@ -45,9 +55,11 @@ class RefreshTokenService implements RefreshTokens
                 // Reuse of an already-rotated token means it leaked. Signal the
                 // family up so it can be revoked *after* this transaction — doing
                 // it here would be rolled back by the exception below.
-                if ($token->consumed_at !== null) {
+                if ($token->consumed_at !== null && $token->consumed_at->diffInSeconds(now()) > self::REUSE_GRACE_SECONDS) {
                     throw new RefreshTokenReuse($token->family_id);
                 }
+                // Within the grace window we fall through and mint a fresh sibling
+                // successor rather than revoking — the concurrent double-refresh case.
 
                 if (! hash_equals($token->client_id, $clientId)) {
                     throw InvalidGrant::make('client mismatch');

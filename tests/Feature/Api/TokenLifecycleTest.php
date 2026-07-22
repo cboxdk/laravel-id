@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -176,6 +177,10 @@ it('detects refresh token reuse and revokes the whole family', function (): void
         'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $refresh,
     ])->assertOk()->json('refresh_token');
 
+    // Age the consumed original past the concurrency grace window so re-presenting it
+    // is treated as genuine theft, not a benign parallel refresh.
+    RefreshToken::query()->whereNotNull('consumed_at')->update(['consumed_at' => now()->subMinute()]);
+
     // Re-using the now-consumed original is theft -> invalid_grant.
     $this->postJson('/oauth/token', [
         'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $refresh,
@@ -185,6 +190,34 @@ it('detects refresh token reuse and revokes the whole family', function (): void
     $this->postJson('/oauth/token', [
         'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $next,
     ])->assertStatus(400);
+});
+
+it('tolerates a concurrent double-refresh within the grace window without revoking the family', function (): void {
+    $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
+    $code = issueCode($clientId, ['openid', 'offline_access']);
+
+    $refresh = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code', 'client_id' => $clientId, 'code' => $code,
+        'redirect_uri' => 'https://app.test/cb', 'code_verifier' => VERIFIER,
+    ])->json('refresh_token');
+
+    // First rotation consumes the token and yields a successor.
+    $first = $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $refresh,
+    ])->assertOk()->json('refresh_token');
+
+    // A parallel request presenting the SAME token immediately (within grace) gets its
+    // OWN successor instead of revoking the family — the concurrency case.
+    $second = $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $refresh,
+    ])->assertOk()->json('refresh_token');
+
+    expect($first)->toBeString()->and($second)->toBeString()->and($second)->not->toBe($first);
+
+    // The family was NOT revoked: the first successor still rotates.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $first,
+    ])->assertOk();
 });
 
 it('serves RFC 8414 authorization server metadata', function (): void {
