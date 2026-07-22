@@ -23,16 +23,6 @@ class DatabaseKeyManager implements KeyManager
 {
     private const CACHE_TTL = 3600;
 
-    /**
-     * Per-request memo of the active key by "{environmentId}:{alg}", so one request
-     * (e.g. an auth-code exchange that signs an access token AND an id_token) loads and
-     * decrypts the active key once, not per sign. Keyed by environment so a long-lived
-     * worker never serves one environment's key to another; cleared on any key mutation.
-     *
-     * @var array<string, SigningKey>
-     */
-    private array $activeKeyMemo = [];
-
     public function __construct(
         private readonly SecretBox $secretBox,
         private readonly EnvironmentContext $environment,
@@ -40,18 +30,18 @@ class DatabaseKeyManager implements KeyManager
 
     public function activeSigningKey(SigningAlg $alg = SigningAlg::RS256): SigningKey
     {
-        $memoKey = $this->envId().':'.$alg->value;
-
-        if (isset($this->activeKeyMemo[$memoKey])) {
-            return $this->activeKeyMemo[$memoKey];
-        }
-
+        // Deliberately NOT memoized on the instance: KeyManager is a singleton, so a
+        // process-lifetime memo would keep serving a since-retired key in a long-lived
+        // worker (Octane/queue) — minting tokens under a kid no longer in the JWKS,
+        // which then fail verification everywhere. The active-key row is one indexed
+        // lookup; the costly JWKS/verification material is cached separately with
+        // cross-process invalidation.
         $existing = SigningKey::query()
             ->where('alg', $alg->value)
             ->where('status', KeyStatus::Active->value)
             ->first();
 
-        return $this->activeKeyMemo[$memoKey] = $existing ?? $this->generate($alg);
+        return $existing ?? $this->generate($alg);
     }
 
     public function rotate(SigningAlg $alg = SigningAlg::RS256): SigningKey
@@ -141,7 +131,6 @@ class DatabaseKeyManager implements KeyManager
 
     private function flushCaches(): void
     {
-        $this->activeKeyMemo = [];
         Cache::forget($this->cacheKey('jwks'));
         Cache::forget($this->cacheKey('verification-keys'));
     }

@@ -128,3 +128,16 @@ it('serves JWKS and verification keys from cache and reloads after rotation', fu
     $new = $keys->rotate();
     expect(array_column($keys->jwks()['keys'], 'kid'))->toContain($new->kid);
 });
+
+it('returns the current active key from a persistent manager instance after rotation', function (): void {
+    // Guards the regression where a process-lifetime memo kept serving a retired key
+    // in a long-lived worker. The SAME instance must reflect the rotation.
+    $keys = app(KeyManager::class);
+    $first = $keys->activeSigningKey();
+    $keys->rotate();
+    $second = $keys->activeSigningKey();
+
+    expect($second->kid)->not->toBe($first->kid)
+        ->and($second->status)->toBe(KeyStatus::Active)
+        ->and($first->fresh()?->status)->toBe(KeyStatus::Rotating);
+});
