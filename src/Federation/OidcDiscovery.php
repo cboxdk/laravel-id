@@ -57,9 +57,11 @@ class OidcDiscovery
             throw OidcDiscoveryFailed::make('the discovery document was not a JSON object.');
         }
 
+        // OIDC Discovery §4.3: `issuer` is REQUIRED and must match. Fail closed when it
+        // is absent rather than accepting the document's endpoints unchecked.
         $documentIssuer = rtrim($this->string($document, 'issuer'), '/');
-        if ($documentIssuer !== '' && $documentIssuer !== $issuer) {
-            throw OidcDiscoveryFailed::make('the discovery document issuer does not match the configured issuer.');
+        if ($documentIssuer === '' || $documentIssuer !== $issuer) {
+            throw OidcDiscoveryFailed::make('the discovery document issuer is missing or does not match the configured issuer.');
         }
 
         $provider = new DiscoveredOidcProvider(
