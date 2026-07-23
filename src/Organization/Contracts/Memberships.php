@@ -34,6 +34,13 @@ interface Memberships
     public function paginateForOrganization(string $organizationId, int $perPage = 25): LengthAwarePaginator;
 
     /**
+     * Count an organization's memberships without hydrating them — for admin surfaces
+     * (dashboard tiles) that need only the number, not the roster. Avoids loading every
+     * membership model into memory just to call count() on the collection.
+     */
+    public function countForOrganization(string $organizationId): int;
+
+    /**
      * Every organization a subject belongs to — a legitimate cross-tenant
      * "which orgs am I in" lookup.
      *

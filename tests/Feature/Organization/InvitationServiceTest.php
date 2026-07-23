@@ -28,8 +28,8 @@ it('grants membership only when the invitee accepts', function (): void {
 
     $membership = $invitations->accept($pending->token, 'subject_dana');
 
-    expect($membership->role)->toBe('admin')
-        ->and(app(Memberships::class)->of($org->id, 'subject_dana')?->role)->toBe('admin')
+    expect($membership->role->value)->toBe('admin')
+        ->and(app(Memberships::class)->of($org->id, 'subject_dana')?->role?->value)->toBe('admin')
         ->and($invitations->pending($org->id))->toBeEmpty(); // no longer pending
 });
 

@@ -153,8 +153,8 @@ it('attaches imported users to the target organization with the right role', fun
     $mId = $subjects->findByEmail('m@corp.test')?->id ?? '';
     $nId = $subjects->findByEmail('n@corp.test')?->id ?? '';
 
-    expect($memberships->of($org->id, $mId)?->role)->toBe('admin')
-        ->and($memberships->of($org->id, $nId)?->role)->toBe('member');
+    expect($memberships->of($org->id, $mId)?->role?->value)->toBe('admin')
+        ->and($memberships->of($org->id, $nId)?->role?->value)->toBe('member');
 });
 
 it('honors the email_verified flag per row', function (): void {

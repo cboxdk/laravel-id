@@ -164,7 +164,7 @@ class DatabaseAccessReviews implements AccessReviews
         }
 
         foreach ($this->memberships->forOrganization($organizationId) as $membership) {
-            $this->makeItem($campaign, AccessKind::Membership, $membership->user_id, $membership->role, $organizationId, null);
+            $this->makeItem($campaign, AccessKind::Membership, $membership->user_id, $membership->role->value, $organizationId, null);
             $count++;
         }
 

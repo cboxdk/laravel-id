@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToTenant;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantOwned;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Enums\MembershipStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $id
  * @property string $organization_id
  * @property string $user_id
- * @property string $role
+ * @property MembershipRole $role
  * @property MembershipStatus $status
  * @property string|null $invited_by
  */
@@ -39,6 +40,7 @@ class Membership extends Model implements EnvironmentOwned, TenantOwned
     protected function casts(): array
     {
         return [
+            'role' => MembershipRole::class,
             'status' => MembershipStatus::class,
         ];
     }
