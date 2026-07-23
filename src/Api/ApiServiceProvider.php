@@ -32,6 +32,7 @@ use Cbox\Id\Api\Http\Controllers\Sso\SamlLogoutController;
 use Cbox\Id\Api\Http\Controllers\Sso\SamlMetadataController;
 use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Controllers\UserInfoController;
+use Cbox\Id\Api\Http\Controllers\UserTokenIntrospectionController;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
 use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
@@ -81,6 +82,10 @@ class ApiServiceProvider extends ServiceProvider
             Route::middleware(['throttle:30,1', NoStore::class])->group(function (): void {
                 Route::post('/oauth/token', TokenController::class);
                 Route::post('/oauth/introspect', IntrospectionController::class);
+
+                // User API tokens (cbid_pat_): introspection for relying-party
+                // services. Same posture as OAuth introspection.
+                Route::post('/user-tokens/introspect', UserTokenIntrospectionController::class);
                 Route::post('/oauth/revoke', RevocationController::class);
 
                 // RFC 9126: back-channel pushed authorization requests.

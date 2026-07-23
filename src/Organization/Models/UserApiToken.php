@@ -33,6 +33,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property Carbon|null $expires_at
  * @property Carbon|null $revoked_at
  * @property Carbon|null $last_used_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 class UserApiToken extends Model implements EnvironmentOwned, TenantOwned
 {
