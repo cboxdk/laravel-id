@@ -27,6 +27,17 @@ enum MembershipRole: string
     case Member = 'member';
     case Viewer = 'viewer';
 
+    public function label(): string
+    {
+        return match ($this) {
+            self::Owner => 'Owner',
+            self::Admin => 'Admin',
+            self::Developer => 'Developer',
+            self::Member => 'Member',
+            self::Viewer => 'Viewer',
+        };
+    }
+
     /**
      * Manage the organization itself: members, invitations, settings,
      * destructive actions. Deliberately limited to Owner/Admin — a Developer
