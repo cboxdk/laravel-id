@@ -58,6 +58,14 @@ return [
         'idle_minutes' => env('CBOX_ID_SESSION_IDLE_MINUTES', 30),
     ],
 
+    /*
+     * User API tokens (`cbid_pat_…`). A token issued without an explicit
+     * expiry gets this TTL — no token is ever open-ended.
+     */
+    'user_api_tokens' => [
+        'default_ttl_days' => env('CBOX_ID_USER_API_TOKEN_TTL_DAYS', 90),
+    ],
+
     'webauthn' => [
         'rp_id' => env('CBOX_ID_WEBAUTHN_RP_ID'),
         'origin' => env('CBOX_ID_WEBAUTHN_ORIGIN'),

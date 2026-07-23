@@ -19,6 +19,9 @@ How the platform is put together and the ideas you build against:
   above organizations (staging/prod, white-label).
 - **[Authorization & the decision plane](authorization.md)** — live permission and
   entitlement decisions, the hot path, and the token hybrid.
+- **[Organization access](organization-access.md)** — ordered membership roles,
+  groups, resource grants with effective-role resolution, and user API tokens
+  capped at the issuer's role.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
 - **On-prem licensing** — the framework itself is free (MIT) and has no license gate.

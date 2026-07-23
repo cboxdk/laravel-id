@@ -19,6 +19,7 @@ use Cbox\Id\Kernel\Authorization\Testing\InteractsWithEntitlements;
 use Cbox\Id\Kernel\Events\Testing\InteractsWithEvents;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\OAuthServer\Testing\InteractsWithOAuth;
+use Cbox\Id\Organization\Testing\InteractsWithAccess;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Cbox\Id\Otp\Testing\InteractsWithOtp;
 use Cbox\Id\Provisioning\Testing\InteractsWithProvisioning;
@@ -31,6 +32,7 @@ use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
 {
+    use InteractsWithAccess;
     use InteractsWithAccessControl;
     use InteractsWithAudit;
     use InteractsWithAuditStreaming;
