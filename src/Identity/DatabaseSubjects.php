@@ -12,6 +12,7 @@ use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
@@ -153,12 +154,14 @@ class DatabaseSubjects implements Subjects
 
     public function linkedIdentities(string $subjectId): array
     {
-        return IdentityLink::query()
-            ->where('user_id', $subjectId)
-            ->orderBy('created_at')
-            ->get()
-            ->map(fn (IdentityLink $link): array => ['provider' => $link->provider, 'subject' => $link->subject])
-            ->all();
+        return array_values(
+            IdentityLink::query()
+                ->where('user_id', $subjectId)
+                ->orderBy('created_at')
+                ->get()
+                ->map(fn (IdentityLink $link): LinkedIdentity => new LinkedIdentity($link->provider, $link->subject))
+                ->all()
+        );
     }
 
     public function unlink(string $subjectId, string $provider): void

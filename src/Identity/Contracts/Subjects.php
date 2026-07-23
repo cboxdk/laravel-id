@@ -7,6 +7,7 @@ namespace Cbox\Id\Identity\Contracts;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
 
 /**
@@ -64,10 +65,9 @@ interface Subjects
     public function link(string $subjectId, FederatedPrincipal $principal): void;
 
     /**
-     * The external identities linked to a subject, as (provider, subject id)
-     * pairs — for a "connected accounts" screen.
+     * The external identities linked to a subject — for a "connected accounts" screen.
      *
-     * @return array<int, array{provider: string, subject: string}>
+     * @return list<LinkedIdentity>
      */
     public function linkedIdentities(string $subjectId): array;
 

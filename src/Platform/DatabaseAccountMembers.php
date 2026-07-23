@@ -6,6 +6,7 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\AccountMembers;
+use Cbox\Id\Platform\Enums\AccountMemberStatus;
 use Cbox\Id\Platform\Enums\AccountRole;
 use Cbox\Id\Platform\Models\AccountMember;
 use Illuminate\Contracts\Hashing\Hasher;
@@ -46,7 +47,7 @@ class DatabaseAccountMembers implements AccountMembers
             'all_environments' => true,
             // The model's `hashed` cast hashes with the configured driver.
             'password' => $password,
-            'status' => 'active',
+            'status' => AccountMemberStatus::Active,
         ]);
     }
 
@@ -63,7 +64,7 @@ class DatabaseAccountMembers implements AccountMembers
             // invitee sets their own. Immaterial anyway: 'invited' status blocks
             // authentication until activate() flips it to 'active'.
             'password' => Str::random(64),
-            'status' => 'invited',
+            'status' => AccountMemberStatus::Invited,
         ]);
     }
 
@@ -146,11 +147,11 @@ class DatabaseAccountMembers implements AccountMembers
 
         // Only an invited member can be activated — a replayed accept must never
         // reset an already-active member's password.
-        if ($member === null || $member->status !== 'invited') {
+        if ($member === null || $member->status !== AccountMemberStatus::Invited) {
             return false;
         }
 
-        $member->forceFill(['password' => $password, 'status' => 'active'])->save();
+        $member->forceFill(['password' => $password, 'status' => AccountMemberStatus::Active])->save();
 
         return true;
     }

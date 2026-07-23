@@ -130,7 +130,7 @@ it('invites a member with a role who cannot authenticate until they accept', fun
 
     $invited = $members->invite($result->account->id, 'teammate@acme.test', AccountRole::Developer, 'Team Mate');
 
-    expect($invited->status)->toBe('invited')
+    expect($invited->status->value)->toBe('invited')
         ->and($invited->role)->toBe(AccountRole::Developer)
         ->and($invited->account_id)->toBe($result->account->id)
         // Invited members are inactive — no credential works, even a lucky guess.
@@ -139,7 +139,7 @@ it('invites a member with a role who cannot authenticate until they accept', fun
     // Accepting sets a password and activates them.
     expect($members->activate($invited->id, 'their-own-passphrase'))->toBeTrue();
     $active = $members->find($invited->id);
-    expect($active->status)->toBe('active')
+    expect($active->status->value)->toBe('active')
         ->and($members->verifyPassword($invited->id, 'their-own-passphrase'))->toBeTrue();
 });
 
@@ -221,7 +221,7 @@ it('resets an active member\'s password but never an invited one', function (): 
     // An invited member can't be reset — they must accept the invitation first.
     $invited = $members->invite($result->account->id, 'inv@acme.test', AccountRole::Viewer);
     expect($members->resetPassword($invited->id, 'sneaky-passphrase'))->toBeFalse()
-        ->and($members->find($invited->id)->status)->toBe('invited');
+        ->and($members->find($invited->id)?->status?->value)->toBe('invited');
 });
 
 it('refuses to add an environment for a suspended account', function (): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform\Models;
 
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\Enums\AccountMemberStatus;
 use Cbox\Id\Platform\Enums\AccountRole;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -25,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property AccountRole $role
  * @property bool $all_environments
  * @property string $password
- * @property string $status
+ * @property AccountMemberStatus $status
  * @property int $session_version
  * @property Carbon|null $last_login_at
  */
@@ -42,7 +43,7 @@ class AccountMember extends Model
 
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === AccountMemberStatus::Active;
     }
 
     /**
@@ -71,6 +72,7 @@ class AccountMember extends Model
     {
         return [
             'role' => AccountRole::class,
+            'status' => AccountMemberStatus::class,
             'all_environments' => 'boolean',
             'password' => 'hashed',
             'last_login_at' => 'datetime',

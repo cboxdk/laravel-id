@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform\Models;
 
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\Enums\AccountStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * @property string $id
  * @property string $name
- * @property string $status
+ * @property AccountStatus $status
  * @property int $environment_limit Seed for the first project's allowance; NOT the enforced limit.
  * @property array<string, mixed> $settings
  */
@@ -37,7 +38,7 @@ class Account extends Model
 
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === AccountStatus::Active;
     }
 
     /**
@@ -78,6 +79,7 @@ class Account extends Model
     protected function casts(): array
     {
         return [
+            'status' => AccountStatus::class,
             'environment_limit' => 'integer',
             'settings' => 'array',
         ];

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform\Models;
 
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Platform\Enums\OperatorStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -20,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $email
  * @property string|null $name
  * @property string $password
- * @property string $status
+ * @property OperatorStatus $status
  * @property Carbon|null $last_login_at
  */
 class PlatformOperator extends Model
@@ -36,7 +37,7 @@ class PlatformOperator extends Model
 
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === OperatorStatus::Active;
     }
 
     /**
@@ -45,6 +46,7 @@ class PlatformOperator extends Model
     protected function casts(): array
     {
         return [
+            'status' => OperatorStatus::class,
             'password' => 'hashed',
             'last_login_at' => 'datetime',
         ];

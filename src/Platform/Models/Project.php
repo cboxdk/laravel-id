@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform\Models;
 
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\Enums\ProjectStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,7 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $account_id
  * @property string $name
  * @property string $slug
- * @property string $status
+ * @property ProjectStatus $status
  * @property int $environment_limit
  * @property array<string, mixed> $settings
  */
@@ -39,7 +40,7 @@ class Project extends Model
 
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === ProjectStatus::Active;
     }
 
     /**
@@ -69,6 +70,7 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'status' => ProjectStatus::class,
             'environment_limit' => 'integer',
             'settings' => 'array',
         ];

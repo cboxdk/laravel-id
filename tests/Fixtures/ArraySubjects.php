@@ -6,6 +6,7 @@ namespace Cbox\Id\Tests\Fixtures;
 
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
 
 /**
@@ -71,6 +72,9 @@ final class ArraySubjects implements Subjects
 
     /**
      * @return array<int, array{provider: string, subject: string}>
+     */
+    /**
+     * @return list<LinkedIdentity>
      */
     public function linkedIdentities(string $subjectId): array
     {

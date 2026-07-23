@@ -8,6 +8,7 @@ use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -109,7 +110,7 @@ it('links a provider identity explicitly to an authenticated subject', function 
     // The linked identity now resolves back to the same subject.
     $resolved = $subjects->provisionFederated(new FederatedPrincipal('social:github', 'gh|1', 'dana@corp.com'));
     expect($resolved->id)->toBe($subject->id)
-        ->and($subjects->linkedIdentities($subject->id))->toContain(['provider' => 'social:github', 'subject' => 'gh|1']);
+        ->and($subjects->linkedIdentities($subject->id))->toContainEqual(new LinkedIdentity('social:github', 'gh|1'));
 });
 
 it('links the same social identity idempotently without creating a duplicate row', function (): void {
