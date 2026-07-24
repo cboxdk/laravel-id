@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Usage\Console;
 
+use Cbox\Id\Kernel\Usage\Contracts\ReconcilableScopes;
 use Cbox\Id\Kernel\Usage\UsageReconciler;
-use Cbox\Id\Organization\Models\Organization;
 use Illuminate\Console\Command;
 
 /**
@@ -20,19 +20,14 @@ class ReconcileUsageCommand extends Command
 
     protected $description = 'Detect and correct drift between the usage meter and ground truth (seats).';
 
-    public function handle(UsageReconciler $reconciler): int
+    public function handle(UsageReconciler $reconciler, ReconcilableScopes $scopes): int
     {
         $org = $this->option('org');
 
         if (is_string($org) && $org !== '') {
             $organizationIds = [$org];
         } else {
-            $organizationIds = [];
-            foreach (Organization::query()->pluck('id') as $id) {
-                if (is_string($id) && $id !== '') {
-                    $organizationIds[] = $id;
-                }
-            }
+            $organizationIds = $scopes->meteredOrganizationIds();
         }
 
         $drifted = 0;

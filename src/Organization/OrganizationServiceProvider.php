@@ -6,6 +6,7 @@ namespace Cbox\Id\Organization;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\Kernel\Usage\Contracts\ReconcilableScopes;
 use Cbox\Id\Organization\Contracts\EnvironmentDomains;
 use Cbox\Id\Organization\Contracts\Groups;
 use Cbox\Id\Organization\Contracts\Invitations;
@@ -33,5 +34,10 @@ class OrganizationServiceProvider extends ServiceProvider
         );
         $this->app->singleton(IssuerResolver::class, EnvironmentIssuerResolver::class);
         $this->app->singleton(EnvironmentDomains::class, EnvironmentDomainService::class);
+
+        // The Usage kernel reconciles per organization but must not import the
+        // Organization model — it depends on ReconcilableScopes, and this module
+        // (which owns the model) supplies the metered ids.
+        $this->app->singleton(ReconcilableScopes::class, DatabaseReconcilableScopes::class);
     }
 }
