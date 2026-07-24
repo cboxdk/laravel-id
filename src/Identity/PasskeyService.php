@@ -7,11 +7,13 @@ namespace Cbox\Id\Identity;
 use Cbox\Id\Identity\Contracts\Passkeys;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Exceptions\ClonedAuthenticator;
+use Cbox\Id\Identity\Exceptions\CredentialAlreadyRegistered;
 use Cbox\Id\Identity\Exceptions\UnknownCredential;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Passkey ceremony orchestration + credential lifecycle. The cryptographic
@@ -28,6 +30,17 @@ class PasskeyService implements Passkeys
     public function register(string $userId, string $challenge, string $clientResponseJson, ?string $name = null): WebAuthnCredential
     {
         $verified = $this->verifier->verifyRegistration($challenge, $clientResponseJson);
+
+        // A registration response's credential_id is attacker-controllable (fmt=none
+        // carries no provenance proof), so we must never let an upsert reassign a
+        // credential that already belongs to a different subject — doing so would let
+        // one authenticated user overwrite (and lock out) another's passkey. Re-binding
+        // to the SAME subject is allowed (idempotent re-register / rotate metadata).
+        $existing = $this->credentialById($verified->credentialId);
+
+        if ($existing !== null && $existing->user_id !== $userId) {
+            throw CredentialAlreadyRegistered::make($verified->credentialId);
+        }
 
         $credential = WebAuthnCredential::query()->updateOrCreate(
             ['credential_id' => $verified->credentialId],
@@ -61,13 +74,26 @@ class PasskeyService implements Passkeys
 
         $result = $this->verifier->verifyAssertion($credential, $challenge, $clientResponseJson);
 
-        // Clone/replay guard: the counter must strictly advance (0 means the
-        // authenticator does not implement a counter, which is allowed).
-        if ($result->newSignCount !== 0 && $result->newSignCount <= $credential->sign_count) {
-            throw ClonedAuthenticator::make($credentialId);
-        }
+        // The clone/replay guard must read and advance the counter ATOMICALLY: two
+        // concurrent assertions carrying the same counter could each read the stale
+        // stored value, both pass the strict-increase test, and both succeed — a
+        // replay. Lock the row for the duration so the second waits, then re-reads the
+        // already-advanced counter and is rejected.
+        DB::transaction(function () use ($credentialId, $credential, $result): void {
+            $locked = WebAuthnCredential::query()->whereKey($credential->id)->lockForUpdate()->first();
 
-        $credential->update(['sign_count' => $result->newSignCount]);
+            if ($locked === null) {
+                throw UnknownCredential::make($credentialId);
+            }
+
+            // Clone/replay guard: the counter must strictly advance (0 means the
+            // authenticator does not implement a counter, which is allowed).
+            if ($result->newSignCount !== 0 && $result->newSignCount <= $locked->sign_count) {
+                throw ClonedAuthenticator::make($credentialId);
+            }
+
+            $locked->update(['sign_count' => $result->newSignCount]);
+        });
 
         $this->audit->record(new AuditEvent(
             action: 'user.passkey_authenticated',

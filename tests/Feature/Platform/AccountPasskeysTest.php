@@ -47,6 +47,21 @@ it('rejects a cloned authenticator (non-increasing counter)', function (): void 
     expect(fn () => $passkeys->authenticate('cred_B', 'login', '{}'))->toThrow(ClonedAuthenticator::class);
 });
 
+it('rejects a replay at the same counter after a successful assertion', function (): void {
+    // Registered at 1, assertion reports 4: the first assertion advances the stored
+    // counter to 4, so a second assertion replaying counter 4 is no longer strictly
+    // greater and is rejected by the atomic guard.
+    $passkeys = new DatabaseAccountPasskeys(new FakeWebAuthnVerifier(credentialId: 'cred_R', registrationSignCount: 1, assertionSignCount: 4), new FakeAuditLog);
+    $memberId = passkeyMemberId();
+    $passkeys->register($memberId, 'reg', '{}');
+
+    expect($passkeys->authenticate('cred_R', 'login', '{}'))->toBe($memberId)
+        ->and($passkeys->credentialById('cred_R')->sign_count)->toBe(4);
+
+    expect(fn () => $passkeys->authenticate('cred_R', 'login', '{}'))->toThrow(ClonedAuthenticator::class);
+    expect($passkeys->credentialById('cred_R')->sign_count)->toBe(4);
+});
+
 it('rejects an unknown credential', function (): void {
     $passkeys = new DatabaseAccountPasskeys(new FakeWebAuthnVerifier, new FakeAuditLog);
 
