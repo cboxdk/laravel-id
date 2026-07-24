@@ -1,0 +1,92 @@
+{
+    "cases": [
+        {
+            "name": "empty",
+            "permissions": [],
+            "roles": [],
+            "canonical_json": "{\"permissions\":[],\"roles\":[]}",
+            "sha256": "0d1152d7f8bb231b10af8f84c60d2630f94c3c8a0ad8f4fa58eb3b50165b4a1d",
+            "version": "0d1152d7f8bb231b"
+        },
+        {
+            "name": "basic",
+            "permissions": [
+                {
+                    "key": "invoices:read",
+                    "description": "View invoices"
+                },
+                {
+                    "key": "invoices:create",
+                    "description": "Create invoices"
+                },
+                {
+                    "key": "invoices:refund",
+                    "description": "Refund invoices"
+                }
+            ],
+            "roles": [
+                {
+                    "key": "viewer",
+                    "name": "Viewer",
+                    "description": "Read-only",
+                    "permissions": [
+                        "invoices:read"
+                    ]
+                },
+                {
+                    "key": "billing-admin",
+                    "name": "Billing Admin",
+                    "description": "Full billing access",
+                    "permissions": [
+                        "invoices:refund",
+                        "invoices:create",
+                        "invoices:read"
+                    ]
+                }
+            ],
+            "canonical_json": "{\"permissions\":[{\"key\":\"invoices:create\",\"description\":\"Create invoices\"},{\"key\":\"invoices:read\",\"description\":\"View invoices\"},{\"key\":\"invoices:refund\",\"description\":\"Refund invoices\"}],\"roles\":[{\"key\":\"billing-admin\",\"name\":\"Billing Admin\",\"description\":\"Full billing access\",\"permissions\":[\"invoices:create\",\"invoices:read\",\"invoices:refund\"]},{\"key\":\"viewer\",\"name\":\"Viewer\",\"description\":\"Read-only\",\"permissions\":[\"invoices:read\"]}]}",
+            "sha256": "d3f48d571dd697b60eb72e656dee724f8550639f80e7a6c1a659346d06f00179",
+            "version": "d3f48d571dd697b6"
+        },
+        {
+            "name": "edge_cases",
+            "permissions": [
+                {
+                    "key": "reports:export",
+                    "description": "Export reports as CSV/PDF"
+                },
+                {
+                    "key": "reports:read",
+                    "description": null
+                },
+                {
+                    "key": "accounts:read",
+                    "description": "Se konti — 日本語 café 😀"
+                }
+            ],
+            "roles": [
+                {
+                    "key": "analyst",
+                    "name": "Analyst",
+                    "description": null,
+                    "permissions": [
+                        "reports:read",
+                        "reports:export",
+                        "accounts:read"
+                    ]
+                },
+                {
+                    "key": "admin",
+                    "name": "Administrator",
+                    "description": "Everything, incl. I/O",
+                    "permissions": [
+                        "reports:export"
+                    ]
+                }
+            ],
+            "canonical_json": "{\"permissions\":[{\"key\":\"accounts:read\",\"description\":\"Se konti \\u2014 \\u65e5\\u672c\\u8a9e caf\\u00e9 \\ud83d\\ude00\"},{\"key\":\"reports:export\",\"description\":\"Export reports as CSV\\/PDF\"},{\"key\":\"reports:read\",\"description\":null}],\"roles\":[{\"key\":\"admin\",\"name\":\"Administrator\",\"description\":\"Everything, incl. I\\/O\",\"permissions\":[\"reports:export\"]},{\"key\":\"analyst\",\"name\":\"Analyst\",\"description\":null,\"permissions\":[\"accounts:read\",\"reports:export\",\"reports:read\"]}]}",
+            "sha256": "b4dd2edc5c58332a5444378e4d0663b7eac219aa31bc126e52811ea887aa9d07",
+            "version": "b4dd2edc5c58332a"
+        }
+    ]
+}
