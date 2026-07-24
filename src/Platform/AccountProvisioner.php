@@ -6,6 +6,7 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\AccountMembers;
@@ -163,7 +164,7 @@ class AccountProvisioner
             'type' => $type,
             'domain' => $domain,
             'domain_verified_at' => $domain !== null ? now() : null,
-            'status' => 'active',
+            'status' => EnvironmentStatus::Active,
         ]);
 
         $this->context->runAs($environment, function (): void {
