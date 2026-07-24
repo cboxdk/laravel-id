@@ -55,13 +55,19 @@ class BackchannelAuthenticationController
         $bindingMessage = $request->string('binding_message')->toString();
         $requestedExpiry = $request->has('requested_expiry') ? $request->integer('requested_expiry') : null;
 
+        // OIDC CIBA Core §7.1: the optional `nonce` binds the eventual id_token to
+        // this backchannel request so the client can detect replay. CIBA persists it
+        // and the id_token path echoes it — so thread it through here rather than
+        // dropping it. A blank/whitespace-only value is treated as absent.
+        $nonce = trim($request->string('nonce')->toString());
+
         try {
             $result = $this->ciba->request(
                 $client,
                 $scopes,
                 $loginHint,
                 $bindingMessage !== '' ? $bindingMessage : null,
-                null,
+                $nonce !== '' ? $nonce : null,
                 $requestedExpiry,
             );
         } catch (UnknownUserHint) {

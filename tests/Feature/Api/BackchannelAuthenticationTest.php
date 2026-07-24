@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Models\BackchannelAuthRequest;
@@ -65,6 +67,37 @@ it('polls pending, then issues access + id_token once the user approves', functi
     $introspection = app(TokenIntrospector::class)->introspect((string) $token->json('access_token'));
     expect($introspection->active)->toBeTrue()
         ->and($introspection->subject)->toBe($user->id);
+});
+
+it('binds the request nonce into the issued id_token', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
+    $user = $this->makeUser('nonce@example.test');
+
+    // The client supplies a nonce at CIBA initiation (CIBA Core §7.1). It must survive
+    // to the id_token so the client can bind the token to this backchannel request.
+    $init = $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid',
+        'login_hint' => $user->id,
+        'nonce' => 'ciba-nonce-xyz',
+    ])->assertOk();
+
+    $request = BackchannelAuthRequest::query()->firstOrFail();
+    expect($request->nonce)->toBe('ciba-nonce-xyz');
+
+    app(BackchannelAuthentication::class)->approve($request->id, $user->id);
+    BackchannelAuthRequest::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    $token = $this->postJson('/oauth/token', [
+        'grant_type' => CIBA_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'auth_req_id' => $init->json('auth_req_id'),
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify((string) $token->json('id_token'), [SigningAlg::RS256]);
+    expect($claims->get('nonce'))->toBe('ciba-nonce-xyz');
 });
 
 it('returns slow_down when polling faster than the interval', function (): void {
