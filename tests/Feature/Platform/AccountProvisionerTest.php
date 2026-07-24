@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Platform\AccountProvisioner;
@@ -38,7 +39,7 @@ it('provisions an account with a member and a first environment', function (): v
         // The routing slug derives from the ACCOUNT name, not the stage name.
         ->and($result->environment->slug)->toBe('acme')
         ->and($result->environment->name)->toBe('Production')
-        ->and($result->environment->status)->toBe('active')
+        ->and($result->environment->status)->toBe(EnvironmentStatus::Active)
         // The environment is OWNED by the account…
         ->and($result->environment->account_id)->toBe($result->account->id)
         // …through a first PROJECT (the account's first IdP product), named after

@@ -72,7 +72,7 @@ class DatabaseEnvironmentResolver implements EnvironmentResolver
      */
     private function servable(?EnvironmentModel $environment): ?EnvironmentModel
     {
-        if ($environment === null || $environment->status !== 'active') {
+        if ($environment === null || ! $environment->status->canServe()) {
             return null;
         }
 

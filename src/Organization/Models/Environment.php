@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Organization\Models;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment as EnvironmentContract;
+use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * @property EnvironmentType $type
  * @property string|null $domain
  * @property Carbon|null $domain_verified_at
- * @property string $status
+ * @property EnvironmentStatus $status
  * @property bool $is_default
  * @property array<string, mixed> $settings
  */
@@ -45,6 +46,7 @@ class Environment extends Model implements EnvironmentContract
     {
         return [
             'type' => EnvironmentType::class,
+            'status' => EnvironmentStatus::class,
             'is_default' => 'boolean',
             'settings' => 'array',
             'domain_verified_at' => 'datetime',
