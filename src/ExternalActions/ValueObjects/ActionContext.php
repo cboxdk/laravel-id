@@ -14,7 +14,7 @@ use Cbox\Id\ExternalActions\Enums\HookPoint;
  * base `claims` about to be signed. An action reads this; it never mutates it (it
  * returns an {@see ActionResult} instead).
  */
-final readonly class ActionContext
+readonly class ActionContext
 {
     /**
      * @param  array<string, mixed>  $payload

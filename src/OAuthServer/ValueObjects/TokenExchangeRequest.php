@@ -8,7 +8,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  * A validated RFC 8693 token-exchange request (the token-endpoint parameters for the
  * `urn:ietf:params:oauth:grant-type:token-exchange` grant).
  */
-final readonly class TokenExchangeRequest
+readonly class TokenExchangeRequest
 {
     /** RFC 8693 token type URI for an access token. */
     public const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';

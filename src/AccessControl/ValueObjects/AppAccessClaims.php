@@ -10,7 +10,7 @@ namespace Cbox\Id\AccessControl\ValueObjects;
  * roles plus org-wide roles) and the union of those roles' permission keys. Other
  * apps' roles are deliberately excluded, so an app only ever sees access it owns.
  */
-final readonly class AppAccessClaims
+readonly class AppAccessClaims
 {
     /**
      * @param  list<string>  $roles

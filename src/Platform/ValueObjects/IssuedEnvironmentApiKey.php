@@ -11,7 +11,7 @@ use Cbox\Id\Platform\Models\EnvironmentApiKey;
  * plaintext. The plaintext exists only here — it is never persisted and cannot be
  * recovered, so the caller must surface it to the user immediately.
  */
-final readonly class IssuedEnvironmentApiKey
+readonly class IssuedEnvironmentApiKey
 {
     public function __construct(
         public EnvironmentApiKey $key,

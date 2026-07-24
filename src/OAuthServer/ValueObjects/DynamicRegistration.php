@@ -12,7 +12,7 @@ use Cbox\Id\OAuthServer\Models\Client;
  * access token. Both secrets are returned exactly once — only their hashes are
  * persisted.
  */
-final readonly class DynamicRegistration
+readonly class DynamicRegistration
 {
     public function __construct(
         public Client $client,

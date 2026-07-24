@@ -7,7 +7,7 @@ namespace Cbox\Id\Kernel\Authorization\ValueObjects;
 /**
  * Who is asking — a user, a service account, or any principal type.
  */
-final readonly class Subject
+readonly class Subject
 {
     public function __construct(
         public string $type,

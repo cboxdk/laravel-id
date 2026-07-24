@@ -16,7 +16,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  *    to approve its own request). It is surfaced only in-process and via the
  *    `oauth.backchannel_authentication_requested` domain event.
  */
-final readonly class BackchannelAuthenticationResult
+readonly class BackchannelAuthenticationResult
 {
     public function __construct(
         public string $requestId,

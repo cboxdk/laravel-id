@@ -13,7 +13,7 @@ use Cbox\Id\Federation\OidcClient;
  * the authorization and token endpoints (which {@see OidcClient}
  * requires) — the classic source of half-configured OIDC connections.
  */
-final readonly class DiscoveredOidcProvider
+readonly class DiscoveredOidcProvider
 {
     public function __construct(
         public string $issuer,

@@ -10,7 +10,7 @@ namespace Cbox\Id\ExternalActions\ValueObjects;
  *    the token hook: extra claims to add, reserved claims excepted); or
  *  - DENY, with a `reason` — vetoes the operation, short-circuiting the pipeline.
  */
-final readonly class ActionResult
+readonly class ActionResult
 {
     /**
      * @param  array<string, mixed>  $enrichment

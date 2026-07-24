@@ -10,7 +10,7 @@ namespace Cbox\Id\SamlIdp\ValueObjects;
  * URL-decoded by the framework). Passing them as one typed object keeps the
  * controller from threading four loose strings through the service boundary.
  */
-final readonly class LogoutMessage
+readonly class LogoutMessage
 {
     public function __construct(
         public string $samlRequest,

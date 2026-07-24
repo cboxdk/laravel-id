@@ -13,7 +13,7 @@ namespace Cbox\Id\Kernel\Authorization\ValueObjects;
  * "members of group:eng are viewers of doc:1" =
  *   new Relationship('org', 'doc', '1', 'viewer', 'group', 'eng', 'member').
  */
-final readonly class Relationship
+readonly class Relationship
 {
     public function __construct(
         public string $organizationId,

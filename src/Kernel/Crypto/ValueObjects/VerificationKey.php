@@ -11,7 +11,7 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
  * signature, with no private component. Cheap and safe to cache — it carries only
  * public key material and its pinned algorithm.
  */
-final readonly class VerificationKey
+readonly class VerificationKey
 {
     public function __construct(
         public string $kid,

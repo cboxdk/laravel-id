@@ -13,7 +13,7 @@ use DOMDocument;
  * still enforce SP registration, ACS match and signature policy — this object
  * asserts nothing about trust.
  */
-final readonly class ParsedAuthnRequest
+readonly class ParsedAuthnRequest
 {
     public function __construct(
         public string $id,

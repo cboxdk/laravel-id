@@ -11,7 +11,7 @@ use Cbox\Id\Organization\Models\Invitation;
  * token (emailed to the invitee, never retrievable again — only the hash is
  * stored).
  */
-final readonly class PendingInvitation
+readonly class PendingInvitation
 {
     public function __construct(
         public Invitation $invitation,

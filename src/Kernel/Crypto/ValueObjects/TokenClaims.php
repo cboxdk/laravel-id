@@ -7,7 +7,7 @@ namespace Cbox\Id\Kernel\Crypto\ValueObjects;
 /**
  * Immutable, validated claims extracted from a verified token.
  */
-final readonly class TokenClaims
+readonly class TokenClaims
 {
     /**
      * @param  array<string, mixed>  $claims

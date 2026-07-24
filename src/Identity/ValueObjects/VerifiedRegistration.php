@@ -7,7 +7,7 @@ namespace Cbox\Id\Identity\ValueObjects;
 /**
  * The trusted result of verifying a WebAuthn registration ceremony.
  */
-final readonly class VerifiedRegistration
+readonly class VerifiedRegistration
 {
     /**
      * @param  list<string>  $transports

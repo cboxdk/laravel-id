@@ -9,7 +9,7 @@ namespace Cbox\Id\ExternalActions\ValueObjects;
  * is allowed, the merged `enrichment` from all continuing actions (later actions
  * override earlier on the same key), and — when denied — the deciding `reason`.
  */
-final readonly class PipelineOutcome
+readonly class PipelineOutcome
 {
     /**
      * @param  array<string, mixed>  $enrichment

@@ -8,7 +8,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  * The trusted result of rotating a refresh token: the newly-minted refresh token
  * (raw, returned once) plus the grant context it carries forward.
  */
-final readonly class RefreshGrant
+readonly class RefreshGrant
 {
     /**
      * @param  list<string>  $scopes

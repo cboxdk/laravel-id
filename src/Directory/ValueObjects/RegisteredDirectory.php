@@ -10,7 +10,7 @@ use Cbox\Id\Directory\Models\Directory;
  * Returned once at registration: the directory plus its plaintext SCIM bearer
  * token, which is never retrievable again (only its hash is stored).
  */
-final readonly class RegisteredDirectory
+readonly class RegisteredDirectory
 {
     public function __construct(
         public Directory $directory,

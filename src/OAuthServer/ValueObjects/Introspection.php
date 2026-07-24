@@ -7,7 +7,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
 /**
  * RFC 7662-style introspection result.
  */
-final readonly class Introspection
+readonly class Introspection
 {
     /**
      * @param  list<string>  $scopes

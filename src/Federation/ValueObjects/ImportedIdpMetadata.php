@@ -12,7 +12,7 @@ namespace Cbox\Id\Federation\ValueObjects;
  * platform's own, derived from the connection's route), and creating the connection
  * stays an explicit admin action.
  */
-final readonly class ImportedIdpMetadata
+readonly class ImportedIdpMetadata
 {
     public function __construct(
         public string $entityId,

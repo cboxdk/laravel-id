@@ -10,7 +10,7 @@ use Cbox\Id\OAuthServer\Models\Client;
  * Returned once at registration: the client plus its plaintext secret (null for
  * public clients), which is never retrievable again — only the hash is stored.
  */
-final readonly class RegisteredClient
+readonly class RegisteredClient
 {
     public function __construct(
         public Client $client,

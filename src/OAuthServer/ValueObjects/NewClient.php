@@ -6,7 +6,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
 
 use Cbox\Id\OAuthServer\Enums\ClientType;
 
-final readonly class NewClient
+readonly class NewClient
 {
     /**
      * @param  list<string>  $redirectUris

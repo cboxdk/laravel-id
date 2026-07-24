@@ -7,7 +7,7 @@ namespace Cbox\Id\Kernel\Audit\ValueObjects;
 /**
  * Result of verifying an audit chain segment.
  */
-final readonly class ChainVerification
+readonly class ChainVerification
 {
     private function __construct(
         public bool $valid,

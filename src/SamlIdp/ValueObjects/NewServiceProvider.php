@@ -12,7 +12,7 @@ use Cbox\Id\SamlIdp\Enums\ServiceProviderStatus;
  * an emitted SAML attribute name to the subject/user field it is read from (e.g.
  * `['email' => 'email', 'firstName' => 'given_name']`).
  */
-final readonly class NewServiceProvider
+readonly class NewServiceProvider
 {
     /**
      * @param  array<string, string>  $attributeMappings

@@ -7,7 +7,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
 /**
  * The trusted result of exchanging a valid authorization code (PKCE verified).
  */
-final readonly class AuthorizedGrant
+readonly class AuthorizedGrant
 {
     /**
      * @param  list<string>  $scopes

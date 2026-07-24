@@ -8,7 +8,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  * The device-authorization response (RFC 8628 §3.2). `deviceCode` is the raw
  * polling secret returned once; only its hash is stored.
  */
-final readonly class DeviceAuthorizationResult
+readonly class DeviceAuthorizationResult
 {
     /**
      * @param  list<string>  $scopes

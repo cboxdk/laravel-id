@@ -12,7 +12,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  * otherwise there is nowhere to send the user and the endpoint renders its own
  * logged-out response. This is the type that keeps the endpoint from open-redirecting.
  */
-final readonly class EndSessionResult
+readonly class EndSessionResult
 {
     public function __construct(
         public ?string $redirectTo = null,

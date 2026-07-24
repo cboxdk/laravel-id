@@ -10,7 +10,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  * the issued scope differs from what was requested — e.g. an empty request that
  * inherited the subject token's scopes).
  */
-final readonly class TokenExchangeResult
+readonly class TokenExchangeResult
 {
     /**
      * @param  list<string>  $scopes

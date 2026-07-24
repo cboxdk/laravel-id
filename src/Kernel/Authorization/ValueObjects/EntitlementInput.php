@@ -9,7 +9,7 @@ use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 /**
  * The desired state of a single entitlement, as pushed from a source of truth.
  */
-final readonly class EntitlementInput
+readonly class EntitlementInput
 {
     /**
      * @param  array<string, mixed>  $value  e.g. {"tier":"pro"} / {"limit":50} / {"enabled":true}

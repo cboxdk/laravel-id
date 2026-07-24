@@ -11,7 +11,7 @@ use Cbox\Id\ExternalActions\Models\ExternalActionEndpoint;
  * which is never retrievable again (only the sealed form is stored). The receiver
  * uses this secret to verify the `X-Cbox-Signature` on each hook request.
  */
-final readonly class RegisteredActionEndpoint
+readonly class RegisteredActionEndpoint
 {
     public function __construct(
         public ExternalActionEndpoint $endpoint,

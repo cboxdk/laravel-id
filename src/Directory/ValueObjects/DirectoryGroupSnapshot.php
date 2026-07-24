@@ -12,7 +12,7 @@ use Cbox\Id\Directory\Models\DirectoryGroup;
  * reconciliation, so a group maps onto the same {@see DirectoryGroup}
  * as SCIM Groups — and feeds the same group→role mappings.
  */
-final readonly class DirectoryGroupSnapshot
+readonly class DirectoryGroupSnapshot
 {
     /**
      * @param  list<string>  $memberExternalIds

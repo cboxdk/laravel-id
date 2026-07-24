@@ -8,7 +8,7 @@ namespace Cbox\Id\Kernel\Authorization\ValueObjects;
  * The outcome of an authorization decision. Deny-by-default: the only way to
  * `allow()` is an explicit grant.
  */
-final readonly class Decision
+readonly class Decision
 {
     private function __construct(
         public bool $allowed,

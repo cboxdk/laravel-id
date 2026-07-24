@@ -14,7 +14,7 @@ use Cbox\Id\Platform\Models\Project;
  * root-console login), its first project (the first IdP product), and that project's
  * first environment — an empty, routable IdP realm ready for the member to configure.
  */
-final readonly class ProvisionedAccount
+readonly class ProvisionedAccount
 {
     public function __construct(
         public Account $account,

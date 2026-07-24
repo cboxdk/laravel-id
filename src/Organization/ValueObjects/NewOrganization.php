@@ -6,7 +6,7 @@ namespace Cbox\Id\Organization\ValueObjects;
 
 use Cbox\Id\Organization\Enums\OrganizationType;
 
-final readonly class NewOrganization
+readonly class NewOrganization
 {
     /**
      * @param  array<string, mixed>  $settings

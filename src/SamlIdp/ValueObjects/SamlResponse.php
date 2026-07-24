@@ -10,7 +10,7 @@ namespace Cbox\Id\SamlIdp\ValueObjects;
  * `SAMLResponse` form field); `acsUrl` is the registered ACS it must be POSTed to;
  * `relayState` is echoed back untouched.
  */
-final readonly class SamlResponse
+readonly class SamlResponse
 {
     public function __construct(
         public string $xml,

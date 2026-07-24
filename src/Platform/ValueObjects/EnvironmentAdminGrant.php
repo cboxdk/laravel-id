@@ -12,7 +12,7 @@ namespace Cbox\Id\Platform\ValueObjects;
  * tenant environment WITHOUT a second login and WITHOUT existing as a subject inside
  * that environment.
  */
-final readonly class EnvironmentAdminGrant
+readonly class EnvironmentAdminGrant
 {
     public function __construct(
         public string $accountMemberId,

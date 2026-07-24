@@ -11,7 +11,7 @@ use Cbox\Id\Platform\Models\AccountApiKey;
  * plaintext. The plaintext exists only here — it is never persisted and cannot be
  * recovered, so the caller must surface it to the user immediately.
  */
-final readonly class IssuedAccountApiKey
+readonly class IssuedAccountApiKey
 {
     public function __construct(
         public AccountApiKey $key,

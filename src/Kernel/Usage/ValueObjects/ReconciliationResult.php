@@ -9,7 +9,7 @@ namespace Cbox\Id\Kernel\Usage\ValueObjects;
  * said (`metered`), what reality said (`expected`), the gap (`drift`), and whether a
  * correction was applied. `drift === 0` means the meter was already truthful.
  */
-final readonly class ReconciliationResult
+readonly class ReconciliationResult
 {
     public function __construct(
         public string $organizationId,

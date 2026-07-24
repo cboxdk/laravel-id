@@ -9,7 +9,7 @@ namespace Cbox\Id\Identity\ValueObjects;
  * {@see ImportResult} rather than aborting the whole run — one bad row never
  * discards the good ones.
  */
-final readonly class ImportError
+readonly class ImportError
 {
     /**
      * @param  int  $row  1-based position of the row in the source stream

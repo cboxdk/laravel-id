@@ -16,7 +16,7 @@ use DateTimeImmutable;
  * revocation happens at the secret / grant level, which takes effect on the next
  * lease rather than clawing back an in-flight one.
  */
-final readonly class SecretLease
+readonly class SecretLease
 {
     public function __construct(
         public string $secretId,

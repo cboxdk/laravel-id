@@ -12,7 +12,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
  * `organizationId` selects the chain: a tenant key scopes it to that tenant's
  * trail; null records it on the system trail.
  */
-final readonly class AuditEvent
+readonly class AuditEvent
 {
     /**
      * @param  array<string, mixed>  $context

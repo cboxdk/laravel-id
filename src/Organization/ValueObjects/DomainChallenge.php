@@ -11,7 +11,7 @@ namespace Cbox\Id\Organization\ValueObjects;
  * to the environment's issuer host. Carrying the exact record to publish as a typed
  * object keeps the console from re-deriving the challenge string in a view.
  */
-final readonly class DomainChallenge
+readonly class DomainChallenge
 {
     public function __construct(
         public string $domain,

@@ -10,7 +10,7 @@ use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
 /**
  * A resolved entitlement value with its provenance and enforcement mode.
  */
-final readonly class EntitlementValue
+readonly class EntitlementValue
 {
     /**
      * @param  array<string, mixed>  $value

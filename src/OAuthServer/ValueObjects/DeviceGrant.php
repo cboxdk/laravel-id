@@ -7,7 +7,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
 /**
  * An approved device grant, ready to mint a token for.
  */
-final readonly class DeviceGrant
+readonly class DeviceGrant
 {
     /**
      * @param  list<string>  $scopes

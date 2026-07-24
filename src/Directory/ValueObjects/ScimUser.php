@@ -7,7 +7,7 @@ namespace Cbox\Id\Directory\ValueObjects;
 /**
  * A SCIM 2.0 User resource, already parsed from the wire.
  */
-final readonly class ScimUser
+readonly class ScimUser
 {
     /**
      * @param  array<string, mixed>  $raw

@@ -21,7 +21,7 @@ use Cbox\Id\Identity\Contracts\HashVerifier;
  * Provide at most one of the two. A row with neither is imported without a
  * password credential (the user signs in via SSO, a magic link, or a reset).
  */
-final readonly class ImportedUser
+readonly class ImportedUser
 {
     /**
      * @param  array<string, mixed>  $attributes  provider-specific extras, carried

@@ -13,7 +13,7 @@ use Cbox\Id\Provisioning\Models\ProvisioningConnection;
  * reveal back — it is sealed on the way in and never exposed again. This wrapper
  * exists to keep a symmetric, explicit registration return type.
  */
-final readonly class RegisteredConnection
+readonly class RegisteredConnection
 {
     public function __construct(
         public ProvisioningConnection $connection,

@@ -12,7 +12,7 @@ use Cbox\Id\Identity\Contracts\UserImport;
  * are the safe ones — deny-by-default on credentials, honor the source's
  * verified-email flag, and skip (rather than silently mutate) existing accounts.
  */
-final readonly class ImportOptions
+readonly class ImportOptions
 {
     /**
      * @param  bool  $upsert  when an email already exists in the environment,

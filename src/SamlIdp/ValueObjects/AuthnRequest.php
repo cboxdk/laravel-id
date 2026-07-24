@@ -19,7 +19,7 @@ use Cbox\Id\SamlIdp\Contracts\SamlIdentityProvider;
  * location. `serviceProviderId` re-resolves the SP for issuance (deny-by-default
  * a second time), and `spEntityId` is the audience the assertion is restricted to.
  */
-final readonly class AuthnRequest
+readonly class AuthnRequest
 {
     public function __construct(
         public string $id,

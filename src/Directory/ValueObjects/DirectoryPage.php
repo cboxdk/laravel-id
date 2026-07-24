@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * @template TModel of Model
  */
-final class DirectoryPage
+class DirectoryPage
 {
     /**
      * @param  Collection<int, TModel>  $resources

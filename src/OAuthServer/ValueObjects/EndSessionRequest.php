@@ -11,7 +11,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  * requesting client can be identified (explicit `clientId`, or the `aud` of a
  * verifiable `idTokenHint`) AND the URI is on that client's allow-list.
  */
-final readonly class EndSessionRequest
+readonly class EndSessionRequest
 {
     public function __construct(
         public ?string $idTokenHint = null,

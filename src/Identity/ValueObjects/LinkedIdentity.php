@@ -13,7 +13,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
  * has a real, discoverable type across the {@see Subjects}
  * contract, mirroring {@see FederatedPrincipal} for the inbound direction.
  */
-final readonly class LinkedIdentity
+readonly class LinkedIdentity
 {
     public function __construct(
         public string $provider,

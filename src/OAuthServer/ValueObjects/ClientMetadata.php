@@ -12,7 +12,7 @@ use Cbox\Id\OAuthServer\DynamicClientRegistrar;
  * which enforces the policy (allowed grant types/scopes, redirect-uri rules); this
  * object only carries the already-vetted result.
  */
-final readonly class ClientMetadata
+readonly class ClientMetadata
 {
     /**
      * @param  list<string>  $redirectUris

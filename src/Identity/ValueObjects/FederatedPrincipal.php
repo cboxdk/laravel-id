@@ -13,7 +13,7 @@ namespace Cbox\Id\Identity\ValueObjects;
  * account. A first-seen identity whose email already belongs to an account is
  * refused; linking is an explicit, authenticated action (see Subjects::link()).
  */
-final readonly class FederatedPrincipal
+readonly class FederatedPrincipal
 {
     /**
      * @param  array<string, mixed>  $raw

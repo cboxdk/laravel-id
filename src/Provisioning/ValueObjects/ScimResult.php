@@ -11,7 +11,7 @@ namespace Cbox\Id\Provisioning\ValueObjects;
  * which — like a 429 or a 5xx — is a TRANSIENT failure the drain should retry;
  * a 4xx (other than the specially-handled 404/409) is a PERMANENT client error.
  */
-final readonly class ScimResult
+readonly class ScimResult
 {
     /**
      * @param  array<string, mixed>  $body  the parsed SCIM response body ([] on transport error)

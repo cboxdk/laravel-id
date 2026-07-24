@@ -6,7 +6,7 @@ namespace Cbox\Id\AuditQuery\ValueObjects;
 
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 
-final readonly class AuditPage
+readonly class AuditPage
 {
     /**
      * @param  list<AuditEntry>  $items

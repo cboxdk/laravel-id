@@ -8,7 +8,7 @@ namespace Cbox\Id\Kernel\Events\ValueObjects;
  * A domain event to append to the outbox. `organizationId` tags the event with
  * its tenant (null for system-level events).
  */
-final readonly class DomainEvent
+readonly class DomainEvent
 {
     /**
      * @param  array<string, mixed>  $payload

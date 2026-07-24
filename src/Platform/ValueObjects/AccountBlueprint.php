@@ -15,7 +15,7 @@ namespace Cbox\Id\Platform\ValueObjects;
  * environment, which is exactly the Account → Environment → Organization → User
  * layering (the account plane never seeds the end-user plane).
  */
-final readonly class AccountBlueprint
+readonly class AccountBlueprint
 {
     public function __construct(
         public string $accountName,

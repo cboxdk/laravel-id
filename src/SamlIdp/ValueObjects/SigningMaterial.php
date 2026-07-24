@@ -9,7 +9,7 @@ namespace Cbox\Id\SamlIdp\ValueObjects;
  * from the sealed store only for the duration of a signing call and is never
  * logged or persisted. `certificatePem` and `kid` are public.
  */
-final readonly class SigningMaterial
+readonly class SigningMaterial
 {
     public function __construct(
         public string $privateKeyPem,

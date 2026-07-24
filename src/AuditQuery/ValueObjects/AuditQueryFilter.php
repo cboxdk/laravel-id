@@ -10,7 +10,7 @@ namespace Cbox\Id\AuditQuery\ValueObjects;
  * entries acting *on* a subject — the query behind a data-subject (DSR) export,
  * which needs everything done to a person, not just what they did.
  */
-final readonly class AuditQueryFilter
+readonly class AuditQueryFilter
 {
     public function __construct(
         public ?string $organizationId = null,

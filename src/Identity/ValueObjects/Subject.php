@@ -15,7 +15,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
  * models (users, admins, resellers) behind one {@see Subjects}
  * resolver.
  */
-final readonly class Subject
+readonly class Subject
 {
     public function __construct(
         public string $id,

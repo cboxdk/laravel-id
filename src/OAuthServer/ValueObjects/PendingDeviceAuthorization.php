@@ -13,7 +13,7 @@ use DateTimeImmutable;
  * the user sees what they are authorizing before they approve. It never exposes the
  * `device_code` (the requesting device's polling secret).
  */
-final readonly class PendingDeviceAuthorization
+readonly class PendingDeviceAuthorization
 {
     /**
      * @param  list<string>  $scopes

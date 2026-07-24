@@ -9,7 +9,7 @@ namespace Cbox\Id\Identity\ValueObjects;
  * skipped (already present, no upsert), plus the per-row errors that were
  * collected instead of aborting the run.
  */
-final readonly class ImportResult
+readonly class ImportResult
 {
     /**
      * @param  list<ImportError>  $errors

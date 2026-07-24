@@ -12,7 +12,7 @@ use Cbox\Id\Otp\Enums\OtpFailureReason;
  * carries only a coarse {@see OtpFailureReason} — never a hint about which
  * recipients or challenges exist (see the enum's note).
  */
-final readonly class OtpResult
+readonly class OtpResult
 {
     private function __construct(
         public bool $verified,

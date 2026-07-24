@@ -10,7 +10,7 @@ namespace Cbox\Id\SamlIdp\ValueObjects;
  * fully-formed, signed redirect URL that returns a `LogoutResponse` to the SP's SLO
  * endpoint. The controller revokes the session and 302s to `redirectUrl`.
  */
-final readonly class SamlLogoutOutcome
+readonly class SamlLogoutOutcome
 {
     public function __construct(
         public string $nameId,
