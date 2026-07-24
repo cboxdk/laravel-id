@@ -182,6 +182,19 @@ return [
      * pull. Keep the guard true in any multi-tenant deployment.
      */
     'access_control' => [
+        /*
+         * RBAC driver — which authorization backend the platform (and its token
+         * claims) reads from.
+         *   'builtin'  — the package's own hierarchy-aware RBAC. Loads the
+         *                roles/permissions/… schema and binds the built-in services.
+         *   'external' — bring-your-own. The built-in tables and their migrations
+         *                are NOT loaded, and AccessChecker/Roles fall back to a
+         *                refusing default (deny-by-default) until you bind an adapter
+         *                (e.g. one backed by an existing Spatie permission install).
+         *                See docs/extension-points/custom-rbac.md.
+         */
+        'driver' => env('CBOX_ID_ACCESS_CONTROL_DRIVER', 'builtin'),
+
         'verify_manifest_url' => env('CBOX_ID_MANIFEST_VERIFY_URL', true),
         'fetch_timeout' => (int) env('CBOX_ID_MANIFEST_FETCH_TIMEOUT', 10),
     ],

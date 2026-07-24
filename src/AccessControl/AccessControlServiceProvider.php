@@ -20,6 +20,18 @@ class AccessControlServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        if (! $this->builtinDriver()) {
+            // 'external' — bring-your-own RBAC. Fall back to deny-by-default so a
+            // host that has not yet bound an adapter is refused, never trusted, and
+            // never queries the built-in tables (which are not created in this mode).
+            // A binding in the host's own provider wins over these.
+            $this->app->singleton(AccessChecker::class, NullAccessChecker::class);
+            $this->app->singleton(Roles::class, UnboundRoles::class);
+            $this->app->singleton(GroupRoleMappings::class, UnboundGroupRoleMappings::class);
+
+            return;
+        }
+
         $this->app->singleton(Roles::class, RoleService::class);
         $this->app->singleton(AccessChecker::class, HierarchyAwareAccessChecker::class);
         $this->app->singleton(AppManifests::class, ManifestSyncService::class);
@@ -29,11 +41,23 @@ class AccessControlServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if (! $this->builtinDriver()) {
+            // The built-in RBAC schema, the group→role reconciliation bridge, and the
+            // manifest machinery all belong to the builtin driver only. In 'external'
+            // mode the host owns authorization storage and reconciliation.
+            return;
+        }
+
         // Reconcile group→role assignments whenever a directory group's membership
         // changes (the SCIM→role bridge), via the domain-event outbox.
         Event::listen(EventDelivered::class, function (EventDelivered $delivered): void {
             $this->app->make(ReconcileGroupRolesOnDomainEvent::class)->handle($delivered);
         });
+
+        // The module owns its own schema; the shared loader in IdServiceProvider is
+        // non-recursive and does not reach this subdirectory, so it only runs under
+        // the builtin driver.
+        $this->loadMigrationsFrom(__DIR__.'/../../database/migrations/access-control');
 
         if ($this->app->runningInConsole()) {
             $this->commands([SyncAppManifestsCommand::class]);
@@ -50,5 +74,14 @@ class AccessControlServiceProvider extends ServiceProvider
                     ->withoutOverlapping();
             });
         }
+    }
+
+    /**
+     * Whether the built-in hierarchy-aware RBAC is active. False means the host
+     * brings its own authorization backend (see docs/extension-points/custom-rbac.md).
+     */
+    private function builtinDriver(): bool
+    {
+        return config('cbox-id.access_control.driver', 'builtin') === 'builtin';
     }
 }

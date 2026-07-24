@@ -116,9 +116,21 @@ class IdServiceProvider extends ServiceProvider
                 __DIR__.'/../config/cbox-id.php' => config_path('cbox-id.php'),
             ], 'cbox-id-config');
 
-            $this->publishes([
-                __DIR__.'/../database/migrations' => database_path('migrations'),
-            ], 'cbox-id-migrations');
+            // Publish every migration FLAT into the host's migrations directory —
+            // including the builtin-RBAC set that lives in the access-control/ subdir
+            // (kept out of the top level so the non-recursive auto-loader can gate it
+            // on access_control.driver). A host's own migrator is likewise
+            // non-recursive, so a nested copy would silently never run.
+            $migrationPublishMap = [];
+            foreach ([
+                __DIR__.'/../database/migrations/*_*.php',
+                __DIR__.'/../database/migrations/access-control/*_*.php',
+            ] as $pattern) {
+                foreach (glob($pattern) ?: [] as $migration) {
+                    $migrationPublishMap[$migration] = database_path('migrations/'.basename($migration));
+                }
+            }
+            $this->publishes($migrationPublishMap, 'cbox-id-migrations');
 
             // Optional: the canonical users table for greenfield installs only.
             // Apps with existing users never publish this.

@@ -21,6 +21,9 @@ Topic guides:
   an HSM or external secrets manager while keeping the deny-by-default grant model.
 - **[Custom hook action](custom-action.md)** — write an in-process inline-hook
   handler, or swap how external hook endpoints are called.
+- **[Custom RBAC (bring your own)](custom-rbac.md)** — keep an existing authorization
+  backend (e.g. a Spatie permission install) as the source of roles, permissions, and
+  token claims while the platform handles AuthN/SSO/OAuth/OIDC.
 
 ## Swap an implementation
 
