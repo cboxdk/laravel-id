@@ -333,6 +333,40 @@ it('refuses an unmapped PATCH path instead of reporting a write it did not make'
         ->assertJsonPath('schemas.0', 'urn:ietf:params:scim:api:messages:2.0:Error');
 });
 
+// RFC 7644 §3.5.2 defines only add/remove/replace. A typo'd op used to fall through to a
+// silent `replace` default and 200 — the exact gap already closed for Group PATCH, left
+// asymmetric on Users. An unknown op must 400 `invalidSyntax` and change nothing, so the
+// IdP surfaces the malformed request instead of trusting a write that misfired.
+it('refuses a User PATCH with an unknown op instead of silently replacing', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana3', 'okta|13', 'dana3@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'append', 'path' => 'displayName', 'value' => 'Hijacked']],
+    ], $headers)
+        ->assertStatus(400)
+        ->assertJsonPath('scimType', 'invalidSyntax')
+        ->assertJsonPath('schemas.0', 'urn:ietf:params:scim:api:messages:2.0:Error');
+
+    // The mis-typed write must NOT have landed (applyPatch throws before persistence).
+    $this->getJson('/scim/v2/Users/'.$id, $headers)
+        ->assertOk()
+        ->assertJsonPath('displayName', fn ($value): bool => $value !== 'Hijacked');
+});
+
+it('refuses a User PATCH with a missing op', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana4', 'okta|14', 'dana4@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['path' => 'displayName', 'value' => 'No Op']],
+    ], $headers)
+        ->assertStatus(400)
+        ->assertJsonPath('scimType', 'invalidSyntax');
+});
+
 /**
  * The invalidPath fix traded a silent no-op for a HARD FAILURE on the operations that
  * matter. applyPatch throws mid-loop, so one unmapped attribute 400s the whole request —
