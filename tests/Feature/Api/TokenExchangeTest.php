@@ -161,6 +161,24 @@ it('requires client authentication for token exchange', function (): void {
     ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
 });
 
+it('refuses to exchange a DPoP-bound subject token presented without a matching DPoP proof (RFC 9449)', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['api.read'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange', 'client_credentials']);
+    // A sender-constrained subject token (cnf.jkt set). Holding the bytes alone must
+    // not be enough to launder it into a fresh, unconstrained token.
+    $subjectToken = app(TokenIssuer::class)
+        ->issueForUser($registered->client, 'alice', $org->id, ['api.read'], null, 'attacker-lacks-this-key-thumbprint')
+        ->token;
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => TX_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'subject_token' => $subjectToken,
+        'subject_token_type' => TX_ACCESS,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
 it('advertises token-exchange in discovery', function (): void {
     $grants = $this->getJson('/.well-known/openid-configuration')->assertOk()->json('grant_types_supported');
     expect($grants)->toContain(TX_GRANT);

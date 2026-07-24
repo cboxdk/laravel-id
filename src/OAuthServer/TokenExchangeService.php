@@ -56,6 +56,22 @@ class TokenExchangeService implements TokenExchange
             throw InvalidTokenExchange::unauthorizedClient();
         }
 
+        // RFC 9449: a sender-constrained (DPoP-bound) subject token may only be
+        // exchanged by a caller that proves possession of the bound key. Presenting
+        // the token bytes alone is not enough — otherwise a party that merely holds
+        // the token (a resource server it was legitimately presented to, any client
+        // named in a multi-audience `aud`) could launder it into a fresh token that
+        // is unbound or bound to the attacker's own key, defeating the whole point of
+        // `cnf.jkt`. The exchange endpoint's own DPoP proof supplies $request->dpopJkt;
+        // it must match the subject token's binding, and the new token inherits it.
+        // Mirrors the DPoP continuity check on refresh-token rotation.
+        $boundThumbprint = $subject->confirmationThumbprint();
+
+        if ($boundThumbprint !== null
+            && ($request->dpopJkt === null || ! hash_equals($boundThumbprint, $request->dpopJkt))) {
+            throw InvalidTokenExchange::unprovenSenderConstraint();
+        }
+
         // Down-scope only: every requested scope must already be present on the
         // subject token. An empty request keeps the subject token's scopes.
         $scopes = $request->requestedScopes === [] ? $subject->scopes : $request->requestedScopes;
