@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Directory\Models\DirectoryUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -225,6 +226,48 @@ it('refuses a PUT whose body externalId names a different resource (no IDOR)', f
     // A still resolves by its own externalId, unchanged.
     $this->getJson('/scim/v2/Users?filter='.urlencode('externalId eq "okta|A"'), $headers)
         ->assertOk()->assertJsonPath('totalResults', 1);
+});
+
+it('refuses a create whose userName is already taken in the directory (409 uniqueness)', function (): void {
+    $headers = $this->scimHeaders;
+    provision($this, $headers, 'anna', 'okta|A', 'anna@corp.com');
+
+    // Different externalId + email, same userName → uniqueness=server must reject.
+    $this->postJson('/scim/v2/Users', [
+        'userName' => 'anna', 'externalId' => 'okta|B',
+        'emails' => [['value' => 'anna.two@corp.com', 'primary' => true]], 'active' => true,
+    ], $headers)->assertStatus(409)->assertJsonPath('scimType', 'uniqueness');
+});
+
+it('refuses a create with no userName (400 invalidValue)', function (): void {
+    $this->postJson('/scim/v2/Users', [
+        'externalId' => 'okta|X', 'emails' => [['value' => 'x@corp.com', 'primary' => true]],
+    ], $this->scimHeaders)->assertStatus(400)->assertJsonPath('scimType', 'invalidValue');
+});
+
+it('binds a PUT to the URL target even when the body omits externalId', function (): void {
+    $headers = $this->scimHeaders;
+    $idA = provision($this, $headers, 'anna@corp.com', 'okta|A', 'anna@corp.com');
+
+    // PUT /Users/{A} with NO externalId and a different userName. The mapper falls
+    // back externalId=userName, so without pinning this would re-key the write to a
+    // NEW row ("bob@corp.com") and leave A untouched — a wrong-user/confused-deputy
+    // write. The target must stay bound to the URL.
+    $this->putJson("/scim/v2/Users/{$idA}", [
+        'userName' => 'bob@corp.com',
+        'emails' => [['value' => 'bob@corp.com', 'primary' => true]], 'active' => true,
+    ], $headers)->assertOk()->assertJsonPath('id', $idA);
+
+    // A was updated in place: its externalId is unchanged, its userName replaced.
+    expect(DirectoryUser::query()->count())->toBe(1);
+    $this->getJson('/scim/v2/Users/'.$idA, $headers)
+        ->assertOk()
+        ->assertJsonPath('externalId', 'okta|A')
+        ->assertJsonPath('userName', 'bob@corp.com');
+
+    // No phantom row keyed on the body userName was created.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('externalId eq "bob@corp.com"'), $headers)
+        ->assertOk()->assertJsonPath('totalResults', 0);
 });
 
 /**

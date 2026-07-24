@@ -6,12 +6,14 @@ namespace Cbox\Id\Directory;
 
 use Cbox\Id\Directory\Contracts\DirectoryGroups;
 use Cbox\Id\Directory\Exceptions\UnsupportedDirectoryFilter;
+use Cbox\Id\Directory\Exceptions\UnsupportedGroupPatch;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryGroup;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\DirectoryPage;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The default {@see DirectoryGroups} implementation over `directory_groups` and
@@ -90,11 +92,17 @@ class DatabaseDirectoryGroups implements DirectoryGroups
 
     public function applyPatch(DirectoryGroup $group, array $operations): DirectoryGroup
     {
-        foreach ($operations as $operation) {
-            if (is_array($operation)) {
-                $this->applyOperation($group, $operation);
+        // SCIM PATCH is atomic (RFC 7644 §3.5.2): if any operation fails the whole
+        // request fails with no partial change. Wrap the ops so a later invalid op
+        // rolls back the earlier ones instead of leaving the group half-edited — and
+        // the membership event only fires on a fully-applied patch.
+        DB::transaction(function () use ($group, $operations): void {
+            foreach ($operations as $operation) {
+                if (is_array($operation)) {
+                    $this->applyOperation($group, $operation);
+                }
             }
-        }
+        });
 
         $this->emitMembershipChanged($group->id, $this->organizationOf($group->directory_id));
 
@@ -140,6 +148,13 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         $path = is_string($operation['path'] ?? null) ? $operation['path'] : '';
         $value = $operation['value'] ?? null;
 
+        // Deny-by-default: only add/remove/replace are defined for SCIM PATCH
+        // (RFC 7644 §3.5.2). An unknown op is a client error, not a silent no-op that
+        // returns 200 with nothing changed.
+        if (! in_array($op, ['add', 'remove', 'replace'], true)) {
+            throw UnsupportedGroupPatch::op($op);
+        }
+
         // Rename: replace with a displayName in the value (path or pathless).
         if ($op === 'replace' && is_array($value) && isset($value['displayName']) && is_string($value['displayName'])) {
             $group->forceFill(['display_name' => $value['displayName']])->save();
@@ -153,15 +168,31 @@ class DatabaseDirectoryGroups implements DirectoryGroups
             return;
         }
 
+        // Beyond displayName (handled above) and the pathless whole-resource form,
+        // only the `members` attribute is addressable. A bogus path is refused rather
+        // than silently ignored.
         if (! str_starts_with($path, 'members') && $path !== '') {
+            throw UnsupportedGroupPatch::path($path);
+        }
+
+        // Where the member payload lives: a `members`-pathed op carries the id list
+        // directly as $value; a PATHLESS op carries the whole resource, so the members
+        // live under its `members` key. Reading $value directly for the pathless form
+        // extracted ZERO ids from `{members:[…]}` and then sync([]) WIPED every member.
+        $memberValue = $path === '' && is_array($value) ? ($value['members'] ?? null) : $value;
+
+        // A pathless replace that doesn't carry `members` at all is a resource replace
+        // that must not touch membership — never let it fall through to sync([]).
+        if ($op === 'replace' && $path === '' && $memberValue === null) {
             return;
         }
 
+        // $op is guaranteed to be add/remove/replace (validated above), so the match
+        // is exhaustive without a default arm.
         match ($op) {
-            'add' => $group->members()->syncWithoutDetaching($this->resolveMembers($group->directory_id, $this->valueIds($value))),
-            'replace' => $group->members()->sync($this->resolveMembers($group->directory_id, $this->valueIds($value))),
-            'remove' => $this->removeMembers($group, $path, $value),
-            default => null,
+            'add' => $group->members()->syncWithoutDetaching($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
+            'replace' => $group->members()->sync($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
+            'remove' => $this->removeMembers($group, $path, $memberValue),
         };
     }
 

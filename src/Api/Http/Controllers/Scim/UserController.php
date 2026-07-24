@@ -8,6 +8,7 @@ use Cbox\Id\Api\Exceptions\UnsupportedScimPath;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Contracts\DirectoryUsers;
+use Cbox\Id\Directory\Exceptions\DirectoryUserNameTaken;
 use Cbox\Id\Directory\Exceptions\UnsupportedDirectoryFilter;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryUser;
@@ -54,6 +55,14 @@ class UserController
     public function store(Request $request): JsonResponse
     {
         $directory = $this->directory($request);
+
+        // userName is REQUIRED (RFC 7643 §4.1.1). Without this an empty/absent userName
+        // provisioned a 201 with a blank name — a resource the IdP can't address by
+        // filter. Refuse at the edge with the SCIM-typed error.
+        if ($request->string('userName')->toString() === '') {
+            return $this->error('400', 'userName is required.', 'invalidValue');
+        }
+
         $result = $this->provision($directory->id, ScimMapper::fromRequest($request));
 
         return $result instanceof JsonResponse
@@ -70,18 +79,26 @@ class UserController
             return $this->notFound();
         }
 
+        // A full replace must still carry the required userName (RFC 7643 §4.1.1).
+        if ($request->string('userName')->toString() === '') {
+            return $this->error('400', 'userName is required.', 'invalidValue');
+        }
+
         // The URL identifies the resource; provisioning keys by externalId. A body
         // whose externalId names a DIFFERENT resource must not be honored — otherwise
         // `PUT /Users/A` with `externalId=B` would mutate/create B and leave A intact
-        // (an IDOR). Bind the replace to the located row: reject a mismatch.
+        // (an IDOR). Bind the replace to the located row: reject an explicit mismatch.
         $bodyExternalId = $request->string('externalId')->toString();
         if ($bodyExternalId !== '' && $bodyExternalId !== $target->external_id) {
             return $this->error('400', 'externalId does not match the target resource.', 'mutability');
         }
 
-        // Full replace (PUT): re-provision from the submitted resource, keeping
-        // the record identified by its stored externalId.
-        $result = $this->provision($directory->id, ScimMapper::fromRequest($request));
+        // Full replace (PUT): re-provision from the submitted resource, PINNING the
+        // externalId to the URL-located row. When the body omits externalId, the mapper
+        // would otherwise fall back to `userName` and re-key the write to another row —
+        // so `PUT /Users/A` with `{userName: "B"}` would create/overwrite B and leave A
+        // untouched. Passing $target->external_id makes the URL the sole identity.
+        $result = $this->provision($directory->id, ScimMapper::fromRequest($request, $target->external_id));
 
         return $result instanceof JsonResponse
             ? $result
@@ -146,6 +163,8 @@ class UserController
             return $this->sync->provisionUser($directoryId, $scim);
         } catch (AccountExistsForEmail) {
             return $this->error('409', 'A user with this email already exists on the platform.', 'uniqueness');
+        } catch (DirectoryUserNameTaken) {
+            return $this->error('409', 'A user with this userName already exists in this directory.', 'uniqueness');
         }
     }
 

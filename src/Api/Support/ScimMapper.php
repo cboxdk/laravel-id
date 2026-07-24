@@ -26,10 +26,18 @@ class ScimMapper
     /** Enterprise-extension attributes IdPs actually provision. */
     private const ENTERPRISE_ATTRIBUTES = ['employeeNumber', 'costCenter', 'organization', 'division', 'department', 'manager'];
 
-    public static function fromRequest(Request $request): ScimUser
+    /**
+     * Map an inbound SCIM User payload to a {@see ScimUser}.
+     *
+     * On PUT (full replace) the resource identity is the URL, not the body: pass
+     * `$externalId` to pin it to the located row. Without that pin an omitted
+     * `externalId` falls back to `userName` below, which would re-key the write to
+     * a DIFFERENT row (create/overwrite the wrong user) — see {@see UserController::replace()}.
+     */
+    public static function fromRequest(Request $request, ?string $externalId = null): ScimUser
     {
         $userName = $request->string('userName')->toString();
-        $externalId = $request->string('externalId')->toString() ?: $userName;
+        $externalId ??= $request->string('externalId')->toString() ?: $userName;
 
         $emailRaw = $request->input('emails.0.value');
         $email = is_string($emailRaw) ? $emailRaw : null;

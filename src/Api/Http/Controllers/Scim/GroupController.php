@@ -8,6 +8,7 @@ use Cbox\Id\Api\Support\ScimGroupMapper;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectoryGroups;
 use Cbox\Id\Directory\Exceptions\UnsupportedDirectoryFilter;
+use Cbox\Id\Directory\Exceptions\UnsupportedGroupPatch;
 use Cbox\Id\Directory\Models\Directory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,9 +82,17 @@ class GroupController
 
         $body = $this->body($request);
 
+        // PUT is a full replacement (RFC 7644 §3.5.1) and `displayName` is the sole
+        // required Group attribute (RFC 7643 §4.2) — a PUT without it is invalid, not
+        // a silent no-change.
+        $displayName = ScimGroupMapper::displayName($body);
+        if ($displayName === null) {
+            return $this->error('400', 'displayName is required.', 'invalidValue');
+        }
+
         $group = $this->groups->replace(
             $group,
-            ScimGroupMapper::displayName($body),
+            $displayName,
             ScimGroupMapper::externalId($body),
             ScimGroupMapper::memberIds($body),
         );
@@ -102,7 +111,11 @@ class GroupController
 
         $operations = $this->body($request)['Operations'] ?? [];
 
-        $group = $this->groups->applyPatch($group, is_array($operations) ? $operations : []);
+        try {
+            $group = $this->groups->applyPatch($group, is_array($operations) ? $operations : []);
+        } catch (UnsupportedGroupPatch $e) {
+            return $this->error('400', $e->getMessage(), $e->scimType);
+        }
 
         return new JsonResponse(ScimGroupMapper::toResource($group));
     }

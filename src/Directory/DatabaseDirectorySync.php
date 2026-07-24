@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Directory;
 
 use Cbox\Id\Directory\Contracts\DirectorySync;
+use Cbox\Id\Directory\Exceptions\DirectoryUserNameTaken;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
@@ -40,6 +41,20 @@ class DatabaseDirectorySync implements DirectorySync
         $directory = Directory::query()->whereKey($directoryId)->firstOrFail();
 
         return DB::transaction(function () use ($directory, $user): DirectoryUser {
+            // userName is unique per directory (ServiceProviderConfig advertises
+            // uniqueness=server). A collision with a DIFFERENT externalId is a 409, not
+            // a duplicate userName the IdP can never reconcile. Same-externalId re-pushes
+            // fall through to updateOrCreate below (an update, not a conflict).
+            $nameTaken = DirectoryUser::query()
+                ->where('directory_id', $directory->id)
+                ->where('resource->userName', $user->userName)
+                ->where('external_id', '!=', $user->externalId)
+                ->exists();
+
+            if ($nameTaken) {
+                throw DirectoryUserNameTaken::make($user->userName);
+            }
+
             $subject = $this->subjects->provisionFederated(new FederatedPrincipal(
                 provider: 'scim',
                 subject: $directory->id.'|'.$user->externalId,

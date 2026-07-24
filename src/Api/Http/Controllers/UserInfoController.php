@@ -123,7 +123,7 @@ class UserInfoController
 
                 $organizations = $memberships
                     ->map(fn (Membership $m): ?array => isset($names[$m->organization_id])
-                        ? ['id' => $m->organization_id, 'name' => $names[$m->organization_id]->name, 'role' => $m->role]
+                        ? ['id' => $m->organization_id, 'name' => $names[$m->organization_id]->name, 'role' => $m->role->value]
                         : null)
                     ->filter()
                     ->values()
