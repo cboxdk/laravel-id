@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
@@ -24,6 +25,11 @@ class OAuthServerServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Identity declares this; OAuthServer (which already depends on Identity)
+        // supplies it, so a credential change can cut long-lived grants without
+        // Identity importing OAuth.
+        $this->app->singleton(SubjectGrantRevoker::class, RefreshTokenGrantRevoker::class);
+
         $this->app->singleton(ClientRegistry::class, ClientRegistryService::class);
         $this->app->singleton(ServiceAccounts::class, ServiceAccountService::class);
         $this->app->singleton(TokenIssuer::class, JwtTokenIssuer::class);

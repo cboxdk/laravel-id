@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity;
 
+use Cbox\Id\Identity\Contracts\AdminPasswords;
 use Cbox\Id\Identity\Contracts\EmailVerification;
 use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\MagicLink;
@@ -82,6 +83,7 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(Mfa::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);
         $this->app->singleton(PasswordReset::class, PasswordResetService::class);
+        $this->app->singleton(AdminPasswords::class, AdminPasswordService::class);
         $this->app->singleton(EmailVerification::class, EmailVerificationService::class);
 
         // Real WebAuthn verifier (OpenSSL signatures + vetted CBOR/COSE decoding)
