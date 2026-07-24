@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -16,6 +17,7 @@ it('starts a device grant with a user_code and verification URI', function (): v
 
     $response = $this->postJson('/oauth/device_authorization', [
         'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
         'scope' => 'openid profile',
     ]);
 
@@ -26,6 +28,49 @@ it('starts a device grant with a user_code and verification URI', function (): v
     expect($response->json('device_code'))->toStartWith('dvc_')
         ->and($response->json('user_code'))->toMatch('/^[A-Z]{4}-[A-Z]{4}$/')
         ->and($response->json('verification_uri'))->toEndWith('/device');
+});
+
+it('rejects a confidential client that presents no secret', function (): void {
+    // A confidential client must authenticate at the device endpoint — otherwise
+    // anyone knowing its client_id could start flows (and push approval prompts at
+    // users) under its identity (RFC 8628 §3.1).
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
+
+    $this->postJson('/oauth/device_authorization', [
+        'client_id' => $registered->client->client_id,
+        'scope' => 'openid',
+    ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
+});
+
+it('rejects a confidential client that presents a wrong secret', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
+
+    $this->postJson('/oauth/device_authorization', [
+        'client_id' => $registered->client->client_id,
+        'client_secret' => 'not-the-secret',
+        'scope' => 'openid',
+    ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
+});
+
+it('accepts a confidential client with the correct secret', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
+
+    $this->postJson('/oauth/device_authorization', [
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid',
+    ])->assertOk()->assertJsonStructure(['device_code', 'user_code']);
+});
+
+it('accepts a public client by client_id alone', function (): void {
+    // Public clients (TVs, CLIs) hold no secret — client_id is all they can present,
+    // and that is enough for them.
+    $registered = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
+
+    $this->postJson('/oauth/device_authorization', [
+        'client_id' => $registered->client->client_id,
+        'scope' => 'openid',
+    ])->assertOk()->assertJsonStructure(['device_code', 'user_code']);
 });
 
 it('resolves a live request by user_code for the verification screen (never the device_code)', function (): void {

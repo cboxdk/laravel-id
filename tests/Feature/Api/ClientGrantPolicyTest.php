@@ -183,6 +183,7 @@ it('refuses to start a flow the client is not registered for', function (): void
 
     $this->postJson('/oauth/device_authorization', [
         'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
         'scope' => 'openid',
     ])->assertStatus(400)->assertJsonPath('error', 'unauthorized_client');
 

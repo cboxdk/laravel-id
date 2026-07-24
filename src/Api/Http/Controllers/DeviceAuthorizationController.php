@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
-use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Illuminate\Http\JsonResponse;
@@ -19,13 +19,18 @@ use Illuminate\Http\Request;
 class DeviceAuthorizationController
 {
     public function __construct(
-        private readonly ClientRegistry $clients,
+        private readonly ClientAuthenticator $clientAuth,
         private readonly DeviceAuthorization $device,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
-        $client = $this->clients->byClientId($request->string('client_id')->toString());
+        // Authenticate like the token endpoint: a confidential client MUST prove its
+        // secret (or private_key_jwt), a public client authenticates by client_id
+        // alone. Accepting any known client_id let anyone start a device flow — and
+        // put an approval prompt in front of a user — under a confidential client's
+        // identity (RFC 8628 §3.1 references the token-endpoint client auth).
+        $client = $this->clientAuth->authenticate($request);
 
         if ($client === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401);
