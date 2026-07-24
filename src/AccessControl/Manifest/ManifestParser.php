@@ -64,9 +64,11 @@ class ManifestParser
             $permissions[] = new DeclaredPermission(
                 $key,
                 $this->optionalString($entry['description'] ?? null),
-                // Default true — an app opts a permission OUT of tenant self-serve by
-                // declaring "tenant_assignable": false. Any non-false value stays true.
-                ($entry['tenant_assignable'] ?? true) !== false,
+                // Deny-by-default: a permission is tenant self-serve-assignable ONLY when
+                // the app explicitly declares "tenant_assignable": true. An omitted or
+                // non-true value keeps it internal. As apps become third-party-authored,
+                // an unset field must narrow access, not widen it — the opt-IN model.
+                ($entry['tenant_assignable'] ?? false) === true,
             );
         }
 
