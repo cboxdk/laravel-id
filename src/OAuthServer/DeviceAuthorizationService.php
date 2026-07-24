@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
+use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
@@ -38,7 +39,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
             'user_code' => $userCode,
             'client_id' => $client->client_id,
             'scopes' => $scopes,
-            'status' => 'pending',
+            'status' => GrantPollStatus::Pending,
             'interval' => self::POLL_INTERVAL,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
@@ -58,7 +59,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
     {
         $record = DeviceCode::query()
             ->where('user_code', strtoupper($userCode))
-            ->where('status', 'pending')
+            ->where('status', GrantPollStatus::Pending)
             ->where('expires_at', '>', now())
             ->first();
 
@@ -76,7 +77,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
     public function approve(string $userCode, string $userId, ?string $organizationId): bool
     {
         return $this->transitionPending($userCode, [
-            'status' => 'approved',
+            'status' => GrantPollStatus::Approved,
             'user_id' => $userId,
             'organization_id' => $organizationId,
         ]);
@@ -84,7 +85,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
 
     public function deny(string $userCode): bool
     {
-        return $this->transitionPending($userCode, ['status' => 'denied']);
+        return $this->transitionPending($userCode, ['status' => GrantPollStatus::Denied]);
     }
 
     public function redeem(string $clientId, string $deviceCode): DeviceGrant
@@ -110,16 +111,16 @@ class DeviceAuthorizationService implements DeviceAuthorization
             && $record->last_polled_at->copy()->addSeconds($record->interval)->isFuture()) {
             throw new DeviceSlowDown;
         }
-        if ($record->status === 'denied') {
+        if ($record->status === GrantPollStatus::Denied) {
             throw new DeviceAccessDenied;
         }
 
         // A code already exchanged for a token is spent — never mint again.
-        if ($record->status === 'redeemed') {
+        if ($record->status === GrantPollStatus::Redeemed) {
             throw new InvalidGrant('device_code already used');
         }
 
-        if ($record->status !== 'approved') {
+        if ($record->status !== GrantPollStatus::Approved) {
             $record->forceFill(['last_polled_at' => now()])->save();
 
             throw new DeviceAuthorizationPending;
@@ -127,13 +128,13 @@ class DeviceAuthorizationService implements DeviceAuthorization
 
         // Single-use (RFC 8628 §3.4): a device_code mints a token exactly once.
         // Flip approved -> redeemed under a row lock inside a transaction so two
-        // concurrent polls (a shared/logged code) can't both observe 'approved'
+        // concurrent polls (a shared/logged code) can't both observe Approved
         // and each mint a token. The polling/pending saves above stay outside the
         // transaction so they commit even when this path throws.
         return DB::transaction(function () use ($record): DeviceGrant {
             $locked = DeviceCode::query()->whereKey($record->id)->lockForUpdate()->first();
 
-            if ($locked === null || $locked->status !== 'approved') {
+            if ($locked === null || $locked->status !== GrantPollStatus::Approved) {
                 throw new InvalidGrant('device_code already used');
             }
 
@@ -143,7 +144,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
                 array_values($locked->scopes),
             );
 
-            $locked->forceFill(['status' => 'redeemed', 'last_polled_at' => now()])->save();
+            $locked->forceFill(['status' => GrantPollStatus::Redeemed, 'last_polled_at' => now()])->save();
 
             return $grant;
         });
@@ -156,7 +157,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
     {
         return (bool) DeviceCode::query()
             ->where('user_code', strtoupper($userCode))
-            ->where('status', 'pending')
+            ->where('status', GrantPollStatus::Pending)
             ->where('expires_at', '>', now())
             ->update($attributes);
     }

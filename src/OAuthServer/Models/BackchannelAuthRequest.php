@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer\Models;
 
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -25,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $scopes
  * @property string|null $binding_message
  * @property string|null $nonce
- * @property string $status
+ * @property GrantPollStatus $status
  * @property int $interval
  * @property Carbon|null $last_polled_at
  * @property Carbon|null $approved_at
@@ -47,6 +48,7 @@ class BackchannelAuthRequest extends Model implements EnvironmentOwned
     {
         return [
             'scopes' => 'array',
+            'status' => GrantPollStatus::class,
             'last_polled_at' => 'datetime',
             'approved_at' => 'datetime',
             'expires_at' => 'datetime',

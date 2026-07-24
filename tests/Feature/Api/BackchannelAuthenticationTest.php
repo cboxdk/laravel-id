@@ -6,6 +6,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Models\BackchannelAuthRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -231,7 +232,7 @@ it('refuses to approve or deny another subject\'s request', function (): void {
 
     // Untouched: still pending, still unbound to the attacker's org.
     $row = BackchannelAuthRequest::query()->whereKey($pending->requestId)->firstOrFail();
-    expect($row->status)->toBe('pending')
+    expect($row->status)->toBe(GrantPollStatus::Pending)
         ->and($row->organization_id)->toBeNull();
 
     // And no token can be redeemed off the back of the attempt.

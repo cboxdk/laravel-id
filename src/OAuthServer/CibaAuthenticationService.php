@@ -8,6 +8,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
@@ -66,7 +67,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
             'scopes' => $scopes,
             'binding_message' => $bindingMessage,
             'nonce' => $nonce,
-            'status' => 'pending',
+            'status' => GrantPollStatus::Pending,
             'interval' => $interval,
             'expires_at' => now()->addSeconds($ttl),
         ]);
@@ -98,7 +99,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
     public function approve(string $requestId, string $subjectId, ?string $organizationId = null): bool
     {
         return $this->transitionPending($requestId, $subjectId, [
-            'status' => 'approved',
+            'status' => GrantPollStatus::Approved,
             'organization_id' => $organizationId,
             'approved_at' => now(),
         ]);
@@ -106,7 +107,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
     public function deny(string $requestId, string $subjectId): bool
     {
-        return $this->transitionPending($requestId, $subjectId, ['status' => 'denied']);
+        return $this->transitionPending($requestId, $subjectId, ['status' => GrantPollStatus::Denied]);
     }
 
     public function redeem(string $clientId, string $authReqId): AuthorizedGrant
@@ -133,27 +134,27 @@ class CibaAuthenticationService implements BackchannelAuthentication
             throw new CibaSlowDown;
         }
 
-        if ($record->status === 'denied') {
+        if ($record->status === GrantPollStatus::Denied) {
             throw new CibaAccessDenied;
         }
 
         // An auth_req_id already exchanged for a token is spent — never mint again.
-        if ($record->status === 'redeemed') {
+        if ($record->status === GrantPollStatus::Redeemed) {
             throw new InvalidGrant('auth_req_id already used');
         }
 
-        if ($record->status !== 'approved') {
+        if ($record->status !== GrantPollStatus::Approved) {
             $record->forceFill(['last_polled_at' => now()])->save();
 
             throw new CibaAuthorizationPending;
         }
 
         // Single-use: flip approved -> redeemed under a row lock in a transaction so
-        // two concurrent polls can't both observe 'approved' and each mint a token.
+        // two concurrent polls can't both observe Approved and each mint a token.
         return DB::transaction(function () use ($record): AuthorizedGrant {
             $locked = BackchannelAuthRequest::query()->whereKey($record->id)->lockForUpdate()->first();
 
-            if ($locked === null || $locked->status !== 'approved') {
+            if ($locked === null || $locked->status !== GrantPollStatus::Approved) {
                 throw new InvalidGrant('auth_req_id already used');
             }
 
@@ -165,7 +166,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
                 authTime: $locked->approved_at?->getTimestamp(),
             );
 
-            $locked->forceFill(['status' => 'redeemed', 'last_polled_at' => now()])->save();
+            $locked->forceFill(['status' => GrantPollStatus::Redeemed, 'last_polled_at' => now()])->save();
 
             return $grant;
         });
@@ -184,7 +185,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
             // user's behalf — and the redeemed token is minted for THAT user. Required
             // rather than optional so no caller can omit it, matching the device flow.
             ->where('user_id', $subjectId)
-            ->where('status', 'pending')
+            ->where('status', GrantPollStatus::Pending)
             ->where('expires_at', '>', now())
             ->update($attributes);
     }

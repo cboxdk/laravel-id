@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer\Models;
 
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -18,7 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string $user_code
  * @property string $client_id
  * @property array<int, string> $scopes
- * @property string $status
+ * @property GrantPollStatus $status
  * @property string|null $user_id
  * @property string|null $organization_id
  * @property int $interval
@@ -41,6 +42,7 @@ class DeviceCode extends Model implements EnvironmentOwned
     {
         return [
             'scopes' => 'array',
+            'status' => GrantPollStatus::class,
             'last_polled_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
