@@ -52,14 +52,14 @@ class RefreshTokenService implements RefreshTokens
                     throw InvalidGrant::make('refresh token invalid, expired or revoked');
                 }
 
-                // Reuse of an already-rotated token means it leaked. Signal the
-                // family up so it can be revoked *after* this transaction — doing
-                // it here would be rolled back by the exception below.
+                // Reuse of an already-rotated token PAST the grace window means it
+                // leaked. Signal the family up so it can be revoked *after* this
+                // transaction — doing it here would be rolled back by the exception
+                // below. Checked before client/DPoP so ANY late replay revokes the
+                // family, even one presenting the wrong client.
                 if ($token->consumed_at !== null && $token->consumed_at->diffInSeconds(now()) > self::REUSE_GRACE_SECONDS) {
                     throw new RefreshTokenReuse($token->family_id);
                 }
-                // Within the grace window we fall through and mint a fresh sibling
-                // successor rather than revoking — the concurrent double-refresh case.
 
                 if (! hash_equals($token->client_id, $clientId)) {
                     throw InvalidGrant::make('client mismatch');
@@ -72,7 +72,20 @@ class RefreshTokenService implements RefreshTokens
                     throw InvalidGrant::make('DPoP key does not match the refresh token binding');
                 }
 
-                $token->forceFill(['consumed_at' => now()])->save();
+                // Within-grace replay by a verified presenter (concurrent double
+                // refresh — SSR fan-out, multiple tabs): return the SAME successor,
+                // not a new sibling. This is true idempotency — the grace window can
+                // never yield two independent live tokens, so a stolen token cannot be
+                // laundered into its own lineage during the window.
+                if ($token->consumed_at !== null) {
+                    if ($token->successor_token !== null) {
+                        return $this->grantFor($token, $token->successor_token);
+                    }
+
+                    // Consumed but no recorded successor (a pre-migration row, or an
+                    // anomaly): fail closed — treat as reuse and revoke the family.
+                    throw new RefreshTokenReuse($token->family_id);
+                }
 
                 $raw = $this->mint(
                     $token->family_id,
@@ -84,14 +97,11 @@ class RefreshTokenService implements RefreshTokens
                     $token->jkt,
                 );
 
-                return new RefreshGrant(
-                    refreshToken: $raw,
-                    clientId: $token->client_id,
-                    userId: $token->user_id,
-                    organizationId: $token->organization_id,
-                    scopes: array_values($token->scopes),
-                    audience: $token->audience,
-                );
+                // Consume and record the successor atomically, so a racing replay in
+                // the same window returns this exact token rather than minting another.
+                $token->forceFill(['consumed_at' => now(), 'successor_token' => $raw])->save();
+
+                return $this->grantFor($token, $raw);
             });
         } catch (RefreshTokenReuse $reuse) {
             // Now that the read transaction has unwound, revoke the whole family.
@@ -124,6 +134,23 @@ class RefreshTokenService implements RefreshTokens
             ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
             ->whereNull('revoked_at')
             ->update(['revoked_at' => now()]);
+    }
+
+    /**
+     * Build the grant returned to the caller from the consumed token and the raw
+     * successor — shared by a fresh rotation and an idempotent within-grace replay
+     * so both hand back an identical successor with identical binding.
+     */
+    private function grantFor(RefreshToken $token, string $rawSuccessor): RefreshGrant
+    {
+        return new RefreshGrant(
+            refreshToken: $rawSuccessor,
+            clientId: $token->client_id,
+            userId: $token->user_id,
+            organizationId: $token->organization_id,
+            scopes: array_values($token->scopes),
+            audience: $token->audience,
+        );
     }
 
     /**

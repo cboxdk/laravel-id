@@ -10,6 +10,7 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -192,7 +193,7 @@ it('detects refresh token reuse and revokes the whole family', function (): void
     ])->assertStatus(400);
 });
 
-it('tolerates a concurrent double-refresh within the grace window without revoking the family', function (): void {
+it('returns the SAME successor for a concurrent double-refresh within the grace window (idempotent, no second live token)', function (): void {
     $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid', 'offline_access']);
 
@@ -206,18 +207,28 @@ it('tolerates a concurrent double-refresh within the grace window without revoki
         'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $refresh,
     ])->assertOk()->json('refresh_token');
 
-    // A parallel request presenting the SAME token immediately (within grace) gets its
-    // OWN successor instead of revoking the family — the concurrency case.
+    // A parallel request presenting the SAME token immediately (within grace) gets the
+    // IDENTICAL successor — not a second, independent live token. This is the fix: a
+    // stolen token replayed in the window can never yield its own lineage. Concurrency
+    // is still tolerated (no family revocation), it just converges on one successor.
     $second = $this->postJson('/oauth/token', [
         'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $refresh,
     ])->assertOk()->json('refresh_token');
 
-    expect($first)->toBeString()->and($second)->toBeString()->and($second)->not->toBe($first);
+    expect($first)->toBeString()->and($second)->toBe($first);
 
-    // The family was NOT revoked: the first successor still rotates.
+    // The family was NOT revoked: the single successor still rotates.
     $this->postJson('/oauth/token', [
         'grant_type' => 'refresh_token', 'client_id' => $clientId, 'refresh_token' => $first,
     ])->assertOk();
+
+    // And across the whole family only ONE token was ever live at a time — never two
+    // siblings. (Raw query to bypass the deny-by-default env scope outside a request.)
+    $liveCount = DB::table('oauth_refresh_tokens')
+        ->whereNull('consumed_at')
+        ->whereNull('revoked_at')
+        ->count();
+    expect($liveCount)->toBe(1);
 });
 
 it('serves RFC 8414 authorization server metadata', function (): void {

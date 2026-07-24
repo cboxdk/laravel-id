@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $scopes
  * @property string|null $audience
  * @property string|null $jkt
+ * @property string|null $successor_token
  * @property Carbon|null $consumed_at
  * @property Carbon|null $revoked_at
  * @property Carbon $expires_at
@@ -44,6 +45,9 @@ class RefreshToken extends Model implements EnvironmentOwned
     {
         return [
             'scopes' => 'array',
+            // The raw successor token, kept only for idempotent within-grace replay.
+            // Encrypted at rest — it is a bearer credential, never stored in the clear.
+            'successor_token' => 'encrypted',
             'consumed_at' => 'datetime',
             'revoked_at' => 'datetime',
             'expires_at' => 'datetime',
