@@ -17,6 +17,8 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -108,16 +110,37 @@ class ManifestSyncService implements AppManifests
 
     private function syncPermissions(string $clientId, Manifest $manifest): void
     {
+        // A declared permission is scoped to its declaring app's environment. Derive
+        // it from the CLIENT, not ambient context: the sync may run under a suspended
+        // (or otherwise mismatched) tenancy scope, so resolve the client across the
+        // boundary and stamp its environment on every declared row.
+        $environmentId = $this->environmentForClient($clientId);
+
         foreach ($manifest->permissions as $permission) {
             Permission::query()->updateOrCreate(
                 ['client_id' => $clientId, 'name' => $permission->key],
                 [
+                    'environment_id' => $environmentId,
                     'description' => $permission->description,
                     'tenant_assignable' => $permission->tenantAssignable,
                     'orphaned_at' => null,
                 ],
             );
         }
+    }
+
+    /**
+     * The environment of the declaring client, resolved across the environment scope
+     * (the sync may run with tenancy scoping suspended). Null when the client is
+     * unknown — the permission then stays platform-global, matching manual creation.
+     */
+    private function environmentForClient(string $clientId): ?string
+    {
+        $environmentId = app(EnvironmentContext::class)->withoutScope(
+            fn (): mixed => Client::query()->where('client_id', $clientId)->value('environment_id'),
+        );
+
+        return is_string($environmentId) ? $environmentId : null;
     }
 
     private function syncRoles(string $clientId, Manifest $manifest): void
