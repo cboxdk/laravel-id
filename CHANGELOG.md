@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.49.0] - 2026-07-24
+
+Platform-review remediation. Every finding was adversarially verified before it was
+fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropped.
+
+### Security
+
+- **Refresh-token rotation is now idempotent within the reuse-grace window.** A replayed
+  token in the window returned a second, independent live token; it now returns the same
+  successor, so a stolen token cannot be laundered into its own lineage. Reuse detection
+  past the window (whole-family revocation) is unchanged. Adds an encrypted
+  `successor_token` column (additive migration).
+- **Token exchange requires proof-of-possession for sender-constrained tokens (RFC 9449).**
+  A DPoP-bound subject token can no longer be exchanged without a DPoP proof matching its
+  `cnf.jkt`; the issued token inherits the binding.
+- **OIDC federation enforces `azp` on multi-audience id_tokens (OIDC Core §3.1.3.7).** A
+  token naming more than one audience is rejected unless it carries an `azp` equal to the
+  configured client id.
+- **Permission catalog is environment-scoped.** App-declared permissions carry an
+  `environment_id` (backfilled from the declaring client) and are visible only within
+  their environment; manual permissions remain platform-global. Closes a cross-environment
+  read/bind of another tenant's declared permission keys. (Additive migration.)
+- **Passkey registration rejects credential reassignment** (WebAuthn §7.1 step 22), and the
+  signature-counter check is now atomic under a row lock (no concurrent same-counter pass).
+- **Device authorization authenticates confidential clients** (RFC 8628) via the shared
+  client authenticator, closing prompt-spam under a confidential client's identity.
+
+### Fixed
+
+- **Discovery advertises only what it serves:** `id_token_signing_alg_values_supported` is
+  derived from the live JWKS (RS256 only, not an aspirational superset), and `fragment` is
+  dropped from `response_modes_supported`.
+- **CIBA binds the id_token to the request `nonce`** (previously dropped).
+- **SCIM Group PATCH/PUT reject invalid operations** (RFC 7644): unknown op/path return a
+  `invalidSyntax`/`invalidPath` SCIM error instead of a silent 200, and full PUT requires
+  `displayName`.
+
+### Changed
+
+- **Usage kernel depends on a `ReconcilableScopes` contract** instead of importing the
+  Organization domain model (kernel→domain dependency reversal removed).
+- **Environment status is typed** with the new `EnvironmentStatus` enum.
+- **`final` removed from value objects** — the library must not seal classes host code may
+  extend.
+
 ## [0.15.0] - 2026-07-15
 
 ### Added

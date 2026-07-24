@@ -1,7 +1,7 @@
 ---
 title: Requirements
 description: Runtime and framework versions cboxdk/laravel-id needs
-weight: 2
+weight: 3
 ---
 
 # Requirements
