@@ -9,11 +9,10 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Usage\Contracts\SeatCensus;
 use Cbox\Id\Kernel\Usage\Contracts\UsageMeter;
 use Cbox\Id\Kernel\Usage\Enums\UsageMetric;
 use Cbox\Id\Kernel\Usage\ValueObjects\ReconciliationResult;
-use Cbox\Id\Organization\Contracts\Memberships;
-use Cbox\Id\Organization\Enums\MembershipStatus;
 
 /**
  * The drift safety net over the metering outbox. Delivery is at-least-once and each
@@ -31,7 +30,7 @@ use Cbox\Id\Organization\Enums\MembershipStatus;
 class UsageReconciler
 {
     public function __construct(
-        private readonly Memberships $memberships,
+        private readonly SeatCensus $seats,
         private readonly UsageMeter $meter,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
@@ -39,9 +38,7 @@ class UsageReconciler
 
     public function reconcileMembership(string $organizationId): ReconciliationResult
     {
-        $expected = $this->memberships->forOrganization($organizationId)
-            ->filter(fn ($membership): bool => $membership->status === MembershipStatus::Active)
-            ->count();
+        $expected = $this->seats->activeSeats($organizationId);
 
         $metered = $this->meter->total(UsageMetric::MemberAdded->value, $organizationId)
             - $this->meter->total(UsageMetric::MemberRemoved->value, $organizationId);
