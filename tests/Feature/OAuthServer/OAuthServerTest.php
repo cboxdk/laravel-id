@@ -7,6 +7,7 @@ use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Enums\ServiceAccountStatus;
 use Cbox\Id\OAuthServer\Exceptions\UnknownServiceAccount;
 use Cbox\Id\OAuthServer\Models\ServiceAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -134,7 +135,7 @@ it('retires the old account after cutover: it cannot mint tokens and its tokens 
     expect(app(ClientRegistry::class)->byClientId($original->client->client_id))->toBeNull() // no new tokens
         ->and($introspect->introspect($oldToken->token)->active)->toBeFalse()               // existing revoked
         ->and($introspect->introspect($newToken->token)->active)->toBeTrue()                // successor untouched
-        ->and(ServiceAccount::query()->where('client_id', $original->client->client_id)->value('status'))->toBe('retired');
+        ->and(ServiceAccount::query()->where('client_id', $original->client->client_id)->value('status'))->toBe(ServiceAccountStatus::Retired);
 
     // Retiring again is a no-op, not an error.
     $accounts->retire($org->id, $original->client->client_id);

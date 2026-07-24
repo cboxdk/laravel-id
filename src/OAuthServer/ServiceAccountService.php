@@ -12,6 +12,7 @@ use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Enums\ServiceAccountStatus;
 use Cbox\Id\OAuthServer\Exceptions\UnknownServiceAccount;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -43,7 +44,7 @@ class ServiceAccountService implements ServiceAccounts
                 'organization_id' => $organizationId,
                 'name' => $name,
                 'client_id' => $registered->client->client_id,
-                'status' => 'active',
+                'status' => ServiceAccountStatus::Active,
             ]);
 
             $this->events->emit(new DomainEvent(
@@ -92,7 +93,7 @@ class ServiceAccountService implements ServiceAccounts
                 'name' => $account->name,
                 'client_id' => $registered->client->client_id,
                 'rotated_from' => $clientId,
-                'status' => 'active',
+                'status' => ServiceAccountStatus::Active,
             ]);
 
             $this->events->emit(new DomainEvent(
@@ -122,11 +123,11 @@ class ServiceAccountService implements ServiceAccounts
                 throw UnknownServiceAccount::make($clientId);
             }
 
-            if ($account->status === 'retired') {
+            if ($account->status === ServiceAccountStatus::Retired) {
                 return; // idempotent
             }
 
-            $account->forceFill(['status' => 'retired', 'retired_at' => now()])->save();
+            $account->forceFill(['status' => ServiceAccountStatus::Retired, 'retired_at' => now()])->save();
 
             // Remove the client so it can mint no further tokens, and revoke every
             // access token it already issued.

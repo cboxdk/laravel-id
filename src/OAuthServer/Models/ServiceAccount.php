@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer\Models;
 
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Cbox\Id\OAuthServer\Enums\ServiceAccountStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -19,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $client_id
  * @property string|null $rotated_from
- * @property string $status
+ * @property ServiceAccountStatus $status
  * @property Carbon|null $retired_at
  */
 class ServiceAccount extends Model implements EnvironmentOwned
@@ -30,4 +31,14 @@ class ServiceAccount extends Model implements EnvironmentOwned
     protected $table = 'oauth_service_accounts';
 
     protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => ServiceAccountStatus::class,
+        ];
+    }
 }
