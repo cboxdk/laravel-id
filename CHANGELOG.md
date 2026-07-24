@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.50.0] - 2026-07-24
+
+Bring-your-own RBAC. The platform can now run its AuthN/SSO/OAuth/OIDC/SCIM stack on
+top of an external authorization backend (e.g. an existing `spatie/laravel-permission`
+install) instead of its own RBAC — see the `cboxdk/laravel-id-spatie` adapter.
+
+### Added
+
+- **External access-control driver** (`access_control.driver`, `builtin` default or
+  `external`). Under `external` the built-in RBAC tables and their migrations are not
+  loaded, and the `AccessChecker`/`Roles`/`GroupRoleMappings` contracts fall back to a
+  deny-by-default: `NullAccessChecker` refuses every check and stamps empty token
+  claims, while `UnboundRoles`/`UnboundGroupRoleMappings` throw `ExternalRbacNotBound`
+  so a write or SCIM group→role sync fails loud rather than writing to absent tables.
+  A host binding wins over the fallback. See `docs/extension-points/custom-rbac.md`.
+
+### Changed
+
+- The built-in RBAC migrations moved into a `database/migrations/access-control/`
+  subdirectory so the auto-loader can gate them on the driver (the shared loader's glob
+  is non-recursive). Migration publishing flattens every migration into the host's
+  `database/migrations`, so published output is unchanged. No behavior change under the
+  default `builtin` driver.
+
 ## [0.49.0] - 2026-07-24
 
 Platform-review remediation. Every finding was adversarially verified before it was
