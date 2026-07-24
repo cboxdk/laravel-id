@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Support;
 
+use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 
 /**
@@ -47,11 +49,16 @@ class ServerMetadata
             'backchannel_token_delivery_modes_supported' => ['poll'],
             'backchannel_user_code_parameter_supported' => false,
             'response_types_supported' => ['code'],
-            // Code flow delivers the response on the redirect query; fragment is also
-            // valid. The interactive /authorize endpoint (host-owned) drives these.
-            'response_modes_supported' => ['query', 'fragment'],
+            // Code flow delivers the response on the redirect QUERY — the only mode the
+            // authorize flow actually produces. We do not advertise `fragment`: a client
+            // that requested it would still receive the code on the query, an interop
+            // break, so we promise only what is served.
+            'response_modes_supported' => ['query'],
             'grant_types_supported' => self::grantTypes(),
-            'id_token_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
+            // Only the algs this environment actually holds signing keys for (and thus
+            // issues id_tokens with) — never an aspirational superset. Advertising an
+            // alg we never sign with breaks a conformant client that pins it.
+            'id_token_signing_alg_values_supported' => self::signingAlgs(),
             'code_challenge_methods_supported' => ['S256'],
             // RFC 9449: sender-constrained (DPoP) access tokens.
             'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
@@ -106,6 +113,24 @@ class ServerMetadata
         }
 
         return $document;
+    }
+
+    /**
+     * The distinct signing algorithms the environment currently holds keys for. These
+     * are exactly the algs published in the JWKS and therefore the only algs an
+     * id_token can be signed with. Deny-safe fallback to RS256 (the install default)
+     * if the keystore is momentarily empty, so discovery never advertises an empty set.
+     *
+     * @return list<string>
+     */
+    private static function signingAlgs(): array
+    {
+        $algs = array_values(array_unique(array_map(
+            static fn (VerificationKey $key): string => $key->alg->value,
+            app(KeyManager::class)->verificationKeys(),
+        )));
+
+        return $algs === [] ? ['RS256'] : $algs;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -22,7 +23,29 @@ it('serves the OIDC discovery document', function (): void {
         // Discovery polish: claims, ACRs, and response modes the OP actually honors.
         ->assertJsonPath('claims_supported', fn (array $c): bool => in_array('acr', $c, true) && in_array('org', $c, true))
         ->assertJsonPath('acr_values_supported', ['urn:cbox-id:aal1', 'urn:cbox-id:aal2'])
-        ->assertJsonPath('response_modes_supported', ['query', 'fragment']);
+        // Honest advertisement: only `query` is served (never `fragment`).
+        ->assertJsonPath('response_modes_supported', ['query']);
+});
+
+it('advertises only the id_token signing algs it actually holds keys for', function (): void {
+    // The discovery `id_token_signing_alg_values_supported` must be exactly the algs
+    // present in the JWKS — never an aspirational superset that a pinning client breaks
+    // on. Provision the default RS256 signing key so the JWKS is populated.
+    app(KeyManager::class)->rotate();
+
+    $jwks = $this->getJson('/.well-known/jwks.json')->json('keys');
+    $jwksAlgs = array_values(array_unique(array_column($jwks, 'alg')));
+
+    $advertised = $this->getJson('/.well-known/openid-configuration')
+        ->json('id_token_signing_alg_values_supported');
+
+    sort($jwksAlgs);
+    sort($advertised);
+
+    expect($jwksAlgs)->toBe(['RS256'])           // fresh keystore: RS256 only
+        ->and($advertised)->toBe($jwksAlgs)      // advertised == what the JWKS holds
+        ->and($advertised)->not->toContain('ES256')
+        ->and($advertised)->not->toContain('EdDSA');
 });
 
 it('omits authorization_endpoint when the host has not configured one', function (): void {
