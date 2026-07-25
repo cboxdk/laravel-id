@@ -6,6 +6,8 @@ namespace Cbox\Id\Identity\Contracts;
 
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
+use Cbox\Id\Identity\Exceptions\PolicyViolation;
+use Cbox\Id\Identity\ValueObjects\AuthPolicy;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
@@ -38,6 +40,10 @@ interface Subjects
 
     public function findByEmail(string $email): ?Subject;
 
+    /**
+     * @throws PolicyViolation when a supplied password does not satisfy the tenant's
+     *                         {@see AuthPolicy}
+     */
     public function create(string $email, ?string $name = null, ?string $password = null): Subject;
 
     /**
@@ -75,6 +81,19 @@ interface Subjects
 
     public function verifyPassword(string $subjectId, string $password): bool;
 
+    /**
+     * Set a plaintext password, applying the tenant's
+     * {@see AuthPolicy} and recording the result in the
+     * reuse history.
+     *
+     * Enforcement belongs HERE, not in the services that call it. Every way a credential
+     * can be set — signup, invitation acceptance, self-service reset, administrative
+     * assignment, bulk import — arrives through this method, so a resolver that applies
+     * the policy here cannot have a path that quietly skips it. A resolver that does not
+     * is a resolver on which the tenant's policy is advisory.
+     *
+     * @throws PolicyViolation when the password does not satisfy the effective policy
+     */
     public function setPassword(string $subjectId, string $password): void;
 
     /**

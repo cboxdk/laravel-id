@@ -11,7 +11,6 @@ use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\PasswordRevocationScope;
 use Cbox\Id\Identity\Models\PasswordChangeRequirement;
-use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\AdminPasswordAssignment;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
@@ -34,9 +33,11 @@ class AdminPasswordService implements AdminPasswords
 
     public function assign(AdminPasswordAssignment $assignment): void
     {
-        // The tenant's policy binds an ADMINISTRATOR too. A credential an admin hands
-        // out is one the person may keep using, so exempting this path would leave the
-        // weakest password on the platform sitting behind the highest privilege.
+        // setPassword applies the subject's own effective policy. This extra check names
+        // the ORGANIZATION the assignment is made in, which the primitive cannot infer
+        // when the subject is not a member of it yet — an admin inviting someone into a
+        // strict organization must not be able to seed them a password that organization
+        // forbids. Both run; the stricter one wins, which is the point.
         $this->policy->assertAcceptable(
             $assignment->password,
             $assignment->userId,
@@ -45,7 +46,6 @@ class AdminPasswordService implements AdminPasswords
 
         DB::transaction(function () use ($assignment): void {
             $this->subjects->setPassword($assignment->userId, $assignment->password);
-            $this->rememberForReuse($assignment);
 
             // A temporary credential carries a standing requirement to replace it; a
             // permanent one clears any requirement left over from an earlier hand-off.
@@ -87,20 +87,6 @@ class AdminPasswordService implements AdminPasswords
                 ],
             ));
         });
-    }
-
-    /**
-     * Retain the newly-stored hash so a reuse policy can compare against it later. Read
-     * back from the subject rather than re-hashing, so history holds exactly what
-     * authentication will check.
-     */
-    private function rememberForReuse(AdminPasswordAssignment $assignment): void
-    {
-        $hash = User::query()->whereKey($assignment->userId)->value('password');
-
-        if (is_string($hash) && $hash !== '') {
-            $this->policy->remember($assignment->userId, $hash, $assignment->organizationId);
-        }
     }
 
     public function requiresChange(string $userId): bool

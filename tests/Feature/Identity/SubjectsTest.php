@@ -49,9 +49,9 @@ it('sets a new password', function (): void {
 
     expect($subjects->verifyPassword($subject->id, 'anything'))->toBeFalse(); // none set
 
-    $subjects->setPassword($subject->id, 'newpass');
+    $subjects->setPassword($subject->id, 'a-new-passphrase');
 
-    expect($subjects->verifyPassword($subject->id, 'newpass'))->toBeTrue();
+    expect($subjects->verifyPassword($subject->id, 'a-new-passphrase'))->toBeTrue();
 });
 
 it('provisions a federated identity idempotently', function (): void {

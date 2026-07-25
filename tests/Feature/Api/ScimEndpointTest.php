@@ -128,7 +128,7 @@ it('deprovision over SCIM revokes the user session end-to-end', function (): voi
 it('returns 409 when the SCIM email already belongs to an account', function (): void {
     $org = $this->makeOrganization();
     $headers = scimHeaders($this->makeDirectory($org->id)->token);
-    app(Subjects::class)->create('taken@corp.com', 'Taken', 'pw12345678');
+    app(Subjects::class)->create('taken@corp.com', 'Taken', 'taken-passphrase');
 
     $this->postJson('/scim/v2/Users', [
         'userName' => 'taken', 'externalId' => 'ext|9', 'emails' => [['value' => 'taken@corp.com']],

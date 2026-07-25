@@ -97,6 +97,17 @@ uniform result, so there is no enumeration or timing oracle. Honest scope: SMS i
 only as secure as SIM-swap resistance; prefer a phishing-resistant primary factor.
 See [Security: OTP](otp.md).
 
+## Password policy
+
+An environment sets the authentication baseline and an organization may only **tighten**
+it, so a tenant can never negotiate below the operator's floor. The rules are applied at
+the credential **primitive** (`Subjects::setPassword()` / `create()`) rather than in the
+services that call it, so signup, invitation acceptance, self-service reset,
+administrative assignment and plaintext import all inherit them and no future caller can
+quietly skip them. Honest scope: `mfa`, `lockoutThreshold` and `maxAgeDays` are stored
+and tightened correctly but **not yet read by any sign-in path**.
+See [Security: password policy](password-policy.md).
+
 ## AI token vault
 
 The vault holds downstream third-party credentials that carry real power, so its

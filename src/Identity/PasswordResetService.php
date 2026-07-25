@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity;
 
-use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\PasswordReset;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Exceptions\InvalidPasswordReset;
 use Cbox\Id\Identity\Models\PasswordResetToken;
-use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -23,7 +21,6 @@ class PasswordResetService implements PasswordReset
     public function __construct(
         private readonly Subjects $subjects,
         private readonly SessionManager $sessions,
-        private readonly PasswordPolicyGuard $policy,
         private readonly AuditLog $audit,
     ) {}
 
@@ -51,16 +48,6 @@ class PasswordResetService implements PasswordReset
         ));
 
         return $token;
-    }
-
-    /** Retain the stored hash so a reuse policy can compare against what auth will check. */
-    private function rememberForReuse(string $subjectId): void
-    {
-        $hash = User::query()->whereKey($subjectId)->value('password');
-
-        if (is_string($hash) && $hash !== '') {
-            $this->policy->remember($subjectId, $hash);
-        }
     }
 
     public function reset(string $token, string $newPassword): void
@@ -92,18 +79,9 @@ class PasswordResetService implements PasswordReset
                 throw InvalidPasswordReset::make();
             }
 
-            // The tenant's policy binds the SELF-SERVICE path too. Enforcing it only on
-            // administrative assignment left the door most people actually use governed by
-            // whatever floor the calling form happened to hardcode — so an environment
-            // demanding 24 characters got 12 here, silently.
-            $this->policy->assertAcceptable($newPassword, $subject->id);
-
+            // The tenant's policy and the reuse history are applied by setPassword itself,
+            // so this path cannot drift from the one an administrator uses.
             $this->subjects->setPassword($subject->id, $newPassword);
-
-            // Record the new hash, or the reuse policy compares against a history that
-            // only ever contained administrative assignments — i.e. never the passwords
-            // the subject actually chose.
-            $this->rememberForReuse($subject->id);
 
             // A reset implies the previous credential may be compromised — cut every
             // existing session so a thief can't ride one past the change.

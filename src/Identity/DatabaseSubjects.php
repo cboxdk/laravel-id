@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\HashVerifier;
+use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
@@ -38,7 +39,32 @@ class DatabaseSubjects implements Subjects
         private readonly AuditLog $audit,
         private readonly Hasher $hasher,
         private readonly HashVerifier $verifier,
+        private readonly PasswordPolicyGuard $policy,
     ) {}
+
+    /**
+     * Apply the tenant's policy and retain the resulting hash.
+     *
+     * This sits on the PRIMITIVE rather than on each caller for a reason the review found
+     * the hard way: with the guard bolted onto individual services, signup, invitation
+     * acceptance and every future path silently inherited whatever floor the calling form
+     * happened to hardcode. Enforcing where the credential is actually written means a
+     * caller has to go out of its way to bypass the policy instead of out of its way to
+     * honour it.
+     *
+     * The hash written to history is the one just computed, so reuse is compared against
+     * exactly what authentication will check.
+     */
+    private function hashUnderPolicy(string $subjectId, string $password): string
+    {
+        $this->policy->assertAcceptable($password, $subjectId);
+
+        $hash = $this->hasher->make($password);
+
+        $this->policy->remember($subjectId, $hash);
+
+        return $hash;
+    }
 
     public function find(string $id): ?Subject
     {
@@ -74,14 +100,23 @@ class DatabaseSubjects implements Subjects
     {
         $model = $this->newModel();
         $model->fill(['email' => $email, 'name' => $name, 'status' => UserStatus::Active]);
+        $hash = null;
 
         if ($password !== null) {
-            $model->setAttribute('password', $this->hasher->make($password));
+            // There is no subject id yet, so no reuse history to compare against — but
+            // length and the breach corpus bind at signup exactly as they do later.
+            $this->policy->assertAcceptable($password);
+
+            $model->setAttribute('password', $hash = $this->hasher->make($password));
         }
 
         $model->save();
 
         $subject = $this->toSubject($model);
+
+        if ($hash !== null) {
+            $this->policy->remember($subject->id, $hash);
+        }
 
         $this->events->emit(new DomainEvent('user.created', ['user_id' => $subject->id, 'email' => $email]));
         $this->audit->record(new AuditEvent(
@@ -329,7 +364,7 @@ class DatabaseSubjects implements Subjects
             return;
         }
 
-        $model->setAttribute('password', $this->hasher->make($password));
+        $model->setAttribute('password', $this->hashUnderPolicy($this->keyOf($model), $password));
         $model->save();
 
         $this->audit->record(new AuditEvent(

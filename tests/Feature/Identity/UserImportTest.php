@@ -77,20 +77,20 @@ it('is idempotent: skips an existing email, upserts only when asked', function (
     $org = $this->makeOrganization();
     $subjects = app(Subjects::class);
 
-    $this->importUsers($org->id, [$this->importedUser('c@corp.test', 'C', password: 'first')]);
+    $this->importUsers($org->id, [$this->importedUser('c@corp.test', 'C', password: 'the-first-passphrase')]);
     $id = $subjects->findByEmail('c@corp.test')?->id ?? '';
 
     // Re-import WITHOUT upsert: skipped, credential untouched.
-    $skip = $this->importUsers($org->id, [$this->importedUser('c@corp.test', 'C2', password: 'second')]);
+    $skip = $this->importUsers($org->id, [$this->importedUser('c@corp.test', 'C2', password: 'the-second-passphrase')]);
     expect($skip->skipped)->toBe(1)
         ->and($skip->imported)->toBe(0)
-        ->and($subjects->verifyPassword($id, 'first'))->toBeTrue()
-        ->and($subjects->verifyPassword($id, 'second'))->toBeFalse();
+        ->and($subjects->verifyPassword($id, 'the-first-passphrase'))->toBeTrue()
+        ->and($subjects->verifyPassword($id, 'the-second-passphrase'))->toBeFalse();
 
     // Re-import WITH upsert: updated, new credential applied.
-    $up = $this->importUsers($org->id, [$this->importedUser('c@corp.test', 'C2', password: 'second')], new ImportOptions(upsert: true));
+    $up = $this->importUsers($org->id, [$this->importedUser('c@corp.test', 'C2', password: 'the-second-passphrase')], new ImportOptions(upsert: true));
     expect($up->updated)->toBe(1)
-        ->and($subjects->verifyPassword($id, 'second'))->toBeTrue();
+        ->and($subjects->verifyPassword($id, 'the-second-passphrase'))->toBeTrue();
 
     // Still exactly one user for the email.
     expect(User::query()->where('email', 'c@corp.test')->count())->toBe(1);
@@ -104,7 +104,7 @@ it('rejects an unverifiable hash per-row and never imports it (deny-by-default)'
 
     $result = $this->importUsers($org->id, [
         $this->importedUser('weak@corp.test', passwordHash: $unsupported),
-        $this->importedUser('good@corp.test', password: 'ok'),
+        $this->importedUser('good@corp.test', password: 'an-ok-passphrase'),
     ]);
 
     // The good row imports; the unverifiable one is a per-row error, not imported.

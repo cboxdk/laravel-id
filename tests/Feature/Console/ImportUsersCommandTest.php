@@ -26,7 +26,7 @@ it('imports a CSV fixture and reports the right counts', function (): void {
     file_put_contents($this->fixture, implode("\n", [
         'email,name,password_hash,password,email_verified,role',
         "alice@corp.test,Alice,{$bcrypt},,1,member",
-        'bob@corp.test,Bob,,plain-pw,0,admin',
+        'bob@corp.test,Bob,,a-plain-passphrase,0,admin',
     ])."\n");
 
     $this->artisan('cbox-id:users:import', [
@@ -44,7 +44,7 @@ it('imports a CSV fixture and reports the right counts', function (): void {
         // The imported bcrypt hash authenticates day-one.
         ->and($subjects->verifyPassword($alice?->id ?? '', 's3cret'))->toBeTrue()
         // The plaintext password was hashed and works.
-        ->and($subjects->verifyPassword($bob?->id ?? '', 'plain-pw'))->toBeTrue();
+        ->and($subjects->verifyPassword($bob?->id ?? '', 'a-plain-passphrase'))->toBeTrue();
 });
 
 it('exits non-zero when a row cannot be imported', function (): void {
@@ -52,8 +52,8 @@ it('exits non-zero when a row cannot be imported', function (): void {
 
     file_put_contents($this->fixture, implode("\n", [
         'email,name,password',
-        'good@corp.test,Good,pw',
-        'not-an-email,Bad,pw',
+        'good@corp.test,Good,a-good-passphrase',
+        'not-an-email,Bad,a-bad-passphrase',
     ])."\n");
 
     $this->artisan('cbox-id:users:import', [
