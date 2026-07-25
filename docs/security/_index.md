@@ -104,8 +104,13 @@ it, so a tenant can never negotiate below the operator's floor. The rules are ap
 the credential **primitive** (`Subjects::setPassword()` / `create()`) rather than in the
 services that call it, so signup, invitation acceptance, self-service reset,
 administrative assignment and plaintext import all inherit them and no future caller can
-quietly skip them. Honest scope: `mfa`, `lockoutThreshold` and `maxAgeDays` are stored
-and tightened correctly but **not yet read by any sign-in path**.
+quietly skip them. The three fields that are not about strength are enforced separately,
+each in the way its own failure mode demands: `maxAgeDays` and `mfa` HOLD an authenticated
+subject rather than turning them away (refusing entry to someone who needs to rotate or
+enrol locks out exactly the wrong people), and `lockoutThreshold` counts per SUBJECT and
+is checked before the credential, so a locked account is not an oracle for which guess was
+right. Honest scope: the lockout window and duration are fixed at 15 minutes rather than
+tenant-configurable, deliberately — an indefinite lock is a denial-of-service tool.
 See [Security: password policy](password-policy.md).
 
 ## AI token vault

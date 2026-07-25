@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.54.0] - 2026-07-25
+
+`AuthPolicy`'s remaining three fields stop being decoration. `maxAgeDays`, `mfa` and
+`lockoutThreshold` were stored, inherited and tightened correctly, and read by nothing.
+
+**Upgrading:** two new tables. `password_ages` is seeded with every existing subject at
+the upgrade time, so a `maxAgeDays` policy starts its clock for everyone at once rather
+than never applying to anyone who predates it. Turning any of the three fields on now
+changes behaviour where it previously changed nothing — review what your environments
+have set before deploying.
+
+### Added
+
+- **`Identity\Contracts\PasswordExpiry`** — whether a subject's password has outlived
+  `maxAgeDays`. Backed by `password_ages`, stamped by the credential primitive. A
+  subject with no recorded age never expires: their credential predating this being
+  tracked is not evidence of an old password.
+- **`Identity\Contracts\MfaMandate`** — whether a subject still owes the tenant a second
+  factor. Expressed as a question rather than a refusal, because turning away someone
+  with no factor locks out precisely the people who need to enrol. A confirmed TOTP
+  factor and a registered passkey both satisfy it.
+- **`Identity\Contracts\LoginAttempts`** — per-SUBJECT failed-attempt counting and
+  lockout at `lockoutThreshold`. Distinct from the IP-keyed rate limiting a sign-in form
+  does: an attacker spreading guesses across a botnet never trips an IP limit, and a
+  shared office NAT trips one with nobody being attacked.
+
+### Changed
+
+- `DatabaseAccountMembers` and `DatabaseSubjects` stamp the password age wherever a
+  credential is written, for the same reason the policy is applied there.
+- `docs/security/password-policy.md` documents all three, including the two durations
+  that are deliberately NOT tenant-configurable: an indefinite lockout is a
+  denial-of-service tool, and a counting window that never resets locks out people who
+  occasionally mistype.
+
 ## [0.53.0] - 2026-07-25
 
 The authentication policy is now applied where credentials are written, instead of on

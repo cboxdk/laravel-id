@@ -67,10 +67,52 @@ Bulk import distinguishes two cases, and the policy binds only one of them:
 If you have plaintext, you are seeding accounts rather than migrating them, and seeded
 accounts should meet the same floor as any other.
 
-## What this does not cover
+## The three fields that are not about password strength
 
-`AuthPolicy` also carries `mfa`, `lockoutThreshold` and `maxAgeDays`. Those are stored,
-inherited and tightened correctly, but **no sign-in path reads them yet** — they describe
-an intent the authentication flow does not act on. The console marks them as such rather
-than presenting them as live controls. Treat them as unimplemented until this page says
-otherwise.
+`AuthPolicy` also carries `maxAgeDays`, `mfa` and `lockoutThreshold`. Each is enforced by
+a service of its own, because each fails differently when enforced naively.
+
+### `maxAgeDays` — `PasswordExpiry`
+
+Rotation needs to know when the password was last set, and the users table is host-owned,
+so the platform keeps its own `password_ages` row, stamped by the same primitive that
+applies the policy. A timestamp maintained by the callers is a timestamp some caller
+forgets.
+
+A subject with **no** recorded age does not expire. Their credential predating this being
+tracked is not evidence of an old password, and locking them out on that assumption is a
+worse failure than a clock that starts late. The migration seeds every existing subject
+with the upgrade time so the clock starts for everyone at once rather than never.
+
+Enforcement is a **hold on every authenticated request**, not a check at sign-in: an
+already-open session would otherwise outlive the rotation it was supposed to trigger.
+
+### `mfa` — `MfaMandate`
+
+This is the one field that cannot be enforced by refusing something. Turning away a
+subject who has no factor, on a policy that has just started requiring one, locks out
+exactly the people who need to enrol. So the mandate is a question — "does this subject
+still owe one?" — and the host holds them on the enrolment page until the answer is no.
+
+A confirmed TOTP factor and a registered passkey both satisfy it. A passkey is usually
+the stronger of the two, so treating it as not-a-factor would push people from a better
+credential to a worse one to satisfy a policy meant to raise the bar.
+
+### `lockoutThreshold` — `LoginAttempts`
+
+Per **subject**, not per IP. The IP-keyed rate limiting the sign-in forms already do is a
+different control: it protects the service from a flood, while an attacker spreading
+guesses across a botnet never trips it and a shared office NAT trips it with nobody being
+attacked at all.
+
+The lock is checked **before** the credential, or a locked account still tells an attacker
+which guess was right.
+
+Two durations are deliberately not policy fields:
+
+- The counting **window** (15 minutes). Failures spread thinly over weeks are not an
+  attack in progress, and counting them forever locks out people who occasionally mistype.
+- The lockout **duration** (15 minutes). A lock that lasts until an administrator
+  intervenes is a denial-of-service tool — anyone who knows an email address can lock its
+  owner out at will. NIST SP 800-63B prefers throttling to hard lockout for this reason:
+  the threshold exists to make guessing impractical, not to punish.

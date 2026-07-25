@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\HashVerifier;
+use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\UserStatus;
@@ -40,6 +41,7 @@ class DatabaseSubjects implements Subjects
         private readonly Hasher $hasher,
         private readonly HashVerifier $verifier,
         private readonly PasswordPolicyGuard $policy,
+        private readonly PasswordExpiry $ages,
     ) {}
 
     /**
@@ -62,6 +64,10 @@ class DatabaseSubjects implements Subjects
         $hash = $this->hasher->make($password);
 
         $this->policy->remember($subjectId, $hash);
+
+        // Start the max-age clock here for the same reason the policy is applied here:
+        // a timestamp kept by the callers is a timestamp some caller forgets.
+        $this->ages->record($subjectId);
 
         return $hash;
     }
@@ -116,6 +122,7 @@ class DatabaseSubjects implements Subjects
 
         if ($hash !== null) {
             $this->policy->remember($subject->id, $hash);
+            $this->ages->record($subject->id);
         }
 
         $this->events->emit(new DomainEvent('user.created', ['user_id' => $subject->id, 'email' => $email]));

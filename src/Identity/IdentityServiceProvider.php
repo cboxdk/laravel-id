@@ -9,9 +9,12 @@ use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\BreachedPasswordCheck;
 use Cbox\Id\Identity\Contracts\EmailVerification;
 use Cbox\Id\Identity\Contracts\HashVerifier;
+use Cbox\Id\Identity\Contracts\LoginAttempts;
 use Cbox\Id\Identity\Contracts\MagicLink;
 use Cbox\Id\Identity\Contracts\Mfa;
+use Cbox\Id\Identity\Contracts\MfaMandate;
 use Cbox\Id\Identity\Contracts\Passkeys;
+use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\PasswordReset;
 use Cbox\Id\Identity\Contracts\SessionManager;
@@ -89,6 +92,9 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(AdminPasswords::class, AdminPasswordService::class);
         $this->app->singleton(AuthPolicies::class, DatabaseAuthPolicies::class);
         $this->app->singleton(PasswordPolicyGuard::class, PasswordPolicyEnforcer::class);
+        $this->app->singleton(PasswordExpiry::class, DatabasePasswordExpiry::class);
+        $this->app->singleton(MfaMandate::class, DatabaseMfaMandate::class);
+        $this->app->singleton(LoginAttempts::class, DatabaseLoginAttempts::class);
         // Inert by default: a breach lookup is a network call against a service the HOST
         // operates, so the library ships a do-nothing default rather than pretending to
         // protection it never wired up. Hosts bind their own.
