@@ -24,4 +24,18 @@ enum SigningAlg: string
             self::EdDSA => 'OKP',
         };
     }
+
+    /**
+     * The hash used for the OIDC `at_hash`/`c_hash` half-digests (OIDC Core §3.1.3.6):
+     * the hash of the id_token's OWN signing algorithm, not a fixed one. Ed25519 signs
+     * over SHA-512, so an EdDSA id_token must carry a SHA-512-derived hash — computing
+     * SHA-256 there produces a value a strict relying party rejects.
+     */
+    public function hashAlgorithm(): string
+    {
+        return match ($this) {
+            self::RS256, self::ES256 => 'sha256',
+            self::EdDSA => 'sha512',
+        };
+    }
 }

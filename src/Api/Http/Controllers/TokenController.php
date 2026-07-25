@@ -8,6 +8,7 @@ use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
@@ -46,6 +47,12 @@ use Illuminate\Http\Request;
  */
 class TokenController
 {
+    /**
+     * The algorithm id_tokens are signed with. Named once so the signature and the
+     * at_hash digest are derived from the same source and cannot diverge.
+     */
+    private const ID_TOKEN_ALG = SigningAlg::RS256;
+
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,
         private readonly AuthorizationCodes $codes,
@@ -313,15 +320,20 @@ class TokenController
             $claims['acr'] = $stepUp ? 'urn:cbox-id:aal2' : 'urn:cbox-id:aal1';
         }
 
-        return $this->signer->sign($claims);
+        return $this->signer->sign($claims, self::ID_TOKEN_ALG);
     }
 
     /**
-     * OIDC `at_hash`: base64url of the left half of SHA-256 of the access token.
+     * OIDC `at_hash` (Core §3.1.3.6): base64url of the LEFT HALF of the access token's
+     * hash, using the hash of the id_token's own signing algorithm — not a fixed SHA-256.
+     *
+     * Both this and the signing call above derive from {@see ID_TOKEN_ALG}, so the digest
+     * cannot drift from the algorithm actually used: an EdDSA id_token carrying a
+     * SHA-256 at_hash is rejected by a strict relying party.
      */
     private function atHash(string $accessToken): string
     {
-        $digest = hash('sha256', $accessToken, true);
+        $digest = hash(self::ID_TOKEN_ALG->hashAlgorithm(), $accessToken, true);
 
         return Base64Url::encode(substr($digest, 0, intdiv(strlen($digest), 2)));
     }

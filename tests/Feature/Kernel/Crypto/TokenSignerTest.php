@@ -86,3 +86,13 @@ it('rejects an empty allow-list', function (): void {
 
     expect(fn () => $signer->verify($jwt, []))->toThrow(InvalidToken::class);
 });
+
+// OIDC Core §3.1.3.6 derives at_hash/c_hash from the id_token's OWN signing algorithm.
+// Ed25519 signs over SHA-512, so an EdDSA id_token carrying a SHA-256 half-digest is
+// rejected by a strict relying party. Locking the mapping here keeps TokenController's
+// at_hash correct if the id_token algorithm is ever changed.
+it('maps each signing algorithm to the hash its half-digest must use', function (): void {
+    expect(SigningAlg::RS256->hashAlgorithm())->toBe('sha256')
+        ->and(SigningAlg::ES256->hashAlgorithm())->toBe('sha256')
+        ->and(SigningAlg::EdDSA->hashAlgorithm())->toBe('sha512');
+});
