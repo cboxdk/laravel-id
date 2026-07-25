@@ -15,9 +15,9 @@ use RobRichards\XMLSecLibs\XMLSecurityKey;
 
 uses(RefreshDatabase::class);
 
-const SP_ENTITY = 'https://sp.example.test/metadata';
-const SP_ACS = 'https://sp.example.test/saml/acs';
-const IDP_ENTITY = 'https://idp.example.test/metadata';
+const FED_SP_ENTITY = 'https://sp.example.test/metadata';
+const FED_SP_ACS = 'https://sp.example.test/saml/acs';
+const FED_IDP_ENTITY = 'https://idp.example.test/metadata';
 
 /**
  * A minimal SAML IdP: self-signed cert + a genuinely XML-DSig-signed Response.
@@ -41,7 +41,7 @@ final class SamlIdp
 
     public function response(
         string $nameId = 'alice@corp.com',
-        string $audience = SP_ENTITY,
+        string $audience = FED_SP_ENTITY,
         bool $sign = true,
         bool $tamper = false,
         ?string $inResponseTo = null,
@@ -52,8 +52,8 @@ final class SamlIdp
         $after = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
         $assertionId = '_'.bin2hex(random_bytes(16));
         $responseId = '_'.bin2hex(random_bytes(16));
-        $issuer = IDP_ENTITY;
-        $recipient = SP_ACS;
+        $issuer = FED_IDP_ENTITY;
+        $recipient = FED_SP_ACS;
         $inResponseToAttr = $inResponseTo !== null ? ' InResponseTo="'.htmlspecialchars($inResponseTo, ENT_QUOTES).'"' : '';
 
         $xml = <<<XML
@@ -136,11 +136,11 @@ function samlConnection(SamlIdp $idp): Connection
         // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
         // keeps exercising the IdP-initiated path deliberately rather than by default.
         'allow_idp_initiated' => true,
-        'idp_entity_id' => IDP_ENTITY,
+        'idp_entity_id' => FED_IDP_ENTITY,
         'idp_sso_url' => 'https://idp.example.test/sso',
         'idp_x509cert' => $idp->certPem,
-        'sp_entity_id' => SP_ENTITY,
-        'sp_acs_url' => SP_ACS,
+        'sp_entity_id' => FED_SP_ENTITY,
+        'sp_acs_url' => FED_SP_ACS,
     ]);
     $connections->activate($connection->organization_id, $connection->id);
 
@@ -311,11 +311,11 @@ it('refuses an unsolicited assertion unless the connection opts in', function ()
     // Same fixture as samlConnection(), MINUS the opt-in.
     $connections = app(Connections::class);
     $connection = $connections->create((string) Str::ulid(), ConnectionType::Saml, 'Okta', [
-        'idp_entity_id' => IDP_ENTITY,
+        'idp_entity_id' => FED_IDP_ENTITY,
         'idp_sso_url' => 'https://idp.example.test/sso',
         'idp_x509cert' => $idp->certPem,
-        'sp_entity_id' => SP_ENTITY,
-        'sp_acs_url' => SP_ACS,
+        'sp_entity_id' => FED_SP_ENTITY,
+        'sp_acs_url' => FED_SP_ACS,
     ]);
     $connections->activate($connection->organization_id, $connection->id);
 
