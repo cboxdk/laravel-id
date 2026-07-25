@@ -36,5 +36,7 @@ readonly class AdminPasswordAssignment
         public ?string $actorType = null,
         public ?string $actorId = null,
         public ?string $reason = null,
+        /** Whose policy applies — the organization context this assignment is made in. */
+        public ?string $organizationId = null,
     ) {}
 }
