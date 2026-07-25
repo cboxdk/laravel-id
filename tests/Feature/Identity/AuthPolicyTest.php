@@ -10,6 +10,8 @@ use Cbox\Id\Identity\Enums\SsoEnforcement;
 use Cbox\Id\Identity\Exceptions\PolicyViolation;
 use Cbox\Id\Identity\NeverBreachedCheck;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -177,4 +179,27 @@ it('ships a breach check that claims nothing rather than pretending', function (
     expect(app(BreachedPasswordCheck::class))
         ->toBeInstanceOf(NeverBreachedCheck::class)
         ->and(app(BreachedPasswordCheck::class)->isBreached('password'))->toBeFalse();
+});
+
+/**
+ * The per-request memo is a singleton, and one process legitimately visits several
+ * environments: a queue worker draining jobs for different tenants, and every
+ * `PlatformRoot::run()` that steps into tenant 1 and back. An unkeyed memo answered the
+ * FIRST environment's policy for all of them — applying one tenant's password floor to
+ * another's people, in the direction the tighten-only rule exists to forbid.
+ */
+it('does not carry one environment memoized policy into another', function (): void {
+    $context = app(EnvironmentContext::class);
+    $policies = app(AuthPolicies::class);
+
+    $lax = GenericEnvironment::of('env_lax');
+    $strict = GenericEnvironment::of('env_strict');
+
+    $context->runAs($lax, fn () => $policies->setForEnvironment(new AuthPolicy(minLength: 12)));
+    $context->runAs($strict, fn () => $policies->setForEnvironment(new AuthPolicy(minLength: 32)));
+
+    // Warm the memo on the lax environment first, then step into the strict one.
+    expect($context->runAs($lax, fn (): int => $policies->forEnvironment()->minLength))->toBe(12)
+        ->and($context->runAs($strict, fn (): int => $policies->forEnvironment()->minLength))->toBe(32)
+        ->and($context->runAs($lax, fn (): int => $policies->forEnvironment()->minLength))->toBe(12);
 });

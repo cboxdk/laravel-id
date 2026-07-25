@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.55.1] - 2026-07-25
+
+### Fixed
+
+- `DatabaseAuthPolicies` memoized the environment baseline without keying the memo by
+  environment. It is a singleton, and one process legitimately visits several
+  environments — a queue worker draining jobs for different tenants, and every
+  `PlatformRoot::run()` that steps into tenant 1 and back — so the first environment's
+  policy was answered for all of them. Latent while the policy had few consumers;
+  load-bearing since 0.53.0 put it on every credential path, where it would apply one
+  tenant's password floor to another's people, in the direction tighten-only exists to
+  forbid.
+
 ## [0.55.0] - 2026-07-25
 
 **Upgrading:** `PlatformRoot::environment()` no longer accepts a configured default that

@@ -7,6 +7,7 @@ namespace Cbox\Id\Identity;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Models\AuthPolicyRecord;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 
 /**
  * The default {@see AuthPolicies}: policies live in the `auth_policies` table, scoped by
@@ -18,8 +19,23 @@ use Cbox\Id\Identity\ValueObjects\AuthPolicy;
  */
 class DatabaseAuthPolicies implements AuthPolicies
 {
-    /** Per-request memo — resolve() is consulted on every credential path. */
-    private ?AuthPolicy $environmentPolicy = null;
+    /**
+     * Per-request memo, keyed by ENVIRONMENT — resolve() is consulted on every credential
+     * path, and this is a singleton.
+     *
+     * Keying matters because one process legitimately visits several environments: a
+     * queue worker draining jobs for different tenants, and every `PlatformRoot::run()`
+     * that steps into tenant 1 and back. An unkeyed memo would answer the first
+     * environment's policy for all of them — applying one tenant's password floor to
+     * another's people, in the direction the tighten-only rule exists to forbid.
+     *
+     * @var array<string, AuthPolicy>
+     */
+    private array $environmentPolicies = [];
+
+    public function __construct(
+        private readonly EnvironmentContext $environments,
+    ) {}
 
     public function resolve(?string $organizationId = null): AuthPolicy
     {
@@ -36,7 +52,9 @@ class DatabaseAuthPolicies implements AuthPolicies
 
     public function forEnvironment(): AuthPolicy
     {
-        return $this->environmentPolicy ??= AuthPolicyRecord::query()
+        $key = $this->environments->current()?->environmentKey() ?? '';
+
+        return $this->environmentPolicies[$key] ??= AuthPolicyRecord::query()
             ->whereNull('organization_id')
             ->first()?->toPolicy() ?? new AuthPolicy;
     }
@@ -55,7 +73,9 @@ class DatabaseAuthPolicies implements AuthPolicies
             AuthPolicyRecord::columnsFor($policy),
         );
 
-        $this->environmentPolicy = null;
+        // Drop every key, not just this environment's: a write is rare, and a stale
+        // entry for a scope this call was not made in is the failure being avoided.
+        $this->environmentPolicies = [];
     }
 
     public function setForOrganization(string $organizationId, AuthPolicy $policy): void
