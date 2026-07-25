@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.53.0] - 2026-07-25
+
+The authentication policy is now applied where credentials are written, instead of on
+whichever caller remembered to ask for it.
+
+**Upgrading:** behavioural. `Subjects::create()` and `Subjects::setPassword()` throw
+`PolicyViolation` for a password below the tenant's floor. Any code path that sets a
+password with a value the policy refuses now fails where it previously succeeded —
+including seeders, factories that go through `Subjects`, and plaintext bulk import.
+Hash import (`storeCredential()`) is unaffected. A host application binding its own
+`Subjects` resolver should apply the guard in the same two methods; the contract's
+docblock says so.
+
+### Added
+
+- **`Identity\Rules\PasswordMeetsPolicy`** — a validation rule so a form surfaces a
+  policy refusal on the field instead of as an unhandled exception. Use it *instead of*
+  a hardcoded `min:` rule, not beside one: a fixed number cannot know what the tenant
+  requires, and the smaller of the two silently defines the experience.
+- `docs/security/password-policy.md` — where enforcement lives and why, how the
+  organization is inferred when a caller does not name one, and what plaintext import
+  means.
+
+### Changed
+
+- `DatabaseSubjects::create()` and `setPassword()` apply the policy and record the
+  resulting hash in the reuse history themselves. Signup, invitation acceptance,
+  self-service reset, administrative assignment and plaintext import all inherit it.
+  `PasswordResetService` and `AdminPasswordService` lose their bolted-on copies.
+- When no organization is named, `PasswordPolicyEnforcer` resolves the environment
+  baseline tightened by **every** organization the subject belongs to. Resolving the
+  bare baseline would let a member of a strict organization satisfy the looser
+  environment floor through any path that did not carry org context.
+- `DatabaseAccountMembers::activate()` and `resetPassword()` are transactional, so a
+  policy refusal cannot leave the member row holding a rejected password or spend a
+  single-use reset link on the way out.
+
+### Fixed
+
+- The password policy was enforced on administrative assignment and nowhere else. An
+  environment demanding 24 characters got 24 from an admin and 12 — whatever the calling
+  form hardcoded — from every self-service path.
+
+### Known limitations
+
+- `AuthPolicy`'s `mfa`, `lockoutThreshold` and `maxAgeDays` are stored, inherited and
+  tightened correctly but **no sign-in path reads them**. They describe an intent the
+  authentication flow does not yet act on.
+
 ## [0.52.0] - 2026-07-25
 
 Unified account identity. An account member's **subject** becomes the credential of
