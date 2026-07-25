@@ -15,7 +15,8 @@ use Illuminate\Contracts\Cache\Repository as Cache;
 
 /**
  * Token-based environment-admin handoff over the vetted {@see TokenSigner} (managed
- * keys, RS256). The token carries a distinct `purpose` and is verified with an
+ * keys, RS256). Its `sub` is the platform-root SUBJECT — the credential of record for
+ * account members — never the account-membership row. The token carries a distinct `purpose` and is verified with an
  * explicit algorithm allow-list, so it can never be confused with an OAuth access
  * token or an OIDC id_token even though they share the signer.
  *
@@ -50,10 +51,10 @@ class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
         private readonly Cache $cache,
     ) {}
 
-    public function mint(string $accountMemberId, string $environmentId, int $ttlSeconds = 120): string
+    public function mint(string $subjectId, string $environmentId, int $ttlSeconds = 120): string
     {
         return $this->environments->runAs(GenericEnvironment::of(self::SIGNING_SCOPE), fn (): string => $this->signer->sign([
-            'sub' => $accountMemberId,
+            'sub' => $subjectId,
             'env' => $environmentId,
             'purpose' => self::PURPOSE,
             'jti' => bin2hex(random_bytes(16)),
@@ -76,10 +77,10 @@ class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
             return null;
         }
 
-        $member = $claims->subject();
+        $subject = $claims->subject();
         $environment = $claims->string('env');
 
-        if ($member === null || $member === '' || $environment === null || $environment === '') {
+        if ($subject === null || $subject === '' || $environment === null || $environment === '') {
             return null;
         }
 
@@ -99,6 +100,6 @@ class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
             return null;
         }
 
-        return new EnvironmentAdminGrant($member, $environment);
+        return new EnvironmentAdminGrant($subject, $environment);
     }
 }

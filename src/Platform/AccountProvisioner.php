@@ -49,6 +49,7 @@ class AccountProvisioner
         private readonly AccountMembers $members,
         private readonly Projects $projects,
         private readonly Organizations $organizations,
+        private readonly PlatformRoot $platformRoot,
     ) {}
 
     public function provision(AccountBlueprint $blueprint): ProvisionedAccount
@@ -198,7 +199,7 @@ class AccountProvisioner
      */
     private function homeAccount(Account $account): void
     {
-        $platformRoot = Environment::query()->where('is_default', true)->first();
+        $platformRoot = $this->platformRoot->model();
 
         if ($platformRoot === null) {
             return;
