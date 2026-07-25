@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Organization\Enums\EnvironmentStatus;
+use Cbox\Id\Organization\Enums\EnvironmentType;
+use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -17,6 +20,18 @@ it('passes the health check on a configured install', function (): void {
         'cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize',
     ]);
     app(KeyManager::class)->activeSigningKey(); // mint a signing key
+
+    // A fully-configured install has a platform root stamped in the DATABASE — that is
+    // what `cbox-id:install` does, and it is what stops the answer depending on
+    // per-process configuration in a horizontally-scaled deployment.
+    Environment::query()->create([
+        'name' => 'Platform',
+        'slug' => 'platform-root',
+        'type' => EnvironmentType::Production,
+        'status' => EnvironmentStatus::Active,
+        'is_default' => true,
+        'settings' => [],
+    ]);
 
     $this->artisan('cbox-id:doctor')
         ->assertExitCode(0)

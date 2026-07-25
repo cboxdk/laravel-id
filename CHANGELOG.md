@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.55.0] - 2026-07-25
+
+**Upgrading:** `PlatformRoot::environment()` no longer accepts a configured default that
+matches no environment row, or one that belongs to an account. A deployment relying on
+either loses its platform root — which is the point; see below. `cbox-id:doctor` reports
+which case you are in.
+
+### Fixed
+
+- **The platform root could be a customer's environment.** `PlatformRoot` fell back to
+  `cbox-id.environments.default` without checking what that key pointed at. A deployment
+  that never stamped an `is_default` row and aimed the config at a tenant environment
+  wrote every account member's subject INSIDE that customer's tenant — where that
+  customer's environment admins (including a Developer, a role explicitly denied the
+  member roster) could set the password through the admin-password feature and sign in
+  as an account member. The fallback now resolves to a real row and refuses one an
+  account owns.
+- **Three components resolved "the default environment" in two different orders.**
+  `Api\Http\Middleware\ResolveEnvironment` preferred the config key while
+  `PlatformRoot` and the console's `SetEnvironment`/`PlaneResolver` preferred the
+  `is_default` row, so a deployment with both would answer "which tenant is this
+  request" one way over the API and another on the web. All of them now take the row
+  first: it is what the installer stamps and it survives horizontal scaling.
+
+### Added
+
+- A `cbox-id:doctor` check for the platform root. It fails on a configured default that
+  belongs to an account, and warns when the root is resolved from config rather than a
+  stamped row — the silent-at-runtime misconfigurations, which otherwise surface as an
+  incident rather than a deploy-time message.
+
 ## [0.54.0] - 2026-07-25
 
 `AuthPolicy`'s remaining three fields stop being decoration. `maxAgeDays`, `mfa` and

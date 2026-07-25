@@ -6,6 +6,7 @@ namespace Cbox\Id\Console;
 
 use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
+use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
@@ -37,6 +38,7 @@ class DoctorCommand extends Command
         $this->checkCryptoKey();
         $this->checkMigrations();
         $this->checkSigningKeys();
+        $this->checkPlatformRoot();
         $this->checkIssuer();
         $this->checkAuthorizationEndpoint();
         $this->checkWebAuthn();
@@ -126,6 +128,52 @@ class DoctorCommand extends Command
         $active > 0
             ? $this->addOk('Signing keys', "{$active} active key(s). Tokens can be signed and the JWKS is populated.")
             : $this->addWarn('Signing keys', 'No active signing key yet — one is minted on first use, or run `php artisan cbox-id:install`.');
+    }
+
+    /**
+     * The platform root is where the platform's OWN people are written as subjects, so
+     * aiming it at a customer's environment hands that customer's environment admins a
+     * way to set an account member's password and sign in as them. The mistake is silent
+     * at runtime — everything works, in the wrong tenant — so it is caught here.
+     */
+    private function checkPlatformRoot(): void
+    {
+        try {
+            $stamped = Environment::query()->where('is_default', true)->first();
+        } catch (Throwable) {
+            $this->addWarn('Platform root', 'Could not read environments (migrations not run yet?).');
+
+            return;
+        }
+
+        if ($stamped !== null) {
+            $this->addOk('Platform root', "'{$stamped->slug}' is flagged is_default.");
+
+            return;
+        }
+
+        $configured = config('cbox-id.environments.default');
+
+        if (! is_string($configured) || $configured === '') {
+            $this->addWarn('Platform root', 'No is_default environment and no CBOX_ID_ENVIRONMENT_DEFAULT — account members have nowhere to live. Run `php artisan cbox-id:install`.');
+
+            return;
+        }
+
+        $row = Environment::query()->where('id', $configured)->orWhere('slug', $configured)->first();
+
+        if ($row === null) {
+            // Legitimate for a single-tenant self-hosted install: the config key scopes
+            // every query and no `environments` row need ever exist. It only matters if
+            // this deployment serves ACCOUNTS, which need somewhere to put their people.
+            $this->addWarn('Platform root', "CBOX_ID_ENVIRONMENT_DEFAULT is '{$configured}' with no environment row behind it. Fine for a single-tenant install; multi-account deployments need a real environment stamped is_default.");
+
+            return;
+        }
+
+        $row->account_id === null
+            ? $this->addWarn('Platform root', "Resolved from config to '{$row->slug}'. Stamp it is_default so the answer does not depend on per-process configuration.")
+            : $this->addFail('Platform root', "CBOX_ID_ENVIRONMENT_DEFAULT points at '{$row->slug}', which belongs to an account. The platform root must be an environment no customer owns.");
     }
 
     private function checkIssuer(): void

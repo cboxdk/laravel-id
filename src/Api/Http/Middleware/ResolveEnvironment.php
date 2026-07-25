@@ -33,14 +33,19 @@ class ResolveEnvironment
         $environment = $this->resolver->resolveForHost($request->getHost());
 
         if ($environment === null) {
-            // Host matched nothing → fall back to the single-tenant default. An
-            // explicit config key (env var / ConfigMap) wins when set; otherwise
-            // the environment flagged default in the database, so a host-less,
-            // horizontally-scaled deployment needs no per-replica config.
+            // Host matched nothing → fall back to the single-tenant default. The
+            // DATABASE marker wins, then the configured key.
+            //
+            // That order used to be reversed here and the right way round in the console
+            // and in PlatformRoot, so a deployment with both would resolve one
+            // environment over the API and a different one on the web — two answers to
+            // "which tenant is this request" is the shape every tenancy bug in this
+            // codebase has taken. The row is authoritative: it is what the installer
+            // stamps, and it survives horizontal scaling because it is not per-process
+            // configuration.
             $default = config('cbox-id.environments.default');
-            $environment = is_string($default) && $default !== ''
-                ? GenericEnvironment::of($default)
-                : $this->resolver->defaultEnvironment();
+            $environment = $this->resolver->defaultEnvironment()
+                ?? (is_string($default) && $default !== '' ? GenericEnvironment::of($default) : null);
         }
 
         abort_if($environment === null, 404, 'Unknown environment for host.');

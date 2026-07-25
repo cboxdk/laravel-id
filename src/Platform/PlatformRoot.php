@@ -7,7 +7,6 @@ namespace Cbox\Id\Platform;
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment as EnvironmentContract;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
-use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Organization\Models\Environment;
 use Closure;
 
@@ -28,7 +27,10 @@ use Closure;
  *     what {@see InstallCommand} stamps, and it survives a
  *     horizontally-scaled deployment because it is not per-process configuration.
  *  2. Otherwise the configured default (`cbox-id.environments.default`), for deployments
- *     that pin their root by config and never stamped a row.
+ *     that pin their root by config and never stamped a row — but ONLY when that key
+ *     resolves to a real environment that no account owns. The platform root is where
+ *     the platform's own people are written; a config key aimed at a customer's
+ *     environment would put every account member inside that customer's tenant.
  *
  * Both may be absent on a brand-new install, in which case there is NO platform root and
  * the callers degrade explicitly rather than inventing one.
@@ -65,9 +67,21 @@ class PlatformRoot
 
         $configured = config('cbox-id.environments.default');
 
-        return is_string($configured) && $configured !== ''
-            ? GenericEnvironment::of($configured)
-            : null;
+        if (! is_string($configured) || $configured === '') {
+            return null;
+        }
+
+        // The configured key is resolved to a REAL ROW and refused if that row belongs to
+        // an account. This is where the platform's own people get written: a deployment
+        // that never stamped `is_default` and pointed the config at a customer's
+        // environment would put every account member inside that customer's tenant, where
+        // its environment admins could set their password and sign in as them.
+        //
+        // Requiring a row also matches what the callers actually need — model() already
+        // does, since an organization cannot point at an environment that does not exist.
+        $row = Environment::query()->where('id', $configured)->orWhere('slug', $configured)->first();
+
+        return $row !== null && $row->account_id === null ? $row : null;
     }
 
     /**

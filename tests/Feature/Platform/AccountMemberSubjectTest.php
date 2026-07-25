@@ -218,16 +218,60 @@ it('resolves the account membership from the subject — the lookup the admin se
 });
 
 it('names the platform root by its is_default row, falling back to the configured default', function (): void {
+    // A configured key with no environment behind it is not a platform root. Accepting
+    // it would produce organizations and subjects pointing at an environment that does
+    // not exist.
     config(['cbox-id.environments.default' => 'env_configured_root']);
+    expect(app(PlatformRoot::class)->environment())->toBeNull();
 
-    // With no stamped row, the configured default is the root.
+    $unowned = Environment::query()->create([
+        'name' => 'Configured',
+        'slug' => 'configured-'.Str::lower((string) Str::ulid()),
+        'type' => EnvironmentType::Production,
+        'status' => EnvironmentStatus::Active,
+        'is_default' => false,
+        'settings' => [],
+    ]);
+
+    config(['cbox-id.environments.default' => $unowned->id]);
+
     expect(app(PlatformRoot::class)->model())->toBeNull()
-        ->and(app(PlatformRoot::class)->environment()?->environmentKey())->toBe('env_configured_root');
+        ->and(app(PlatformRoot::class)->environment()?->environmentKey())->toBe($unowned->id);
 
     // A stamped row is authoritative — it wins over per-process configuration.
     $root = platformRootEnvironment();
     expect(app(PlatformRoot::class)->model()?->id)->toBe($root->id)
         ->and(app(PlatformRoot::class)->environment()?->environmentKey())->toBe($root->id);
+});
+
+/**
+ * The platform root is where the platform's OWN people are written as subjects. Pointing
+ * it at a customer's environment would put every account member inside that tenant, where
+ * its environment admins — including a Developer, a role explicitly denied the member
+ * roster — could set their password through the admin-password feature and sign in as
+ * them. A misaimed config key must resolve to nothing, not to a customer.
+ */
+it('refuses a configured default that belongs to an account', function (): void {
+    $result = provisionHomedAccount();
+
+    $tenant = Environment::query()->create([
+        'name' => 'Acme production',
+        'slug' => 'acme-'.Str::lower((string) Str::ulid()),
+        'type' => EnvironmentType::Production,
+        'status' => EnvironmentStatus::Active,
+        'is_default' => false,
+        'account_id' => $result->account->id,
+        'settings' => [],
+    ]);
+
+    config(['cbox-id.environments.default' => $tenant->id]);
+
+    // No is_default row, and the only candidate is owned — so there is no root at all,
+    // and run() degrades to null rather than writing into the customer.
+    Environment::query()->where('is_default', true)->update(['is_default' => false]);
+
+    expect(app(PlatformRoot::class)->environment())->toBeNull()
+        ->and(app(PlatformRoot::class)->run(fn (): string => 'ran'))->toBeNull();
 });
 
 /**
