@@ -121,3 +121,21 @@ it('records an audit entry on enrolment', function (): void {
 
     $audit->assertRecorded('user.mfa_enrolled');
 });
+
+/**
+ * A recovery code is spent exactly once.
+ *
+ * TOTP single-use is already covered above; the recovery path was not. Both now claim
+ * their credential with a conditional UPDATE rather than a read-then-write, so two
+ * requests presenting the same code concurrently cannot both be admitted.
+ */
+it('spends a recovery code exactly once even when presented twice', function (): void {
+    $userId = 'user_recovery_race';
+    $mfa = app(Mfa::class);
+    $codes = $mfa->generateRecoveryCodes($userId, 3);
+
+    expect($mfa->verifyRecoveryCode($userId, $codes[0]))->toBeTrue()
+        ->and($mfa->verifyRecoveryCode($userId, $codes[0]))->toBeFalse()
+        // The other codes are untouched by the refused replay.
+        ->and($mfa->verifyRecoveryCode($userId, $codes[1]))->toBeTrue();
+});

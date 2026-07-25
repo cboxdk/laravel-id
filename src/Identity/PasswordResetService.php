@@ -65,7 +65,19 @@ class PasswordResetService implements PasswordReset
                 throw InvalidPasswordReset::make();
             }
 
-            $record->forceFill(['consumed_at' => now()])->save();
+            // CLAIM the token with a conditional update rather than a read-then-write:
+            // two requests presenting the same token concurrently would both have seen
+            // `consumed_at` null above and both gone on to set a password. Only the
+            // update that actually matches an unconsumed row wins; the loser is refused,
+            // so a single-use token is single-use under real concurrency.
+            $claimed = PasswordResetToken::query()
+                ->whereKey($record->id)
+                ->whereNull('consumed_at')
+                ->update(['consumed_at' => now()]);
+
+            if ($claimed !== 1) {
+                throw InvalidPasswordReset::make();
+            }
 
             $this->subjects->setPassword($subject->id, $newPassword);
 
