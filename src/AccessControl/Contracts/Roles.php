@@ -48,6 +48,16 @@ interface Roles
     public function unassign(string $organizationId, string $userId, string $roleId): void;
 
     /**
+     * Drop every role this subject holds in the organization, and report how many went.
+     *
+     * Called when the subject stops being a member. Assignments are read by
+     * (organization, user) with no membership join, so leaving them behind does not
+     * merely litter: re-adding the person later silently restores privileges nobody
+     * re-granted, and anything reading assignments directly still sees them as held.
+     */
+    public function unassignAll(string $organizationId, string $userId): int;
+
+    /**
      * The DIRECT role assignments a subject holds AT this organization (not the
      * hierarchy-rolled-up effective set — an inherited grant lives on, and is read
      * from, the ancestor org where it was assigned). Read surface for governance

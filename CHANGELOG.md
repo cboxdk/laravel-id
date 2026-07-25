@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.56.0] - 2026-07-25
+
+**Upgrading:** two contract changes. `PasswordPolicyGuard::assertAcceptable()` now
+REQUIRES the subject id — the no-subject case is `assertAcceptableForNewSubject()`.
+`Roles` gains `unassignAll()`; a custom implementation must supply it.
+
+### Fixed
+
+- **A removed member kept their RBAC grants.** `MembershipService::remove()` deleted the
+  membership and left `role_assignments` behind. Assignments are read by (organization,
+  user) with no membership join, so this was not litter: re-adding the person later
+  silently restored privileges nobody re-granted, and anything reading assignments
+  directly still saw them held. Removal now revokes them in the same transaction, one
+  `role.unassigned` event per role. A deployment binding external RBAC owns its own
+  grants, so its refusal is caught and the removal proceeds.
+
+### Changed
+
+- `PasswordPolicyGuard::assertAcceptable()` takes a non-optional `string $userId`, and
+  the genuine no-subject case — signup, or an administrator seeding an account — is the
+  separate `assertAcceptableForNewSubject()`. The optional argument used to buy a caller
+  a weaker check for free: no reuse history, and the bare environment baseline instead of
+  the organizations binding the subject. An exemption reachable by forgetting an argument
+  looks identical to the case where it is correct.
+
 ## [0.55.1] - 2026-07-25
 
 ### Fixed

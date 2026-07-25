@@ -48,6 +48,11 @@ class UnboundRoles implements Roles
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
+    public function unassignAll(string $organizationId, string $userId): int
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
     public function assignmentsForSubject(string $organizationId, string $userId): array
     {
         throw ExternalRbacNotBound::forContract(Roles::class);

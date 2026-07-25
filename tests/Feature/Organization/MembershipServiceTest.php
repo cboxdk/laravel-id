@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Exceptions\LastOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -130,4 +132,49 @@ it('paginates an organization roster without hydrating every member', function (
         ->and($page->count())->toBe(2)
         ->and($page->lastPage())->toBe(3)
         ->and($page->items()[0]->user_id)->toBe('user_1'); // oldest-first
+});
+
+/**
+ * Role assignments are read by (organization, user) with no membership join, so leaving
+ * them behind when a member is removed is not untidiness: re-adding the person later
+ * silently restores privileges nobody re-granted, and anything reading assignments
+ * directly still sees them held.
+ */
+it('revokes the subject RBAC grants along with the membership', function (): void {
+    $org = $this->makeOrganization();
+    $memberships = app(Memberships::class);
+    $roles = app(Roles::class);
+
+    $memberships->add($org->id, 'user_rbac', 'member');
+
+    $role = $roles->define($org->id, 'billing-admin');
+    $roles->assign($org->id, 'user_rbac', $role->id, GrantSource::Manual);
+
+    expect($roles->assignmentsForSubject($org->id, 'user_rbac'))->toHaveCount(1);
+
+    $memberships->remove($org->id, 'user_rbac');
+
+    expect($roles->assignmentsForSubject($org->id, 'user_rbac'))->toBe([]);
+
+    // Re-adding them starts from nothing, rather than restoring what was never re-granted.
+    $memberships->add($org->id, 'user_rbac', 'member');
+    expect($roles->assignmentsForSubject($org->id, 'user_rbac'))->toBe([]);
+});
+
+it('leaves another subject grants alone when one member is removed', function (): void {
+    $org = $this->makeOrganization();
+    $memberships = app(Memberships::class);
+    $roles = app(Roles::class);
+
+    $memberships->add($org->id, 'user_goes', 'member');
+    $memberships->add($org->id, 'user_stays', 'member');
+
+    $role = $roles->define($org->id, 'support');
+    $roles->assign($org->id, 'user_goes', $role->id, GrantSource::Manual);
+    $roles->assign($org->id, 'user_stays', $role->id, GrantSource::Manual);
+
+    $memberships->remove($org->id, 'user_goes');
+
+    expect($roles->assignmentsForSubject($org->id, 'user_goes'))->toBe([])
+        ->and($roles->assignmentsForSubject($org->id, 'user_stays'))->toHaveCount(1);
 });

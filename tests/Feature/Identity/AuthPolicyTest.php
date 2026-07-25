@@ -102,11 +102,11 @@ it('enforces the minimum length on a proposed password', function (): void {
     app(AuthPolicies::class)->setForEnvironment(new AuthPolicy(minLength: 16, requireBreachCheck: false));
     $guard = app(PasswordPolicyGuard::class);
 
-    expect(fn () => $guard->assertAcceptable('short-one-123'))
+    expect(fn () => $guard->assertAcceptableForNewSubject('short-one-123'))
         ->toThrow(PolicyViolation::class, 'at least 16 characters');
 
     // A conforming password passes without incident.
-    $guard->assertAcceptable('a-long-enough-passphrase');
+    $guard->assertAcceptableForNewSubject('a-long-enough-passphrase');
 });
 
 it('refuses a breached password only when the policy asks for the check', function (): void {
@@ -123,10 +123,10 @@ it('refuses a breached password only when the policy asks for the check', functi
     $guard = app(PasswordPolicyGuard::class);
 
     $policies->setForEnvironment(new AuthPolicy(minLength: 8, requireBreachCheck: false));
-    $guard->assertAcceptable('a-perfectly-fine-passphrase');
+    $guard->assertAcceptableForNewSubject('a-perfectly-fine-passphrase');
 
     $policies->setForEnvironment(new AuthPolicy(minLength: 8, requireBreachCheck: true));
-    expect(fn () => $guard->assertAcceptable('a-perfectly-fine-passphrase'))
+    expect(fn () => $guard->assertAcceptableForNewSubject('a-perfectly-fine-passphrase'))
         ->toThrow(PolicyViolation::class, 'public data breach');
 });
 
@@ -202,4 +202,19 @@ it('does not carry one environment memoized policy into another', function (): v
     expect($context->runAs($lax, fn (): int => $policies->forEnvironment()->minLength))->toBe(12)
         ->and($context->runAs($strict, fn (): int => $policies->forEnvironment()->minLength))->toBe(32)
         ->and($context->runAs($lax, fn (): int => $policies->forEnvironment()->minLength))->toBe(12);
+});
+
+/**
+ * The optional `$userId` used to buy a caller a weaker check for free: no reuse history,
+ * and the bare environment baseline instead of the organizations that bind the subject.
+ * An exemption reachable by forgetting an argument looks identical to the case where it
+ * is correct, so the two cases are now different methods and the subject has no default.
+ */
+it('names the no-subject case rather than letting a caller omit one', function (): void {
+    $reflection = new ReflectionMethod(PasswordPolicyGuard::class, 'assertAcceptable');
+    $userId = $reflection->getParameters()[1];
+
+    expect($userId->getName())->toBe('userId')
+        ->and($userId->isOptional())->toBeFalse()
+        ->and($userId->getType()?->allowsNull() ?? true)->toBeFalse();
 });

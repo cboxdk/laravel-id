@@ -30,7 +30,17 @@ class PasswordPolicyEnforcer implements PasswordPolicyGuard
         private readonly Memberships $memberships,
     ) {}
 
-    public function assertAcceptable(string $password, ?string $userId = null, ?string $organizationId = null): void
+    public function assertAcceptable(string $password, string $userId, ?string $organizationId = null): void
+    {
+        $this->assertAgainst($password, $userId, $organizationId);
+    }
+
+    public function assertAcceptableForNewSubject(string $password, ?string $organizationId = null): void
+    {
+        $this->assertAgainst($password, null, $organizationId);
+    }
+
+    private function assertAgainst(string $password, ?string $userId, ?string $organizationId): void
     {
         $policy = $this->effectiveFor($userId, $organizationId);
 

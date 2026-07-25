@@ -121,6 +121,35 @@ class RoleService implements Roles
         $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
     }
 
+    public function unassignAll(string $organizationId, string $userId): int
+    {
+        $roleIds = RoleAssignment::query()
+            ->where('organization_id', $organizationId)
+            ->where('user_id', $userId)
+            ->pluck('role_id')
+            ->all();
+
+        if ($roleIds === []) {
+            return 0;
+        }
+
+        RoleAssignment::query()
+            ->where('organization_id', $organizationId)
+            ->where('user_id', $userId)
+            ->delete();
+
+        // One event per role, not one for the batch: a downstream consumer reconciling
+        // grants needs to know WHICH roles went, and every other revocation on this
+        // service reports itself that way.
+        foreach ($roleIds as $roleId) {
+            if (is_string($roleId)) {
+                $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
+            }
+        }
+
+        return count($roleIds);
+    }
+
     public function assignmentsForSubject(string $organizationId, string $userId): array
     {
         return array_values(RoleAssignment::query()

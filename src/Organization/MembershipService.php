@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization;
 
+use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\AccessControl\Exceptions\ExternalRbacNotBound;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -31,6 +33,7 @@ class MembershipService implements Memberships
         private readonly TenantContext $tenant,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly Roles $roles,
     ) {}
 
     public function add(string $organizationId, string $userId, string $role, ?string $invitedBy = null): Membership
@@ -90,6 +93,20 @@ class MembershipService implements Memberships
             }
 
             Membership::query()->where('user_id', $userId)->delete();
+
+            // Drop the RBAC grants with the membership. Assignments are read by
+            // (organization, user) with no membership join, so leaving them behind is not
+            // untidiness: re-adding the person later silently restores privileges nobody
+            // re-granted, and anything reading assignments directly still sees them held.
+            //
+            // A deployment that binds EXTERNAL RBAC owns its own grants and has none here
+            // to revoke — that refusal is the contract working, not a failure to remove a
+            // member, so it does not abort the removal.
+            try {
+                $this->roles->unassignAll($organizationId, $userId);
+            } catch (ExternalRbacNotBound) {
+                // Nothing of ours to revoke.
+            }
 
             $this->emitAndAudit($organizationId, $userId, 'organization.member_removed', []);
         }));

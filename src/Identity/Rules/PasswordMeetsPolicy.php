@@ -48,7 +48,13 @@ class PasswordMeetsPolicy implements ValidationRule
         }
 
         try {
-            $this->guard->assertAcceptable($value, $this->userId, $this->organizationId);
+            // A form legitimately may not know the subject — signup has none yet, and the
+            // token-based reset deliberately does not resolve one (doing so would make
+            // the page an account-existence oracle). The guard is asked the matching
+            // question rather than handed a null and left to guess which case this is.
+            $this->userId === null
+                ? $this->guard->assertAcceptableForNewSubject($value, $this->organizationId)
+                : $this->guard->assertAcceptable($value, $this->userId, $this->organizationId);
         } catch (PolicyViolation $violation) {
             $fail($violation->getMessage());
         }

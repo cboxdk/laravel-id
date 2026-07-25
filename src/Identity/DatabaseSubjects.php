@@ -111,7 +111,7 @@ class DatabaseSubjects implements Subjects
         if ($password !== null) {
             // There is no subject id yet, so no reuse history to compare against — but
             // length and the breach corpus bind at signup exactly as they do later.
-            $this->policy->assertAcceptable($password);
+            $this->policy->assertAcceptableForNewSubject($password);
 
             $model->setAttribute('password', $hash = $this->hasher->make($password));
         }
