@@ -6,9 +6,12 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Organization\Models\Organization;
+use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\Projects;
@@ -45,12 +48,20 @@ class AccountProvisioner
         private readonly Accounts $accounts,
         private readonly AccountMembers $members,
         private readonly Projects $projects,
+        private readonly Organizations $organizations,
+        private readonly PlatformRoot $platformRoot,
     ) {}
 
     public function provision(AccountBlueprint $blueprint): ProvisionedAccount
     {
         return DB::transaction(function () use ($blueprint): ProvisionedAccount {
             $account = $this->accounts->create($blueprint->accountName, $blueprint->environmentLimit);
+
+            // The account's home in the platform-root environment. Account members live
+            // there as ordinary subjects rather than in a second credential store, so the
+            // account needs an organization to hold them — and account SSO then becomes an
+            // ordinary connection on it. See docs/core-concepts/unified-account-identity.md.
+            $this->homeAccount($account);
 
             $member = $this->members->create(
                 $account->id,
@@ -175,6 +186,48 @@ class AccountProvisioner
     }
 
     /** A slug unique across environments (the routing key when no custom domain is set). */
+    /**
+     * Give the account an organization in the platform-root environment and link it.
+     *
+     * Runs inside that environment's scope because organizations are environment-owned —
+     * created outside it the row would be written against whatever scope happened to be
+     * current, or refused outright by the deny-by-default tenancy scope.
+     *
+     * A deployment with no platform-root environment yet (the very first install, before
+     * `cbox-id:install` has run) leaves the account unhomed rather than inventing an
+     * environment: the caller is bootstrapping, and the install flow homes it.
+     */
+    private function homeAccount(Account $account): void
+    {
+        $platformRoot = $this->platformRoot->model();
+
+        if ($platformRoot === null) {
+            return;
+        }
+
+        $organization = $this->context->runAs($platformRoot, fn (): Organization => $this->organizations->create(
+            new NewOrganization(
+                name: $account->name,
+                slug: $this->uniqueOrganizationSlug($account->name),
+            ),
+        ));
+
+        $account->forceFill(['organization_id' => $organization->id])->save();
+    }
+
+    private function uniqueOrganizationSlug(string $name): string
+    {
+        $base = $this->slug($name);
+        $slug = $base;
+        $suffix = 1;
+
+        while (Organization::query()->where('slug', $slug)->exists()) {
+            $slug = $base.'-'.(++$suffix);
+        }
+
+        return $slug;
+    }
+
     private function uniqueSlug(string $name): string
     {
         $base = $this->slug($name);

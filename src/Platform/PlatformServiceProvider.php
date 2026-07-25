@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
 use Cbox\Id\Platform\Contracts\AccountMemberMfa;
 use Cbox\Id\Platform\Contracts\AccountMembers;
@@ -52,7 +54,14 @@ class PlatformServiceProvider extends ServiceProvider
         $this->app->singleton(Projects::class, DatabaseProjects::class);
 
         $this->app->singleton(AccountMembers::class, function (Application $app): AccountMembers {
-            return new DatabaseAccountMembers($app->make(Hasher::class));
+            return new DatabaseAccountMembers(
+                $app->make(Hasher::class),
+                // Account members authenticate as subjects in the platform-root
+                // environment — one identity stack, not two.
+                $app->make(Subjects::class),
+                $app->make(Memberships::class),
+                $app->make(PlatformRoot::class),
+            );
         });
 
         $this->app->singleton(AccountApiKeys::class, DatabaseAccountApiKeys::class);

@@ -25,6 +25,16 @@ interface AccountMembers
     public function findByEmail(string $email): ?AccountMember;
 
     /**
+     * The account membership behind a platform-root SUBJECT, or null.
+     *
+     * This is the lookup that lets an authenticated subject be recognised as an account
+     * member: the subject is the credential of record, and this resolves it to the
+     * account-side aggregate that carries the {@see AccountRole} and the environment
+     * grants. Deny-by-default — an unknown or unlinked subject is simply not a member.
+     */
+    public function findBySubject(string $subjectId): ?AccountMember;
+
+    /**
      * Add the account's first member — its owner. The password is hashed with the
      * configured driver on the way in; the member is created with the Owner role.
      */

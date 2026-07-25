@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.52.0] - 2026-07-25
+
+Unified account identity. An account member's **subject** becomes the credential of
+record: members are ordinary subjects in the platform-root environment, holding a
+membership in their account's organization. The account keeps its ownership and billing
+role — what it loses is its own parallel way of authenticating people.
+
+**Upgrading:** breaking. `account_members` gains `subject_id`, and credential operations
+(`verifyPassword`, `resetPassword`, `activate`) now act on the member's subject. A
+deployment with existing account members needs those subjects minted before sign-in
+works; there is no backfill migration, because the platform had no external consumers at
+the time of the cut.
+
+### Added
+
+- **`Platform\PlatformRoot`** — the single answer to "which environment is tenant 1".
+  Subject and membership writes run inside its scope, since both rows are
+  environment-owned and would otherwise be written against whatever scope happened to be
+  current.
+- `accounts.organization_id` and `account_members.subject_id`; `AccountProvisioner`
+  creates the account's organization in the platform root alongside the account.
+- `EnvironmentAdminGrant::$subjectId` — the signed handoff now carries the subject.
+
+### Changed
+
+- `DatabaseAccountMembers::create/invite` mint the member's subject in the platform root
+  and add a membership in the account's organization. Credential verification and reset
+  go to that subject.
+- `remove()` revokes the organization membership and deactivates the subject unless
+  another account still holds them.
+
+### Security
+
+- **An invited member's subject is minted deactivated.** An invitation must not be a way
+  in before it is accepted.
+- **An address that already has a subject is reused, never re-credentialed.** Otherwise
+  inviting an email you do not control would reset that person's password.
+- Account members inherit the tenant password policy, administrative password expiry and
+  the SSO mandate, because they authenticate as subjects — previously none of those
+  applied on the account plane.
+
 ## [0.51.0] - 2026-07-25
 
 Second platform-review loop. Every finding was adversarially verified before it was

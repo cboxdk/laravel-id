@@ -14,13 +14,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 
 /**
- * An account member — a login identity for the account's root console. Like an
- * operator it is NOT environment-owned: it authenticates once at the platform
- * root and can then step into any environment its account owns. Distinct from a
- * Subject (an end-user inside an environment), which never sees this plane.
+ * An account member — a person's place on an account: which account, which
+ * {@see AccountRole}, which environments they may reach. Like an operator it is NOT
+ * environment-owned; it sits at the platform root, above every environment.
+ *
+ * It is no longer a credential store. {@see $subject_id} points at the member's ordinary
+ * subject in the platform-root environment, and THAT is what authenticates — which is
+ * how account members get SSO, passkeys, MFA and the password policy without a second
+ * identity stack. See docs/core-concepts/unified-account-identity.md.
  *
  * @property string $id
  * @property string $account_id
+ * @property string|null $subject_id
  * @property string $email
  * @property string|null $name
  * @property AccountRole $role

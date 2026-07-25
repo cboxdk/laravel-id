@@ -13,7 +13,7 @@ it('verifies ACROSS environments — minted on the account plane, redeemed on th
     $handoff = app(EnvironmentAdminHandoff::class);
 
     // Minted while the account plane's (root) environment is active…
-    $token = $this->runAsEnvironment('env_platform_root', fn () => $handoff->mint('acct_member_1', 'env_tenant_x'));
+    $token = $this->runAsEnvironment('env_platform_root', fn () => $handoff->mint('subject_1', 'env_tenant_x'));
 
     // …redeemed while the TARGET tenant environment is active. Env signing keys differ
     // between these contexts, so this only works because the handoff signs/verifies in
@@ -21,24 +21,24 @@ it('verifies ACROSS environments — minted on the account plane, redeemed on th
     $grant = $this->runAsEnvironment('env_tenant_x', fn () => $handoff->verify($token));
 
     expect($grant)->not->toBeNull()
-        ->and($grant->accountMemberId)->toBe('acct_member_1')
+        ->and($grant->subjectId)->toBe('subject_1')
         ->and($grant->environmentId)->toBe('env_tenant_x');
 });
 
-it('mints and verifies a handoff, binding the account member to the environment', function (): void {
+it('mints and verifies a handoff, binding the platform-root subject to the environment', function (): void {
     $handoff = app(EnvironmentAdminHandoff::class);
 
-    $token = $handoff->mint('acct_member_1', 'env_prod');
+    $token = $handoff->mint('subject_1', 'env_prod');
     $grant = $handoff->verify($token);
 
     expect($grant)->not->toBeNull()
-        ->and($grant->accountMemberId)->toBe('acct_member_1')
+        ->and($grant->subjectId)->toBe('subject_1')
         ->and($grant->environmentId)->toBe('env_prod');
 });
 
 it('is single-use — a replayed handoff is refused', function (): void {
     $handoff = app(EnvironmentAdminHandoff::class);
-    $token = $handoff->mint('acct_member_1', 'env_prod');
+    $token = $handoff->mint('subject_1', 'env_prod');
 
     // First redemption wins…
     expect($handoff->verify($token))->not->toBeNull();
@@ -50,7 +50,7 @@ it('is single-use — a replayed handoff is refused', function (): void {
 
 it('refuses a tampered token', function (): void {
     $handoff = app(EnvironmentAdminHandoff::class);
-    $token = $handoff->mint('acct_member_1', 'env_prod');
+    $token = $handoff->mint('subject_1', 'env_prod');
 
     // Flip a character in the payload segment.
     [$h, $p, $s] = explode('.', $token);
@@ -63,7 +63,7 @@ it('refuses an expired handoff', function (): void {
     // A correctly-signed, correct-purpose handoff — but already past its expiry.
     // (firebase/php-jwt checks the real clock, so we sign a past `exp` directly.)
     $expired = app(TokenSigner::class)->sign([
-        'sub' => 'acct_member_1',
+        'sub' => 'subject_1',
         'env' => 'env_prod',
         'purpose' => 'cbox.env-admin-handoff',
         'exp' => time() - 10,
@@ -75,7 +75,7 @@ it('refuses an expired handoff', function (): void {
 it('refuses a token that is not a handoff (wrong purpose) — no cross-use with OAuth tokens', function (): void {
     // A perfectly-valid platform-signed token, but minted for something else.
     $foreign = app(TokenSigner::class)->sign([
-        'sub' => 'acct_member_1',
+        'sub' => 'subject_1',
         'env' => 'env_prod',
         'exp' => time() + 300,
         // no `purpose`, or a different one — an access token, an id_token, etc.
