@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Exceptions\PolicyViolation;
+use Cbox\Id\Identity\ValueObjects\AuthPolicy;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
@@ -225,4 +228,33 @@ it('names the platform root by its is_default row, falling back to the configure
     $root = platformRootEnvironment();
     expect(app(PlatformRoot::class)->model()?->id)->toBe($root->id)
         ->and(app(PlatformRoot::class)->environment()?->environmentKey())->toBe($root->id);
+});
+
+/**
+ * The account member row carries a fallback password column, and the reset also burns
+ * the link by bumping session_version. Since the subject write can now REFUSE — the
+ * tenant's policy applies there — both must be inside the same transaction, or a
+ * rejected password lands in the fallback column and spends the link on its way out.
+ */
+it('rolls the whole reset back when the policy refuses the new password', function (): void {
+    $root = platformRootEnvironment();
+    $result = provisionHomedAccount();
+    $members = app(AccountMembers::class);
+
+    app(EnvironmentContext::class)->runAs(
+        $root,
+        fn () => app(AuthPolicies::class)->setForEnvironment(new AuthPolicy(minLength: 40)),
+    );
+
+    $before = $members->find($result->member->id);
+    $stampBefore = $before?->session_version;
+
+    expect(fn () => $members->resetPassword($result->member->id, 'nowhere-near-forty-characters'))
+        ->toThrow(PolicyViolation::class);
+
+    $after = $members->find($result->member->id);
+
+    // The link is unspent and the rejected password is nowhere.
+    expect($after?->session_version)->toBe($stampBefore)
+        ->and($members->verifyPassword($result->member->id, 'nowhere-near-forty-characters'))->toBeFalse();
 });

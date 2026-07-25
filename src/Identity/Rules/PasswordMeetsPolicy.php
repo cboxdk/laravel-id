@@ -7,6 +7,7 @@ namespace Cbox\Id\Identity\Rules;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Exceptions\PolicyViolation;
 use Closure;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
@@ -25,6 +26,20 @@ class PasswordMeetsPolicy implements ValidationRule
         private readonly ?string $userId = null,
         private readonly ?string $organizationId = null,
     ) {}
+
+    /**
+     * Resolve the guard from the container, so a form can name the rule without also
+     * naming its dependency: `new PasswordMeetsPolicy(...)` in a validation array reads
+     * as plumbing, and plumbing is what people leave out.
+     *
+     * Pass the subject when the password is being CHANGED, so the reuse history applies;
+     * leave it null when the subject does not exist yet. Pass the organization when the
+     * form knows one the subject may not be a member of yet.
+     */
+    public static function for(?string $userId = null, ?string $organizationId = null): self
+    {
+        return new self(Container::getInstance()->make(PasswordPolicyGuard::class), $userId, $organizationId);
+    }
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {

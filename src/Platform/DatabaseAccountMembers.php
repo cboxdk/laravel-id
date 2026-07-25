@@ -248,19 +248,26 @@ class DatabaseAccountMembers implements AccountMembers
             return false;
         }
 
-        $member->forceFill(['password' => $password, 'status' => AccountMemberStatus::Active])->save();
+        // One transaction, because the subject write can REFUSE: setPassword applies the
+        // tenant's policy and throws on a password below the floor. Without this, a
+        // refusal would leave the member activated and holding the very password the
+        // policy just rejected, in the fallback credential column.
+        DB::transaction(function () use ($member, $password): void {
+            $member->forceFill(['password' => $password, 'status' => AccountMemberStatus::Active])->save();
 
-        // The subject is the credential of record, so acceptance writes there. Only for
-        // the subject this invitation minted (still deactivated): an invitee who ALREADY
-        // had a Cbox ID subject is simply activated into the account — accepting an
-        // invitation must never rewrite the password of an identity that predates it.
-        $this->onSubject($member, function (string $subjectId) use ($password): void {
-            if ($this->subjects->isActive($subjectId)) {
-                return;
-            }
+            // The subject is the credential of record, so acceptance writes there. Only
+            // for the subject this invitation minted (still deactivated): an invitee who
+            // ALREADY had a Cbox ID subject is simply activated into the account —
+            // accepting an invitation must never rewrite the password of an identity that
+            // predates it.
+            $this->onSubject($member, function (string $subjectId) use ($password): void {
+                if ($this->subjects->isActive($subjectId)) {
+                    return;
+                }
 
-            $this->subjects->setPassword($subjectId, $password);
-            $this->subjects->reactivate($subjectId);
+                $this->subjects->setPassword($subjectId, $password);
+                $this->subjects->reactivate($subjectId);
+            });
         });
 
         return true;
@@ -345,15 +352,20 @@ class DatabaseAccountMembers implements AccountMembers
             return false;
         }
 
-        // Bump the security stamp: every existing session AND any other outstanding
-        // reset link bound to the old version is invalidated (log-out-everywhere +
-        // single-use reset).
-        $member->forceFill([
-            'password' => $password,
-            'session_version' => $member->session_version + 1,
-        ])->save();
+        // One transaction: setPassword applies the tenant's policy and throws on a
+        // password below the floor, and a refused reset must not still have burned the
+        // link (session_version) or written the rejected password to the fallback column.
+        DB::transaction(function () use ($member, $password): void {
+            // Bump the security stamp: every existing session AND any other outstanding
+            // reset link bound to the old version is invalidated (log-out-everywhere +
+            // single-use reset).
+            $member->forceFill([
+                'password' => $password,
+                'session_version' => $member->session_version + 1,
+            ])->save();
 
-        $this->onSubject($member, fn (string $subjectId) => $this->subjects->setPassword($subjectId, $password));
+            $this->onSubject($member, fn (string $subjectId) => $this->subjects->setPassword($subjectId, $password));
+        });
 
         return true;
     }
