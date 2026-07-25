@@ -7,6 +7,7 @@ namespace Cbox\Id\Console;
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
@@ -155,7 +156,7 @@ class InstallCommand extends Command
             $environment = Environment::query()->create([
                 'name' => $name !== '' ? $name : 'Production',
                 'slug' => $this->uniqueEnvironmentSlug($name !== '' ? $name : 'Production'),
-                'status' => 'active',
+                'status' => EnvironmentStatus::Active,
                 'settings' => [],
             ]);
 

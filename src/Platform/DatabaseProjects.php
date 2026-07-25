@@ -6,6 +6,7 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\Projects;
+use Cbox\Id\Platform\Enums\ProjectStatus;
 use Cbox\Id\Platform\Models\Project;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -38,7 +39,7 @@ class DatabaseProjects implements Projects
             'account_id' => $accountId,
             'name' => $name,
             'slug' => $this->uniqueSlug($accountId, $name),
-            'status' => 'active',
+            'status' => ProjectStatus::Active,
             'environment_limit' => max(1, $environmentLimit),
         ]);
     }
@@ -50,12 +51,12 @@ class DatabaseProjects implements Projects
 
     public function suspend(string $id): void
     {
-        Project::query()->whereKey($id)->update(['status' => 'suspended']);
+        Project::query()->whereKey($id)->update(['status' => ProjectStatus::Suspended]);
     }
 
     public function reactivate(string $id): void
     {
-        Project::query()->whereKey($id)->update(['status' => 'active']);
+        Project::query()->whereKey($id)->update(['status' => ProjectStatus::Active]);
     }
 
     public function remainingEnvironments(Project $project): int

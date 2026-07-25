@@ -96,9 +96,28 @@ class MembershipService implements Memberships
     }
 
     /** Owners in the current tenant scope. */
+    /**
+     * How many owners this organization has, with the owner rows LOCKED for the rest of
+     * the transaction.
+     *
+     * The lock is the point. Two owners each demoting (or removing) themselves at the
+     * same moment would both read a count of 2, both conclude they are not the last one,
+     * and both commit — leaving an organization with no owner and no way to appoint one.
+     * Locking the rows serializes the two transactions, so the second re-reads a count of
+     * 1 and is correctly refused.
+     *
+     * The rows are fetched and counted in PHP rather than with `count()`, because
+     * PostgreSQL rejects `FOR UPDATE` alongside an aggregate.
+     */
     private function ownerCount(): int
     {
-        return Membership::query()->where('role', MembershipRole::Owner->value)->count();
+        $lockedOwnerIds = Membership::query()
+            ->where('role', MembershipRole::Owner->value)
+            ->lockForUpdate()
+            ->pluck('id')
+            ->all();
+
+        return count($lockedOwnerIds);
     }
 
     public function of(string $organizationId, string $userId): ?Membership

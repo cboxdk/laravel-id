@@ -8,6 +8,7 @@ use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\SamlAuthRequest;
+use DOMElement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use RobRichards\XMLSecLibs\XMLSecurityDSig;
@@ -15,9 +16,9 @@ use RobRichards\XMLSecLibs\XMLSecurityKey;
 
 uses(RefreshDatabase::class);
 
-const SP_ENTITY = 'https://sp.example.test/metadata';
-const SP_ACS = 'https://sp.example.test/saml/acs';
-const IDP_ENTITY = 'https://idp.example.test/metadata';
+const FED_SP_ENTITY = 'https://sp.example.test/metadata';
+const FED_SP_ACS = 'https://sp.example.test/saml/acs';
+const FED_IDP_ENTITY = 'https://idp.example.test/metadata';
 
 /**
  * A minimal SAML IdP: self-signed cert + a genuinely XML-DSig-signed Response.
@@ -41,19 +42,20 @@ final class SamlIdp
 
     public function response(
         string $nameId = 'alice@corp.com',
-        string $audience = SP_ENTITY,
+        string $audience = FED_SP_ENTITY,
         bool $sign = true,
         bool $tamper = false,
         ?string $inResponseTo = null,
         bool $sha1 = false,
+        ?string $wrapAs = null,
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
         $after = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
         $assertionId = '_'.bin2hex(random_bytes(16));
         $responseId = '_'.bin2hex(random_bytes(16));
-        $issuer = IDP_ENTITY;
-        $recipient = SP_ACS;
+        $issuer = FED_IDP_ENTITY;
+        $recipient = FED_SP_ACS;
         $inResponseToAttr = $inResponseTo !== null ? ' InResponseTo="'.htmlspecialchars($inResponseTo, ENT_QUOTES).'"' : '';
 
         $xml = <<<XML
@@ -89,6 +91,10 @@ XML;
             $this->signAssertion($doc, $sha1);
         }
 
+        if ($wrapAs !== null) {
+            $this->wrapSignedAssertion($doc, $wrapAs);
+        }
+
         $signedXml = (string) $doc->saveXML();
 
         if ($tamper) {
@@ -102,6 +108,72 @@ XML;
         }
 
         return base64_encode($signedXml);
+    }
+
+    /**
+     * Mount an XML Signature Wrapping attack.
+     *
+     * The genuine assertion and its signature are left completely INTACT — the signature
+     * still verifies — and a forged copy naming the attacker is injected alongside it.
+     * The attack wins if the validator verifies one element but reads the subject from
+     * another, which is precisely what "the signature was valid" cannot tell you.
+     *
+     * `$wrapAs` selects the classic placements: 'sibling' puts the forgery first inside
+     * the Response so a naive "first Assertion" lookup finds it, while 'nested' hides the
+     * genuine signed assertion inside the forgery's own Signature/Object so a document
+     * scan still finds a valid signature somewhere.
+     */
+    private function wrapSignedAssertion(DOMDocument $doc, string $wrapAs): void
+    {
+        $response = $doc->documentElement;
+        $genuine = $doc->getElementsByTagName('Assertion')->item(0);
+
+        if ($response === null || $genuine === null) {
+            return;
+        }
+
+        // A copy of the signed assertion with the attacker's identity and a fresh ID,
+        // stripped of the signature that would no longer cover it.
+        $forged = $genuine->cloneNode(true);
+        $forgedId = '_'.bin2hex(random_bytes(16));
+
+        if ($forged instanceof DOMElement) {
+            $forged->setAttribute('ID', $forgedId);
+
+            foreach (iterator_to_array($forged->getElementsByTagName('Signature')) as $sig) {
+                $sig->parentNode?->removeChild($sig);
+            }
+
+            foreach (iterator_to_array($forged->getElementsByTagName('NameID')) as $nameId) {
+                $nameId->nodeValue = 'attacker@evil.test';
+            }
+
+            foreach (iterator_to_array($forged->getElementsByTagName('AttributeValue')) as $value) {
+                if (str_contains((string) $value->nodeValue, '@')) {
+                    $value->nodeValue = 'attacker@evil.test';
+                }
+            }
+        }
+
+        if ($wrapAs === 'nested') {
+            // Tuck the genuine, still-signed assertion inside the forgery's Signature so
+            // a validator that merely finds "a valid signature in this document" is
+            // satisfied while the forged Subject is the one sitting at the top level.
+            $response->removeChild($genuine);
+            $object = $doc->createElementNS('http://www.w3.org/2000/09/xmldsig#', 'ds:Object');
+            $object->appendChild($genuine);
+
+            $signature = $doc->createElementNS('http://www.w3.org/2000/09/xmldsig#', 'ds:Signature');
+            $signature->appendChild($object);
+            $forged->appendChild($signature);
+            $response->appendChild($forged);
+
+            return;
+        }
+
+        // Sibling: the forgery goes FIRST, so any "take the first Assertion" read picks
+        // the attacker's while the genuine signed one trails behind it.
+        $response->insertBefore($forged, $genuine);
     }
 
     private function signAssertion(DOMDocument $doc, bool $sha1 = false): void
@@ -136,11 +208,11 @@ function samlConnection(SamlIdp $idp): Connection
         // opt-in per connection — see SamlAssertionValidator. Enabled here so the test
         // keeps exercising the IdP-initiated path deliberately rather than by default.
         'allow_idp_initiated' => true,
-        'idp_entity_id' => IDP_ENTITY,
+        'idp_entity_id' => FED_IDP_ENTITY,
         'idp_sso_url' => 'https://idp.example.test/sso',
         'idp_x509cert' => $idp->certPem,
-        'sp_entity_id' => SP_ENTITY,
-        'sp_acs_url' => SP_ACS,
+        'sp_entity_id' => FED_SP_ENTITY,
+        'sp_acs_url' => FED_SP_ACS,
     ]);
     $connections->activate($connection->organization_id, $connection->id);
 
@@ -169,6 +241,28 @@ it('validates a genuinely signed SAML response into a principal', function (): v
         ->and($principal->provider)->toBe('saml')
         ->and($principal->connectionId)->toBe($connection->id);
 });
+
+/**
+ * XML Signature Wrapping — the attack a "the signature was valid" check cannot catch.
+ *
+ * The genuine assertion and its signature are untouched and still verify; the attacker
+ * merely adds a second, forged assertion naming themselves. The system is only safe if
+ * the element whose signature was verified is the SAME element whose Subject is
+ * consumed. These lock that binding in so it cannot regress behind a library swap or a
+ * strict-mode misconfiguration.
+ */
+it('refuses a wrapped assertion smuggled alongside the genuine signed one', function (string $placement): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    // Refused outright by our own single-assertion rule, BEFORE any question of which
+    // Subject to read arises — the strongest place to stop this, since it removes the
+    // ambiguity the attack depends on rather than trying to resolve it correctly.
+    expect(fn () => app(AssertionValidator::class)->validate(
+        $connection,
+        $idp->response(wrapAs: $placement),
+    ))->toThrow(InvalidAssertion::class, 'must contain 1 assertion');
+})->with(['sibling', 'nested']);
 
 it('rejects a SAML response with a tampered signature', function (): void {
     $idp = new SamlIdp;
@@ -311,11 +405,11 @@ it('refuses an unsolicited assertion unless the connection opts in', function ()
     // Same fixture as samlConnection(), MINUS the opt-in.
     $connections = app(Connections::class);
     $connection = $connections->create((string) Str::ulid(), ConnectionType::Saml, 'Okta', [
-        'idp_entity_id' => IDP_ENTITY,
+        'idp_entity_id' => FED_IDP_ENTITY,
         'idp_sso_url' => 'https://idp.example.test/sso',
         'idp_x509cert' => $idp->certPem,
-        'sp_entity_id' => SP_ENTITY,
-        'sp_acs_url' => SP_ACS,
+        'sp_entity_id' => FED_SP_ENTITY,
+        'sp_acs_url' => FED_SP_ACS,
     ]);
     $connections->activate($connection->organization_id, $connection->id);
 

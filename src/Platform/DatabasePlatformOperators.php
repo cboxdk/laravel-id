@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
+use Cbox\Id\Platform\Enums\OperatorStatus;
 use Cbox\Id\Platform\Exceptions\CannotSuspendLastOperator;
 use Cbox\Id\Platform\Models\PlatformOperator;
 use Illuminate\Contracts\Hashing\Hasher;
@@ -42,7 +43,7 @@ class DatabasePlatformOperators implements PlatformOperators
             'name' => $name,
             // The model's `hashed` cast hashes with the configured driver.
             'password' => $password,
-            'status' => 'active',
+            'status' => OperatorStatus::Active,
         ]);
     }
 
@@ -101,7 +102,7 @@ class DatabasePlatformOperators implements PlatformOperators
                 throw CannotSuspendLastOperator::make($id);
             }
 
-            $operator->forceFill(['status' => 'suspended'])->save();
+            $operator->forceFill(['status' => OperatorStatus::Suspended])->save();
             $this->recordStatus('operator.suspended', $operator->id, $actorId);
         });
     }
@@ -114,7 +115,7 @@ class DatabasePlatformOperators implements PlatformOperators
             return; // already active — idempotent
         }
 
-        $operator->forceFill(['status' => 'active'])->save();
+        $operator->forceFill(['status' => OperatorStatus::Active])->save();
         $this->recordStatus('operator.reactivated', $operator->id, $actorId);
     }
 

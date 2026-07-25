@@ -139,16 +139,21 @@ it('rejects a malformed manifest whole', function (array $bad): void {
     'duplicate role name' => [['version' => '1', 'permissions' => [], 'roles' => [['key' => 'a', 'name' => 'Admin', 'permissions' => []], ['key' => 'b', 'name' => 'Admin', 'permissions' => []]]]],
 ]);
 
-it('honours tenant_assignable, defaulting to true and marking opted-out permissions internal', function (): void {
+it('honours tenant_assignable opt-in, defaulting to internal (deny-by-default)', function (): void {
     syncManifest('app_billing', [
         'version' => 'v1',
         'permissions' => [
-            ['key' => 'invoices:read', 'description' => 'View invoices'],                                    // default → assignable
-            ['key' => 'ledger:close', 'description' => 'Close the ledger', 'tenant_assignable' => false],    // internal, app-only
+            ['key' => 'invoices:read', 'description' => 'View invoices', 'tenant_assignable' => true],       // explicit opt-in → assignable
+            ['key' => 'ledger:close', 'description' => 'Close the ledger'],                                   // omitted → internal, app-only
+            ['key' => 'ledger:void', 'description' => 'Void an entry', 'tenant_assignable' => false],         // explicit opt-out → internal
         ],
         'roles' => [],
     ]);
 
+    // Deny-by-default: only an explicit `tenant_assignable: true` opts a permission into
+    // tenant self-serve. An omitted field is internal, same as an explicit false — as
+    // apps become third-party-authored, an unset field must not widen access.
     expect(Permission::query()->where('name', 'invoices:read')->sole()->tenant_assignable)->toBeTrue()
-        ->and(Permission::query()->where('name', 'ledger:close')->sole()->tenant_assignable)->toBeFalse();
+        ->and(Permission::query()->where('name', 'ledger:close')->sole()->tenant_assignable)->toBeFalse()
+        ->and(Permission::query()->where('name', 'ledger:void')->sole()->tenant_assignable)->toBeFalse();
 });

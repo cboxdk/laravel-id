@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+## [0.51.0] - 2026-07-25
+
+Second platform-review loop. Every finding was adversarially verified before it was
+fixed: four of nine P1 reports were refuted and dropped (SAML SSO's missing org gate is
+the intended environment-owned model; WebAuthn challenge replay is closed by the host
+contract; device/CIBA approval derives the organization server-side; the JWT leeway
+window is guarded by try/finally and unreachable without Octane).
+
+**Upgrading:** `tenant_assignable` in an app manifest is now OPT-IN. A declared
+permission without an explicit `"tenant_assignable": true` becomes internal on the next
+manifest sync, where it was previously tenant-assignable by default. Review your
+manifests before upgrading if tenants compose app permissions into their own roles.
+
+### Added
+
+- **Per-environment and per-organization authentication policy** (`AuthPolicies`,
+  `AuthPolicy`). Minimum length, breach checking, maximum age, reuse history, MFA
+  requirement and SSO enforcement. An environment sets the baseline; an organization may
+  override it, but `AuthPolicy::tightenedWith()` takes the STRICTER value of every field,
+  so an override can never weaken the operator's floor. `PasswordPolicyGuard` is the one
+  enforcement point every credential path runs through. Two additive migrations
+  (`auth_policies`, `password_history` — hashes only, pruned to the configured depth).
+- **Administrative password assignment** (`AdminPasswords`). Sets a subject's credential
+  directly — legitimate because this platform owns its user records — as either a
+  temporary hand-off (must be replaced at next sign-in, with an optional deadline after
+  which it stops authenticating) or a permanent password, with the revocation blast
+  radius an explicit choice (`PasswordRevocationScope`). Every call is audited with the
+  actor and their stated reason, and is held to the tenant's password policy.
+  Authorization is deliberately the caller's responsibility. Additive migration
+  (`password_change_requirements`).
+- **`BreachedPasswordCheck`** contract, shipped with a deliberately-inert
+  `NeverBreachedCheck` default: the lookup is a network call against a service the host
+  operates, so the library refuses to imply protection it never wired up.
+- **`cbox-id:doctor` warns when `authorization_endpoint` is unconfigured.** OpenID
+  Connect Discovery §3 marks it REQUIRED, and a host that never set it shipped a
+  discovery document conformant OIDC clients refuse to initialize against, with nothing
+  surfacing that. A warning rather than a failure, because an OAuth-only
+  (client_credentials) deployment legitimately has none.
+
+### Security
+
+- **One-time credentials are claimed with a conditional update, not a read-then-write.**
+  Password-reset tokens, TOTP steps and MFA recovery codes could each be consumed twice
+  by concurrent requests presenting the same value — spending one reset token on two
+  password changes, or one recovery code on two sessions. Each now acts only if it won
+  the row.
+- **Last-owner protection locks the owner rows before counting.** Two owners each
+  demoting or removing themselves at the same moment both read a count of two, both
+  concluded they were not the last, and both committed — leaving an organization with no
+  owner and no way to appoint one.
+- **SCIM `User` PATCH rejects an unknown or missing `op`** with `400 invalidSyntax`
+  (RFC 7644 §3.5.2). It previously fell through to a silent `replace`, so a typo'd
+  operation mutated the resource and the calling IdP recorded a write that never
+  happened. The Group path already enforced this; Users did not.
+- **`tenant_assignable` is opt-in** (see Upgrading above): an omitted field no longer
+  widens tenant self-serve access.
+
+### Fixed
+
+- **`at_hash` derives from the id_token's own signing algorithm** (OIDC Core §3.1.3.6)
+  rather than a hardcoded SHA-256. Correct only because id_tokens happen to be RS256;
+  an EdDSA id_token (Ed25519 signs over SHA-512) would have carried a digest a strict
+  relying party rejects.
+- **Environment-wide audit browse no longer filesorts.** Adds the
+  `(environment_id, sequence)` index; the organization-filtered export cursor already
+  had its own composite and is unaffected.
+- Manual permissions authored in a console are stamped with their authoring environment.
+  Additive backfill migration derives the environment from each row's bound roles where
+  unambiguous; it is intentionally irreversible (`down()` is a no-op, because a set value
+  cannot be told apart from a pre-existing one).
+
+### Changed
+
+- **The Usage kernel no longer imports a domain module.** `UsageReconciler` depends on a
+  new `SeatCensus` contract (implemented in the Organization module) instead of
+  `Organization\Contracts\Memberships`. `src/Kernel` now imports no domain module at all.
+- Device/CIBA poll status and service-account status are typed enums (`GrantPollStatus`,
+  `ServiceAccountStatus`) — the token-mint guard was a string comparison. Platform
+  repositories write those enums instead of raw strings past their casts.
+
+### Tests
+
+- **SAML XML Signature Wrapping**, both classic placements: the genuine signature stays
+  valid and a forged assertion is smuggled beside it. Refused by the single-assertion
+  rule. Verified non-vacuous — the test fails if that guard is removed.
+- Recovery-code single-use, the org-can-only-tighten policy invariant, and an
+  administrator being held to the tenant policy.
+- Two test files declared `SP_ACS` at global scope with different values; load order
+  silently decided which URL was tested.
+
 ## [0.50.0] - 2026-07-24
 
 Bring-your-own RBAC. The platform can now run its AuthN/SSO/OAuth/OIDC/SCIM stack on

@@ -12,6 +12,9 @@ it('passes the health check on a configured install', function (): void {
         'cbox-id.issuer' => 'https://id.acme.test',
         'cbox-id.webauthn.rp_id' => 'id.acme.test',
         'cbox-id.webauthn.origin' => 'https://id.acme.test',
+        // A fully-configured OIDC install advertises where /authorize is mounted;
+        // without it discovery omits a field OIDC Discovery §3 marks REQUIRED.
+        'cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize',
     ]);
     app(KeyManager::class)->activeSigningKey(); // mint a signing key
 

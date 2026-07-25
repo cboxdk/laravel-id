@@ -85,9 +85,16 @@ class MfaService implements Mfa
             return false;
         }
 
-        $factor->forceFill(['last_used_step' => $step])->save();
+        // Advance the step with a conditional update, not a read-then-write: two requests
+        // presenting the SAME intercepted code at once would both have passed the replay
+        // check above and both been accepted. Only the update that still sees the earlier
+        // step wins, so one code admits exactly one sign-in.
+        $advanced = MfaFactor::query()
+            ->whereKey($factor->id)
+            ->where(fn ($query) => $query->whereNull('last_used_step')->orWhere('last_used_step', '<', $step))
+            ->update(['last_used_step' => $step]);
 
-        return true;
+        return $advanced === 1;
     }
 
     public function hasConfirmedTotp(string $userId): bool
@@ -142,7 +149,17 @@ class MfaService implements Mfa
             return false;
         }
 
-        $match->forceFill(['used_at' => now()])->save();
+        // Claim the code conditionally: two requests presenting the same recovery code at
+        // once would both have found it unused above and both been let in, spending one
+        // code on two sessions. Only the update that still sees it unused wins.
+        $claimed = MfaRecoveryCode::query()
+            ->whereKey($match->id)
+            ->whereNull('used_at')
+            ->update(['used_at' => now()]);
+
+        if ($claimed !== 1) {
+            return false;
+        }
 
         $this->audit->record(new AuditEvent(
             action: 'user.mfa_recovery_used',

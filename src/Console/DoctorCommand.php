@@ -38,6 +38,7 @@ class DoctorCommand extends Command
         $this->checkMigrations();
         $this->checkSigningKeys();
         $this->checkIssuer();
+        $this->checkAuthorizationEndpoint();
         $this->checkWebAuthn();
         $this->checkProductionHardening();
 
@@ -134,6 +135,33 @@ class DoctorCommand extends Command
         is_string($issuer) && $issuer !== ''
             ? $this->addOk('Issuer', $issuer)
             : $this->addWarn('Issuer', 'CBOX_ID_ISSUER is not set — discovery falls back to the app URL. Set it to your public HTTPS URL.');
+    }
+
+    private function checkAuthorizationEndpoint(): void
+    {
+        $rawPath = config('cbox-id.oauth.authorization_endpoint_path');
+        $rawAbsolute = config('cbox-id.oauth.authorization_endpoint');
+        $path = is_string($rawPath) ? $rawPath : '';
+        $absolute = is_string($rawAbsolute) ? $rawAbsolute : '';
+        $configured = $path !== '' || $absolute !== '';
+
+        // OpenID Connect Discovery §3 marks authorization_endpoint REQUIRED, but RFC 8414
+        // (plain OAuth) permits omitting it — and a machine-to-machine deployment serving
+        // only client_credentials genuinely has no authorization endpoint. So this is a
+        // warning, not a failure: it must not fail a valid OAuth-only install, but a host
+        // intending to serve OIDC needs to know its discovery document is one certified
+        // clients will refuse. The package cannot supply the value itself — it serves the
+        // back-channel endpoints, not the consent screen, and advertising a route it does
+        // not serve would be worse than omitting it.
+        $configured
+            ? $this->addOk('Authorization endpoint', $path !== '' ? $path : $absolute)
+            : $this->addWarn(
+                'Authorization endpoint',
+                'Not configured, so discovery omits `authorization_endpoint`. Fine for an OAuth-only '
+                .'(client_credentials) deployment; but if you serve OpenID Connect, a conformant client will '
+                .'refuse to initialize — set CBOX_ID_AUTHORIZATION_ENDPOINT_PATH to where your app mounts '
+                .'/authorize (e.g. /oauth/authorize).',
+            );
     }
 
     private function checkWebAuthn(): void

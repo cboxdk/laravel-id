@@ -96,9 +96,18 @@ class ScimMapper
                 continue;
             }
 
-            $op = strtolower(self::str($operation['op'] ?? 'replace'));
+            $op = strtolower(self::str($operation['op'] ?? ''));
             $path = $operation['path'] ?? null;
             $value = $operation['value'] ?? null;
+
+            // Deny-by-default: RFC 7644 §3.5.2 defines only add/remove/replace. An
+            // unknown or missing op is a client error — a 400 `invalidSyntax`, never a
+            // silent 200 that lets the IdP believe a mis-typed write applied. This is the
+            // same guard the Group PATCH path enforces; leaving it off Users let a
+            // typo'd op mutate the resource under a `replace` default and drift silently.
+            if (! in_array($op, ['add', 'remove', 'replace'], true)) {
+                throw UnsupportedScimPath::forOp($op);
+            }
 
             // `remove` clears the targeted attribute (RFC 7644 §3.5.2.2) rather
             // than being ignored — e.g. an IdP removing a user's display name.

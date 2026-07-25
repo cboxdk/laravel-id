@@ -6,6 +6,7 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\Accounts;
+use Cbox\Id\Platform\Enums\AccountStatus;
 use Cbox\Id\Platform\Models\Account;
 
 /**
@@ -26,19 +27,19 @@ class DatabaseAccounts implements Accounts
 
     public function suspend(string $id): void
     {
-        Account::query()->whereKey($id)->update(['status' => 'suspended']);
+        Account::query()->whereKey($id)->update(['status' => AccountStatus::Suspended]);
     }
 
     public function reactivate(string $id): void
     {
-        Account::query()->whereKey($id)->update(['status' => 'active']);
+        Account::query()->whereKey($id)->update(['status' => AccountStatus::Active]);
     }
 
     public function create(string $name, int $environmentLimit = 2): Account
     {
         return Account::query()->create([
             'name' => $name,
-            'status' => 'active',
+            'status' => AccountStatus::Active,
             'environment_limit' => max(1, $environmentLimit),
         ]);
     }

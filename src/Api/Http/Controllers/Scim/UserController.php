@@ -129,9 +129,10 @@ class UserController
         try {
             $patched = ScimMapper::applyPatch($directoryUser, $request);
         } catch (UnsupportedScimPath $e) {
-            // RFC 7644 §3.5.2: an unmatched target is an error. Answering 200 would make
-            // the IdP record a write that never happened and never retry it.
-            return $this->error('400', $e->getMessage(), 'invalidPath');
+            // RFC 7644 §3.5.2: an unmatched target or an unknown/missing op is an error.
+            // Answering 200 would make the IdP record a write that never happened and
+            // never retry it. The exception carries the right §3.12 keyword.
+            return $this->error('400', $e->getMessage(), $e->scimType);
         }
 
         $result = $this->provision($directory->id, $patched);
