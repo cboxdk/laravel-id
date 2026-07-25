@@ -23,6 +23,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * per-project allowance is what the framework actually enforces.
  *
  * @property string $id
+ * @property string|null $organization_id The account's organization in the platform-root
+ *                                        environment, where its members live as subjects.
+ *                                        Null only for an account provisioned before the
+ *                                        unified-identity cutover.
  * @property string $name
  * @property AccountStatus $status
  * @property int $environment_limit Seed for the first project's allowance; NOT the enforced limit.

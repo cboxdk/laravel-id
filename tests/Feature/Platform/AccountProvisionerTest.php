@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
+use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\AccountMembers;
@@ -15,6 +16,7 @@ use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
 use Cbox\Id\Platform\Models\Account;
 use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -256,4 +258,50 @@ it('lets a project add environments up to its plan limit, then refuses', functio
     // …and the third is refused by the plan.
     expect(fn () => $provisioner->addEnvironment($project, 'Dev'))
         ->toThrow(EnvironmentLimitReached::class);
+});
+
+/**
+ * An account's people live in the platform-root environment as ordinary subjects, so the
+ * account needs an organization there to hold them. Once it has one, account SSO is an
+ * ordinary connection on that organization rather than a parallel federation stack.
+ */
+it('homes a provisioned account in an organization in the platform-root environment', function (): void {
+    $root = Environment::query()->create([
+        'name' => 'Platform', 'slug' => 'platform-'.Str::ulid(),
+        'type' => EnvironmentType::Production, 'status' => EnvironmentStatus::Active,
+        'is_default' => true, 'settings' => [],
+    ]);
+
+    $result = app(AccountProvisioner::class)->provision(new AccountBlueprint(
+        accountName: 'Acme',
+        ownerEmail: 'owner@acme.test',
+        ownerName: 'Owner',
+        ownerPassword: 'a-strong-unbreached-passphrase',
+    ));
+
+    $account = $result->account->refresh();
+    expect($account->organization_id)->not->toBeNull();
+
+    // The organization lives in the platform root, not in the account's own environment.
+    $org = Organization::query()->withoutGlobalScopes()->whereKey($account->organization_id)->first();
+    expect($org)->not->toBeNull()
+        ->and($org->environment_id)->toBe($root->id)
+        ->and($org->name)->toBe('Acme')
+        // ...and NOT in the environment the account just had provisioned for it.
+        ->and($org->environment_id)->not->toBe($result->environment->id);
+});
+
+// Bootstrapping: the very first install provisions before a platform root exists, and
+// must not invent one.
+it('leaves an account unhomed when no platform-root environment exists yet', function (): void {
+    Environment::query()->where('is_default', true)->update(['is_default' => false]);
+
+    $result = app(AccountProvisioner::class)->provision(new AccountBlueprint(
+        accountName: 'Bootstrap',
+        ownerEmail: 'owner@bootstrap.test',
+        ownerName: 'Owner',
+        ownerPassword: 'a-strong-unbreached-passphrase',
+    ));
+
+    expect($result->account->refresh()->organization_id)->toBeNull();
 });
