@@ -20,7 +20,7 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 /** An organization with one active member holding the given role. */
-function memberOrg(string $role = 'admin', string $userId = 'user_1'): Organization
+function memberOrg(MembershipRole $role = MembershipRole::Admin, string $userId = 'user_1'): Organization
 {
     $org = app(Organizations::class)->create(new NewOrganization(
         name: 'Acme Inc',
@@ -101,7 +101,7 @@ it('normalises an empty family list to unrestricted (the null ⇒ all contract)'
 });
 
 it('caps the scope at the issuer role: a viewer mints read only', function (): void {
-    $org = memberOrg(role: 'viewer');
+    $org = memberOrg(role: MembershipRole::Viewer);
     $tokens = app(UserApiTokens::class);
 
     expect($tokens->issue($org->id, 'user_1', 'Read', TokenScope::Read)->token)->toBeInstanceOf(UserApiToken::class)
@@ -110,7 +110,7 @@ it('caps the scope at the issuer role: a viewer mints read only', function (): v
 });
 
 it('caps the scope at the issuer role: a developer mints read and write, never admin', function (): void {
-    $org = memberOrg(role: 'developer');
+    $org = memberOrg(role: MembershipRole::Developer);
     $tokens = app(UserApiTokens::class);
 
     expect($tokens->issue($org->id, 'user_1', 'Write', TokenScope::Write)->token->scope)->toBe(TokenScope::Write)
@@ -118,7 +118,7 @@ it('caps the scope at the issuer role: a developer mints read and write, never a
 });
 
 it('lets an admin-capable member mint an admin token', function (): void {
-    $org = memberOrg(role: 'admin');
+    $org = memberOrg(role: MembershipRole::Admin);
 
     $issued = app(UserApiTokens::class)->issue($org->id, 'user_1', 'Admin', TokenScope::Admin);
 
@@ -136,7 +136,7 @@ it('the cap honours the effective role, not just the raw membership', function (
     // A viewer by membership, elevated to admin org-wide via a grant on the
     // organization's own ref — the cap sees the same effective role every
     // other authorization decision would.
-    $org = memberOrg(role: 'viewer');
+    $org = memberOrg(role: MembershipRole::Viewer);
     $this->grantAccess($org->id, GrantSubject::user('user_1'), MembershipRole::Admin, ResourceRef::of('organization', $org->id));
 
     // Org-level effectiveRole() considers membership only, so admin scope is

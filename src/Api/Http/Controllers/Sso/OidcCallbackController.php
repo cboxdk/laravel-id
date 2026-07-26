@@ -7,10 +7,10 @@ namespace Cbox\Id\Api\Http\Controllers\Sso;
 use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\FederationFlow;
+use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
-use Cbox\Id\Federation\OidcClient;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,7 +26,7 @@ class OidcCallbackController
 {
     public function __construct(
         private readonly Connections $connections,
-        private readonly OidcClient $client,
+        private readonly OidcRelyingParty $client,
         private readonly AssertionValidator $validator,
         private readonly FederationFlow $flow,
     ) {}

@@ -7,6 +7,7 @@ namespace Cbox\Id\Directory\Connectors;
 use Cbox\Id\Directory\Contracts\DirectoryConnector;
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Directory\Support\JsonObjectList;
 use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Illuminate\Support\Facades\Http;
@@ -67,8 +68,7 @@ class MicrosoftEntraConnector implements DirectoryConnector
             $body = $response->json();
             $body = is_array($body) ? $body : [];
 
-            /** @var array<int, array<string, mixed>> $users */
-            $users = is_array($body['value'] ?? null) ? $body['value'] : [];
+            $users = JsonObjectList::from($body['value'] ?? null);
 
             foreach ($users as $user) {
                 $scim = $this->toScimUser($user);
@@ -95,8 +95,7 @@ class MicrosoftEntraConnector implements DirectoryConnector
             }
 
             $body = is_array($response->json()) ? $response->json() : [];
-            /** @var array<int, array<string, mixed>> $groups */
-            $groups = is_array($body['value'] ?? null) ? $body['value'] : [];
+            $groups = JsonObjectList::from($body['value'] ?? null);
 
             foreach ($groups as $group) {
                 $id = $group['id'] ?? null;

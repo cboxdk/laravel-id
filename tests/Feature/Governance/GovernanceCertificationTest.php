@@ -10,6 +10,7 @@ use Cbox\Id\Governance\Exceptions\CampaignClosed;
 use Cbox\Id\Governance\Exceptions\UnknownCampaign;
 use Cbox\Id\Governance\Models\CertificationItem;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -17,7 +18,7 @@ uses(RefreshDatabase::class);
 it('snapshots roles and memberships as pending items', function (): void {
     $role = app(Roles::class)->define('acme', 'admin');
     app(Roles::class)->assign('acme', 'user-1', $role->id);
-    app(Memberships::class)->add('acme', 'user-2', 'member');
+    app(Memberships::class)->add('acme', 'user-2', MembershipRole::Member);
 
     $reviews = app(AccessReviews::class);
     $campaign = $reviews->open('acme', 'Q3 review');
@@ -53,7 +54,7 @@ it('applies revoked decisions on close and leaves certified access intact', func
 });
 
 it('removes a revoked membership on close', function (): void {
-    app(Memberships::class)->add('acme', 'member-1', 'member');
+    app(Memberships::class)->add('acme', 'member-1', MembershipRole::Member);
 
     $reviews = app(AccessReviews::class);
     $campaign = $reviews->open('acme', 'review');
@@ -87,7 +88,7 @@ it('keeps pending items when the policy is certify', function (): void {
 });
 
 it('records a blocked revoke when removing the last owner (never silently dropped)', function (): void {
-    app(Memberships::class)->add('acme', 'owner-1', 'owner');
+    app(Memberships::class)->add('acme', 'owner-1', MembershipRole::Owner);
 
     $reviews = app(AccessReviews::class);
     $campaign = $reviews->open('acme', 'review');
@@ -144,7 +145,7 @@ it('refuses to certify, revoke or close another organization\'s campaign', funct
     // Org B's campaign, covering a membership org B depends on.
     $role = app(Roles::class)->define('org-b', 'admin');
     app(Roles::class)->assign('org-b', 'victim-user', $role->id);
-    app(Memberships::class)->add('org-b', 'victim-user', 'member');
+    app(Memberships::class)->add('org-b', 'victim-user', MembershipRole::Member);
     $victimCampaign = $reviews->open('org-b', 'Org B review');
     $victimItem = $reviews->itemsFor($victimCampaign->id)[0];
 

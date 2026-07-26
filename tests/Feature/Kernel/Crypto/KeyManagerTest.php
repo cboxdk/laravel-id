@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Exceptions\InvalidToken;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
+use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -128,6 +130,95 @@ it('serves JWKS and verification keys from cache and reloads after rotation', fu
     $new = $keys->rotate();
     expect(array_column($keys->jwks()['keys'], 'kid'))->toContain($new->kid);
 });
+
+// --- transposition guards -------------------------------------------------
+//
+// Key generation hands back two halves. While that was an `array{0: string, 1: string}`
+// both halves were `string`, so swapping them type-checked cleanly and the only
+// symptom was the PRIVATE key being published at the JWKS endpoint. The halves are
+// now named (GeneratedKeyPair), and these tests fail loudly if they are ever
+// re-transposed anyway.
+
+it('stores the public half public and the private half sealed, never the reverse', function (SigningAlg $alg): void {
+    $key = app(KeyManager::class)->activeSigningKey($alg);
+    $private = app(SecretBox::class)->open($key->private_key_encrypted, $key->secretContext());
+
+    if ($alg === SigningAlg::EdDSA) {
+        // Raw sodium: a public key is 32 bytes, a secret key 64 — and the secret key's
+        // trailing 32 bytes ARE the public key, so this asserts correspondence too.
+        $publicRaw = (string) base64_decode($key->public_key, true);
+        $privateRaw = (string) base64_decode($private, true);
+
+        expect(strlen($publicRaw))->toBe(SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES)
+            ->and(strlen($privateRaw))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES)
+            ->and(sodium_crypto_sign_publickey_from_secretkey($privateRaw))->toBe($publicRaw);
+
+        return;
+    }
+
+    // PEM: the stored public column must be a public key with no private material,
+    // and the sealed column must be the private key.
+    expect($key->public_key)->toContain('BEGIN PUBLIC KEY')
+        ->and($key->public_key)->not->toContain('PRIVATE')
+        ->and($private)->toContain('PRIVATE KEY');
+
+    // And they must be the two halves of ONE pair: the public material derived from
+    // the sealed private key has to match the material stored in the public column.
+    $fromPrivate = openssl_pkey_get_private($private);
+    expect($fromPrivate)->not->toBeFalse();
+    /** @var array{key: string} $details */
+    $details = openssl_pkey_get_details($fromPrivate);
+
+    expect($details['key'])->toBe($key->public_key);
+})->with([
+    'RS256' => SigningAlg::RS256,
+    'ES256' => SigningAlg::ES256,
+    'EdDSA' => SigningAlg::EdDSA,
+]);
+
+it('publishes only public material in the JWKS', function (SigningAlg $alg): void {
+    $key = app(KeyManager::class)->activeSigningKey($alg);
+    $private = app(SecretBox::class)->open($key->private_key_encrypted, $key->secretContext());
+
+    $jwks = app(KeyManager::class)->jwks();
+    $jwk = $jwks['keys'][0];
+
+    // No private exponent / seed under any of the names a private JWK would use,
+    // and no PEM private block smuggled into a value.
+    expect($jwk)->not->toHaveKey('d')
+        ->and($jwk)->not->toHaveKey('p')
+        ->and($jwk)->not->toHaveKey('q')
+        ->and(json_encode($jwks))->not->toContain('PRIVATE');
+
+    if ($alg === SigningAlg::EdDSA) {
+        // x is the 32-byte public key, not the 64-byte secret key.
+        $x = Base64Url::decode($jwk['x']);
+        expect(strlen($x))->toBe(SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES)
+            ->and($x)->toBe((string) base64_decode($key->public_key, true));
+
+        return;
+    }
+
+    // The published curve point / modulus must be the one belonging to the sealed
+    // private key — i.e. the JWKS describes the PUBLIC half of the same pair.
+    $fromPrivate = openssl_pkey_get_private($private);
+    expect($fromPrivate)->not->toBeFalse();
+    $details = openssl_pkey_get_details($fromPrivate);
+
+    if ($alg === SigningAlg::RS256) {
+        expect($jwk['n'])->toBe(Base64Url::encode($details['rsa']['n']))
+            ->and($jwk['e'])->toBe(Base64Url::encode($details['rsa']['e']));
+
+        return;
+    }
+
+    expect($jwk['x'])->toBe(Base64Url::encode($details['ec']['x']))
+        ->and($jwk['y'])->toBe(Base64Url::encode($details['ec']['y']));
+})->with([
+    'RS256' => SigningAlg::RS256,
+    'ES256' => SigningAlg::ES256,
+    'EdDSA' => SigningAlg::EdDSA,
+]);
 
 it('returns the current active key from a persistent manager instance after rotation', function (): void {
     // Guards the regression where a process-lifetime memo kept serving a retired key

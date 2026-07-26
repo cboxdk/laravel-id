@@ -43,14 +43,10 @@ class SamlLoginController
             return new Response('Unknown or inactive SAML connection.', 404);
         }
 
-        $config = $this->connections->config($model);
-        $ssoUrl = $config['idp_sso_url'] ?? null;
-
-        if (! is_string($ssoUrl) || $ssoUrl === '') {
-            return new Response('SAML connection is not fully configured.', 422);
-        }
-
         try {
+            // Parsing the config asserts every required field — including the SSO URL
+            // used below — so the separate pre-check this replaces is now redundant.
+            $config = $this->connections->samlConfig($model);
             $authn = new AuthnRequest(SamlSettings::for($config));
         } catch (Throwable) {
             return new Response('SAML connection is not fully configured.', 422);
@@ -73,8 +69,8 @@ class SamlLoginController
             $params['RelayState'] = $relayState;
         }
 
-        $separator = str_contains($ssoUrl, '?') ? '&' : '?';
+        $separator = str_contains($config->idpSsoUrl, '?') ? '&' : '?';
 
-        return new RedirectResponse($ssoUrl.$separator.http_build_query($params));
+        return new RedirectResponse($config->idpSsoUrl.$separator.http_build_query($params));
     }
 }

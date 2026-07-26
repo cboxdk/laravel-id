@@ -7,6 +7,7 @@ namespace Cbox\Id\Directory\Connectors;
 use Cbox\Id\Directory\Contracts\DirectoryConnector;
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Directory\Support\JsonObjectList;
 use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Firebase\JWT\JWT;
@@ -57,8 +58,7 @@ class GoogleWorkspaceConnector implements DirectoryConnector
                 throw DirectoryConnectionFailed::make('Google Workspace', 'Directory users request failed ('.$response->status().').');
             }
 
-            /** @var array<int, array<string, mixed>> $users */
-            $users = $response->json('users', []);
+            $users = JsonObjectList::from($response->json('users'));
 
             foreach ($users as $user) {
                 $scim = $this->toScimUser($user);
@@ -93,8 +93,7 @@ class GoogleWorkspaceConnector implements DirectoryConnector
                 throw DirectoryConnectionFailed::make('Google Workspace', 'Directory groups request failed ('.$response->status().').');
             }
 
-            /** @var array<int, array<string, mixed>> $groups */
-            $groups = $response->json('groups', []);
+            $groups = JsonObjectList::from($response->json('groups'));
 
             foreach ($groups as $group) {
                 $id = $group['id'] ?? null;
@@ -129,8 +128,7 @@ class GoogleWorkspaceConnector implements DirectoryConnector
                 break;
             }
 
-            /** @var array<int, array<string, mixed>> $members */
-            $members = $response->json('members', []);
+            $members = JsonObjectList::from($response->json('members'));
 
             foreach ($members as $member) {
                 if (($member['type'] ?? null) === 'USER' && is_string($member['id'] ?? null)) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\Kernel\Usage\Contracts\UsageMeter;
 use Cbox\Id\Kernel\Usage\UsageReconciler;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -17,9 +18,9 @@ it('detects seat drift, corrects the meter, and emits + audits a reconciliation'
     // Ground truth: 3 active members. Their member_added events sit unrelayed on the
     // outbox, so the meter reads 0 — a drift of +3, as if those events were lost.
     $memberships = app(Memberships::class);
-    $memberships->add($org->id, 'u1', 'member');
-    $memberships->add($org->id, 'u2', 'member');
-    $memberships->add($org->id, 'u3', 'member');
+    $memberships->add($org->id, 'u1', MembershipRole::Member);
+    $memberships->add($org->id, 'u2', MembershipRole::Member);
+    $memberships->add($org->id, 'u3', MembershipRole::Member);
 
     $meter = app(UsageMeter::class);
     expect($meter->total('auth.member_added', $org->id))->toBe(0);
@@ -41,7 +42,7 @@ it('corrects an over-count by metering the missing departures', function (): voi
     $this->fakeEvents();
     $this->fakeAudit();
 
-    app(Memberships::class)->add($org->id, 'u1', 'member');   // ground truth: 1 active member
+    app(Memberships::class)->add($org->id, 'u1', MembershipRole::Member);   // ground truth: 1 active member
 
     // The meter over-counts: 3 joins recorded but only 1 departure — net 2 vs truth 1.
     $meter = app(UsageMeter::class);
@@ -60,7 +61,7 @@ it('is a no-op when the meter already matches ground truth', function (): void {
     $org = $this->makeOrganization();
     $events = $this->fakeEvents();
 
-    app(Memberships::class)->add($org->id, 'u1', 'member');
+    app(Memberships::class)->add($org->id, 'u1', MembershipRole::Member);
     app(UsageMeter::class)->record('auth.member_added', 1, $org->id);
 
     $result = app(UsageReconciler::class)->reconcileMembership($org->id);

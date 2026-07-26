@@ -6,6 +6,7 @@ namespace Cbox\Id\Identity\ValueObjects;
 
 use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\UserImport;
+use Cbox\Id\Organization\Enums\MembershipRole;
 
 /**
  * Knobs for a bulk {@see UserImport} run. The defaults
@@ -30,15 +31,18 @@ readonly class ImportOptions
      *                                          never import an account that could
      *                                          never log in. Turn off only when a
      *                                          host verifier will be added later.
-     * @param  string  $defaultRole  the org membership role for rows that carry no
-     *                               explicit role
+     * @param  MembershipRole  $defaultRole  the org membership role for rows that carry
+     *                                       no explicit role. Typed, not a string: this
+     *                                       is durable, host-authored configuration, and
+     *                                       a typo here would have silently decided the
+     *                                       authorization level of every imported user.
      * @param  int  $chunkSize  rows per database transaction (batching)
      */
     public function __construct(
         public bool $upsert = false,
         public bool $markEmailVerified = true,
         public bool $rejectUnverifiableHashes = true,
-        public string $defaultRole = 'member',
+        public MembershipRole $defaultRole = MembershipRole::Member,
         public int $chunkSize = 500,
     ) {}
 }

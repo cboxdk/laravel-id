@@ -13,7 +13,128 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
-## Unreleased (from 0.56.x)
+## 0.58.0
+
+### Do this BEFORE you deploy
+
+1. **Update every call to `Memberships::add()`, `Memberships::changeRole()` and
+   `Invitations::invite()`.** The `$role` parameter is now a `MembershipRole` enum, not a
+   string. This breaks at compile/type level, so it will not slip past you silently — but
+   it does break every host call site.
+2. **If you implement `Federation\Contracts\Connections` yourself, add two methods.**
+   `samlConfig()` and `oidcConfig()`. Nothing else about the interface changed.
+3. **If you call `SamlSettings` directly, pass a `SamlConnectionConfig`.** It no longer
+   takes an array, and `SamlSettings::slsUrl()` moved onto the value object.
+
+Each is expanded below.
+
+---
+
+### Membership roles are an enum on the contract, not a string
+
+**What changed.**
+
+```diff
+-public function add(string $organizationId, string $userId, string $role, ?string $invitedBy = null): Membership;
++public function add(string $organizationId, string $userId, MembershipRole $role, ?string $invitedBy = null): Membership;
+
+-public function changeRole(string $organizationId, string $userId, string $role): Membership;
++public function changeRole(string $organizationId, string $userId, MembershipRole $role): Membership;
+
+-public function invite(string $organizationId, string $email, string $role, ?string $invitedBy = null): PendingInvitation;
++public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null): PendingInvitation;
+```
+
+`ImportOptions::$defaultRole` changes with them: `string $defaultRole = 'member'` becomes
+`MembershipRole $defaultRole = MembershipRole::Member`.
+
+**Why.** The role is authorization data — the last-owner guard and the console's
+isOwner/isAdmin checks turn on it. The service already parsed it with
+`MembershipRole::from()` internally, so a typo'd role was an uncaught `ValueError` (a 500)
+deep inside a transaction rather than a validation failure, and static analysis could not
+see it at all. The enum's own docblock states the goal the string signature defeated: an
+invalid role should be unrepresentable.
+
+It also fixes a quieter divergence: the audit payload recorded the caller's RAW string
+while the row persisted the parsed enum, so a case-variant input made the audit trail
+disagree with the stored role. Both now record the same enum-backed value.
+
+**What to do.** Pass the enum:
+
+```diff
+-app(Memberships::class)->add($org->id, $user->id, 'admin');
++app(Memberships::class)->add($org->id, $user->id, MembershipRole::Admin);
+```
+
+Parse untrusted input (an HTTP field, a CSV cell) at the edge, where a bad value is a
+validation failure you can report:
+
+```php
+$role = MembershipRole::tryFrom($request->string('role')->toString());
+
+abort_if($role === null, 422, 'Unknown role.');
+```
+
+`tryFrom()` is case-sensitive and returns `null` — it never guesses.
+
+**Related, non-breaking:** `Invitation::$role` is now cast to `MembershipRole` (the column
+is unchanged; no migration). `cbox-id:users:import` validates `--role` up front and fails
+with the accepted list instead of erroring mid-run, and an unrecognized role in an import
+row is now a per-row `ImportError` naming the accepted roles rather than a raw
+`ValueError` message.
+
+---
+
+### Federation connection configs are parsed value objects
+
+**What changed.** `Federation\Contracts\Connections` gains two methods:
+
+```php
+public function samlConfig(Connection $connection): SamlConnectionConfig;
+public function oidcConfig(Connection $connection): OidcConnectionConfig;
+```
+
+`config(): array` is unchanged and still there — it is the unseal half of the JSON
+persistence boundary — but it is no longer how the config should be READ. `create()` is
+also unchanged: it still takes an array, because a DRAFT connection is deliberately
+allowed to be incomplete.
+
+`SamlSettings::for()` and `SamlSettings::toArray()` now take a `SamlConnectionConfig`
+instead of an array, and `SamlSettings::slsUrl(array $config)` is gone — it is
+`$config->slsUrl()` on the value object.
+
+**Why.** The config is durable, admin-authored configuration that four subsystems read
+(assertion validation, SP metadata, SP-initiated login, Single Logout). As an
+`array<string, mixed>` each of them re-read the same string keys and re-validated the
+same shape across roughly two dozen sites, so adding one field — `jwks_uri` was the
+motivating case — meant finding every reader.
+
+**Behaviour note.** Required fields are asserted once, when the config is read, and the
+error names the missing key exactly as before. One case tightened: reading a connection
+as the wrong protocol (`oidcConfig()` on a SAML connection) now raises a message that
+says so, instead of a confusing "missing [idp_entity_id]".
+
+**What to do.**
+
+```diff
+-$config = $connections->config($connection);
+-$settings = SamlSettings::toArray($config);
+-$slo = SamlSettings::slsUrl($config);
++$config = $connections->samlConfig($connection);
++$settings = SamlSettings::toArray($config);
++$slo = $config->slsUrl();
+```
+
+**Related, non-breaking:** two Federation collaborators the HTTP layer drives are now
+published as contracts and bound as singletons, matching every other collaborator in
+the module — `OidcRelyingParty` (implemented by `OidcClient`) and `SamlSpSingleLogout`
+(implemented by `Saml\SamlLogout`). The concrete classes still exist and still work; the
+contracts are simply what you should type-hint and what you can rebind. Note the
+SP-role name: `SamlIdp\Contracts\SamlSingleLogout` is the separate IdP-role interface.
+
+---
+
+## 0.57.0
 
 ### Do this BEFORE you deploy
 

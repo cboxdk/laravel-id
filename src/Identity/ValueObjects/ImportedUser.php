@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity\ValueObjects;
 
 use Cbox\Id\Identity\Contracts\HashVerifier;
+use Cbox\Id\Organization\Enums\MembershipRole;
 
 /**
  * One user to import from another provider (a hosted IdP, a legacy app, a CSV export).
@@ -26,6 +27,14 @@ readonly class ImportedUser
     /**
      * @param  array<string, mixed>  $attributes  provider-specific extras, carried
      *                                            through untouched for the host
+     * @param  string|null  $role  the source row's membership role AS WRITTEN. This is
+     *                             the one field still carried as a string, because this
+     *                             object IS the wire row (a CSV cell, a provider export
+     *                             entry): an unrecognized value has to survive as far as
+     *                             the importer so it can be reported as a per-row
+     *                             {@see ImportError}, not blow up the whole run. The
+     *                             importer parses it into a {@see MembershipRole}
+     *                             before anything is written.
      */
     public function __construct(
         public string $email,

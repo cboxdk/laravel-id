@@ -39,10 +39,11 @@ scoped to it automatically.
 ```php
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 
 $user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3cret');
 
-app(Memberships::class)->add($org->id, $user->id, role: 'admin');
+app(Memberships::class)->add($org->id, $user->id, role: MembershipRole::Admin);
 ```
 
 ## 3. Grant a role and check access

@@ -30,7 +30,7 @@ class SamlMetadataController
         }
 
         try {
-            $settings = SamlSettings::for($this->connections->config($model));
+            $settings = SamlSettings::for($this->connections->samlConfig($model));
             $errors = $settings->validateMetadata($xml = $settings->getSPMetadata());
         } catch (Throwable) {
             return new Response('SAML connection is not fully configured.', 422);

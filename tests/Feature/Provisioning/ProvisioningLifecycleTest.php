@@ -6,6 +6,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Provisioning\Enums\DeprovisionPolicy;
 use Cbox\Id\Provisioning\Enums\ResourceState;
 use Cbox\Id\Provisioning\Models\ProvisionedResource;
@@ -114,7 +115,7 @@ it('de-provisions a removed member by DELETE when the policy is delete', functio
     )->connection;
 
     $user = $this->makeUser('dan@example.com', 'Dan');
-    app(Memberships::class)->add($organization->id, $user->id, 'member');
+    app(Memberships::class)->add($organization->id, $user->id, MembershipRole::Member);
     $this->relayEvents();
     $this->drainProvisioning($connection->id);
     $remoteId = ProvisionedResource::query()->where('user_id', $user->id)->value('remote_id');
@@ -143,8 +144,8 @@ it('does NOT deprovision a member removed from one org while still in another or
     )->connection;
 
     $user = $this->makeUser('eve@example.com', 'Eve');
-    app(Memberships::class)->add($orgA->id, $user->id, 'member');
-    app(Memberships::class)->add($orgB->id, $user->id, 'member');
+    app(Memberships::class)->add($orgA->id, $user->id, MembershipRole::Member);
+    app(Memberships::class)->add($orgB->id, $user->id, MembershipRole::Member);
     $this->relayEvents();
     $this->drainProvisioning($connection->id);
     expect(ProvisionedResource::query()->where('user_id', $user->id)->value('remote_id'))->not->toBeNull();
@@ -170,7 +171,7 @@ it('does NOT deprovision from an environment-wide connection on an org membershi
     )->connection;
 
     $user = $this->makeUser('frank@example.com', 'Frank');
-    app(Memberships::class)->add($org->id, $user->id, 'member');
+    app(Memberships::class)->add($org->id, $user->id, MembershipRole::Member);
     $this->relayEvents();
     $this->drainProvisioning($connection->id);
     expect(ProvisionedResource::query()->where('user_id', $user->id)->value('remote_id'))->not->toBeNull();

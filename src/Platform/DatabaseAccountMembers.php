@@ -152,7 +152,7 @@ class DatabaseAccountMembers implements AccountMembers
                 // is the single authority for account capabilities, and mirroring it here
                 // would create a second truth that drifts (and a last-owner deadlock the
                 // moment ownership is transferred).
-                $this->memberships->add($organizationId, $subjectId, MembershipRole::Member->value);
+                $this->memberships->add($organizationId, $subjectId, MembershipRole::Member);
             }
 
             return $subjectId;

@@ -22,14 +22,14 @@ it('resolves no access for a stranger (deny-by-default)', function (): void {
 
 it('resolves the membership role as the org-level effective role', function (): void {
     $org = $this->makeOrganization();
-    app(Memberships::class)->add($org->id, 'user_1', 'developer');
+    app(Memberships::class)->add($org->id, 'user_1', MembershipRole::Developer);
 
     expect($this->effectiveRole($org->id, 'user_1'))->toBe(MembershipRole::Developer);
 });
 
 it('a direct resource grant raises the effective role above the membership', function (): void {
     $org = $this->makeOrganization();
-    app(Memberships::class)->add($org->id, 'user_1', 'viewer');
+    app(Memberships::class)->add($org->id, 'user_1', MembershipRole::Viewer);
     $project = ResourceRef::of('project', 'p1');
 
     $this->grantAccess($org->id, GrantSubject::user('user_1'), MembershipRole::Admin, $project);
@@ -41,7 +41,7 @@ it('a direct resource grant raises the effective role above the membership', fun
 
 it('a grant never lowers the effective role (highest wins)', function (): void {
     $org = $this->makeOrganization();
-    app(Memberships::class)->add($org->id, 'user_1', 'admin');
+    app(Memberships::class)->add($org->id, 'user_1', MembershipRole::Admin);
     $project = ResourceRef::of('project', 'p1');
 
     $this->grantAccess($org->id, GrantSubject::user('user_1'), MembershipRole::Viewer, $project);
@@ -51,7 +51,7 @@ it('a grant never lowers the effective role (highest wins)', function (): void {
 
 it('resolves group-inherited grants and picks the highest across sources', function (): void {
     $org = $this->makeOrganization();
-    app(Memberships::class)->add($org->id, 'user_1', 'viewer');
+    app(Memberships::class)->add($org->id, 'user_1', MembershipRole::Viewer);
     $project = ResourceRef::of('project', 'p1');
     $service = ResourceRef::of('service', 's1');
 
@@ -67,7 +67,7 @@ it('resolves group-inherited grants and picks the highest across sources', funct
 it('a suspended membership confers no access', function (): void {
     $org = $this->makeOrganization();
     $memberships = app(Memberships::class);
-    $membership = $memberships->add($org->id, 'user_1', 'admin');
+    $membership = $memberships->add($org->id, 'user_1', MembershipRole::Admin);
 
     $membership->forceFill(['status' => 'suspended'])->save();
 

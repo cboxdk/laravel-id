@@ -4,24 +4,22 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation\Saml;
 
-use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Federation\ValueObjects\SamlConnectionConfig;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\ValueObjects\SigningMaterial;
 use OneLogin\Saml2\Settings;
 use Throwable;
 
 /**
- * Builds the onelogin/php-saml {@see Settings} for a connection from its sealed
+ * Builds the onelogin/php-saml {@see Settings} for a connection from its parsed
  * config — the single place the SP<->IdP relationship is described. Shared by the
  * assertion validator (ACS), the SP metadata endpoint, SP-initiated login
  * (AuthnRequest) and Single Logout (SLO), so all four agree on entity ids,
  * endpoints and security policy.
  *
- * Required config: `idp_entity_id`, `idp_sso_url`, `idp_x509cert`,
- * `sp_entity_id`, `sp_acs_url`. Optional: `idp_x509cert_extra` (further IdP
- * signing certificates, for a rollover overlap window), `idp_slo_url` (the IdP's
- * SingleLogoutService) and `sp_sls_url` (defaults to the ACS URL with a trailing
- * `/acs` rewritten to `/slo`).
+ * The config arrives as a {@see SamlConnectionConfig}: field presence and shape are
+ * settled by its `fromArray()`, so this class only maps typed fields onto php-saml's
+ * array schema (a third-party API boundary) and decides security policy.
  *
  * The SP half carries KEY MATERIAL — the same platform signing key the IdP role
  * publishes. Without it php-saml silently degrades: `logoutResponseSigned`
@@ -32,40 +30,34 @@ use Throwable;
  */
 class SamlSettings
 {
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    public static function for(array $config): Settings
+    public static function for(SamlConnectionConfig $config): Settings
     {
         return new Settings(self::toArray($config), true);
     }
 
     /**
-     * @param  array<string, mixed>  $config
      * @param  bool  $requireSignedMessages  enforce a signature on the whole
      *                                       inbound message (used for SLO, where the message — not an assertion — is
      *                                       the security boundary, so an unsigned LogoutRequest must be rejected).
      * @return array<string, mixed>
      */
-    public static function toArray(array $config, bool $requireSignedMessages = false): array
+    public static function toArray(SamlConnectionConfig $config, bool $requireSignedMessages = false): array
     {
-        $acs = self::require($config, 'sp_acs_url');
-
         $sp = [
-            'entityId' => self::require($config, 'sp_entity_id'),
-            'assertionConsumerService' => ['url' => $acs],
+            'entityId' => $config->spEntityId,
+            'assertionConsumerService' => ['url' => $config->spAcsUrl],
         ];
 
-        $sls = self::optional($config, 'sp_sls_url') ?? self::deriveSlsUrl($acs);
+        $sls = $config->slsUrl();
         if ($sls !== null) {
             $sp['singleLogoutService'] = ['url' => $sls];
         }
 
-        $certificates = self::idpSigningCertificates($config);
+        $certificates = $config->signingCertificates();
 
         $idp = [
-            'entityId' => self::require($config, 'idp_entity_id'),
-            'singleSignOnService' => ['url' => self::require($config, 'idp_sso_url')],
+            'entityId' => $config->idpEntityId,
+            'singleSignOnService' => ['url' => $config->idpSsoUrl],
             'x509cert' => $certificates[0],
         ];
 
@@ -77,9 +69,8 @@ class SamlSettings
             $idp['x509certMulti'] = ['signing' => $certificates];
         }
 
-        $idpSlo = self::optional($config, 'idp_slo_url');
-        if ($idpSlo !== null) {
-            $idp['singleLogoutService'] = ['url' => $idpSlo];
+        if ($config->idpSloUrl !== null) {
+            $idp['singleLogoutService'] = ['url' => $config->idpSloUrl];
         }
 
         $security = [
@@ -140,84 +131,5 @@ class SamlSettings
         } catch (Throwable) {
             return null;
         }
-    }
-
-    /**
-     * Every IdP signing certificate on the connection: the primary
-     * `idp_x509cert` followed by any `idp_x509cert_extra`, de-duplicated.
-     *
-     * @param  array<string, mixed>  $config
-     * @return non-empty-list<string>
-     */
-    private static function idpSigningCertificates(array $config): array
-    {
-        $certificates = [self::require($config, 'idp_x509cert')];
-
-        $extra = $config['idp_x509cert_extra'] ?? null;
-
-        if (is_array($extra)) {
-            foreach ($extra as $certificate) {
-                if (is_string($certificate) && $certificate !== '' && ! in_array($certificate, $certificates, true)) {
-                    $certificates[] = $certificate;
-                }
-            }
-        }
-
-        return $certificates;
-    }
-
-    /**
-     * The SP SingleLogoutService URL for a connection (typed), or null if neither
-     * configured nor derivable.
-     *
-     * @param  array<string, mixed>  $config
-     */
-    public static function slsUrl(array $config): ?string
-    {
-        $explicit = self::optional($config, 'sp_sls_url');
-        if ($explicit !== null) {
-            return $explicit;
-        }
-
-        $acs = self::optional($config, 'sp_acs_url');
-
-        return $acs !== null ? self::deriveSlsUrl($acs) : null;
-    }
-
-    /**
-     * The SP SingleLogoutService URL, derived from the ACS URL so the route pair
-     * `/sso/saml/{c}/acs` and `/sso/saml/{c}/slo` stay in lockstep.
-     */
-    private static function deriveSlsUrl(string $acsUrl): ?string
-    {
-        if (str_ends_with($acsUrl, '/acs')) {
-            return substr($acsUrl, 0, -4).'/slo';
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private static function require(array $config, string $key): string
-    {
-        $value = $config[$key] ?? null;
-
-        if (! is_string($value) || $value === '') {
-            throw InvalidAssertion::make("connection config missing [{$key}]");
-        }
-
-        return $value;
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private static function optional(array $config, string $key): ?string
-    {
-        $value = $config[$key] ?? null;
-
-        return is_string($value) && $value !== '' ? $value : null;
     }
 }

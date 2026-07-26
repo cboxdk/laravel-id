@@ -12,6 +12,7 @@ use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Organization\Contracts\Invitations;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\InvitationStatus;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Exceptions\InvalidInvitation;
 use Cbox\Id\Organization\Models\Invitation;
 use Cbox\Id\Organization\Models\Membership;
@@ -29,7 +30,7 @@ class InvitationService implements Invitations
         private readonly AuditLog $audit,
     ) {}
 
-    public function invite(string $organizationId, string $email, string $role, ?string $invitedBy = null): PendingInvitation
+    public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null): PendingInvitation
     {
         $token = 'inv_'.bin2hex(random_bytes(32));
 
@@ -52,7 +53,7 @@ class InvitationService implements Invitations
         ]);
         $invitation->save();
 
-        $this->events->emit(new DomainEvent('organization.invitation_created', ['email' => $email, 'role' => $role], $organizationId));
+        $this->events->emit(new DomainEvent('organization.invitation_created', ['email' => $email, 'role' => $role->value], $organizationId));
         $this->audit->record(new AuditEvent(
             action: 'organization.invitation_created',
             actorType: ActorType::User,
@@ -60,7 +61,7 @@ class InvitationService implements Invitations
             organizationId: $organizationId,
             targetType: 'email',
             targetId: $email,
-            context: ['role' => $role],
+            context: ['role' => $role->value],
         ));
 
         return new PendingInvitation($invitation, $token);

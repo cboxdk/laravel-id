@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Enums\ConnectionType;
-use Cbox\Id\Federation\OidcClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,7 +20,7 @@ class OidcRedirectController
 {
     public function __construct(
         private readonly Connections $connections,
-        private readonly OidcClient $client,
+        private readonly OidcRelyingParty $client,
     ) {}
 
     public function __invoke(Request $request, string $connection): RedirectResponse|JsonResponse

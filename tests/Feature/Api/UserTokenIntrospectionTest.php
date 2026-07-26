@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Contracts\UserApiTokens;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Enums\OrganizationType;
 use Cbox\Id\Organization\Enums\TokenScope;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
@@ -26,7 +27,7 @@ function introspectionFixture(TokenScope $scope = TokenScope::Write): array
         type: OrganizationType::Customer,
     ));
 
-    app(Memberships::class)->add($org->id, 'user_rp', 'admin');
+    app(Memberships::class)->add($org->id, 'user_rp', MembershipRole::Admin);
     $token = app(UserApiTokens::class)->issue($org->id, 'user_rp', 'RP token', $scope, ['services']);
 
     $key = app(EnvironmentApiKeys::class)->issue('env_test', 'cortex-rp', EnvironmentApiScope::all());

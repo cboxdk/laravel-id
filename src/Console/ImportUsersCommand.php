@@ -9,6 +9,7 @@ use Cbox\Id\Identity\ValueObjects\ImportedUser;
 use Cbox\Id\Identity\ValueObjects\ImportOptions;
 use Cbox\Id\Identity\ValueObjects\ImportResult;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Organization\Models\Organization;
 use Generator;
@@ -75,9 +76,22 @@ class ImportUsersCommand extends Command
             return self::FAILURE;
         }
 
+        // Parse --role HERE, at the CLI edge, where a bad value is a usage error the
+        // operator can fix — not a ValueError surfacing mid-import once rows are already
+        // written. Same treatment as --format above.
+        $roleOption = $this->stringOption('role');
+        $defaultRole = $roleOption === null ? MembershipRole::Member : MembershipRole::tryFrom($roleOption);
+
+        if ($defaultRole === null) {
+            $accepted = implode(', ', array_column(MembershipRole::cases(), 'value'));
+            $this->error("Unknown --role [{$roleOption}] — use one of: {$accepted}.");
+
+            return self::FAILURE;
+        }
+
         $options = new ImportOptions(
             upsert: (bool) $this->option('upsert'),
-            defaultRole: $this->stringOption('role') ?? 'member',
+            defaultRole: $defaultRole,
         );
 
         $doImport = fn (): ImportResult => $import->import($orgId, $this->rows($file, $format), $options);

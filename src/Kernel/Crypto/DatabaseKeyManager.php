@@ -11,6 +11,7 @@ use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Cbox\Id\Kernel\Crypto\ValueObjects\GeneratedKeyPair;
 use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Illuminate\Support\Facades\Cache;
@@ -110,14 +111,14 @@ class DatabaseKeyManager implements KeyManager
 
     private function generate(SigningAlg $alg): SigningKey
     {
-        [$publicPem, $privatePem] = $this->generateKeyPair($alg);
+        $pair = $this->generateKeyPair($alg);
         $kid = (string) Str::ulid();
 
         $key = SigningKey::query()->create([
             'kid' => $kid,
             'alg' => $alg,
-            'public_key' => $publicPem,
-            'private_key_encrypted' => $this->secretBox->seal($privatePem, 'cbox-id:signing-key:'.$kid),
+            'public_key' => $pair->publicKey,
+            'private_key_encrypted' => $this->secretBox->seal($pair->privateKey, 'cbox-id:signing-key:'.$kid),
             'status' => KeyStatus::Active,
             'activated_at' => now(),
         ]);
@@ -159,21 +160,17 @@ class DatabaseKeyManager implements KeyManager
         return app(EnvironmentContext::class)->current()?->environmentKey() ?? 'global';
     }
 
-    /**
-     * @return array{0: string, 1: string} [public, private] — PEM for RSA/EC,
-     *                                     base64 raw sodium keys for Ed25519
-     */
-    private function generateKeyPair(SigningAlg $alg): array
+    private function generateKeyPair(SigningAlg $alg): GeneratedKeyPair
     {
         // Ed25519 isn't an OpenSSL keygen type; use libsodium. firebase/php-jwt
         // signs/verifies EdDSA with base64-encoded raw sodium keys, so store those.
         if ($alg === SigningAlg::EdDSA) {
             $pair = sodium_crypto_sign_keypair();
 
-            return [
-                base64_encode(sodium_crypto_sign_publickey($pair)),
-                base64_encode(sodium_crypto_sign_secretkey($pair)),
-            ];
+            return new GeneratedKeyPair(
+                publicKey: base64_encode(sodium_crypto_sign_publickey($pair)),
+                privateKey: base64_encode(sodium_crypto_sign_secretkey($pair)),
+            );
         }
 
         // Only RS256/ES256 reach here (EdDSA returned above).
@@ -200,7 +197,7 @@ class DatabaseKeyManager implements KeyManager
             throw CryptoConfigurationException::keyGenerationFailed('could not export public key');
         }
 
-        return [$details['key'], $privatePem];
+        return new GeneratedKeyPair(publicKey: $details['key'], privateKey: $privatePem);
     }
 
     /**

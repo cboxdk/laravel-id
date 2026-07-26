@@ -23,6 +23,7 @@ use Cbox\Id\Identity\Contracts\UserImport;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Hashing\HashVerifierRegistry;
 use Cbox\Id\Identity\Hashing\NativePasswordVerifier;
+use Cbox\Id\Identity\ValueObjects\PasswordHashTarget;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
@@ -40,9 +41,9 @@ class IdentityServiceProvider extends ServiceProvider
         // own HashVerifier classes in `cbox-id.hashing.verifiers`. An unknown
         // format is refused, never silently trusted.
         $this->app->singleton(HashVerifier::class, function (Application $app): HashVerifier {
-            [$algorithm, $options] = $this->platformHashTarget();
+            $target = $this->platformHashTarget();
 
-            $verifiers = [new NativePasswordVerifier($algorithm, $options)];
+            $verifiers = [new NativePasswordVerifier($target->algorithm, $target->options)];
 
             $configured = config('cbox-id.hashing.verifiers');
             if (is_array($configured)) {
@@ -126,10 +127,8 @@ class IdentityServiceProvider extends ServiceProvider
      * `needsRehash` decision (what to upgrade TO) always agrees with what
      * {@see Hasher::make()} produces. Defaults mirror
      * Laravel's own hasher defaults.
-     *
-     * @return array{0: string, 1: array<string, int>}
      */
-    private function platformHashTarget(): array
+    private function platformHashTarget(): PasswordHashTarget
     {
         $driver = config('hashing.driver');
         $driver = is_string($driver) && $driver !== '' ? $driver : 'bcrypt';
@@ -141,9 +140,9 @@ class IdentityServiceProvider extends ServiceProvider
         ];
 
         return match ($driver) {
-            'argon' => [PASSWORD_ARGON2I, $argon],
-            'argon2id' => [PASSWORD_ARGON2ID, $argon],
-            default => [PASSWORD_BCRYPT, ['cost' => $this->intConfig('hashing.bcrypt.rounds', 12)]],
+            'argon' => new PasswordHashTarget(PASSWORD_ARGON2I, $argon),
+            'argon2id' => new PasswordHashTarget(PASSWORD_ARGON2ID, $argon),
+            default => new PasswordHashTarget(PASSWORD_BCRYPT, ['cost' => $this->intConfig('hashing.bcrypt.rounds', 12)]),
         };
     }
 

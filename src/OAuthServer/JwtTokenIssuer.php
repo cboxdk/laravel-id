@@ -16,6 +16,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Support\Str;
@@ -67,15 +68,13 @@ class JwtTokenIssuer implements TokenIssuer
 
     /**
      * The org's Claims-mode entitlements to embed in a token, plus the highest
-     * version among them (a staleness signal). Returns `[[], 0]` when disabled or
-     * when the org has no Claims-mode entitlements.
-     *
-     * @return array{0: array<string, array<string, mixed>>, 1: int}
+     * version among them (a staleness signal). Empty when disabled or when the org
+     * has no Claims-mode entitlements.
      */
-    private function claimsEntitlements(string $organizationId): array
+    private function claimsEntitlements(string $organizationId): EmbeddedEntitlements
     {
         if (config('cbox-id.oauth.embed_entitlements', true) !== true) {
-            return [[], 0];
+            return EmbeddedEntitlements::none();
         }
 
         $embedded = [];
@@ -90,7 +89,7 @@ class JwtTokenIssuer implements TokenIssuer
             $version = max($version, $value->version);
         }
 
-        return [$embedded, $version];
+        return new EmbeddedEntitlements($embedded, $version);
     }
 
     /**
@@ -177,10 +176,10 @@ class JwtTokenIssuer implements TokenIssuer
         // Only Claims-mode keys are included; instant-critical ones stay DecisionApi
         // (live via /oauth/decisions). `ent_ver` lets a consumer detect staleness.
         if ($organizationId !== null) {
-            [$entitlements, $version] = $this->claimsEntitlements($organizationId);
-            if ($entitlements !== []) {
-                $claims['ent'] = $entitlements;
-                $claims['ent_ver'] = $version;
+            $entitlements = $this->claimsEntitlements($organizationId);
+            if (! $entitlements->isEmpty()) {
+                $claims['ent'] = $entitlements->values;
+                $claims['ent_ver'] = $entitlements->version;
             }
         }
 

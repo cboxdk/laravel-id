@@ -6,6 +6,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Saml\SamlLogout;
 use Cbox\Id\Federation\Saml\SamlSettings;
+use Cbox\Id\Federation\ValueObjects\SamlConnectionConfig;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\Tests\Support\SamlIdp;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,15 +19,15 @@ uses(RefreshDatabase::class);
  * metadata without a KeyDescriptor, and made an EncryptedAssertion (what Salesforce
  * and Shibboleth send by default) impossible to read.
  */
-function samlConnectionConfig(): array
+function samlConnectionConfig(): SamlConnectionConfig
 {
-    return [
+    return SamlConnectionConfig::fromArray([
         'idp_entity_id' => 'https://idp.okta.example/entity',
         'idp_sso_url' => 'https://idp.okta.example/sso',
         'idp_x509cert' => 'CERT-ONE',
         'sp_entity_id' => 'https://sp.example.test/metadata',
         'sp_acs_url' => 'https://sp.example.test/saml/acs',
-    ];
+    ]);
 }
 
 it('gives the SP role the platform key material, so it can sign and decrypt', function (): void {
@@ -62,10 +63,14 @@ it('closes the Destination-extends-our-ACS half of php-saml comparison', functio
 });
 
 it('hands php-saml every IdP signing certificate so a rollover verifies either way', function (): void {
-    $config = samlConnectionConfig();
-    $config['idp_x509cert_extra'] = ['CERT-TWO', 'CERT-ONE'];
-
-    $settings = SamlSettings::toArray($config);
+    $settings = SamlSettings::toArray(new SamlConnectionConfig(
+        idpEntityId: 'https://idp.okta.example/entity',
+        idpSsoUrl: 'https://idp.okta.example/sso',
+        idpCertificate: 'CERT-ONE',
+        spEntityId: 'https://sp.example.test/metadata',
+        spAcsUrl: 'https://sp.example.test/saml/acs',
+        idpExtraCertificates: ['CERT-TWO', 'CERT-ONE'],
+    ));
 
     // De-duplicated, primary first — php-saml tries each in turn.
     expect($settings['idp']['x509certMulti']['signing'])->toBe(['CERT-ONE', 'CERT-TWO'])

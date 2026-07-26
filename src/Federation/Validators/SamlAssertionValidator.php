@@ -11,6 +11,7 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\ConsumedAssertion;
 use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Cbox\Id\Federation\Saml\SamlSettings;
+use Cbox\Id\Federation\ValueObjects\SamlConnectionConfig;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use DOMDocument;
 use DOMElement;
@@ -33,9 +34,8 @@ use Throwable;
  * This class enforces the RP-side policy on top of it: strict mode, and
  * `wantAssertionsSigned` so an unsigned assertion is rejected.
  *
- * The connection config (sealed at rest) must contain:
- *  - `idp_entity_id`, `idp_sso_url`, `idp_x509cert` — the trusted IdP
- *  - `sp_entity_id`, `sp_acs_url` — this Relying Party's identifiers
+ * The connection config arrives typed, as a
+ * {@see SamlConnectionConfig}.
  *
  * `$rawResponse` is the base64-encoded `SAMLResponse` as received at the ACS.
  */
@@ -106,9 +106,7 @@ class SamlAssertionValidator implements AssertionValidator
             //
             // A solicited response is bound to a request WE issued, so this is the
             // difference between "someone asked for this login" and "anyone can post one".
-            $config = $this->connections->config($connection);
-
-            if (($config['allow_idp_initiated'] ?? false) !== true) {
+            if (! $this->connections->samlConfig($connection)->allowIdpInitiated) {
                 throw InvalidAssertion::make(
                     'unsolicited SAML response refused: this connection does not allow IdP-initiated sign-in'
                 );
@@ -161,7 +159,7 @@ class SamlAssertionValidator implements AssertionValidator
 
     public function validate(Connection $connection, string $rawResponse): FederatedPrincipal
     {
-        $config = $this->connections->config($connection);
+        $config = $this->connections->samlConfig($connection);
 
         // InResponseTo enforcement: a response carrying an InResponseTo must
         // reference an AuthnRequest THIS SP issued for THIS connection, defeating
@@ -180,7 +178,7 @@ class SamlAssertionValidator implements AssertionValidator
             // Pin it to the connection's configured ACS URL instead — the single
             // source of truth for where this SP receives assertions. Both the
             // Response construction and isValid() read $_SERVER, so both run pinned.
-            [$response, $valid] = $this->withAcsUrl($this->require($config, 'sp_acs_url'), static function () use ($settings, $rawResponse, $expectedRequestId): array {
+            [$response, $valid] = $this->withAcsUrl($config->spAcsUrl, static function () use ($settings, $rawResponse, $expectedRequestId): array {
                 $response = new SamlResponse($settings, $rawResponse);
 
                 return [$response, $response->isValid($expectedRequestId)];
@@ -337,20 +335,6 @@ class SamlAssertionValidator implements AssertionValidator
         $node = $nodes->item(0);
 
         return $node instanceof DOMElement ? $node->getAttribute('Algorithm') : '';
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function require(array $config, string $key): string
-    {
-        $value = $config[$key] ?? null;
-
-        if (! is_string($value) || $value === '') {
-            throw InvalidAssertion::make("connection config missing [{$key}]");
-        }
-
-        return $value;
     }
 
     /**

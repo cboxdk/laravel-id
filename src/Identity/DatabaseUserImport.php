@@ -13,6 +13,7 @@ use Cbox\Id\Identity\ValueObjects\ImportOptions;
 use Cbox\Id\Identity\ValueObjects\ImportResult;
 use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -116,8 +117,27 @@ class DatabaseUserImport implements UserImport
             return;
         }
 
+        // Parse the row's role BEFORE any write, alongside the other row validations.
+        // The source row carries whatever the export wrote; an unrecognized value is a
+        // per-row validation failure with a message naming the accepted roles, not a
+        // bare `ValueError` surfacing from deep inside the membership write.
+        $role = $options->defaultRole;
+
+        if ($user->role !== null && trim($user->role) !== '') {
+            $parsed = MembershipRole::tryFrom(trim($user->role));
+
+            if ($parsed === null) {
+                $accepted = implode(', ', array_column(MembershipRole::cases(), 'value'));
+                $errors[] = new ImportError($index, $email, "Unknown role [{$user->role}] — expected one of: {$accepted}.");
+
+                return;
+            }
+
+            $role = $parsed;
+        }
+
         try {
-            DB::transaction(function () use ($user, $email, $organizationId, $options, &$imported, &$updated, &$skipped): void {
+            DB::transaction(function () use ($user, $email, $organizationId, $options, $role, &$imported, &$updated, &$skipped): void {
                 $existing = $this->subjects->findByEmail($email);
 
                 if ($existing !== null) {
@@ -128,14 +148,14 @@ class DatabaseUserImport implements UserImport
                     }
 
                     $this->applyCredential($existing->id, $user);
-                    $this->attach($organizationId, $existing->id, $user, $options);
+                    $this->attach($organizationId, $existing->id, $user, $options, $role);
                     $updated++;
 
                     return;
                 }
 
                 $subject = $this->createSubject($email, $user);
-                $this->attach($organizationId, $subject->id, $user, $options);
+                $this->attach($organizationId, $subject->id, $user, $options, $role);
                 $imported++;
             });
         } catch (Throwable $e) {
@@ -169,9 +189,8 @@ class DatabaseUserImport implements UserImport
         }
     }
 
-    private function attach(string $organizationId, string $subjectId, ImportedUser $user, ImportOptions $options): void
+    private function attach(string $organizationId, string $subjectId, ImportedUser $user, ImportOptions $options, MembershipRole $role): void
     {
-        $role = $user->role !== null && $user->role !== '' ? $user->role : $options->defaultRole;
         $this->memberships->add($organizationId, $subjectId, $role);
 
         if ($options->markEmailVerified && $user->emailVerified) {

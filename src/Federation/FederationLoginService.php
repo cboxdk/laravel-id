@@ -19,6 +19,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -54,7 +55,7 @@ class FederationLoginService implements FederationFlow
                 throw AccountInactive::make($subject->id);
             }
 
-            $this->memberships->add($connection->organization_id, $subject->id, 'member');
+            $this->memberships->add($connection->organization_id, $subject->id, MembershipRole::Member);
 
             $session = $this->sessions->start($subject->id, $connection->organization_id, ['sso']);
 

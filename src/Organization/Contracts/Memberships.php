@@ -4,15 +4,24 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Contracts;
 
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
 interface Memberships
 {
-    public function add(string $organizationId, string $userId, string $role, ?string $invitedBy = null): Membership;
+    /**
+     * The role is a {@see MembershipRole}, never a raw string. This is authorization
+     * data — the last-owner guard and the console's isOwner/isAdmin checks turn on it —
+     * so an invalid role must be unrepresentable at the boundary rather than an
+     * uncaught `ValueError` deep inside a transaction. Parse an untrusted string at
+     * the HTTP edge (`MembershipRole::tryFrom()`), where a bad value is a validation
+     * failure the caller can act on.
+     */
+    public function add(string $organizationId, string $userId, MembershipRole $role, ?string $invitedBy = null): Membership;
 
-    public function changeRole(string $organizationId, string $userId, string $role): Membership;
+    public function changeRole(string $organizationId, string $userId, MembershipRole $role): Membership;
 
     public function remove(string $organizationId, string $userId): void;
 

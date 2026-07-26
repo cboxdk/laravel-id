@@ -7,6 +7,7 @@ namespace Cbox\Id\Organization\Models;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Organization\Enums\InvitationStatus;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -29,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property string $environment_id
  * @property string $organization_id
  * @property string $email
- * @property string $role
+ * @property MembershipRole $role
  * @property string $token_hash
  * @property InvitationStatus $status
  * @property string|null $invited_by
@@ -56,6 +57,10 @@ class Invitation extends Model implements EnvironmentOwned
     protected function casts(): array
     {
         return [
+            // Cast, like the membership it becomes: the invitation carries the
+            // authorization level the accepted member will hold, so it must not
+            // survive as a raw string that only gets parsed on acceptance.
+            'role' => MembershipRole::class,
             'status' => InvitationStatus::class,
             'expires_at' => 'datetime',
             'accepted_at' => 'datetime',

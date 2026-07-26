@@ -6,6 +6,7 @@ use Cbox\Id\Kernel\Tenancy\Exceptions\CrossEnvironmentAccess;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Organization\Contracts\Invitations;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Exceptions\InvalidInvitation;
 use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,7 +16,7 @@ uses(RefreshDatabase::class, InteractsWithTenancy::class);
 it('creates a pending invitation without granting membership', function (): void {
     $org = $this->makeOrganization();
 
-    $pending = app(Invitations::class)->invite($org->id, 'new@corp.com', 'member', invitedBy: 'admin_1');
+    $pending = app(Invitations::class)->invite($org->id, 'new@corp.com', MembershipRole::Member, invitedBy: 'admin_1');
 
     expect($pending->token)->toStartWith('inv_')
         ->and($pending->invitation->isPending())->toBeTrue()
@@ -27,7 +28,7 @@ it('creates a pending invitation without granting membership', function (): void
 it('grants membership only when the invitee accepts', function (): void {
     $org = $this->makeOrganization();
     $invitations = app(Invitations::class);
-    $pending = $invitations->invite($org->id, 'dana@corp.com', 'admin');
+    $pending = $invitations->invite($org->id, 'dana@corp.com', MembershipRole::Admin);
 
     $membership = $invitations->accept($pending->token, 'subject_dana');
 
@@ -39,7 +40,7 @@ it('grants membership only when the invitee accepts', function (): void {
 it('rejects an unknown, reused, or revoked token', function (): void {
     $org = $this->makeOrganization();
     $invitations = app(Invitations::class);
-    $pending = $invitations->invite($org->id, 'x@corp.com', 'member');
+    $pending = $invitations->invite($org->id, 'x@corp.com', MembershipRole::Member);
 
     $invitations->accept($pending->token, 'subject_x'); // first accept consumes it
 
@@ -50,8 +51,8 @@ it('supersedes an earlier pending invite for the same email', function (): void 
     $org = $this->makeOrganization();
     $invitations = app(Invitations::class);
 
-    $first = $invitations->invite($org->id, 'same@corp.com', 'member');
-    $invitations->invite($org->id, 'same@corp.com', 'admin');
+    $first = $invitations->invite($org->id, 'same@corp.com', MembershipRole::Member);
+    $invitations->invite($org->id, 'same@corp.com', MembershipRole::Admin);
 
     expect($invitations->pending($org->id))->toHaveCount(1);
 
@@ -62,7 +63,7 @@ it('supersedes an earlier pending invite for the same email', function (): void 
 it('revokes a pending invitation', function (): void {
     $org = $this->makeOrganization();
     $invitations = app(Invitations::class);
-    $pending = $invitations->invite($org->id, 'gone@corp.com', 'member');
+    $pending = $invitations->invite($org->id, 'gone@corp.com', MembershipRole::Member);
 
     $invitations->revoke($org->id, $pending->invitation->id);
 
@@ -74,7 +75,7 @@ it('refuses to revoke an invitation from another organization (IDOR)', function 
     $orgA = $this->makeOrganization('A');
     $orgB = $this->makeOrganization('B');
     $invitations = app(Invitations::class);
-    $pending = $invitations->invite($orgA->id, 'x@corp.com', 'member');
+    $pending = $invitations->invite($orgA->id, 'x@corp.com', MembershipRole::Member);
 
     $invitations->revoke($orgB->id, $pending->invitation->id); // wrong org
 
@@ -99,7 +100,7 @@ it('refuses an invitation token redeemed in a DIFFERENT environment', function (
     // issued it.
     $this->actingAsEnvironment('env_a');
     $org = $this->makeOrganization('Acme');
-    $pending = app(Invitations::class)->invite($org->id, 'attacker@evil.test', 'member');
+    $pending = app(Invitations::class)->invite($org->id, 'attacker@evil.test', MembershipRole::Member);
 
     // The attacker rewrites the host. Same token, different environment.
     $this->actingAsEnvironment('env_b');
@@ -132,7 +133,7 @@ it('refuses to add a member to an organization from another environment', functi
 
     $this->actingAsEnvironment('env_b');
 
-    expect(fn () => app(Memberships::class)->add($org->id, 'user_1', 'member'))
+    expect(fn () => app(Memberships::class)->add($org->id, 'user_1', MembershipRole::Member))
         ->toThrow(CrossEnvironmentAccess::class);
 
     expect(Membership::query()->count())->toBe(0);

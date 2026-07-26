@@ -18,6 +18,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -77,7 +78,7 @@ class DatabaseDirectorySync implements DirectorySync
 
             if ($user->active) {
                 $this->subjects->reactivate($subject->id);
-                $this->memberships->add($directory->organization_id, $subject->id, 'member');
+                $this->memberships->add($directory->organization_id, $subject->id, MembershipRole::Member);
                 $action = 'directory.user.provisioned';
             } else {
                 // Deactivate the account itself, not just its sessions — otherwise

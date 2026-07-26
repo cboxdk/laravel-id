@@ -13,6 +13,7 @@ use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\DirectoryPage;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Scim\Enums\ScimPatchOp;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -161,7 +162,13 @@ class DatabaseDirectoryGroups implements DirectoryGroups
      */
     private function applyOperation(DirectoryGroup $group, array $operation): void
     {
-        $op = strtolower(is_string($operation['op'] ?? null) ? $operation['op'] : '');
+        // Deny-by-default: only add/remove/replace are defined for SCIM PATCH
+        // (RFC 7644 §3.5.2). An unknown op is a client error, not a silent no-op that
+        // returns 200 with nothing changed. The closed set lives in ONE place — the
+        // enum — so this surface and the User mapper cannot drift apart again.
+        $op = ScimPatchOp::tryParse($operation['op'] ?? null)
+            ?? throw UnsupportedGroupPatch::op(ScimPatchOp::label($operation['op'] ?? null));
+
         $path = is_string($operation['path'] ?? null) ? trim($operation['path']) : '';
         $value = $operation['value'] ?? null;
 
@@ -172,23 +179,16 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         // got a 400 for a rename this server understood perfectly well.
         $canonical = strtolower($path);
 
-        // Deny-by-default: only add/remove/replace are defined for SCIM PATCH
-        // (RFC 7644 §3.5.2). An unknown op is a client error, not a silent no-op that
-        // returns 200 with nothing changed.
-        if (! in_array($op, ['add', 'remove', 'replace'], true)) {
-            throw UnsupportedGroupPatch::op($op);
-        }
-
         // Rename: replace with a displayName in the value (path or pathless).
         $displayName = is_array($value) ? self::attribute($value, 'displayName') : null;
 
-        if ($op === 'replace' && is_string($displayName)) {
+        if ($op === ScimPatchOp::Replace && is_string($displayName)) {
             $group->forceFill(['display_name' => $displayName])->save();
 
             return;
         }
 
-        if ($op === 'replace' && $canonical === 'displayname' && is_string($value)) {
+        if ($op === ScimPatchOp::Replace && $canonical === 'displayname' && is_string($value)) {
             $group->forceFill(['display_name' => $value])->save();
 
             return;
@@ -209,18 +209,17 @@ class DatabaseDirectoryGroups implements DirectoryGroups
 
         // A pathless replace that doesn't carry `members` at all is a resource replace
         // that must not touch membership — never let it fall through to sync([]).
-        if ($op === 'replace' && $canonical === '' && $memberValue === null) {
+        if ($op === ScimPatchOp::Replace && $canonical === '' && $memberValue === null) {
             return;
         }
 
-        // $op is guaranteed to be add/remove/replace (validated above), so the match
-        // is exhaustive without a default arm. `remove` gets the path AS SENT: its
-        // value filter carries a member id, and folding that would look up a
-        // lower-cased ULID that matches nothing.
+        // The enum closes the set, so the match is exhaustive without a default arm.
+        // `remove` gets the path AS SENT: its value filter carries a member id, and
+        // folding that would look up a lower-cased ULID that matches nothing.
         match ($op) {
-            'add' => $group->members()->syncWithoutDetaching($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
-            'replace' => $group->members()->sync($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
-            'remove' => $this->removeMembers($group, $path, $memberValue),
+            ScimPatchOp::Add => $group->members()->syncWithoutDetaching($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
+            ScimPatchOp::Replace => $group->members()->sync($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
+            ScimPatchOp::Remove => $this->removeMembers($group, $path, $memberValue),
         };
     }
 

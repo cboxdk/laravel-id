@@ -13,6 +13,7 @@ use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -80,7 +81,7 @@ it("takes the organization's shorter maximum age when the caller names none", fu
     $policies->setForOrganization($org->id, new AuthPolicy(maxAgeDays: 30));
 
     $id = policySubject();
-    app(Memberships::class)->add($org->id, $id, 'member');
+    app(Memberships::class)->add($org->id, $id, MembershipRole::Member);
 
     $this->travel(31)->days();
 
@@ -143,7 +144,7 @@ it("inherits an organization's MFA mandate when the caller names none", function
     $policies->setForOrganization($org->id, new AuthPolicy(mfa: MfaRequirement::Required));
 
     $id = policySubject();
-    app(Memberships::class)->add($org->id, $id, 'member');
+    app(Memberships::class)->add($org->id, $id, MembershipRole::Member);
 
     expect(app(MfaMandate::class)->requiresEnrolment($id))->toBeTrue();
 });
@@ -220,7 +221,7 @@ it("applies an organization's tighter threshold when the caller names none", fun
     $policies->setForOrganization($org->id, new AuthPolicy(lockoutThreshold: 2));
 
     $id = policySubject();
-    app(Memberships::class)->add($org->id, $id, 'member');
+    app(Memberships::class)->add($org->id, $id, MembershipRole::Member);
 
     $attempts = app(LoginAttempts::class);
     $attempts->recordFailure($id);

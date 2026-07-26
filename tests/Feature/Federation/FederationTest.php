@@ -6,6 +6,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
+use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Exceptions\AccountInactive;
@@ -32,6 +33,58 @@ it('creates a connection with sealed config that round-trips', function (): void
         ->and($connections->config($connection))->toMatchArray([
             'idp_entity_id' => 'http://www.okta.com/exk1',
         ]);
+});
+
+it('parses a connection config into a typed value object, per protocol', function (): void {
+    $org = $this->makeOrganization();
+    $connections = app(Connections::class);
+
+    $saml = $connections->create($org->id, ConnectionType::Saml, 'Okta', [
+        'idp_entity_id' => 'https://idp.example/entity',
+        'idp_sso_url' => 'https://idp.example/sso',
+        'idp_x509cert' => 'CERT-ONE',
+        'idp_x509cert_extra' => ['CERT-TWO', 'CERT-ONE', 42],
+        'sp_entity_id' => 'https://sp.example/metadata',
+        'sp_acs_url' => 'https://sp.example/saml/acs',
+        'allow_idp_initiated' => '1', // truthy-ish, but NOT the boolean true
+    ]);
+
+    $config = $connections->samlConfig($saml);
+
+    expect($config->idpEntityId)->toBe('https://idp.example/entity')
+        // The extras are filtered to strings and de-duplicated against the primary.
+        ->and($config->signingCertificates())->toBe(['CERT-ONE', 'CERT-TWO'])
+        // Derived, not stored: the ACS/SLO route pair stays in lockstep.
+        ->and($config->slsUrl())->toBe('https://sp.example/saml/slo')
+        // Opt-in means opt-in: '1' is not true, so IdP-initiated stays off.
+        ->and($config->allowIdpInitiated)->toBeFalse();
+
+    $oidc = $connections->create($org->id, ConnectionType::Oidc, 'Corp', [
+        'issuer' => 'https://idp.example',
+        'client_id' => 'client-abc',
+        'signing_keys' => ['kid-1' => 'PEM-ONE', 'kid-2' => ''],
+    ]);
+
+    expect($connections->oidcConfig($oidc)->signingKeys)->toBe(['kid-1' => 'PEM-ONE'])
+        ->and($connections->oidcConfig($oidc)->scopeString())->toBe('openid email profile');
+
+    // Reading a connection as the wrong protocol is named, not silently mis-parsed.
+    expect(fn () => $connections->oidcConfig($saml))->toThrow(InvalidAssertion::class)
+        ->and(fn () => $connections->samlConfig($oidc))->toThrow(InvalidAssertion::class);
+});
+
+it('refuses to read an incomplete connection config rather than half-building settings', function (): void {
+    $org = $this->makeOrganization();
+    $connections = app(Connections::class);
+
+    // A DRAFT may be incomplete — create() is the persistence boundary and does not
+    // validate — but reading it for use must fail, and name the missing field.
+    $draft = $connections->create($org->id, ConnectionType::Saml, 'Half-done', [
+        'idp_entity_id' => 'https://idp.example/entity',
+    ]);
+
+    expect(fn () => $connections->samlConfig($draft))
+        ->toThrow(InvalidAssertion::class, 'connection config missing [idp_sso_url]');
 });
 
 it('returns only the active connection for an organization', function (): void {

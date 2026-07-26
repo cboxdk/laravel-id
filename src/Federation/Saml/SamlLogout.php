@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation\Saml;
 
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\SamlSpSingleLogout;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Models\IdentityLink;
@@ -26,7 +27,7 @@ use Throwable;
  * the actual query parameters for the duration of the call, exactly as the ACS
  * validator pins the request URL.
  */
-class SamlLogout
+class SamlLogout implements SamlSpSingleLogout
 {
     public function __construct(
         private readonly Connections $connections,
@@ -40,8 +41,8 @@ class SamlLogout
      */
     public function handle(Connection $connection, array $query): SamlLogoutResult
     {
-        $config = $this->connections->config($connection);
-        $sloUrl = SamlSettings::slsUrl($config);
+        $config = $this->connections->samlConfig($connection);
+        $sloUrl = $config->slsUrl();
 
         if ($sloUrl === null) {
             return SamlLogoutResult::error('This connection has no Single Logout endpoint configured.');

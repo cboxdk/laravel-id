@@ -190,8 +190,30 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
             throw InvalidAssertionResponse::make('client response missing "response"');
         }
 
-        /** @var array<string, mixed> $response */
-        return $response;
+        return self::stringKeyed($response);
+    }
+
+    /**
+     * Re-key a decoded structure to string keys.
+     *
+     * The two callers used to ASSERT `array<string, mixed>` with an inference-override
+     * `@var` after only an `is_array()` check — but `is_array` says nothing about the
+     * keys, and both a JSON array and a CBOR map with integer labels (which is exactly
+     * what COSE uses) decode with integer ones. Converting is honest; asserting made
+     * PHPStan reason about a shape the client never promised.
+     *
+     * @param  array<array-key, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private static function stringKeyed(array $value): array
+    {
+        $keyed = [];
+
+        foreach ($value as $key => $item) {
+            $keyed[(string) $key] = $item;
+        }
+
+        return $keyed;
     }
 
     /**
@@ -227,8 +249,7 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
             throw InvalidAssertionResponse::make("{$label} is not a CBOR map");
         }
 
-        /** @var array<string, mixed> $normalized */
-        return $normalized;
+        return self::stringKeyed($normalized);
     }
 
     /**

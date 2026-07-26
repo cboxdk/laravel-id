@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
+use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
@@ -28,18 +29,15 @@ use Throwable;
  *  - `exp`/`nbf`/`iat` are enforced by the library; `iss` and `aud` are asserted
  *    against the connection's configured issuer and client id here.
  *
- * The connection config (sealed at rest) must contain:
- *  - `issuer`     — the exact expected `iss`
- *  - `client_id`  — must appear in the token's `aud`
- *  - one of:
- *      `jwks_uri`     — the IdP's JWKS endpoint (discovered from its OIDC metadata).
- *                       Preferred: it is fetched through the DNS-pinned SSRF gate and
- *                       cached, and a signing-key rotation (new `kid`) is picked up
- *                       automatically via a single forced refetch on a kid-miss —
- *                       bounded to once/minute/connection so bad tokens can't amplify
- *                       into a fetch flood. Keys are RS256-pinned exactly as below.
- *      `signing_keys` — map of `kid` → PEM public key (JWKS-style, multi-key)
- *      `signing_key`  — a single PEM public key (used when the IdP omits `kid`)
+ * The connection config arrives typed, as an {@see OidcConnectionConfig}. Verification
+ * material is taken in this order:
+ *   1. `jwksUri` — the IdP's JWKS endpoint (discovered from its OIDC metadata).
+ *      Preferred: it is fetched through the DNS-pinned SSRF gate and cached, and a
+ *      signing-key rotation (new `kid`) is picked up automatically via a single forced
+ *      refetch on a kid-miss — bounded to once/minute/connection so bad tokens can't
+ *      amplify into a fetch flood. Keys are RS256-pinned exactly as the static ones.
+ *   2. `signingKeys` — map of `kid` → PEM public key (JWKS-style, multi-key)
+ *   3. `signingKey` — a single PEM public key (used when the IdP omits `kid`)
  */
 class OidcAssertionValidator implements AssertionValidator
 {
@@ -49,15 +47,12 @@ class OidcAssertionValidator implements AssertionValidator
 
     public function validate(Connection $connection, string $rawResponse): FederatedPrincipal
     {
-        $config = $this->connections->config($connection);
-
-        $issuer = $this->requireString($config, 'issuer');
-        $clientId = $this->requireString($config, 'client_id');
+        $config = $this->connections->oidcConfig($connection);
 
         $claims = $this->decode($rawResponse, $config);
 
-        $this->assertIssuer($claims, $issuer);
-        $this->assertAudience($claims, $clientId);
+        $this->assertIssuer($claims, $config->issuer);
+        $this->assertAudience($claims, $config->clientId);
 
         $subject = isset($claims['sub']) && is_string($claims['sub']) ? $claims['sub'] : null;
 
@@ -76,10 +71,9 @@ class OidcAssertionValidator implements AssertionValidator
     }
 
     /**
-     * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
-    private function decode(string $idToken, array $config): array
+    private function decode(string $idToken, OidcConnectionConfig $config): array
     {
         try {
             $decoded = JWT::decode($idToken, $this->keys($config));
@@ -109,18 +103,15 @@ class OidcAssertionValidator implements AssertionValidator
     }
 
     /**
-     * @param  array<string, mixed>  $config
      * @return Key|array<string, Key>
      */
-    private function keys(array $config, bool $forceRefresh = false): Key|array
+    private function keys(OidcConnectionConfig $config, bool $forceRefresh = false): Key|array
     {
         // Prefer the IdP's live JWKS when a jwks_uri is configured (discovered from the
         // OIDC metadata): fetching it means a signing-key rotation is picked up
         // automatically instead of breaking logins until an admin re-pastes PEMs.
-        $jwksUri = $this->jwksUri($config);
-
-        if ($jwksUri !== null) {
-            $jwks = $this->fetchJwks($jwksUri, $forceRefresh);
+        if ($config->jwksUri !== null) {
+            $jwks = $this->fetchJwks($config->jwksUri, $forceRefresh);
 
             if (is_array($jwks)) {
                 try {
@@ -139,41 +130,20 @@ class OidcAssertionValidator implements AssertionValidator
             }
         }
 
-        $keySet = $config['signing_keys'] ?? null;
-
-        if (is_array($keySet) && $keySet !== []) {
+        if ($config->signingKeys !== []) {
             $keys = [];
-            foreach ($keySet as $kid => $pem) {
-                if (is_string($pem) && $pem !== '') {
-                    $keys[(string) $kid] = new Key($pem, self::ALG);
-                }
+            foreach ($config->signingKeys as $kid => $pem) {
+                $keys[$kid] = new Key($pem, self::ALG);
             }
 
-            if ($keys !== []) {
-                return $keys;
-            }
+            return $keys;
         }
 
-        $single = $config['signing_key'] ?? null;
-
-        if (is_string($single) && $single !== '') {
-            return new Key($single, self::ALG);
+        if ($config->signingKey !== null) {
+            return new Key($config->signingKey, self::ALG);
         }
 
         throw InvalidAssertion::make('connection has no signing key configured');
-    }
-
-    /**
-     * The connection's discovered `jwks_uri`, or null when the IdP is configured with
-     * static PEMs only.
-     *
-     * @param  array<string, mixed>  $config
-     */
-    private function jwksUri(array $config): ?string
-    {
-        $uri = $config['jwks_uri'] ?? null;
-
-        return is_string($uri) && $uri !== '' ? $uri : null;
     }
 
     /**
@@ -181,19 +151,15 @@ class OidcAssertionValidator implements AssertionValidator
      * per minute per connection so a flood of bad tokens can't turn every failed
      * verification into a JWKS fetch — an amplification DoS against the upstream IdP.
      * A genuine key rotation is still picked up within the cooldown window.
-     *
-     * @param  array<string, mixed>  $config
      */
-    private function mayRefresh(array $config): bool
+    private function mayRefresh(OidcConnectionConfig $config): bool
     {
-        $uri = $this->jwksUri($config);
-
-        if ($uri === null) {
+        if ($config->jwksUri === null) {
             return false;
         }
 
         // Cache::add is atomic: true only the first time within the TTL.
-        return Cache::add('oidc_jwks_refresh:'.hash('sha256', $uri), true, 60);
+        return Cache::add('oidc_jwks_refresh:'.hash('sha256', $config->jwksUri), true, 60);
     }
 
     /**
@@ -290,20 +256,6 @@ class OidcAssertionValidator implements AssertionValidator
         if ($azpPresent && ! hash_equals($clientId, $azp)) {
             throw InvalidAssertion::make('azp mismatch');
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function requireString(array $config, string $key): string
-    {
-        $value = $config[$key] ?? null;
-
-        if (! is_string($value) || $value === '') {
-            throw InvalidAssertion::make("connection config missing [{$key}]");
-        }
-
-        return $value;
     }
 
     /**

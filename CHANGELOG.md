@@ -15,6 +15,50 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.58.0] - 2026-07-26
+
+Typed-model debt from the platform review. **Two breaking contract changes** — see
+`UPGRADING.md`.
+
+### Security
+
+- **A transposed key pair could publish the private key at the JWKS endpoint, and
+  nothing caught it.** `DatabaseKeyManager` returned `array{0: string, 1: string}`
+  destructured as `[$public, $private]` — both `string`, so swapping them was invisible
+  to PHPStan, Pint and the type system, and the two build sites (sodium, OpenSSL) look
+  nothing alike. Replaced with a `GeneratedKeyPair` value object, constructed with named
+  arguments so reordering the constructor cannot re-transpose them.
+
+  Six swap-detection tests were added across RS256/ES256/EdDSA, and they were needed:
+  under a deliberate transposition the **pre-existing** EdDSA test still passed, so the
+  Ed25519 secret key would have been published as an OKP JWK silently. The new guards
+  assert the stored public column carries no private material, that the sealed half is
+  the private key, that the two are provably the same pair, and that the JWKS contains
+  no `d`/`p`/`q` and no PEM private block.
+
+### Changed — breaking
+
+- `Memberships::add()`, `Memberships::changeRole()` and `Invitations::invite()` take
+  `MembershipRole`, not `string`. The enum's own docblock said an invalid role should be
+  "a type error, not a silent fail-open" — the contract signature defeated that, so a
+  typo was an uncaught `ValueError` (a 500) invisible to static analysis, on data feeding
+  the last-owner guard and the console's admin checks. Parsing moved to the real edges:
+  the CLI validates `--role` up front, and an unrecognised role in an import row is now a
+  per-row `ImportError` naming the accepted values.
+- `Connections` gains `samlConfig()` / `oidcConfig()` returning typed configuration.
+  `config(): array` remains the unseal primitive, and `create()` deliberately keeps its
+  array — a Draft connection is legitimately incomplete, and validating at create would
+  make drafts unrepresentable.
+
+### Fixed
+
+- The membership audit payload recorded the raw string while the row persisted the enum,
+  so a case-variant input diverged between the audit trail and the stored value.
+- Eight `@var` annotations asserted a shape over decoded JSON that nothing verified;
+  replaced with validating parses.
+- `DatabaseDirectoryGroups` still carried a duplicated copy of the RFC 7644 PATCH op list
+  as string literals; it now uses `ScimPatchOp` with an exhaustive `match`.
+
 ## [0.57.0] - 2026-07-26
 
 Output of a whole-platform review loop: ten specialist passes, an independent

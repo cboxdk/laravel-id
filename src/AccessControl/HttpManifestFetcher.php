@@ -48,7 +48,15 @@ class HttpManifestFetcher implements ManifestFetcher
             throw ManifestFetchFailed::make('response body was not a JSON object.');
         }
 
-        /** @var array<string, mixed> $body */
-        return $this->parser->parse($body);
+        // Re-key rather than ASSERT the key type: `is_array` says nothing about the
+        // keys, and a JSON array (`[…]`) decodes with integer ones. Claiming
+        // `array<string, mixed>` in a docblock made PHPStan reason about a shape the
+        // remote endpoint never promised.
+        $manifest = [];
+        foreach ($body as $key => $value) {
+            $manifest[(string) $key] = $value;
+        }
+
+        return $this->parser->parse($manifest);
     }
 }

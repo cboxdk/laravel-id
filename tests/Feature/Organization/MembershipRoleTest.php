@@ -51,8 +51,8 @@ it('accepts the new roles on a membership', function (): void {
     $org = $this->makeOrganization();
     $memberships = app(Memberships::class);
 
-    $developer = $memberships->add($org->id, 'user_dev', 'developer');
-    $viewer = $memberships->add($org->id, 'user_view', 'viewer');
+    $developer = $memberships->add($org->id, 'user_dev', MembershipRole::Developer);
+    $viewer = $memberships->add($org->id, 'user_view', MembershipRole::Viewer);
 
     expect($developer->role)->toBe(MembershipRole::Developer)
         ->and($viewer->role)->toBe(MembershipRole::Viewer);

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\SamlSpSingleLogout;
 use Cbox\Id\Federation\Enums\ConnectionType;
-use Cbox\Id\Federation\Saml\SamlLogout;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -22,7 +22,7 @@ class SamlLogoutController
 {
     public function __construct(
         private readonly Connections $connections,
-        private readonly SamlLogout $logout,
+        private readonly SamlSpSingleLogout $logout,
     ) {}
 
     public function __invoke(Request $request, string $connection): RedirectResponse|Response

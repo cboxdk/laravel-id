@@ -53,7 +53,9 @@ readonly class AuthenticatorData
         $credentialPublicKey = null;
 
         if (($flags & self::FLAG_ATTESTED_CREDENTIAL_DATA) !== 0) {
-            [$credentialId, $credentialPublicKey] = self::parseAttestedCredentialData($bytes);
+            $attested = self::parseAttestedCredentialData($bytes);
+            $credentialId = $attested->id;
+            $credentialPublicKey = $attested->publicKey;
         }
 
         return new self($rpIdHash, $flags, $signCount, $credentialId, $credentialPublicKey);
@@ -69,10 +71,7 @@ readonly class AuthenticatorData
         return ($this->flags & self::FLAG_USER_VERIFIED) !== 0;
     }
 
-    /**
-     * @return array{0: string, 1: array<int|string, mixed>}
-     */
-    private static function parseAttestedCredentialData(string $bytes): array
+    private static function parseAttestedCredentialData(string $bytes): AttestedCredential
     {
         if (strlen($bytes) < 55) {
             throw InvalidAssertionResponse::make('attestedCredentialData truncated');
@@ -103,6 +102,6 @@ readonly class AuthenticatorData
             throw InvalidAssertionResponse::make('COSE key is not a map');
         }
 
-        return [$credentialId, $normalized];
+        return new AttestedCredential($credentialId, $normalized);
     }
 }

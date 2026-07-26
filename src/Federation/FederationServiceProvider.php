@@ -9,7 +9,10 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\DnsResolver;
 use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Contracts\FederationFlow;
+use Cbox\Id\Federation\Contracts\OidcRelyingParty;
+use Cbox\Id\Federation\Contracts\SamlSpSingleLogout;
 use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Saml\SamlLogout;
 use Cbox\Id\Federation\Saml\SamlMetadataImporter;
 use Cbox\Id\Federation\Validators\DispatchingAssertionValidator;
 use Cbox\Id\Federation\Validators\OidcAssertionValidator;
@@ -25,6 +28,12 @@ class FederationServiceProvider extends ServiceProvider
         $this->app->singleton(FederationFlow::class, FederationLoginService::class);
         $this->app->singleton(DnsResolver::class, SystemDnsResolver::class);
         $this->app->singleton(DomainVerification::class, DatabaseDomainVerification::class);
+
+        // The two protocol halves the HTTP layer drives directly. Bound to contracts
+        // like every other collaborator above, so the SSO controllers depend on the
+        // module's published surface rather than reaching past it into a concrete class.
+        $this->app->singleton(OidcRelyingParty::class, OidcClient::class);
+        $this->app->singleton(SamlSpSingleLogout::class, SamlLogout::class);
 
         // Enterprise SSO onboarding: parse an IdP's SAML metadata (paste or URL)
         // into a connection prefill via the vetted onelogin parser.

@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -120,8 +121,8 @@ it("does not leak one app's roles into another app's UserInfo response", functio
 it('lists the subject active organizations on UserInfo when the organizations scope is granted', function (): void {
     $orgA = $this->makeOrganization();
     $orgB = $this->makeOrganization();
-    app(Memberships::class)->add($orgA->id, 'alice', 'admin');
-    app(Memberships::class)->add($orgB->id, 'alice', 'member');
+    app(Memberships::class)->add($orgA->id, 'alice', MembershipRole::Admin);
+    app(Memberships::class)->add($orgB->id, 'alice', MembershipRole::Member);
 
     $registered = $this->makeClient(['openid', 'organizations']);
     $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $orgA->id, ['openid', 'organizations'])->token;
@@ -140,7 +141,7 @@ it('does NOT leak organizations on a plain profile login (least disclosure)', fu
     // The org list spans unrelated customers/apps, so a profile-scoped login must not
     // expose it — only a client that explicitly requests `organizations` gets it.
     $org = $this->makeOrganization();
-    app(Memberships::class)->add($org->id, 'alice', 'admin');
+    app(Memberships::class)->add($org->id, 'alice', MembershipRole::Admin);
 
     $registered = $this->makeClient(['openid', 'profile']);
     $token = app(TokenIssuer::class)->issueForUser($registered->client, 'alice', $org->id, ['openid', 'profile'])->token;

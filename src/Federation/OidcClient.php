@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation;
 
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
+use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -17,31 +19,25 @@ use Illuminate\Support\Facades\Http;
  * the IdP's token endpoint. Signature/claim validation of the resulting id_token
  * is the {@see Validators\OidcAssertionValidator}'s job.
  *
- * OIDC connection config (sealed at rest) must add, alongside the validator's
- * `issuer`/`client_id`/`signing_key(s)`:
- *  - `authorization_endpoint`, `token_endpoint` — the IdP's OAuth endpoints
- *  - `client_secret` — the confidential client secret
- *  - `scopes` (optional) — defaults to `openid email profile`
+ * Beyond what the validator needs, this half requires the connection's
+ * `authorizationEndpoint`, `tokenEndpoint` and `clientSecret` — asserted here, at the
+ * point of use, so a validator-only connection is not forced to carry them. See
+ * {@see OidcConnectionConfig}.
  */
-class OidcClient
+class OidcClient implements OidcRelyingParty
 {
     public function __construct(private readonly Connections $connections) {}
 
     public function authorizeUrl(Connection $connection, string $redirectUri, string $state, string $nonce): string
     {
-        $config = $this->connections->config($connection);
+        $config = $this->connections->oidcConfig($connection);
 
-        $scopes = $config['scopes'] ?? null;
-        $scope = is_array($scopes) && $scopes !== []
-            ? implode(' ', array_filter($scopes, 'is_string'))
-            : 'openid email profile';
-
-        $endpoint = $this->require($config, 'authorization_endpoint');
+        $endpoint = $config->requireField($config->authorizationEndpoint, 'authorization_endpoint');
         $query = http_build_query([
             'response_type' => 'code',
-            'client_id' => $this->require($config, 'client_id'),
+            'client_id' => $config->clientId,
             'redirect_uri' => $redirectUri,
-            'scope' => $scope,
+            'scope' => $config->scopeString(),
             'state' => $state,
             'nonce' => $nonce,
         ]);
@@ -55,9 +51,9 @@ class OidcClient
      */
     public function exchangeCode(Connection $connection, string $code, string $redirectUri): string
     {
-        $config = $this->connections->config($connection);
+        $config = $this->connections->oidcConfig($connection);
 
-        $endpoint = $this->require($config, 'token_endpoint');
+        $endpoint = $config->requireField($config->tokenEndpoint, 'token_endpoint');
 
         // The token endpoint is org-admin-configured — hence untrusted. Guard it
         // like any other outbound URL (same SSRF mechanism as webhook delivery):
@@ -77,8 +73,8 @@ class OidcClient
                 'grant_type' => 'authorization_code',
                 'code' => $code,
                 'redirect_uri' => $redirectUri,
-                'client_id' => $this->require($config, 'client_id'),
-                'client_secret' => $this->require($config, 'client_secret'),
+                'client_id' => $config->clientId,
+                'client_secret' => $config->requireField($config->clientSecret, 'client_secret'),
             ]);
 
         if (! $response->successful()) {
@@ -92,19 +88,5 @@ class OidcClient
         }
 
         return $idToken;
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function require(array $config, string $key): string
-    {
-        $value = $config[$key] ?? null;
-
-        if (! is_string($value) || $value === '') {
-            throw InvalidAssertion::make("connection config missing [{$key}]");
-        }
-
-        return $value;
     }
 }

@@ -11,6 +11,7 @@ use Cbox\Id\Identity\Exceptions\PolicyViolation;
 use Cbox\Id\Identity\ValueObjects\AdminPasswordAssignment;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -80,7 +81,7 @@ it("applies an organization's tightened policy even when the caller names no org
     $policies->setForOrganization($org->id, new AuthPolicy(minLength: 32));
 
     $subject = app(Subjects::class)->create('strict@corp.test', 'Strict', 'a-perfectly-long-original-passphrase');
-    app(Memberships::class)->add($org->id, $subject->id, 'member');
+    app(Memberships::class)->add($org->id, $subject->id, MembershipRole::Member);
 
     // Satisfies the environment's 12, not the organization's 32.
     expect(fn () => app(Subjects::class)->setPassword($subject->id, 'sixteen-chars-xx'))

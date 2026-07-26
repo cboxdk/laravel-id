@@ -44,7 +44,7 @@ class MembershipService implements Memberships
         private readonly Roles $roles,
     ) {}
 
-    public function add(string $organizationId, string $userId, string $role, ?string $invitedBy = null): Membership
+    public function add(string $organizationId, string $userId, MembershipRole $role, ?string $invitedBy = null): Membership
     {
         // The organization MUST resolve inside the ambient environment before we write.
         //
@@ -100,8 +100,7 @@ class MembershipService implements Memberships
             $membership = new Membership;
             $membership->fill([
                 'user_id' => $userId,
-                // from(): an unknown role is rejected here, not silently persisted.
-                'role' => MembershipRole::from($role),
+                'role' => $role,
                 'status' => MembershipStatus::Active,
                 'invited_by' => $invitedBy,
             ]);
@@ -110,26 +109,29 @@ class MembershipService implements Memberships
             // Same transaction as the row write: the outbox event and the membership
             // commit atomically, so a crash can't leave a changed member with no event
             // (which the outbox could never retry) — closing that drift window.
-            $this->emitAndAudit($organizationId, $userId, 'organization.member_added', ['role' => $role]);
+            //
+            // The audit context records the SAME enum-backed value that was persisted.
+            // While this took a raw string it recorded the caller's spelling, so a
+            // case-variant input made the audit trail disagree with the stored role.
+            $this->emitAndAudit($organizationId, $userId, 'organization.member_added', ['role' => $role->value]);
 
             return $membership;
         }));
     }
 
-    public function changeRole(string $organizationId, string $userId, string $role): Membership
+    public function changeRole(string $organizationId, string $userId, MembershipRole $role): Membership
     {
         return $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): Membership => DB::transaction(function () use ($organizationId, $userId, $role): Membership {
             $membership = Membership::query()->where('user_id', $userId)->firstOrFail();
-            $target = MembershipRole::from($role);
 
             // Demoting the sole owner would orphan the org — never allow it.
-            if ($membership->role === MembershipRole::Owner && $target !== MembershipRole::Owner && $this->ownerCount() <= 1) {
+            if ($membership->role === MembershipRole::Owner && $role !== MembershipRole::Owner && $this->ownerCount() <= 1) {
                 throw LastOwner::make($organizationId);
             }
 
-            $membership->update(['role' => $target]);
+            $membership->update(['role' => $role]);
 
-            $this->emitAndAudit($organizationId, $userId, 'organization.member_role_changed', ['role' => $role]);
+            $this->emitAndAudit($organizationId, $userId, 'organization.member_role_changed', ['role' => $role->value]);
 
             return $membership;
         }));
