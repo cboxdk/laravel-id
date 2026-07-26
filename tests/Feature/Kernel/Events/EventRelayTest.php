@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\Contracts\RelayBacklog;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Kernel\Events\Models\Event;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
@@ -126,6 +127,65 @@ it('isolates a failing listener and still delivers the rest of the batch', funct
 
     // …and the healthy ones are done.
     expect(Event::query()->whereNull('dispatched_at')->count())->toBe(1);
+});
+
+/**
+ * ...but the isolation must be BOUNDED. "Release the claim and retry" is right for a
+ * transient fault and catastrophic for a permanent one: nothing counted attempts, so an
+ * event whose listener could never succeed was re-delivered on every pass forever — never
+ * dispatched so never prunable, permanently counted as backlog, and (listeners run in
+ * registration order) silently skipping every listener after the throwing one, for that
+ * event, on every single pass.
+ */
+it('dead-letters an event that exhausts its delivery attempts', function (): void {
+    config(['cbox-id.events.max_attempts' => 3]);
+
+    $attempts = 0;
+
+    LaravelEvent::listen(EventDelivered::class, function (EventDelivered $delivered) use (&$attempts): void {
+        $attempts++;
+
+        throw new RuntimeException('permanently broken');
+    });
+
+    $bus = app(EventBus::class);
+    $bus->emit(new DomainEvent('poison'));
+
+    // Three passes: each fails, releases the claim, and counts.
+    foreach ([1, 2, 3] as $pass) {
+        expect($bus->flushPending())->toBe(0);
+    }
+
+    $event = Event::query()->where('type', 'poison')->firstOrFail();
+
+    expect($event->attempts)->toBe(3)
+        ->and($event->dead_lettered_at)->not->toBeNull()
+        // NOT dispatched: it was never delivered, and an operator hunting lost work must
+        // be able to tell the two apart.
+        ->and($event->dispatched_at)->toBeNull();
+
+    // A fourth pass does not touch it — the listener is not called again.
+    expect($bus->flushPending())->toBe(0)
+        ->and($attempts)->toBe(3);
+});
+
+it('keeps a dead-lettered event out of the relay backlog signal', function (): void {
+    config(['cbox-id.events.max_attempts' => 1]);
+
+    LaravelEvent::listen(EventDelivered::class, function (): void {
+        throw new RuntimeException('permanently broken');
+    });
+
+    $bus = app(EventBus::class);
+    $bus->emit(new DomainEvent('poison'));
+    $bus->flushPending();
+
+    // Counting it as waiting would put a permanent floor under the gauge that no amount
+    // of relay capacity could bring down, hiding a real backlog behind it.
+    $depth = app(RelayBacklog::class)->depth();
+
+    expect($depth->waiting)->toBe(0)
+        ->and($depth->inFlight)->toBe(0);
 });
 
 it('honours reclaim_after_seconds when it arrives as a string from env', function (): void {

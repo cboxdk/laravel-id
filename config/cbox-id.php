@@ -75,16 +75,6 @@ return [
     ],
 
     /*
-     * Webhook delivery. `verify_url` (SSRF guard) rejects endpoints that resolve
-     * to loopback/private/link-local/reserved addresses and pins the connection
-     * to the validated IPs (closing DNS-rebinding); keep it true in any
-     * multi-tenant deployment. A single-tenant/on-prem install that legitimately
-     * delivers to internal hosts may disable it. `max_attempts` bounds retries
-     * before a delivery is dead-lettered (status `exhausted`). `schedule_retries`
-     * registers a per-minute task that redelivers due failures; disable it if you
-     * drive `retryPending()` yourself.
-     */
-    /*
      * The domain-event outbox (src/Kernel/Events/). Emitting writes a row; nothing is
      * delivered until the relay runs, so `schedule_relay` is what makes webhooks,
      * usage metering, outbound provisioning and every host listener actually fire.
@@ -93,16 +83,74 @@ return [
      * `reclaim_after_seconds` is how long a claimed-but-undelivered event waits before
      * another relay may take it — i.e. how long we assume a relay that died mid-pass
      * might still be running.
+     *
+     * `relay_limit` and `relay_cadence` tune the scheduled pass without turning the
+     * schedule off: a busy environment wants a larger batch, a quiet one a slower
+     * tick. `relay_cadence` is a closed set (see RelayCadence) — every_minute,
+     * every_two_minutes, every_five_minutes, every_ten_minutes,
+     * every_fifteen_minutes, every_thirty_minutes, hourly — because a typo'd cron
+     * string here would silently stop the entire fan-out.
+     *
+     * `max_attempts` bounds how many times a THROWING event is retried before it is
+     * dead-lettered (`dead_lettered_at` stamped, never claimed again, logged at
+     * critical). Unbounded retries are only right for a transient fault: a listener that
+     * throws on data which will never change would otherwise be re-delivered on every
+     * pass forever — never prunable, permanently counted as backlog, and skipping every
+     * listener registered after it, for that event, on every pass.
+     *
+     * `backlog_warning_threshold` is the waiting depth at which each pass logs a
+     * WARNING instead of a debug line. Relay lag is otherwise invisible: a stalled
+     * relay looks exactly like an idle one. A host with metrics wiring can resolve
+     * the RelayBacklog contract directly, or run `cbox-id:events:backlog` (the
+     * package deliberately depends on no telemetry runtime).
      */
     'events' => [
         'schedule_relay' => env('CBOX_ID_EVENTS_SCHEDULE_RELAY', true),
+        'relay_limit' => env('CBOX_ID_EVENTS_RELAY_LIMIT', 100),
+        'relay_cadence' => env('CBOX_ID_EVENTS_RELAY_CADENCE', 'every_minute'),
         'reclaim_after_seconds' => env('CBOX_ID_EVENTS_RECLAIM_AFTER_SECONDS', 300),
+        'max_attempts' => env('CBOX_ID_EVENTS_MAX_ATTEMPTS', 12),
+        'backlog_warning_threshold' => env('CBOX_ID_EVENTS_BACKLOG_WARNING_THRESHOLD', 1000),
     ],
 
+    /*
+     * Webhook delivery. `verify_url` (SSRF guard) rejects endpoints that resolve
+     * to loopback/private/link-local/reserved addresses and pins the connection
+     * to the validated IPs (closing DNS-rebinding); keep it true in any
+     * multi-tenant deployment. A single-tenant/on-prem install that legitimately
+     * delivers to internal hosts may disable it. `max_attempts` bounds retries
+     * before a delivery is dead-lettered (status `exhausted`). `schedule_retries`
+     * registers a per-minute sweep that re-enqueues due failures; disable it if you
+     * drive `retryPending()` yourself.
+     *
+     * Delivery is ASYNCHRONOUS: the relay records a delivery row per matching
+     * endpoint and queues a DeliverWebhook job; the blocking HTTP send happens on a
+     * worker. `queue_connection` / `queue` (both optional) put that egress on its
+     * own connection/queue so a slow receiver cannot crowd out the rest of the
+     * application's jobs. `retry_limit` caps how many due failures one sweep
+     * re-enqueues, and `stranded_after_seconds` is how long a still-`pending`
+     * delivery may sit before the sweep assumes its job was lost and re-enqueues
+     * it — the row is durable BEFORE the job exists, and this is what makes that
+     * guarantee real.
+     *
+     * `circuit_breaker` opens an endpoint after `failure_threshold` consecutive
+     * failures and skips it for `cooldown_seconds`, so a blackholing receiver costs
+     * one timeout per cooldown window instead of one per event. The trip is
+     * recorded on the endpoint's health columns, NOT on `status` — `paused` stays
+     * the operator's own intent.
+     */
     'webhooks' => [
         'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
         'max_attempts' => env('CBOX_ID_WEBHOOKS_MAX_ATTEMPTS', 12),
         'schedule_retries' => env('CBOX_ID_WEBHOOKS_SCHEDULE_RETRIES', true),
+        'retry_limit' => env('CBOX_ID_WEBHOOKS_RETRY_LIMIT', 50),
+        'stranded_after_seconds' => env('CBOX_ID_WEBHOOKS_STRANDED_AFTER_SECONDS', 900),
+        'queue_connection' => env('CBOX_ID_WEBHOOKS_QUEUE_CONNECTION'),
+        'queue' => env('CBOX_ID_WEBHOOKS_QUEUE'),
+        'circuit_breaker' => [
+            'failure_threshold' => env('CBOX_ID_WEBHOOKS_CB_FAILURE_THRESHOLD', 5),
+            'cooldown_seconds' => env('CBOX_ID_WEBHOOKS_CB_COOLDOWN_SECONDS', 300),
+        ],
     ],
 
     /*
@@ -223,6 +271,50 @@ return [
             'trim',
             explode(',', (string) env('CBOX_ID_ENVIRONMENT_BASE_DOMAINS', '')),
         )),
+
+        /*
+         * How long (seconds) a host → environment resolution is cached.
+         *
+         * Every request resolves its environment before any endpoint logic runs, and
+         * uncached that is 2–3 queries (custom domain, then slug, then the owning
+         * account's liveness) against a table that changes approximately never.
+         *
+         * Invalidation is explicit, not TTL-driven, for everything that matters:
+         * creating, renaming, re-domaining or suspending an environment, and
+         * suspending or reactivating its account, all drop the entry immediately —
+         * so the platform's off-switch still cuts traffic on the next request. The
+         * TTL only bounds the one case that cannot be enumerated from the row: a
+         * SLUG rename, where the old subdomain keeps resolving until it lapses.
+         *
+         * Set to 0 to disable caching entirely.
+         */
+        'resolution_cache_ttl' => env('CBOX_ID_ENVIRONMENT_RESOLUTION_CACHE_TTL', 60),
+    ],
+
+    /*
+     * The IdP PROTOCOL surface this package registers — OIDC discovery, JWKS, the
+     * RFC 8414 / RFC 9728 metadata, every `/oauth/*` endpoint, the SAML endpoints and
+     * SCIM — and the extra middleware a HOST may wrap around all of it.
+     *
+     * EMPTY BY DEFAULT, deliberately: a single-tenant / self-hosted deployment is one
+     * host that IS the identity provider, and it must keep serving the whole surface
+     * with no configuration at all.
+     *
+     * A host application may serve more than identity providers. If one of its hosts is
+     * a signup / account-management surface rather than an issuer, serving discovery
+     * there publishes an `issuer` whose `authorization_endpoint` that host does not
+     * answer — and a conformant client follows the document straight into a 404. Naming
+     * middleware here lets the host 404 the entire surface on such a host using ITS OWN
+     * answer to "is this host an identity provider", instead of this package growing a
+     * second copy of that question that could disagree with the host's.
+     *
+     * Values are middleware aliases (e.g. `'plane:subject'`) or class names. They are
+     * applied AFTER {@see \Cbox\Id\Api\Http\Middleware\ResolveEnvironment}, so a gate
+     * can read the environment the request resolved to. `GET /up` is deliberately NOT
+     * covered — a liveness probe must answer on every host.
+     */
+    'api' => [
+        'middleware' => [],
     ],
 
     /*
@@ -245,7 +337,11 @@ return [
         'dynamic_registration' => [
             'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),
             'initial_access_token' => env('CBOX_ID_DCR_INITIAL_ACCESS_TOKEN'),
-            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access'],
+            // `organizations` is advertised in discovery (scopes_supported) and the
+            // token/UserInfo layer emits the claim, but it was missing here — so a
+            // dynamically-registered client could never actually obtain it. Advertised
+            // and unreachable is the same bug the grant list below fixed.
+            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations'],
             /*
              * Grants a DYNAMICALLY registered client may ask for. device_code, CIBA and
              * token-exchange were advertised in discovery but absent here, so no
@@ -317,6 +413,21 @@ return [
          * Default 900s (15 min).
          */
         'access_token_ttl' => env('CBOX_ID_ACCESS_TOKEN_TTL', 900),
+
+        /*
+         * `POST /oauth/decisions` — the authorization decision endpoint.
+         *
+         * `max_batch` caps how many permission checks (and how many entitlement
+         * keys) one request may ask for; past it the endpoint answers 422. Each
+         * permission check walks the relationship graph with two queries per node up
+         * to a depth of 12, so an uncapped array lets any holder of a valid token
+         * turn one HTTP request into an unbounded number of database round trips.
+         * Raise it if your clients legitimately batch more than a screen's worth,
+         * but do not remove the bound.
+         */
+        'decisions' => [
+            'max_batch' => env('CBOX_ID_DECISIONS_MAX_BATCH', 50),
+        ],
     ],
 
     /*
@@ -325,7 +436,14 @@ return [
      *
      * `entity_id` is the IdP EntityID published in metadata and set as the
      * assertion Issuer. It is an opaque URI and MUST stay stable once SPs have
-     * imported it; leave null to derive `{issuer}/sso/saml/idp`.
+     * imported it; leave null to derive `{issuer}/sso/saml/idp` — the derived
+     * value is then FROZEN per environment on first publication, so verifying a
+     * custom domain later moves the endpoint URLs but never the EntityID.
+     *
+     * `want_authn_requests_signed` pins the metadata attribute of the same name.
+     * Leave null and it is derived from the registered SPs (true as soon as any
+     * active SP requires signed AuthnRequests), which is what an SP that treats
+     * metadata as authoritative — Shibboleth, Entra — needs to see.
      *
      * `login_url` is where the SingleSignOnService endpoint sends a browser that
      * has no authenticated subject yet — the host's own login screen. The endpoint
@@ -336,6 +454,7 @@ return [
     'saml_idp' => [
         'entity_id' => env('CBOX_ID_SAML_IDP_ENTITY_ID'),
         'login_url' => env('CBOX_ID_SAML_IDP_LOGIN_URL'),
+        'want_authn_requests_signed' => env('CBOX_ID_SAML_IDP_WANT_AUTHN_REQUESTS_SIGNED'),
     ],
 
     /*
@@ -426,11 +545,25 @@ return [
      * when a hook cannot be run: the default (false) FAILS CLOSED — a security
      * control that fails open is not a control — at the cost of availability if the
      * hook endpoint is down. Set it true only for enrichment-only hooks.
+     *
+     * `timeout` + `connect_timeout` is the WHOLE pipeline's budget, not each hook's:
+     * a fan-out of several endpoints is issued concurrently, so registering a second
+     * or third hook no longer adds its own timeout to every token mint. (A host that
+     * has substituted a transport without concurrent support keeps the old
+     * one-after-another behaviour, and with it the old additive cost.)
+     *
+     * `cache_ttl` (seconds) caches which endpoints are active per environment and
+     * hook point. The token issuer consults the hook on EVERY mint, so without this
+     * an environment that has registered no hooks at all still paid a query per
+     * token. Registering, pausing, activating or removing an endpoint invalidates the
+     * entry immediately, so the TTL is a backstop rather than the mechanism. Set to 0
+     * to always read the database.
      */
     'external_actions' => [
         'verify_url' => env('CBOX_ID_ACTIONS_VERIFY_URL', true),
         'timeout' => env('CBOX_ID_ACTIONS_TIMEOUT', 3),
         'connect_timeout' => env('CBOX_ID_ACTIONS_CONNECT_TIMEOUT', 2),
+        'cache_ttl' => env('CBOX_ID_ACTIONS_CACHE_TTL', 60),
         'fail_open' => env('CBOX_ID_ACTIONS_FAIL_OPEN', false),
         'hooks' => [
             // 'token_minting' => [ App\Actions\AddTenantTierClaim::class ],
@@ -460,6 +593,41 @@ return [
      */
     'usage' => [
         'enabled' => env('CBOX_ID_USAGE_ENABLED', true),
+    ],
+
+    /*
+     * Data lifecycle (src/Maintenance/) — `cbox-id:prune`, scheduled daily.
+     *
+     * Every table below accumulates rows that stop being useful once they are past
+     * their own expiry (replay guards, expired tokens, dispatched outbox rows) or
+     * terminal (delivered/exhausted deliveries). Without a sweep they grow forever;
+     * `dpop_proofs` in particular takes one INSERT per DPoP-protected request.
+     *
+     * `retention_days` is how long a row is kept AFTER it is already dead — not how
+     * long a token lives. Set a table to null to keep its rows forever; omit a table
+     * to use the default in Cbox\Id\Maintenance\Enums\PrunableTable.
+     *
+     * `audit_logs` is deliberately absent and is never pruned: it is a hash-chained,
+     * checkpoint-anchored trail, and deleting rows would make its own tamper
+     * verification report tampering. See Cbox\Id\Maintenance\Pruner.
+     */
+    'prune' => [
+        'schedule' => env('CBOX_ID_PRUNE_SCHEDULE', true),
+        'time' => env('CBOX_ID_PRUNE_TIME', '03:10'),
+        'chunk' => env('CBOX_ID_PRUNE_CHUNK', 1000),
+
+        'retention_days' => [
+            'dpop_proofs' => env('CBOX_ID_PRUNE_DPOP_PROOFS', 1),
+            'consumed_assertions' => env('CBOX_ID_PRUNE_CONSUMED_ASSERTIONS', 1),
+            'oauth_authorization_codes' => env('CBOX_ID_PRUNE_AUTHORIZATION_CODES', 1),
+            'oauth_access_tokens' => env('CBOX_ID_PRUNE_ACCESS_TOKENS', 7),
+            'oauth_refresh_tokens' => env('CBOX_ID_PRUNE_REFRESH_TOKENS', 30),
+            'events' => env('CBOX_ID_PRUNE_EVENTS', 30),
+            'auth_sessions' => env('CBOX_ID_PRUNE_AUTH_SESSIONS', 30),
+            'usage_metered_events' => env('CBOX_ID_PRUNE_USAGE_MARKERS', 30),
+            'webhook_deliveries' => env('CBOX_ID_PRUNE_WEBHOOK_DELIVERIES', 30),
+            'provisioning_operations' => env('CBOX_ID_PRUNE_PROVISIONING_OPERATIONS', 30),
+        ],
     ],
 
     /*

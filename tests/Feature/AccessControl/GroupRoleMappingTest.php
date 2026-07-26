@@ -92,3 +92,53 @@ it('never disturbs a manual assignment while reconciling group roles', function 
     expect(hasAssignment($userId, $admin->id, GrantSource::Manual))->toBeTrue()
         ->and(hasAssignment($userId, $role->id))->toBeFalse();
 });
+
+/**
+ * Deleting a role must take its mappings with it.
+ *
+ * `group_role_mappings` has neither a foreign key nor a cascade, so a delete that leaves
+ * them behind arms a poison pill: the next reconcile of that group plucks the dead role
+ * id, calls assign(), and assertAssignableIn() throws. That reconcile runs on the RELAY
+ * ({@see ReconcileGroupRolesOnDomainEvent}), whose failure isolation releases the claim —
+ * so the outbox row is retried on every pass forever, is never prunable (the pruner needs
+ * `dispatched_at`), counts as backlog permanently, and skips every listener registered
+ * after AccessControl (webhooks, provisioning, metering, audit streaming) for that event
+ * on every single pass.
+ */
+it('takes the group→role mappings with the role it deletes', function (): void {
+    [$org, $group, $role, $userId] = engineeringGroup();
+
+    app(GroupRoleMappings::class)->map($org->id, $group->id, $role->id);
+
+    expect(hasAssignment($userId, $role->id, GrantSource::Pushed))->toBeTrue()
+        ->and(GroupRoleMapping::query()->where('role_id', $role->id)->count())->toBe(1);
+
+    app(Roles::class)->deleteRole($role->id);
+
+    expect(GroupRoleMapping::query()->where('role_id', $role->id)->count())->toBe(0);
+
+    // ...and the reconciler the mapping feeds still runs, on this pass and every one after.
+    app(GroupRoleMappings::class)->reconcileGroup($group->id, $org->id);
+
+    expect(hasAssignment($userId, $role->id))->toBeFalse();
+});
+
+/**
+ * Belt and braces for the same failure: even a mapping that DOES survive — written before
+ * the cascade existed, or by any other route — must not be able to wedge the relay.
+ */
+it('skips a mapped role that no longer resolves instead of throwing', function (): void {
+    [$org, $group, $role, $userId] = engineeringGroup();
+
+    app(GroupRoleMappings::class)->map($org->id, $group->id, $role->id);
+
+    // Delete the role WITHOUT the service, exactly as the pre-fix delete left things.
+    Role::query()->whereKey($role->id)->delete();
+    RoleAssignment::query()->where('role_id', $role->id)->delete();
+
+    expect(GroupRoleMapping::query()->where('role_id', $role->id)->count())->toBe(1);
+
+    app(GroupRoleMappings::class)->reconcileUser($org->id, $userId);
+
+    expect(hasAssignment($userId, $role->id))->toBeFalse();
+});

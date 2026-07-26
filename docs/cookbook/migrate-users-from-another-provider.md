@@ -1,14 +1,14 @@
 ---
 title: Migrate users from another provider
-description: Bulk-import users with their existing password hashes (Auth0/Cognito/Firebase/CSV) and upgrade each hash transparently on first login
+description: Bulk-import users from another identity provider or a legacy app with their existing password hashes, and upgrade each hash transparently on first login
 weight: 7
 ---
 
 # Migrate users from another provider
 
-Moving off Auth0, Cognito, Firebase, or a legacy SQL app usually means one of two
-bad options: force every user through a password reset, or run the old system in
-parallel forever. Cbox ID gives you a third: **import the users together with their
+Moving off another identity provider — or off a legacy SQL app that rolled its own
+auth — usually means one of two bad options: force every user through a password
+reset, or run the old system in parallel forever. Cbox ID gives you a third: **import the users together with their
 existing password hashes**, so they sign in on day one with the password they
 already have — and each foreign hash is transparently re-hashed to the platform's
 own hasher (argon2id) the first time they log in successfully. This is *lazy

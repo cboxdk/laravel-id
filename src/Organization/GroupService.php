@@ -12,7 +12,7 @@ use Cbox\Id\Kernel\Authorization\Models\RelationshipTuple;
 use Cbox\Id\Kernel\Authorization\ValueObjects\Relationship;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesTenant;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Cbox\Id\Organization\Contracts\Groups;
 use Cbox\Id\Organization\Exceptions\GroupNameTaken;
@@ -29,13 +29,17 @@ use Illuminate\Support\Facades\DB;
  */
 class GroupService implements Groups
 {
+    // Lazy per-call resolution of the ambient tenant. This class is a `singleton`
+    // (OrganizationServiceProvider) and TenantContext is `scoped`: injected, every runAs()
+    // would set and restore on the first job's manager, scoping nothing.
+    use ResolvesTenant;
+
     /** Tuple vocabulary for groups; shared with {@see ResourceAccessService}. */
     public const OBJECT_TYPE = 'user_group';
 
     public const MEMBER_RELATION = 'member';
 
     public function __construct(
-        private readonly TenantContext $tenant,
         private readonly RelationshipStore $relationships,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
@@ -43,7 +47,7 @@ class GroupService implements Groups
 
     public function create(string $organizationId, string $name): UserGroup
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), fn (): UserGroup => DB::transaction(function () use ($organizationId, $name): UserGroup {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): UserGroup => DB::transaction(function () use ($organizationId, $name): UserGroup {
             if (UserGroup::query()->where('name', $name)->exists()) {
                 throw GroupNameTaken::make($organizationId, $name);
             }
@@ -60,7 +64,7 @@ class GroupService implements Groups
 
     public function delete(string $organizationId, string $groupId): void
     {
-        $this->tenant->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $groupId): void {
+        $this->tenant()->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $groupId): void {
             $group = UserGroup::query()->whereKey($groupId)->first();
 
             if ($group === null) {
@@ -118,7 +122,7 @@ class GroupService implements Groups
 
     public function members(string $organizationId, string $groupId): array
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($groupId): array {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($groupId): array {
             $ids = RelationshipTuple::query()
                 ->where('object_type', self::OBJECT_TYPE)
                 ->where('object_id', $groupId)
@@ -142,7 +146,7 @@ class GroupService implements Groups
 
     public function groupsFor(string $organizationId, string $userId): Collection
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($userId): Collection {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($userId): Collection {
             $groupIds = RelationshipTuple::query()
                 ->where('object_type', self::OBJECT_TYPE)
                 ->where('relation', self::MEMBER_RELATION)
@@ -157,7 +161,7 @@ class GroupService implements Groups
 
     public function forOrganization(string $organizationId): Collection
     {
-        return $this->tenant->runAs(
+        return $this->tenant()->runAs(
             GenericTenant::of($organizationId),
             fn (): Collection => UserGroup::query()->orderBy('name')->get(),
         );
@@ -165,7 +169,7 @@ class GroupService implements Groups
 
     private function requireGroup(string $organizationId, string $groupId): void
     {
-        $this->tenant->runAs(
+        $this->tenant()->runAs(
             GenericTenant::of($organizationId),
             fn () => UserGroup::query()->whereKey($groupId)->firstOrFail(),
         );

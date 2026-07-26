@@ -7,7 +7,8 @@ namespace Cbox\Id\Kernel\Events;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\Models\Event;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -19,9 +20,20 @@ use Throwable;
 
 class DatabaseEventBus implements EventBus
 {
+    /**
+     * The ambient environment is resolved LAZILY, never captured — see the trait.
+     *
+     * This bus is the case that shows why the rule is not academic. It is a `singleton`,
+     * it is itself captured by OTHER singletons (e.g. ManifestSyncService), and the
+     * outbox row is deliberately NOT {@see EnvironmentOwned} (see {@see Event}) — so
+     * nothing downstream contradicts a stale value. An environment-owned model fails
+     * closed via BelongsToEnvironment::saving(); this would just stamp job B's payload
+     * with job A's environment and deliver it to job A's subscribers.
+     */
+    use ResolvesEnvironment;
+
     public function __construct(
         private readonly Dispatcher $dispatcher,
-        private readonly EnvironmentContext $environments,
         private readonly EnvironmentResolver $environmentResolver,
     ) {}
 
@@ -34,7 +46,7 @@ class DatabaseEventBus implements EventBus
             // Stamp the ambient environment at emit — the relay flushes across
             // environments, so this is how a delivered event carries its origin
             // (the outbox row is deliberately NOT environment-scoped itself).
-            'environment_id' => $this->environments->current()?->environmentKey(),
+            'environment_id' => $this->environments()->current()?->environmentKey(),
             'payload' => $event->payload,
             'occurred_at' => now(),
         ]);
@@ -86,7 +98,7 @@ class DatabaseEventBus implements EventBus
             // event dispatches unscoped.
             try {
                 if ($environment !== null) {
-                    $this->environments->runAs($environment, fn () => $this->dispatcher->dispatch(new EventDelivered($event)));
+                    $this->environments()->runAs($environment, fn () => $this->dispatcher->dispatch(new EventDelivered($event)));
                 } else {
                     $this->dispatcher->dispatch(new EventDelivered($event));
                 }
@@ -103,11 +115,43 @@ class DatabaseEventBus implements EventBus
                 // claim() stamped claimed_at, so in memory it is already null and Eloquent
                 // would see no change and write nothing — leaving the row claimed for the
                 // whole reclaim window. (The test caught exactly that.)
-                Event::query()->whereKey($event->id)->update(['claimed_at' => null]);
+                //
+                // Bounded, though: count the failures and DEAD-LETTER the row once they
+                // exhaust the cap. "Retry until it works" is only right for a transient
+                // fault; a listener that throws on data which will never change (a mapping
+                // naming a role that no longer exists, say) would otherwise be retried on
+                // every pass forever — never dispatched, so never prunable, permanently
+                // counted as backlog, and — because listeners run in registration order —
+                // silently skipping every listener after the throwing one, for that event,
+                // on every single pass.
+                $attempts = $event->attempts + 1;
+
+                if ($attempts >= $this->maxAttempts()) {
+                    Event::query()->whereKey($event->id)->update([
+                        'claimed_at' => null,
+                        'attempts' => $attempts,
+                        'dead_lettered_at' => now(),
+                    ]);
+
+                    Log::critical('cbox-id: outbox event exhausted its delivery attempts; dead-lettering it.', [
+                        'event_id' => $event->id,
+                        'type' => $event->type,
+                        'attempts' => $attempts,
+                        'reason' => $e->getMessage(),
+                    ]);
+
+                    continue;
+                }
+
+                Event::query()->whereKey($event->id)->update([
+                    'claimed_at' => null,
+                    'attempts' => $attempts,
+                ]);
 
                 Log::error('cbox-id: outbox event delivery failed; releasing the claim.', [
                     'event_id' => $event->id,
                     'type' => $event->type,
+                    'attempts' => $attempts,
                     'reason' => $e->getMessage(),
                 ]);
 
@@ -142,6 +186,7 @@ class DatabaseEventBus implements EventBus
         return DB::transaction(function () use ($limit, $staleBefore): Collection {
             $query = Event::query()
                 ->whereNull('dispatched_at')
+                ->whereNull('dead_lettered_at')
                 ->where(fn ($q) => $q->whereNull('claimed_at')->orWhere('claimed_at', '<', $staleBefore))
                 ->orderBy('occurred_at')
                 ->limit($limit);
@@ -172,6 +217,7 @@ class DatabaseEventBus implements EventBus
             Event::query()
                 ->whereIn('id', $events->modelKeys())
                 ->whereNull('dispatched_at')
+                ->whereNull('dead_lettered_at')
                 ->where(fn ($q) => $q->whereNull('claimed_at')->orWhere('claimed_at', '<', $staleBefore))
                 ->update(['claimed_at' => now(), 'claim_token' => $token]);
 
@@ -182,6 +228,20 @@ class DatabaseEventBus implements EventBus
                 ->orderBy('occurred_at')
                 ->get();
         });
+    }
+
+    /**
+     * How many failed deliveries an outbox row gets before it is dead-lettered.
+     *
+     * Generous on purpose: the common cause of a throw is a transient dependency, and
+     * with the default 60-second relay cadence this is roughly a quarter of an hour of
+     * retrying before the row is set aside for an operator.
+     */
+    private function maxAttempts(): int
+    {
+        $configured = config('cbox-id.events.max_attempts', 12);
+
+        return is_numeric($configured) && (int) $configured > 0 ? (int) $configured : 12;
     }
 
     private function reclaimAfterSeconds(): int

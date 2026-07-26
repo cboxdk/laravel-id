@@ -7,12 +7,12 @@ namespace Cbox\Id\Otp;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Otp\Channels\EmailOtpChannel;
 use Cbox\Id\Otp\Contracts\OtpChannel;
 use Cbox\Id\Otp\Contracts\OtpChannels;
 use Cbox\Id\Otp\Contracts\OtpHasher;
 use Cbox\Id\Otp\Contracts\OtpService;
+use Cbox\Id\Support\PackageConfigMerger;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Mail\Mailer;
@@ -22,7 +22,7 @@ class OtpServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__.'/../../config/cbox-id.php', 'cbox-id');
+        PackageConfigMerger::mergeInto($this->app, __DIR__.'/../../config/cbox-id.php', 'cbox-id');
 
         // Keyed OTP hasher — derives its HMAC key from the crypto master key so a
         // database dump alone never reveals a code (see KeyedOtpHasher).
@@ -61,7 +61,6 @@ class OtpServiceProvider extends ServiceProvider
                 $app->make(OtpChannels::class),
                 $app->make(OtpHasher::class),
                 $app->make(AuditLog::class),
-                $app->make(EnvironmentContext::class),
                 $app->make(RateLimiter::class),
                 $this->clampedLength(),
                 $this->intConfig('cbox-id.otp.ttl_seconds', 300),

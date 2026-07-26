@@ -8,6 +8,7 @@ use Cbox\Id\SamlIdp\Contracts\SamlIdentityProvider;
 use Cbox\Id\SamlIdp\Contracts\ServiceProviders;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
 use Cbox\Id\SamlIdp\Models\ServiceProvider;
+use Cbox\Id\SamlIdp\Support\IdpDescriptor;
 use Cbox\Id\SamlIdp\ValueObjects\NewServiceProvider;
 use OneLogin\Saml2\Response as OneLoginResponse;
 use OneLogin\Saml2\Settings as OneLoginSettings;
@@ -59,9 +60,15 @@ trait InteractsWithSamlIdp
      * Pass `$acsUrl` to include an AssertionConsumerServiceURL (used to exercise the
      * ACS-mismatch guard); omit it to send a request with no requested ACS.
      */
-    protected function makeRedirectAuthnRequest(string $issuer, ?string $acsUrl = null, string $id = '_testreq0000000000000000000000000000'): string
-    {
-        $xml = $this->authnRequestXml($issuer, $id, $acsUrl);
+    protected function makeRedirectAuthnRequest(
+        string $issuer,
+        ?string $acsUrl = null,
+        string $id = '_testreq0000000000000000000000000000',
+        ?string $destination = null,
+        ?string $issueInstant = null,
+        ?string $nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+    ): string {
+        $xml = $this->authnRequestXml($issuer, $id, $acsUrl, $destination, $issueInstant, $nameIdFormat);
 
         $deflated = gzdeflate($xml);
 
@@ -71,17 +78,33 @@ trait InteractsWithSamlIdp
     /**
      * The raw `<samlp:AuthnRequest>` XML both bindings share, with its own namespace
      * declarations on the root so it canonicalizes self-contained.
+     *
+     * `Destination` defaults to the published SingleSignOnService endpoint and
+     * `IssueInstant` to now, because the IdP validates both — pass them explicitly
+     * to drive the wrong-endpoint / stale-request refusals.
      */
-    protected function authnRequestXml(string $issuer, string $id = '_testreq0000000000000000000000000000', ?string $acsUrl = null): string
-    {
+    protected function authnRequestXml(
+        string $issuer,
+        string $id = '_testreq0000000000000000000000000000',
+        ?string $acsUrl = null,
+        ?string $destination = null,
+        ?string $issueInstant = null,
+        ?string $nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+    ): string {
         $acsAttr = $acsUrl !== null ? ' AssertionConsumerServiceURL="'.htmlspecialchars($acsUrl, ENT_QUOTES).'"' : '';
+        $destination ??= IdpDescriptor::ssoUrl();
+        $policy = $nameIdFormat !== null
+            ? '<samlp:NameIDPolicy Format="'.htmlspecialchars($nameIdFormat, ENT_QUOTES).'"/>'
+            : '';
 
         return '<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"'
             .' xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"'
-            .' ID="'.htmlspecialchars($id, ENT_QUOTES).'" Version="2.0" IssueInstant="'.gmdate('Y-m-d\TH:i:s\Z').'"'
+            .' ID="'.htmlspecialchars($id, ENT_QUOTES).'" Version="2.0"'
+            .' IssueInstant="'.htmlspecialchars($issueInstant ?? gmdate('Y-m-d\TH:i:s\Z'), ENT_QUOTES).'"'
+            .' Destination="'.htmlspecialchars($destination, ENT_QUOTES).'"'
             .$acsAttr.'>'
             .'<saml:Issuer>'.htmlspecialchars($issuer, ENT_QUOTES).'</saml:Issuer>'
-            .'<samlp:NameIDPolicy Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"/>'
+            .$policy
             .'</samlp:AuthnRequest>';
     }
 
@@ -140,9 +163,10 @@ trait InteractsWithSamlIdp
         string $id = '_postreq00000000000000000000000000000',
         string $signatureAlgorithm = XMLSecurityKey::RSA_SHA256,
         string $digestAlgorithm = XMLSecurityDSig::SHA256,
+        ?string $destination = null,
     ): string {
         $signed = SamlUtils::addSign(
-            $this->authnRequestXml($issuer, $id, $acsUrl),
+            $this->authnRequestXml($issuer, $id, $acsUrl, $destination),
             $privateKey,
             SamlUtils::formatCert($certificate),
             $signatureAlgorithm,

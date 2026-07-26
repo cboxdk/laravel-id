@@ -29,9 +29,18 @@ class OrganizationServiceProvider extends ServiceProvider
         $this->app->singleton(Groups::class, GroupService::class);
         $this->app->singleton(ResourceAccess::class, ResourceAccessService::class);
         $this->app->singleton(UserApiTokens::class, UserApiTokenService::class);
+        $this->app->singleton(EnvironmentResolutionCache::class);
+
+        // Host → environment resolution is 2–3 uncached queries that EVERY request
+        // paid before any endpoint logic ran, against a table that changes
+        // approximately never. The decorator is the binding, so nothing that depends
+        // on the contract has to opt in; set the TTL to 0 to bypass it.
         $this->app->singleton(
             EnvironmentResolver::class,
-            DatabaseEnvironmentResolver::class,
+            fn (): EnvironmentResolver => new CachedEnvironmentResolver(
+                $this->app->make(DatabaseEnvironmentResolver::class),
+                $this->app->make(EnvironmentResolutionCache::class),
+            ),
         );
         $this->app->singleton(IssuerResolver::class, EnvironmentIssuerResolver::class);
         $this->app->singleton(EnvironmentDomains::class, EnvironmentDomainService::class);

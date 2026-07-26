@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Exceptions;
 
-use RuntimeException;
-
 /**
  * A PATCH operation this server cannot honour — an unmatched attribute path, or an
  * unknown/missing `op`.
@@ -13,17 +11,17 @@ use RuntimeException;
  * RFC 7644 §3.5.2 defines only `add`/`remove`/`replace` and requires an unmatched
  * target to be refused. Ignoring either and answering 200 is worse than useless: the
  * calling IdP records a successful write, never retries, and the drift is permanent and
- * invisible on both sides. The carried {@see $scimType} lets the controller emit the
- * correct RFC 7644 §3.12 keyword (`invalidPath` vs `invalidSyntax`).
+ * invisible on both sides. The inherited {@see InvalidScimRequest::$scimType} lets the
+ * controller emit the correct RFC 7644 §3.12 keyword (`invalidPath` vs `invalidSyntax`).
  */
-class UnsupportedScimPath extends RuntimeException
+class UnsupportedScimPath extends InvalidScimRequest
 {
     /**
      * @param  string  $scimType  the SCIM error keyword (RFC 7644 §3.12)
      */
-    public function __construct(string $message, public readonly string $scimType = 'invalidPath')
+    public function __construct(string $message, string $scimType = 'invalidPath')
     {
-        parent::__construct($message);
+        parent::__construct($message, $scimType);
     }
 
     public static function forPath(string $path): self

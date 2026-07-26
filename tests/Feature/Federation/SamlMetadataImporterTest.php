@@ -112,3 +112,53 @@ it('surfaces an HTTP error from a metadata URL', function (): void {
     expect(fn () => app(SamlMetadataImporter::class)->fromUrl('https://idp.okta.example/metadata.xml'))
         ->toThrow(SamlMetadataImportFailed::class, 'HTTP 404');
 });
+
+/** Metadata mid-rollover: TWO signing KeyDescriptors, exactly as Okta and Entra publish. */
+function rollingIdpMetadataXml(string $current, string $next): string
+{
+    return <<<XML
+    <?xml version="1.0" encoding="UTF-8"?>
+    <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.okta.example/entity">
+      <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+        <md:KeyDescriptor use="signing">
+          <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+            <ds:X509Data><ds:X509Certificate>{$current}</ds:X509Certificate></ds:X509Data>
+          </ds:KeyInfo>
+        </md:KeyDescriptor>
+        <md:KeyDescriptor use="signing">
+          <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+            <ds:X509Data><ds:X509Certificate>{$next}</ds:X509Certificate></ds:X509Data>
+          </ds:KeyInfo>
+        </md:KeyDescriptor>
+        <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.okta.example/sso"/>
+      </md:IDPSSODescriptor>
+    </md:EntityDescriptor>
+    XML;
+}
+
+/**
+ * Key rollover is the whole reason this matters: an IdP mid-rotation publishes the
+ * outgoing and incoming certificates side by side and may sign with either. Keeping
+ * only the first turns switchover day into a tenant-wide login outage.
+ */
+it('keeps every signing certificate an IdP publishes during a rollover', function (): void {
+    $current = signingCertBase64();
+    $next = signingCertBase64();
+
+    $metadata = app(SamlMetadataImporter::class)->fromXml(rollingIdpMetadataXml($current, $next));
+
+    expect($metadata->x509cert)->toBe($current)
+        ->and($metadata->extraCertificates)->toBe([$next]);
+
+    $config = $metadata->toConfig();
+
+    expect($config['idp_x509cert'])->toBe($current)
+        ->and($config['idp_x509cert_extra'])->toBe([$next]);
+});
+
+it('carries no extra certificates when the IdP publishes a single key', function (): void {
+    $metadata = app(SamlMetadataImporter::class)->fromXml(idpMetadataXml(signingCertBase64()));
+
+    expect($metadata->extraCertificates)->toBe([])
+        ->and($metadata->toConfig())->not->toHaveKey('idp_x509cert_extra');
+});

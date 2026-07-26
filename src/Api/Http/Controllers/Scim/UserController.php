@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers\Scim;
 
-use Cbox\Id\Api\Exceptions\UnsupportedScimPath;
+use Cbox\Id\Api\Exceptions\InvalidScimRequest;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Contracts\DirectoryUsers;
@@ -27,7 +27,7 @@ use Illuminate\Http\Response;
  * validates and maps SCIM; the directory read/query and provisioning is delegated
  * to the {@see DirectoryUsers} and {@see DirectorySync} contracts.
  */
-class UserController
+class UserController extends ScimController
 {
     public function __construct(
         private readonly DirectoryUsers $users,
@@ -63,11 +63,17 @@ class UserController
             return $this->error('400', 'userName is required.', 'invalidValue');
         }
 
-        $result = $this->provision($directory->id, ScimMapper::fromRequest($request));
+        try {
+            $scim = ScimMapper::fromRequest($request);
+        } catch (InvalidScimRequest $e) {
+            return $this->error('400', $e->getMessage(), $e->scimType);
+        }
+
+        $result = $this->provision($directory->id, $scim);
 
         return $result instanceof JsonResponse
             ? $result
-            : new JsonResponse(ScimMapper::toResource($result), 201);
+            : $this->resource(ScimMapper::toResource($result), 201);
     }
 
     public function replace(Request $request, string $id): JsonResponse
@@ -98,11 +104,17 @@ class UserController
         // would otherwise fall back to `userName` and re-key the write to another row —
         // so `PUT /Users/A` with `{userName: "B"}` would create/overwrite B and leave A
         // untouched. Passing $target->external_id makes the URL the sole identity.
-        $result = $this->provision($directory->id, ScimMapper::fromRequest($request, $target->external_id));
+        try {
+            $scim = ScimMapper::fromRequest($request, $target->external_id);
+        } catch (InvalidScimRequest $e) {
+            return $this->error('400', $e->getMessage(), $e->scimType);
+        }
+
+        $result = $this->provision($directory->id, $scim);
 
         return $result instanceof JsonResponse
             ? $result
-            : new JsonResponse(ScimMapper::toResource($result));
+            : $this->resource(ScimMapper::toResource($result));
     }
 
     public function show(Request $request, string $id): JsonResponse
@@ -111,7 +123,7 @@ class UserController
 
         return $directoryUser === null
             ? $this->notFound()
-            : new JsonResponse(ScimMapper::toResource($directoryUser));
+            : $this->resource(ScimMapper::toResource($directoryUser));
     }
 
     public function patch(Request $request, string $id): JsonResponse
@@ -127,11 +139,12 @@ class UserController
         // Re-provisioning with active=false deactivates: drops membership and
         // revokes sessions immediately.
         try {
-            $patched = ScimMapper::applyPatch($directoryUser, $request);
-        } catch (UnsupportedScimPath $e) {
-            // RFC 7644 §3.5.2: an unmatched target or an unknown/missing op is an error.
-            // Answering 200 would make the IdP record a write that never happened and
-            // never retry it. The exception carries the right §3.12 keyword.
+            $patched = ScimMapper::applyPatch($directoryUser, $this->operations($request));
+        } catch (InvalidScimRequest $e) {
+            // RFC 7644 §3.5.2: a missing `Operations` member, an unmatched target, an
+            // unknown/missing op or a non-boolean `active` are all errors. Answering 200
+            // would make the IdP record a write that never happened and never retry it.
+            // The exception carries the right §3.12 keyword.
             return $this->error('400', $e->getMessage(), $e->scimType);
         }
 
@@ -139,17 +152,23 @@ class UserController
 
         return $result instanceof JsonResponse
             ? $result
-            : new JsonResponse(ScimMapper::toResource($result));
+            : $this->resource(ScimMapper::toResource($result));
     }
 
-    public function destroy(Request $request, string $id): Response
+    public function destroy(Request $request, string $id): Response|JsonResponse
     {
         $directory = $this->directory($request);
         $directoryUser = $this->users->find($directory, $id);
 
-        if ($directoryUser !== null) {
-            $this->sync->deprovisionUser($directory->id, $directoryUser->external_id);
+        // RFC 7644 §3.6: deleting a resource that does not exist is a 404. Answering
+        // 204 told the IdP the deprovision succeeded for an id it never had — so it
+        // marked the user gone and stopped reconciling, orphaning whatever live account
+        // the id was actually meant to name.
+        if ($directoryUser === null) {
+            return $this->notFound();
         }
+
+        $this->sync->deprovisionUser($directory->id, $directoryUser->external_id);
 
         return response()->noContent();
     }
@@ -169,34 +188,8 @@ class UserController
         }
     }
 
-    private function directory(Request $request): Directory
-    {
-        $directory = $request->attributes->get('scim_directory');
-
-        if (! $directory instanceof Directory) {
-            abort(401);
-        }
-
-        return $directory;
-    }
-
     private function notFound(): JsonResponse
     {
         return $this->error('404', 'User not found.');
-    }
-
-    private function error(string $status, string $detail, ?string $scimType = null): JsonResponse
-    {
-        $body = [
-            'schemas' => ['urn:ietf:params:scim:api:messages:2.0:Error'],
-            'status' => $status,
-            'detail' => $detail,
-        ];
-
-        if ($scimType !== null) {
-            $body['scimType'] = $scimType;
-        }
-
-        return new JsonResponse($body, (int) $status);
     }
 }

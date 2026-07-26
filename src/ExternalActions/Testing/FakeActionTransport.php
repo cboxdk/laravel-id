@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Cbox\Id\ExternalActions\Testing;
 
 use Cbox\Id\ExternalActions\Contracts\ActionTransport;
+use Cbox\Id\ExternalActions\Contracts\ConcurrentActionTransport;
 use Cbox\Id\ExternalActions\Models\ExternalActionEndpoint;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\ExternalActions\ValueObjects\ActionResult;
+use Illuminate\Support\Collection;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -16,7 +18,7 @@ use PHPUnit\Framework\Assert;
  * and the token hook can be tested without an HTTP endpoint. By default it continues
  * (allow, no enrichment); use {@see willEnrich()} / {@see willDeny()} to script a reply.
  */
-class FakeActionTransport implements ActionTransport
+class FakeActionTransport implements ConcurrentActionTransport
 {
     private ActionResult $result;
 
@@ -50,6 +52,25 @@ class FakeActionTransport implements ActionTransport
         $this->sent[] = ['endpoint' => $endpoint->id, 'url' => $endpoint->url, 'context' => $context];
 
         return $this->result;
+    }
+
+    /**
+     * Implemented so tests exercise the pipeline's CONCURRENT branch as well as the
+     * sequential one. There is no real concurrency to fake — the point is that a fan-out
+     * of several endpoints takes the same code path in tests as in production.
+     *
+     * @param  Collection<int, ExternalActionEndpoint>  $endpoints
+     * @return array<string, ActionResult>
+     */
+    public function sendMany(Collection $endpoints, ActionContext $context): array
+    {
+        $results = [];
+
+        foreach ($endpoints as $endpoint) {
+            $results[$endpoint->id] = $this->send($endpoint, $context);
+        }
+
+        return $results;
     }
 
     public function assertSent(): void

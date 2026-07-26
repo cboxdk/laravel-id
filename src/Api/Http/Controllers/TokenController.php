@@ -17,6 +17,7 @@ use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
+use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
@@ -123,9 +124,12 @@ class TokenController
             return $this->error('unauthorized_client', 400);
         }
 
+        $requested = $this->scopes($request);
+
         return $this->tokenResponse(
-            $this->issuer->issueClientCredentials($client, $this->scopes($request), $this->resource($request), $dpopJkt),
+            $this->issuer->issueClientCredentials($client, $requested, $this->resource($request), $dpopJkt),
             null,
+            requestedScopes: $requested,
         );
     }
 
@@ -169,7 +173,7 @@ class TokenController
             ? $this->refreshTokens->issue($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt)
             : null;
 
-        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access), $refresh);
+        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access), $refresh, $grant->scopes);
     }
 
     private function deviceCode(Request $request, ?string $dpopJkt): JsonResponse
@@ -205,6 +209,7 @@ class TokenController
         return $this->tokenResponse(
             $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt),
             null,
+            requestedScopes: $grant->scopes,
         );
     }
 
@@ -242,7 +247,7 @@ class TokenController
         // the approving user (with auth_time and the request nonce).
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt);
 
-        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access));
+        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access), null, $grant->scopes);
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
@@ -267,7 +272,7 @@ class TokenController
             return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
-        return $this->tokenResponse($this->accessFromRefresh($client, $rotated, $dpopJkt), null, $rotated->refreshToken);
+        return $this->tokenResponse($this->accessFromRefresh($client, $rotated, $dpopJkt), null, $rotated->refreshToken, $rotated->scopes);
     }
 
     private function accessFromRefresh(Client $client, RefreshGrant $grant, ?string $dpopJkt): IssuedToken
@@ -315,9 +320,10 @@ class TokenController
 
         if ($grant->amr !== []) {
             $claims['amr'] = $grant->amr;
-            // acr: a stronger login (a second factor was used) is level 2.
-            $stepUp = array_intersect($grant->amr, ['mfa', 'otp', 'passkey', 'webauthn']) !== [];
-            $claims['acr'] = $stepUp ? 'urn:cbox-id:aal2' : 'urn:cbox-id:aal1';
+            // acr: derived from the amr through the SAME enum that advertises
+            // acr_values_supported and gates a requested acr_values at /authorize, so
+            // the level we assert here is the level that was actually demanded.
+            $claims['acr'] = AuthenticationContextClass::forAmr($grant->amr)->value;
         }
 
         return $this->signer->sign($claims, self::ID_TOKEN_ALG);
@@ -427,13 +433,35 @@ class TokenController
         ]));
     }
 
-    private function tokenResponse(IssuedToken $token, ?string $idToken, ?string $refreshToken = null): JsonResponse
+    /**
+     * @param  list<string>|null  $requestedScopes  what the client asked for, so the granted set
+     *                                              can be echoed when it differs (null = the grant carries no scope request)
+     */
+    private function tokenResponse(IssuedToken $token, ?string $idToken, ?string $refreshToken = null, ?array $requestedScopes = null): JsonResponse
     {
         $body = [
             'access_token' => $token->token,
             'token_type' => $token->tokenType,
             'expires_in' => $token->expiresIn,
         ];
+
+        // RFC 6749 §5.1: `scope` is OPTIONAL only when it is IDENTICAL to the request —
+        // otherwise it is REQUIRED. The issuer silently filters a request down to the
+        // client's registered set, so without this a client asking for
+        // `openid profile organizations offline_access` got a 200 carrying a narrower
+        // token and nothing in the response to say so; its next API call 403'd with no
+        // way to diagnose it, because every conformant library (AppAuth,
+        // node-openid-client, Spring Security) assumes the full request was granted
+        // when `scope` is absent. The token-exchange path below has always echoed it
+        // (RFC 8693 §2.2.1); this makes the rest of the endpoint consistent.
+        //
+        // An EMPTY granted set omits the key rather than sending `"scope": ""`. RFC 6749
+        // §5.1 defines the value as `scope-token *( SP scope-token )` — one token minimum,
+        // no empty production — so a no-scope client was being handed a response its own
+        // ABNF does not admit.
+        if ($requestedScopes !== null && $token->scopes !== $requestedScopes && $token->scopes !== []) {
+            $body['scope'] = implode(' ', $token->scopes);
+        }
 
         if ($idToken !== null) {
             $body['id_token'] = $idToken;

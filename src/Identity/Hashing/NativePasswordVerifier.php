@@ -15,9 +15,10 @@ use Cbox\Id\Identity\Contracts\HashVerifier;
  *   - bcrypt  — `$2y$…`, `$2a$…`, `$2b$…`
  *   - argon2  — `$argon2i$…`, `$argon2id$…`
  *
- * These are exactly the formats Auth0/Cognito/most SQL apps export, so the common
- * migration path needs no host code at all. Weak legacy digests (raw md5/sha1,
- * `{SSHA}`, PBKDF2, Firebase scrypt) are deliberately NOT supported here: a host
+ * These are exactly the formats most hosted identity providers and SQL apps export,
+ * so the common migration path needs no host code at all. Weak legacy digests (raw
+ * md5/sha1, `{SSHA}`, PBKDF2, Firebase scrypt) are deliberately NOT supported here:
+ * a host
  * that must accept one registers its own {@see HashVerifier} wrapping a vetted
  * library, opting in explicitly rather than the package quietly trusting a weak
  * or non-native format.

@@ -94,6 +94,37 @@ it('keeps a manual permission platform-global and visible from every environment
         ->and(Permission::query()->where('name', 'platform:manage')->value('environment_id'))->toBeNull();
 });
 
+/**
+ * With no environment resolved the scope used to apply NO predicate at all — a
+ * fail-OPEN hole in a kernel whose every other environment-owned model emits
+ * `1 = 0` in that state. A permission key is tenant-identifying
+ * (`acme.billing.refund` names the customer and what they bought), so falling back
+ * to the platform-global rows is the only honest answer. Suspension stays the ONE
+ * explicit way to read the whole catalog.
+ */
+it('falls back to platform-global rows only when no environment is in context', function (): void {
+    ($this->declareInEnvironment)('env_a', 'invoices:read');
+
+    Permission::query()->create(['client_id' => null, 'name' => 'platform:manage']);
+
+    $this->forgetEnvironment();
+
+    $names = Permission::query()->pluck('name')->all();
+
+    expect($names)->toContain('platform:manage')
+        ->and($names)->not->toContain('invoices:read');
+});
+
+it('still reads the whole catalog when scoping is explicitly suspended', function (): void {
+    ($this->declareInEnvironment)('env_a', 'invoices:read');
+
+    $this->forgetEnvironment();
+
+    $names = $this->withoutEnvironmentScope(fn (): array => Permission::query()->pluck('name')->all());
+
+    expect($names)->toContain('invoices:read');
+});
+
 it('stamps a declared permission with its client environment, derived from the client', function (): void {
     // Register the app in env_c.
     $clientId = $this->runAsEnvironment('env_c', fn (): string => $this->makeClient()->client->client_id);

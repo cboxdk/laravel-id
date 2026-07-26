@@ -21,7 +21,7 @@ use function Laravel\Prompts\table;
 
 /**
  * `cbox-id:users:import` — the CLI on-ramp for the migration wedge. Point it at a
- * CSV or JSON export from your old provider (Auth0/Cognito/Firebase/a SQL app),
+ * CSV or JSON export from your old provider (a hosted IdP, or a legacy SQL app),
  * INCLUDING each user's existing password hash, and it streams them into the
  * platform so they sign in on day one — each foreign hash upgraded to argon2id on
  * first successful login (see {@see UserImport}).

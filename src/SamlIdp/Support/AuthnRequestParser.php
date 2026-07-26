@@ -64,6 +64,8 @@ class AuthnRequestParser
         }
 
         $acs = $root->getAttribute('AssertionConsumerServiceURL');
+        $destination = $root->getAttribute('Destination');
+        $issueInstant = $root->getAttribute('IssueInstant');
 
         return new ParsedAuthnRequest(
             id: $id,
@@ -72,6 +74,8 @@ class AuthnRequestParser
             nameIdFormat: $this->nameIdFormat($document, $root),
             hasSignature: $this->hasEmbeddedSignature($document, $root),
             document: $document,
+            destination: $destination !== '' ? $destination : null,
+            issueInstant: $issueInstant !== '' ? $issueInstant : null,
         );
     }
 

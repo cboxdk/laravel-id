@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Carbon;
 
 /**
  * A SCIM Group (RFC 7643 §4.2) synced from the customer's directory. Membership is
@@ -20,6 +21,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $directory_id
  * @property string|null $external_id
  * @property string $display_name
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 class DirectoryGroup extends Model implements EnvironmentOwned
 {

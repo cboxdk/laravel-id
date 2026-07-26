@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * A project — one IdP product within an account, between the account (the login /
  * identity umbrella) and its environments (the product's prod/staging/dev stages).
- * The Clerk "Application" / Auth0 "Tenant" layer: one account can own several
+ * The layer other IdPs call an "application" or a "tenant": one account can own several
  * independently-billed projects.
  *
  * The plan/billing anchor lives here: `environment_limit` is THIS project's plan

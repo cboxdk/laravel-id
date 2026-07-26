@@ -10,7 +10,6 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
 use Cbox\Id\Platform\Contracts\AccountMemberMfa;
@@ -66,16 +65,13 @@ class PlatformServiceProvider extends ServiceProvider
 
         $this->app->singleton(AccountApiKeys::class, DatabaseAccountApiKeys::class);
 
-        $this->app->singleton(EnvironmentApiKeys::class, function (Application $app): EnvironmentApiKeys {
-            return new DatabaseEnvironmentApiKeys($app->make(EnvironmentContext::class));
-        });
+        $this->app->singleton(EnvironmentApiKeys::class, DatabaseEnvironmentApiKeys::class);
 
         // The signed bridge that lets an account member administer a tenant
         // environment without a second login (and without being a subject there).
         $this->app->singleton(EnvironmentAdminHandoff::class, function (Application $app): EnvironmentAdminHandoff {
             return new SignedEnvironmentAdminHandoff(
                 $app->make(TokenSigner::class),
-                $app->make(EnvironmentContext::class),
                 $app->make(CacheRepository::class),
             );
         });

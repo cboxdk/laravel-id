@@ -46,6 +46,8 @@ $user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3c
 Full docs live in [`docs/`](docs/index.md):
 
 - [Requirements](docs/requirements.md) · [Installation](docs/getting-started/installation.md) · [Quickstart](docs/quickstart.md)
+- [**Upgrading**](UPGRADING.md) — breaking changes and what to do about them, read this before crossing a version
+- [Operations](docs/operations/_index.md) — the queue worker and scheduler the platform needs, and retention
 - [Architecture & patterns](docs/core-concepts/architecture.md)
 - [Cookbook](docs/cookbook/_index.md)
 - [Extending & customizing](docs/extension-points/_index.md)

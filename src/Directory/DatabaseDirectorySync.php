@@ -45,9 +45,15 @@ class DatabaseDirectorySync implements DirectorySync
             // uniqueness=server). A collision with a DIFFERENT externalId is a 409, not
             // a duplicate userName the IdP can never reconcile. Same-externalId re-pushes
             // fall through to updateOrCreate below (an update, not a conflict).
+            //
+            // Matched on the folded column, because RFC 7643 defines userName as
+            // caseExact:false. Comparing the raw JSON value made this check inherit the
+            // database's collation: on PostgreSQL `Dana.Rivera` and `dana.rivera` were
+            // two different people, so the IdP's pre-provision lookup missed, this guard
+            // missed, and a second directory row and a second subject were created.
             $nameTaken = DirectoryUser::query()
                 ->where('directory_id', $directory->id)
-                ->where('resource->userName', $user->userName)
+                ->where('user_name_lower', DirectoryUser::normalize($user->userName))
                 ->where('external_id', '!=', $user->externalId)
                 ->exists();
 

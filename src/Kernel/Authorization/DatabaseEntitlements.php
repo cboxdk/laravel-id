@@ -16,7 +16,7 @@ use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementInput;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesTenant;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Illuminate\Support\Facades\DB;
 
@@ -26,15 +26,19 @@ use Illuminate\Support\Facades\DB;
  */
 class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
 {
+    // Lazy per-call resolution of the ambient tenant. This class is a `singleton`
+    // (AuthorizationServiceProvider) and TenantContext is `scoped`: injected, every runAs()
+    // would set and restore on the first job's manager, scoping nothing.
+    use ResolvesTenant;
+
     public function __construct(
-        private readonly TenantContext $tenant,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
     ) {}
 
     public function get(string $organizationId, string $key): ?EntitlementValue
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $key): ?EntitlementValue {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $key): ?EntitlementValue {
             $entitlement = $this->find($organizationId, $key);
 
             if ($entitlement === null || $this->isExpired($entitlement)) {
@@ -47,7 +51,7 @@ class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
 
     public function all(string $organizationId): array
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId): array {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($organizationId): array {
             $result = [];
 
             foreach (Entitlement::query()->where('organization_id', $organizationId)->get() as $entitlement) {
@@ -68,7 +72,7 @@ class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
         EntitlementSource $source,
         ?string $sourceRef = null,
     ): EntitlementValue {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), fn (): EntitlementValue => DB::transaction(function () use ($organizationId, $input, $source, $sourceRef): EntitlementValue {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): EntitlementValue => DB::transaction(function () use ($organizationId, $input, $source, $sourceRef): EntitlementValue {
             $existing = $this->find($organizationId, $input->key);
             $version = ($existing === null ? 0 : $existing->version) + 1;
 
@@ -97,7 +101,7 @@ class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
 
     public function revoke(string $organizationId, string $key, EntitlementSource $source): void
     {
-        $this->tenant->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $key, $source): void {
+        $this->tenant()->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $key, $source): void {
             $existing = $this->find($organizationId, $key);
 
             if ($existing === null) {
@@ -117,7 +121,7 @@ class DatabaseEntitlements implements EntitlementReader, EntitlementWriter
 
     public function reconcile(string $organizationId, array $authoritative, EntitlementSource $source): void
     {
-        $this->tenant->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $authoritative, $source): void {
+        $this->tenant()->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $authoritative, $source): void {
             $desired = [];
 
             foreach ($authoritative as $input) {

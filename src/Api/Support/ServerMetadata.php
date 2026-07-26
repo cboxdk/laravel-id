@@ -7,6 +7,7 @@ namespace Cbox\Id\Api\Support;
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
 
 /**
  * The authorization-server metadata document, shared by the OIDC discovery
@@ -73,8 +74,10 @@ class ServerMetadata
                 'roles', 'permissions', 'organizations',
             ],
             // The authentication context class references this IdP asserts: aal1 (a
-            // single factor) and aal2 (a second factor was used at login).
-            'acr_values_supported' => ['urn:cbox-id:aal1', 'urn:cbox-id:aal2'],
+            // single factor) and aal2 (a second factor was used at login). Read from
+            // the enum that also gates `acr_values` at /authorize and stamps `acr` on
+            // the id_token, so the advertisement cannot outrun what is enforced.
+            'acr_values_supported' => AuthenticationContextClass::values(),
             'claims_parameter_supported' => false,
             'request_parameter_supported' => false,
             'request_uri_parameter_supported' => false,

@@ -14,8 +14,8 @@ use Cbox\Id\Organization\Contracts\Memberships;
  * provider so they can sign in immediately, with each foreign hash transparently
  * upgraded to the platform hasher on the user's first successful login (see
  * {@see Subjects::verifyPassword()} and {@see HashVerifier}). This is the
- * enterprise migration wedge: move off Auth0/Cognito/Firebase/a legacy SQL app
- * without a forced password reset.
+ * enterprise migration wedge: move off a hosted identity provider or a legacy SQL
+ * app without a forced password reset.
  *
  * The default implementation provisions into the platform's own user store via
  * {@see Subjects} and attaches each user to an organization via

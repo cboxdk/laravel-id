@@ -8,35 +8,42 @@ use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Contracts\SamlIdentityProvider;
 use Cbox\Id\SamlIdp\Contracts\ServiceProviders;
 use Cbox\Id\SamlIdp\Enums\AuthnContext;
+use Cbox\Id\SamlIdp\Enums\NameIdFormat;
+use Cbox\Id\SamlIdp\Enums\SamlBinding;
+use Cbox\Id\SamlIdp\Enums\SamlStatusCode;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
 use Cbox\Id\SamlIdp\Models\ServiceProvider;
 use Cbox\Id\SamlIdp\Support\AssertionBuilder;
 use Cbox\Id\SamlIdp\Support\AuthnRequestParser;
+use Cbox\Id\SamlIdp\Support\EmbeddedSignature;
 use Cbox\Id\SamlIdp\Support\IdpDescriptor;
+use Cbox\Id\SamlIdp\Support\MessageGuard;
+use Cbox\Id\SamlIdp\Support\ReceivedEndpoint;
 use Cbox\Id\SamlIdp\Support\RedirectBindingSignature;
 use Cbox\Id\SamlIdp\ValueObjects\AuthnRequest;
 use Cbox\Id\SamlIdp\ValueObjects\ParsedAuthnRequest;
+use Cbox\Id\SamlIdp\ValueObjects\SamlError;
 use Cbox\Id\SamlIdp\ValueObjects\SamlResponse as SamlResponseVo;
 use DOMDocument;
-use DOMElement;
-use DOMXPath;
-use OneLogin\Saml2\Utils as SamlUtils;
-use RobRichards\XMLSecLibs\XMLSecurityDSig;
-use RobRichards\XMLSecLibs\XMLSecurityKey;
-use Throwable;
 
 /**
  * The SAML 2.0 Identity Provider. Enforces the IdP-side trust policy on top of the
  * vetted signing/verification primitives (xmlseclibs, onelogin): an assertion is
  * only ever minted for a registered, active SP, delivered only to that SP's
- * exact registered ACS, and (when required) only in answer to a signed request.
+ * exact registered ACS, and (when required) only in answer to a signed, fresh,
+ * correctly-addressed request that has not been seen before.
  */
 class SamlIdentityProviderService implements SamlIdentityProvider
 {
-    private const NS_PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
-
-    private const NS_DSIG = 'http://www.w3.org/2000/09/xmldsig#';
+    /**
+     * How far an inbound `AuthnRequest`'s IssueInstant may be from now, in both
+     * directions. Wider than the SLO window on purpose: the SSO endpoint hands an
+     * unauthenticated browser off to the host's login and the SAME request comes
+     * back once the user has signed in, so the window has to cover a real login
+     * (password + MFA), not just network latency.
+     */
+    private const REQUEST_FRESHNESS_SECONDS = 900;
 
     public function __construct(
         private readonly ServiceProviders $serviceProviders,
@@ -44,16 +51,27 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         private readonly AuthnRequestParser $parser,
         private readonly RedirectBindingSignature $redirectSignature,
         private readonly AssertionBuilder $assertions,
+        private readonly EmbeddedSignature $embeddedSignature,
+        private readonly MessageGuard $guard,
     ) {}
 
+    /**
+     * The published IdP metadata. Everything in it is derived from what this IdP
+     * ACTUALLY does — an SP treats metadata as authoritative, so an attribute that
+     * over-promises is not cosmetic: it is an outage on the SP's side. Hence
+     * `WantAuthnRequestsSigned` follows the registered SPs' real policy, the
+     * NameIDFormats are the ones this environment actually emits, and both SLO
+     * bindings are advertised only because both are now verified.
+     */
     public function metadata(): string
     {
-        $material = $this->keyMaterial->active();
-        $certBody = $this->certificateBody($material->certificatePem);
-
         $entityId = IdpDescriptor::entityId();
         $ssoUrl = IdpDescriptor::ssoUrl();
         $sloUrl = IdpDescriptor::sloUrl();
+
+        // Read the registrations ONCE — both derived attributes below describe the
+        // same set of SPs.
+        $registered = $this->activeServiceProviders();
 
         $md = 'urn:oasis:names:tc:SAML:2.0:metadata';
         $ds = 'http://www.w3.org/2000/09/xmldsig#';
@@ -67,50 +85,171 @@ class SamlIdentityProviderService implements SamlIdentityProvider
 
         $idp = $document->createElementNS($md, 'md:IDPSSODescriptor');
         $idp->setAttribute('protocolSupportEnumeration', 'urn:oasis:names:tc:SAML:2.0:protocol');
-        $idp->setAttribute('WantAuthnRequestsSigned', 'false');
+        $idp->setAttribute('WantAuthnRequestsSigned', $this->wantAuthnRequestsSigned($registered) ? 'true' : 'false');
         $entity->appendChild($idp);
 
-        // Signing key descriptor — the X.509 cert SPs pin to verify our assertions.
-        $keyDescriptor = $document->createElementNS($md, 'md:KeyDescriptor');
-        $keyDescriptor->setAttribute('use', 'signing');
-        $keyInfo = $document->createElementNS($ds, 'ds:KeyInfo');
-        $x509Data = $document->createElementNS($ds, 'ds:X509Data');
-        $x509Certificate = $document->createElementNS($ds, 'ds:X509Certificate');
-        $x509Certificate->appendChild($document->createTextNode($certBody));
-        $x509Data->appendChild($x509Certificate);
-        $keyInfo->appendChild($x509Data);
-        $keyDescriptor->appendChild($keyInfo);
-        $idp->appendChild($keyDescriptor);
+        // Signing key descriptors — the X.509 certs SPs pin to verify our
+        // assertions. One per currently-trusted key (active first, then the ones
+        // rotating out) so a rotation has an overlap window instead of a cliff.
+        foreach ($this->keyMaterial->published() as $certificate) {
+            $keyDescriptor = $document->createElementNS($md, 'md:KeyDescriptor');
+            $keyDescriptor->setAttribute('use', 'signing');
+            $keyInfo = $document->createElementNS($ds, 'ds:KeyInfo');
+            $x509Data = $document->createElementNS($ds, 'ds:X509Data');
+            $x509Certificate = $document->createElementNS($ds, 'ds:X509Certificate');
+            $x509Certificate->appendChild($document->createTextNode($this->certificateBody($certificate)));
+            $x509Data->appendChild($x509Certificate);
+            $keyInfo->appendChild($x509Data);
+            $keyDescriptor->appendChild($keyInfo);
+            $idp->appendChild($keyDescriptor);
+        }
 
-        // Single Logout endpoints (both bindings).
-        foreach (['HTTP-Redirect', 'HTTP-POST'] as $binding) {
+        // Single Logout endpoints. Both bindings are verified: HTTP-Redirect by the
+        // detached query signature, HTTP-POST by the enveloped XML-DSig.
+        foreach (SamlBinding::cases() as $binding) {
             $slo = $document->createElementNS($md, 'md:SingleLogoutService');
-            $slo->setAttribute('Binding', 'urn:oasis:names:tc:SAML:2.0:bindings:'.$binding);
+            $slo->setAttribute('Binding', $binding->value);
             $slo->setAttribute('Location', $sloUrl);
             $idp->appendChild($slo);
         }
 
-        // Supported NameID formats.
-        foreach ([
-            'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-            'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
-            'urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
-            'urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified',
-        ] as $format) {
+        // The NameID formats EVERY registered SP can be answered under. One
+        // IDPSSODescriptor serves all of them, so a format only some SPs accept is
+        // a menu item that refuses whoever orders it.
+        foreach ($this->advertisedNameIdFormats($registered) as $format) {
             $nameIdFormat = $document->createElementNS($md, 'md:NameIDFormat');
-            $nameIdFormat->appendChild($document->createTextNode($format));
+            $nameIdFormat->appendChild($document->createTextNode($format->value));
             $idp->appendChild($nameIdFormat);
         }
 
         // Single Sign-On endpoints (both bindings).
-        foreach (['HTTP-Redirect', 'HTTP-POST'] as $binding) {
+        foreach (SamlBinding::cases() as $binding) {
             $sso = $document->createElementNS($md, 'md:SingleSignOnService');
-            $sso->setAttribute('Binding', 'urn:oasis:names:tc:SAML:2.0:bindings:'.$binding);
+            $sso->setAttribute('Binding', $binding->value);
             $sso->setAttribute('Location', $ssoUrl);
             $idp->appendChild($sso);
         }
 
         return (string) $document->saveXML();
+    }
+
+    /**
+     * Whether metadata should declare that AuthnRequests must be signed.
+     *
+     * `WantAuthnRequestsSigned` is ONE boolean on the one IDPSSODescriptor (SAML
+     * metadata §2.4.3) while enforcement is per-SP (`want_authn_requests_signed`),
+     * so the two can only be reconciled in one of two directions. We publish `true`
+     * only when EVERY active SP requires signing, rather than enforcing signing on
+     * everyone as soon as one SP requires it: the attribute is a claim about what
+     * this IdP refuses, and "true" while unsigned requests are still accepted for
+     * other SPs is simply untrue — but tightening enforcement to match an
+     * any-SP publication would make registering a single strict SP silently start
+     * refusing every already-working SP that does not sign. A conservative claim
+     * costs the strict SP a configuration step (it must be told to sign, which is
+     * the same step that put its certificate on file); an over-broad one costs
+     * every other SP its logins.
+     *
+     * With no active SP registered there is nothing being required of anyone, so
+     * the answer is `false`. `cbox-id.saml_idp.want_authn_requests_signed` pins it
+     * either way for an operator whose policy is IdP-wide.
+     *
+     * @param  list<ServiceProvider>  $registered
+     */
+    private function wantAuthnRequestsSigned(array $registered): bool
+    {
+        $configured = config('cbox-id.saml_idp.want_authn_requests_signed');
+
+        if (is_bool($configured)) {
+            return $configured;
+        }
+
+        if ($registered === []) {
+            return false;
+        }
+
+        foreach ($registered as $serviceProvider) {
+            if (! $serviceProvider->want_authn_requests_signed) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The NameID formats metadata may advertise: the INTERSECTION of what every
+     * active SP can be answered under.
+     *
+     * One IDPSSODescriptor is published to all of them, and an SP treats it as a
+     * menu — Shibboleth's `nameIDFormatPrecedence` defaults to the first entry and
+     * Salesforce fills its picklist straight from the imported document. Publishing
+     * the UNION therefore hands a newly-onboarded SP a sibling's format and answers
+     * it with `InvalidNameIDPolicy` for using it. The intersection is by
+     * construction a subset of {@see satisfiableNameIdFormats}, which is the same
+     * predicate {@see assertNameIdPolicySatisfiable} enforces, so the advertised and
+     * accepted sets cannot drift apart.
+     *
+     * With nothing registered yet, only `unspecified` is honest.
+     *
+     * @param  list<ServiceProvider>  $registered
+     * @return non-empty-list<NameIdFormat>
+     */
+    private function advertisedNameIdFormats(array $registered): array
+    {
+        $advertised = null;
+
+        foreach ($registered as $serviceProvider) {
+            $satisfiable = $this->satisfiableNameIdFormats($serviceProvider);
+
+            $advertised = $advertised === null
+                ? $satisfiable
+                : array_values(array_filter(
+                    $advertised,
+                    static fn (NameIdFormat $format): bool => in_array($format, $satisfiable, true),
+                ));
+        }
+
+        if ($advertised === null || $advertised === []) {
+            return [NameIdFormat::Unspecified];
+        }
+
+        return $advertised;
+    }
+
+    /**
+     * The NameID formats an AuthnRequest addressed to `$serviceProvider` may ask
+     * for and be answered under: the SP's OWN registered format — the one the
+     * assertion will actually carry — and `unspecified`, which means "IdP, you
+     * choose". The SP's format comes first because that is the order an SP reads a
+     * precedence list in.
+     *
+     * @return non-empty-list<NameIdFormat>
+     */
+    private function satisfiableNameIdFormats(ServiceProvider $serviceProvider): array
+    {
+        if ($serviceProvider->name_id_format === NameIdFormat::Unspecified) {
+            return [NameIdFormat::Unspecified];
+        }
+
+        return [$serviceProvider->name_id_format, NameIdFormat::Unspecified];
+    }
+
+    /**
+     * The SPs registered in this environment that are currently active.
+     *
+     * @return list<ServiceProvider>
+     */
+    private function activeServiceProviders(): array
+    {
+        $active = [];
+
+        foreach ($this->serviceProviders->all() as $serviceProvider) {
+            if ($serviceProvider->isActive()) {
+                $active[] = $serviceProvider;
+            }
+        }
+
+        return $active;
     }
 
     public function parseAuthnRequest(
@@ -119,6 +258,7 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         ?string $signature = null,
         ?string $sigAlg = null,
         bool $fromRedirectBinding = true,
+        ?string $rawQueryString = null,
     ): AuthnRequest {
         $parsed = $this->parser->parse($samlRequest, $fromRedirectBinding);
 
@@ -138,8 +278,16 @@ class SamlIdentityProviderService implements SamlIdentityProvider
 
         // Signature policy.
         if ($serviceProvider->want_authn_requests_signed) {
-            $this->verifyRequestSignature($serviceProvider, $parsed, $samlRequest, $relayState, $signature, $sigAlg, $fromRedirectBinding);
+            $this->verifyRequestSignature($serviceProvider, $parsed, $samlRequest, $relayState, $signature, $sigAlg, $fromRedirectBinding, $rawQueryString);
         }
+
+        $signed = $fromRedirectBinding ? ($signature !== null && $signature !== '') : $parsed->hasSignature;
+
+        // From here on the request has cleared every trust gate, so a refusal can
+        // be reported to the SP in SAML rather than as an opaque HTTP error.
+        $this->assertAddressedToUs($parsed, $serviceProvider, $signed, $relayState);
+        $this->assertFresh($parsed, $serviceProvider, $relayState);
+        $this->assertNameIdPolicySatisfiable($parsed, $serviceProvider, $relayState);
 
         return new AuthnRequest(
             id: $parsed->id,
@@ -151,6 +299,161 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         );
     }
 
+    /**
+     * `Destination` binds a request to the endpoint it was meant for. SAML core
+     * §3.2.1 makes it a MUST on any signed message, and validating it is what stops
+     * a request captured at one endpoint (or one tenant's IdP) being replayed at
+     * another.
+     *
+     * SAML bindings §3.4.5.2 defines the comparison against "the location at which
+     * the message has been received", which is NOT the same string as the endpoint
+     * we currently publish — see {@see ReceivedEndpoint} for why the two legitimately
+     * diverge and why accepting either is the conformant answer.
+     */
+    private function assertAddressedToUs(
+        ParsedAuthnRequest $parsed,
+        ServiceProvider $serviceProvider,
+        bool $signed,
+        ?string $relayState,
+    ): void {
+        $destination = $parsed->destination;
+
+        if ($destination === null) {
+            if ($signed) {
+                throw $this->reject(
+                    'a signed AuthnRequest must carry a Destination',
+                    $parsed,
+                    $serviceProvider,
+                    $relayState,
+                    SamlStatusCode::Requester,
+                    SamlStatusCode::RequestDenied,
+                );
+            }
+
+            return;
+        }
+
+        if (! ReceivedEndpoint::addresses($destination, IdpDescriptor::ssoUrl())) {
+            throw $this->reject(
+                'Destination does not address this SingleSignOnService endpoint',
+                $parsed,
+                $serviceProvider,
+                $relayState,
+                SamlStatusCode::Requester,
+                SamlStatusCode::RequestDenied,
+            );
+        }
+    }
+
+    /**
+     * A signature proves who sent a request, never when. Without a freshness bound
+     * a captured AuthnRequest is good forever; the single-use burn that closes the
+     * replay lives at issuance ({@see issueResponse}), because THIS request is
+     * legitimately parsed twice — once before the host's login hand-off and once
+     * when the browser comes back with it.
+     */
+    private function assertFresh(ParsedAuthnRequest $parsed, ServiceProvider $serviceProvider, ?string $relayState): void
+    {
+        if (! $this->guard->fresh($parsed->issueInstant, self::REQUEST_FRESHNESS_SECONDS)) {
+            throw $this->reject(
+                'the AuthnRequest is stale or its IssueInstant is missing/unparseable',
+                $parsed,
+                $serviceProvider,
+                $relayState,
+                SamlStatusCode::Requester,
+                SamlStatusCode::RequestDenied,
+            );
+        }
+    }
+
+    /**
+     * A `NameIDPolicy/@Format` we cannot satisfy is answered with
+     * `InvalidNameIDPolicy` (SAML core §3.4.1.1), not silently ignored. The IdP
+     * emits the SP's REGISTERED format; a request for `unspecified` means "you
+     * choose", and anything else would mean labelling the same value with a
+     * different format URN — telling Salesforce an email address is a persistent
+     * identifier is worse than refusing.
+     *
+     * The accepted set is {@see satisfiableNameIdFormats} — the same list metadata
+     * is derived from, so nothing this refuses can ever have been advertised.
+     */
+    private function assertNameIdPolicySatisfiable(
+        ParsedAuthnRequest $parsed,
+        ServiceProvider $serviceProvider,
+        ?string $relayState,
+    ): void {
+        $requested = $parsed->nameIdFormat;
+
+        if ($requested === null || $requested === '') {
+            return;
+        }
+
+        $format = NameIdFormat::tryFromPolicyUrn($requested);
+
+        if ($format !== null && in_array($format, $this->satisfiableNameIdFormats($serviceProvider), true)) {
+            return;
+        }
+
+        throw $this->reject(
+            'the requested NameIDPolicy Format is not the one registered for this service provider',
+            $parsed,
+            $serviceProvider,
+            $relayState,
+            SamlStatusCode::Requester,
+            SamlStatusCode::InvalidNameIdPolicy,
+        );
+    }
+
+    /** A refusal the SP will be told about on its own ACS, in SAML. */
+    private function reject(
+        string $reason,
+        ParsedAuthnRequest $parsed,
+        ServiceProvider $serviceProvider,
+        ?string $relayState,
+        SamlStatusCode $status,
+        ?SamlStatusCode $subStatus = null,
+    ): InvalidAuthnRequest {
+        return InvalidAuthnRequest::reportable($reason, new SamlError(
+            spEntityId: $serviceProvider->entity_id,
+            acsUrl: $serviceProvider->acs_url,
+            status: $status,
+            subStatus: $subStatus,
+            inResponseTo: $parsed->id,
+            relayState: $relayState,
+            message: $reason,
+        ));
+    }
+
+    public function issueErrorResponse(SamlError $error): SamlResponseVo
+    {
+        // Re-resolve the SP (deny-by-default, exactly as issuance does): an error
+        // response is still a document we sign and POST somewhere, so the target
+        // must be a currently-registered, active SP's own registered ACS — never a
+        // URL carried in the error itself.
+        $serviceProvider = $this->serviceProviders->findActiveByEntityId($error->spEntityId);
+
+        if ($serviceProvider === null) {
+            throw UnknownServiceProvider::forEntityId($error->spEntityId);
+        }
+
+        $xml = $this->assertions->buildStatus(
+            material: $this->keyMaterial->active(),
+            idpEntityId: IdpDescriptor::entityId(),
+            destination: $serviceProvider->acs_url,
+            status: $error->status,
+            subStatus: $error->subStatus,
+            inResponseTo: $error->inResponseTo,
+            message: $error->message,
+        );
+
+        return new SamlResponseVo(
+            xml: $xml,
+            encoded: base64_encode($xml),
+            acsUrl: $serviceProvider->acs_url,
+            relayState: $error->relayState,
+        );
+    }
+
     public function issueResponse(AuthnRequest $request, string $subjectId, array $attributes = []): SamlResponseVo
     {
         // Re-resolve the SP at issuance time (deny-by-default a second time): if it
@@ -158,6 +461,14 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         $serviceProvider = $this->serviceProviders->findActiveByEntityId($request->spEntityId);
         if ($serviceProvider === null) {
             throw UnknownServiceProvider::forEntityId($request->spEntityId);
+        }
+
+        // Single-use: one AuthnRequest buys exactly one assertion. Burning the id
+        // HERE rather than at parse time is deliberate — the SSO endpoint parses
+        // the same request again when the browser returns from the host's login,
+        // and that is not a replay. A second assertion for it would be.
+        if (! $this->guard->consume($request->spEntityId, $request->id, self::REQUEST_FRESHNESS_SECONDS)) {
+            throw InvalidAuthnRequest::make('the AuthnRequest has already been answered (replay)');
         }
 
         $material = $this->keyMaterial->active();
@@ -263,6 +574,7 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         ?string $signature,
         ?string $sigAlg,
         bool $fromRedirectBinding,
+        ?string $rawQueryString = null,
     ): void {
         if ($fromRedirectBinding) {
             $this->redirectSignature->verify(
@@ -271,6 +583,7 @@ class SamlIdentityProviderService implements SamlIdentityProvider
                 $signature,
                 $sigAlg,
                 $serviceProvider->certificate,
+                $rawQueryString,
             );
 
             return;
@@ -285,158 +598,7 @@ class SamlIdentityProviderService implements SamlIdentityProvider
             throw InvalidAuthnRequest::make('SP has no certificate on file to verify a signed request');
         }
 
-        $this->verifyEmbeddedSignature($parsed->document, $serviceProvider->certificate);
-    }
-
-    /**
-     * Verify an enveloped XML-DSig on a POSTed AuthnRequest against the SP cert.
-     *
-     * The RSA verification is delegated to onelogin's {@see SamlUtils::validateSign()}
-     * (xmlseclibs under the hood), but that call only proves *a* signature in the
-     * document verifies against the cert — on its own it does NOT prove the signature
-     * covers the element the parser actually read. Left alone it accepts a valid
-     * signature over a wrapped or duplicated decoy element (XML Signature Wrapping,
-     * XSW): xmlseclibs' {@see XMLSecurityDSig::locateSignature()}
-     * takes the first `ds:Signature` anywhere in the tree and `validateReference()`
-     * resolves the `Reference URI` to any `//*[@ID=…]` node, neither bound to the
-     * request root. We close that gap by binding the signature to the root before we
-     * trust the verification:
-     *
-     *  1. the message signature MUST be a single `ds:Signature` that is a direct child
-     *     of the AuthnRequest root (an enveloped message signature — not one smuggled
-     *     into a nested or wrapped element);
-     *  2. its single `Reference` MUST cover that root — an empty URI (whole document)
-     *     or `#<root ID>`, never a decoy element elsewhere in the tree; and
-     *  3. `validateSign` is PINNED (via its `$xpath` argument) to that exact
-     *     root-child signature, so the crypto we verify is the one enveloped in the
-     *     root rather than whichever `ds:Signature` appears first in document order.
-     *
-     * Algorithms are pinned to RSA-SHA256 / SHA-256, matching the redirect binding —
-     * onelogin's `validateSign` would otherwise also accept the deprecated SHA-1.
-     */
-    private function verifyEmbeddedSignature(DOMDocument $document, string $certificate): void
-    {
-        $root = $document->documentElement;
-
-        if ($root === null) {
-            throw InvalidAuthnRequest::make('request signature is invalid');
-        }
-
-        $signature = $this->rootChildSignature($document, $root);
-        $reference = $this->rootBoundReference($document, $signature, $root);
-        $this->assertPinnedSignatureAlgorithms($document, $signature, $reference);
-
-        try {
-            // Pin validateSign to the root-child signature located above. Without the
-            // $xpath it would locate the first ds:Signature in document order, which a
-            // wrapping attacker controls; pinning guarantees the verified crypto is the
-            // enveloped signature over the root the parser read.
-            $valid = SamlUtils::validateSign(
-                $document,
-                SamlUtils::formatCert($certificate),
-                null,
-                'sha1',
-                '/samlp:AuthnRequest/ds:Signature',
-            );
-        } catch (Throwable $exception) {
-            throw InvalidAuthnRequest::make('request signature could not be verified ('.$exception->getMessage().')');
-        }
-
-        if ($valid !== true) {
-            throw InvalidAuthnRequest::make('request signature is invalid');
-        }
-    }
-
-    /**
-     * The message signature: the single `ds:Signature` that is a direct child of the
-     * AuthnRequest root. More or fewer than one is rejected — an XSW payload hides its
-     * real (decoy-covering) signature deeper in the tree or duplicates it.
-     */
-    private function rootChildSignature(DOMDocument $document, DOMElement $root): DOMElement
-    {
-        $nodes = $this->dsigXPath($document)->query('./ds:Signature', $root);
-
-        if ($nodes === false || $nodes->length !== 1) {
-            throw InvalidAuthnRequest::make('request must carry exactly one enveloped signature on the request root');
-        }
-
-        $signature = $nodes->item(0);
-
-        if (! $signature instanceof DOMElement) {
-            throw InvalidAuthnRequest::make('request signature is invalid');
-        }
-
-        return $signature;
-    }
-
-    /**
-     * The signature's single `Reference` must cover the request root — an empty URI
-     * (the whole document) or a fragment pointing at the root's own `ID`. Any other
-     * target is a signature over a wrapped/duplicated element and is rejected.
-     */
-    private function rootBoundReference(DOMDocument $document, DOMElement $signature, DOMElement $root): DOMElement
-    {
-        $nodes = $this->dsigXPath($document)->query('./ds:SignedInfo/ds:Reference', $signature);
-
-        if ($nodes === false || $nodes->length !== 1) {
-            throw InvalidAuthnRequest::make('request signature must have exactly one Reference');
-        }
-
-        $reference = $nodes->item(0);
-
-        if (! $reference instanceof DOMElement) {
-            throw InvalidAuthnRequest::make('request signature is invalid');
-        }
-
-        $uri = $reference->getAttribute('URI');
-        $rootId = $root->getAttribute('ID');
-
-        if ($uri !== '' && ($rootId === '' || $uri !== '#'.$rootId)) {
-            throw InvalidAuthnRequest::make('request signature does not cover the request root (possible signature wrapping)');
-        }
-
-        return $reference;
-    }
-
-    /**
-     * Pin the embedded signature to RSA-SHA256 / SHA-256. onelogin's validateSign
-     * accepts RSA-SHA1 too, so without this a SHA-1-signed POST request would pass.
-     */
-    private function assertPinnedSignatureAlgorithms(DOMDocument $document, DOMElement $signature, DOMElement $reference): void
-    {
-        $xpath = $this->dsigXPath($document);
-
-        $signatureMethod = $this->attributeOf($xpath, $signature, './ds:SignedInfo/ds:SignatureMethod', 'Algorithm');
-        if ($signatureMethod !== XMLSecurityKey::RSA_SHA256) {
-            throw InvalidAuthnRequest::make('unsupported signature algorithm (RSA-SHA256 required)');
-        }
-
-        $digestMethod = $this->attributeOf($xpath, $reference, './ds:DigestMethod', 'Algorithm');
-        if ($digestMethod !== XMLSecurityDSig::SHA256) {
-            throw InvalidAuthnRequest::make('unsupported digest algorithm (SHA-256 required)');
-        }
-    }
-
-    private function attributeOf(DOMXPath $xpath, DOMElement $context, string $expression, string $attribute): string
-    {
-        $nodes = $xpath->query($expression, $context);
-
-        if ($nodes === false) {
-            return '';
-        }
-
-        $node = $nodes->item(0);
-
-        return $node instanceof DOMElement ? $node->getAttribute($attribute) : '';
-    }
-
-    private function dsigXPath(DOMDocument $document): DOMXPath
-    {
-        $xpath = new DOMXPath($document);
-        $xpath->registerNamespace('samlp', self::NS_PROTOCOL);
-        $xpath->registerNamespace('ds', self::NS_DSIG);
-
-        return $xpath;
+        $this->embeddedSignature->verify($parsed->document, $serviceProvider->certificate, 'AuthnRequest');
     }
 
     private function certificateBody(string $pem): string

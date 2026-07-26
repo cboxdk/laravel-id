@@ -29,18 +29,24 @@ class DatabaseDirectoryGroups implements DirectoryGroups
 
     public function __construct(private readonly EventBus $events) {}
 
-    public function list(Directory $directory, string $filter, ?int $startIndex, ?int $count): DirectoryPage
+    public function list(Directory $directory, string $filter, ?int $startIndex, ?int $count, bool $withMembers = false): DirectoryPage
     {
         $query = DirectoryGroup::query()->where('directory_id', $directory->id);
 
         if ($filter !== '') {
-            // Groups are overwhelmingly filtered by `displayName eq "x"` (the
-            // membership-sync existence check). Support just that.
-            if (preg_match('/^displayName\s+eq\s+"([^"]*)"$/i', trim($filter), $m) !== 1) {
+            // The two equality filters IdPs actually send against /Groups:
+            // `displayName eq "x"` (Okta's membership-sync existence check) and
+            // `externalId eq "x"` — which Entra sends on EVERY cycle to locate the
+            // group it already provisioned. Refusing externalId returned a flat 400 to
+            // the first call of every sync, which Entra escalates into a quarantined
+            // provisioning job rather than a degraded one.
+            if (preg_match('/^(?<attr>displayName|externalId)\s+eq\s+"(?<val>[^"]*)"$/i', trim($filter), $m) !== 1) {
                 throw UnsupportedDirectoryFilter::make($filter);
             }
 
-            $query->where('display_name', $m[1]);
+            // RFC 7643 §2.1: the attribute NAME is case-insensitive. Its value is not —
+            // `externalId` is a client-assigned opaque identifier, compared as issued.
+            $query->where(strtolower($m['attr']) === 'externalid' ? 'external_id' : 'display_name', $m['val']);
         }
 
         $total = (clone $query)->count();
@@ -48,7 +54,18 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         $start = max(1, $startIndex ?? 1);
         $limit = min(self::MAX_PAGE, max(0, $count ?? self::MAX_PAGE));
 
-        $resources = $query->with('members')->orderBy('id')->offset($start - 1)->limit($limit)->get();
+        // Membership is loaded only when the caller asked for it. Eager-loading it
+        // unconditionally meant a page of 200 groups hydrated EVERY member of every
+        // one of them: against an enterprise directory with several 20,000-member
+        // groups — which is the exact shape Entra ID syncs — one `GET /Groups?count=200`
+        // built hundreds of thousands of models to answer. That is an out-of-memory,
+        // not a slow response.
+        $resources = $query
+            ->when($withMembers, static fn ($builder) => $builder->with('members'))
+            ->orderBy('id')
+            ->offset($start - 1)
+            ->limit($limit)
+            ->get();
 
         return new DirectoryPage($resources, $total, $start);
     }
@@ -145,8 +162,15 @@ class DatabaseDirectoryGroups implements DirectoryGroups
     private function applyOperation(DirectoryGroup $group, array $operation): void
     {
         $op = strtolower(is_string($operation['op'] ?? null) ? $operation['op'] : '');
-        $path = is_string($operation['path'] ?? null) ? $operation['path'] : '';
+        $path = is_string($operation['path'] ?? null) ? trim($operation['path']) : '';
         $value = $operation['value'] ?? null;
+
+        // RFC 7643 §2.1: "Attribute names are case insensitive." That governs the
+        // `path` and the keys inside a pathless `value` exactly as it governs `op`, so
+        // every comparison below is made against the folded spelling. Matching
+        // `displayName`/`members` byte-for-byte meant an IdP that sent `displayname`
+        // got a 400 for a rename this server understood perfectly well.
+        $canonical = strtolower($path);
 
         // Deny-by-default: only add/remove/replace are defined for SCIM PATCH
         // (RFC 7644 §3.5.2). An unknown op is a client error, not a silent no-op that
@@ -156,13 +180,15 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         }
 
         // Rename: replace with a displayName in the value (path or pathless).
-        if ($op === 'replace' && is_array($value) && isset($value['displayName']) && is_string($value['displayName'])) {
-            $group->forceFill(['display_name' => $value['displayName']])->save();
+        $displayName = is_array($value) ? self::attribute($value, 'displayName') : null;
+
+        if ($op === 'replace' && is_string($displayName)) {
+            $group->forceFill(['display_name' => $displayName])->save();
 
             return;
         }
 
-        if ($op === 'replace' && $path === 'displayName' && is_string($value)) {
+        if ($op === 'replace' && $canonical === 'displayname' && is_string($value)) {
             $group->forceFill(['display_name' => $value])->save();
 
             return;
@@ -171,7 +197,7 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         // Beyond displayName (handled above) and the pathless whole-resource form,
         // only the `members` attribute is addressable. A bogus path is refused rather
         // than silently ignored.
-        if (! str_starts_with($path, 'members') && $path !== '') {
+        if (! str_starts_with($canonical, 'members') && $canonical !== '') {
             throw UnsupportedGroupPatch::path($path);
         }
 
@@ -179,21 +205,34 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         // directly as $value; a PATHLESS op carries the whole resource, so the members
         // live under its `members` key. Reading $value directly for the pathless form
         // extracted ZERO ids from `{members:[…]}` and then sync([]) WIPED every member.
-        $memberValue = $path === '' && is_array($value) ? ($value['members'] ?? null) : $value;
+        $memberValue = $canonical === '' && is_array($value) ? self::attribute($value, 'members') : $value;
 
         // A pathless replace that doesn't carry `members` at all is a resource replace
         // that must not touch membership — never let it fall through to sync([]).
-        if ($op === 'replace' && $path === '' && $memberValue === null) {
+        if ($op === 'replace' && $canonical === '' && $memberValue === null) {
             return;
         }
 
         // $op is guaranteed to be add/remove/replace (validated above), so the match
-        // is exhaustive without a default arm.
+        // is exhaustive without a default arm. `remove` gets the path AS SENT: its
+        // value filter carries a member id, and folding that would look up a
+        // lower-cased ULID that matches nothing.
         match ($op) {
             'add' => $group->members()->syncWithoutDetaching($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
             'replace' => $group->members()->sync($this->resolveMembers($group->directory_id, $this->valueIds($memberValue))),
             'remove' => $this->removeMembers($group, $path, $memberValue),
         };
+    }
+
+    /**
+     * Read one attribute out of a PATCH `value` object by its case-insensitive name
+     * (RFC 7643 §2.1).
+     *
+     * @param  array<array-key, mixed>  $value
+     */
+    private static function attribute(array $value, string $name): mixed
+    {
+        return array_change_key_case($value, CASE_LOWER)[strtolower($name)] ?? null;
     }
 
     private function removeMembers(DirectoryGroup $group, string $path, mixed $value): void

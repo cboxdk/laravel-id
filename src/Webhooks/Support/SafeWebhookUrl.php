@@ -17,6 +17,17 @@ use Cbox\Ssrf\Exceptions\BlockedUrl;
  */
 class SafeWebhookUrl
 {
+    /**
+     * Webhook deliveries are HTTPS-ONLY. A payload carries the full event body —
+     * emails, names, org ids — and the HMAC signature authenticates it but does not
+     * encrypt it, so a plaintext `http://` endpoint puts every subscriber's PII on the
+     * wire in the clear. The SSRF guard's configured scheme list is deliberately wider
+     * (it serves several sinks), so narrow it here at the sink that needs it.
+     *
+     * @var list<string>
+     */
+    private const SCHEMES = ['https'];
+
     public static function isSafe(string $url): bool
     {
         try {
@@ -38,7 +49,7 @@ class SafeWebhookUrl
         }
 
         try {
-            app(UrlGuard::class)->assertSafe($url);
+            app(UrlGuard::class)->assertSafe($url, self::SCHEMES);
         } catch (BlockedUrl $e) {
             throw UnsafeWebhookUrl::make($e->getMessage());
         }
@@ -61,7 +72,7 @@ class SafeWebhookUrl
         }
 
         try {
-            return app(UrlGuard::class)->pinnedOptions($url);
+            return app(UrlGuard::class)->pinnedOptions($url, self::SCHEMES);
         } catch (BlockedUrl $e) {
             throw UnsafeWebhookUrl::make($e->getMessage());
         }

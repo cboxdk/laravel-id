@@ -120,6 +120,17 @@ class DiscoveryController
      */
     private function groupSchema(): array
     {
+        $sub = static fn (string $name, string $type, string $mutability = 'immutable'): array => [
+            'name' => $name,
+            'type' => $type,
+            'multiValued' => false,
+            'required' => false,
+            'caseExact' => false,
+            'mutability' => $mutability,
+            'returned' => 'default',
+            'uniqueness' => 'none',
+        ];
+
         return [
             'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:Schema'],
             'id' => 'urn:ietf:params:scim:schemas:core:2.0:Group',
@@ -133,7 +144,22 @@ class DiscoveryController
                 ],
                 [
                     'name' => 'members', 'type' => 'complex', 'multiValued' => true,
-                    'required' => false, 'mutability' => 'readWrite', 'returned' => 'default',
+                    'required' => false, 'mutability' => 'readWrite',
+                    // RFC 7643 §7 `returned: "request"` — returned only when the client
+                    // asks. That is what the code actually implements on a LISTING (see
+                    // ScimAttributeSelection); declaring "default" made /Schemas
+                    // contradict the server's own behaviour, and a schema an IdP cannot
+                    // trust is worse than one that admits a limitation.
+                    'returned' => 'request',
+                    // Declared, not just typed `complex`: Okta's schema importer treats
+                    // a complex attribute with no subAttributes as unmappable, so the
+                    // whole `members` attribute silently vanished from the profile.
+                    'subAttributes' => [
+                        $sub('value', 'string'),
+                        $sub('$ref', 'reference'),
+                        $sub('type', 'string'),
+                        $sub('display', 'string', 'readOnly'),
+                    ],
                 ],
             ],
             'meta' => ['resourceType' => 'Schema'],
@@ -145,14 +171,19 @@ class DiscoveryController
      */
     private function userSchema(): array
     {
-        $attr = static fn (string $name, string $type, bool $required = false): array => [
+        // `$returned` is not decoration. RFC 7643 §7 defines `never` as "the attribute
+        // is never returned", and several sub-attributes below are exactly that: the
+        // mapper ACCEPTS them on write (see ScimMapper::isTolerated()) but keeps
+        // nothing, so declaring them `default` promised an admin a round-trip that
+        // never happens — they map the field, import, and every value comes back blank.
+        $attr = static fn (string $name, string $type, bool $required = false, string $returned = 'default'): array => [
             'name' => $name,
             'type' => $type,
             'multiValued' => false,
             'required' => $required,
             'caseExact' => false,
             'mutability' => 'readWrite',
-            'returned' => 'default',
+            'returned' => $returned,
             'uniqueness' => $name === 'userName' ? 'server' : 'none',
         ];
 
@@ -161,10 +192,41 @@ class DiscoveryController
             'id' => 'urn:ietf:params:scim:schemas:core:2.0:User',
             'name' => 'User',
             'description' => 'User Account',
+            // The declaration must cover everything the mapper accepts and returns. It
+            // used to stop at four scalars while `name` and `emails` were fully
+            // supported on the wire, so an admin running Okta's "Import Schema" got a
+            // four-attribute profile and had no way to map email or first/last name —
+            // the two attributes provisioning is least useful without.
             'attributes' => [
                 $attr('userName', 'string', true),
                 $attr('externalId', 'string'),
+                [
+                    'name' => 'name', 'type' => 'complex', 'multiValued' => false,
+                    'required' => false, 'mutability' => 'readWrite', 'returned' => 'default',
+                    'subAttributes' => [
+                        $attr('formatted', 'string'),
+                        $attr('familyName', 'string'),
+                        $attr('givenName', 'string'),
+                        // Accepted and discarded — never read back. See $attr above.
+                        $attr('middleName', 'string', false, 'never'),
+                        $attr('honorificPrefix', 'string', false, 'never'),
+                        $attr('honorificSuffix', 'string', false, 'never'),
+                    ],
+                ],
                 $attr('displayName', 'string'),
+                [
+                    'name' => 'emails', 'type' => 'complex', 'multiValued' => true,
+                    'required' => false, 'mutability' => 'readWrite', 'returned' => 'default',
+                    'subAttributes' => [
+                        $attr('value', 'string'),
+                        // The platform keeps ONE address and emits it as the primary; a
+                        // per-address display label and type are read on write and then
+                        // dropped, so they are never returned.
+                        $attr('display', 'string', false, 'never'),
+                        $attr('type', 'string', false, 'never'),
+                        $attr('primary', 'boolean'),
+                    ],
+                ],
                 $attr('active', 'boolean'),
             ],
             'meta' => ['resourceType' => 'Schema'],

@@ -7,6 +7,7 @@ namespace Cbox\Id\Platform;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Exceptions\InvalidToken;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
@@ -35,6 +36,11 @@ use Illuminate\Contracts\Cache\Repository as Cache;
  */
 class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (PlatformServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     private const PURPOSE = 'cbox.env-admin-handoff';
 
     private const ALG = SigningAlg::RS256;
@@ -47,13 +53,12 @@ class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
 
     public function __construct(
         private readonly TokenSigner $signer,
-        private readonly EnvironmentContext $environments,
         private readonly Cache $cache,
     ) {}
 
     public function mint(string $subjectId, string $environmentId, int $ttlSeconds = 120): string
     {
-        return $this->environments->runAs(GenericEnvironment::of(self::SIGNING_SCOPE), fn (): string => $this->signer->sign([
+        return $this->environments()->runAs(GenericEnvironment::of(self::SIGNING_SCOPE), fn (): string => $this->signer->sign([
             'sub' => $subjectId,
             'env' => $environmentId,
             'purpose' => self::PURPOSE,
@@ -65,7 +70,7 @@ class SignedEnvironmentAdminHandoff implements EnvironmentAdminHandoff
     public function verify(string $token): ?EnvironmentAdminGrant
     {
         try {
-            $claims = $this->environments->runAs(
+            $claims = $this->environments()->runAs(
                 GenericEnvironment::of(self::SIGNING_SCOPE),
                 fn () => $this->signer->verify($token, [self::ALG]),
             );

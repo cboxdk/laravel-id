@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Dpop;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Models\DpopProof;
 use Firebase\JWT\JWK;
@@ -75,9 +76,14 @@ class DpopProofValidator
         }
 
         $this->assertBinding($claims, $htm, $htu, $accessToken);
-        $this->guardReplay($claims);
 
-        return $this->thumbprint($jwk);
+        // The thumbprint is computed BEFORE the replay guard because it is half of
+        // the replay key — see guardReplay().
+        $jkt = $this->thumbprint($jwk);
+
+        $this->guardReplay($claims, $jkt);
+
+        return $jkt;
     }
 
     /**
@@ -115,9 +121,27 @@ class DpopProofValidator
     }
 
     /**
+     * Record this proof as seen, refusing a second use of the same `(jkt, jti)`.
+     *
+     * The replay key is the KEY THUMBPRINT PLUS the nonce, not the nonce alone.
+     * `jti` is a value the client picks (RFC 9449 §4.2 asks only that it be
+     * unique per key), so two unrelated clients holding unrelated keys can
+     * legitimately choose the same one. A global `unique(jti)` rejected the second
+     * as a replay — refusing a perfectly valid proof, with a probability that grows
+     * with the number of clients rather than staying per-client. Single-use is a
+     * property of a proof under ITS key, and `(jkt, jti)` says exactly that.
+     *
+     * The row is stamped with the environment it was seen in — every other
+     * credential-bearing table in the platform carries one, and the prune sweep and
+     * any per-tenant accounting need it. Resolved LAZILY through the container,
+     * never captured: `EnvironmentContext` is a `scoped` binding, and a captured
+     * copy in a longer-lived object keeps the first request's environment for the
+     * life of the process (the bug already fixed in DatabaseKeyManager,
+     * DatabaseAuditLog and DatabaseEventBus).
+     *
      * @param  array<array-key, mixed>  $claims
      */
-    private function guardReplay(array $claims): void
+    private function guardReplay(array $claims, string $jkt): void
     {
         $jti = $claims['jti'] ?? null;
         if (! is_string($jti) || $jti === '') {
@@ -129,6 +153,8 @@ class DpopProofValidator
 
         try {
             DpopProof::query()->create([
+                'environment_id' => app(EnvironmentContext::class)->current()?->environmentKey(),
+                'jkt' => $jkt,
                 'jti' => $jti,
                 'expires_at' => Carbon::createFromTimestamp($iat)->addSeconds(self::MAX_AGE_SECONDS),
             ]);

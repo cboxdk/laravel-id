@@ -22,5 +22,7 @@ readonly class ParsedAuthnRequest
         public ?string $nameIdFormat,
         public bool $hasSignature,
         public DOMDocument $document,
+        public ?string $destination = null,
+        public ?string $issueInstant = null,
     ) {}
 }

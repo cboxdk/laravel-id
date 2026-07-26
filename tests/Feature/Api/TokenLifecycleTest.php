@@ -106,6 +106,112 @@ it('adds at_hash, auth_time, amr and acr to the id_token', function (): void {
         ->and($claims->get('acr'))->toBe('urn:cbox-id:aal2'); // mfa present -> level 2
 });
 
+it('derives at_hash as the base64url LEFT HALF of the access token SHA-256 (OIDC Core 3.1.3.6)', function (): void {
+    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $code = issueCode($clientId, ['openid']);
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $accessToken = $response->json('access_token');
+    $idToken = $response->json('id_token');
+    $atHash = app(TokenSigner::class)->verify($idToken, [SigningAlg::RS256])->get('at_hash');
+
+    // Spelled out from the spec rather than taken from the implementation: for an
+    // RS256 id_token the hash is SHA-256 and at_hash is the base64url of its LEFT
+    // 128 bits. Asserting only ->toBeString() would pass for the full 32-byte digest,
+    // for the right half, or for a hash of the id_token — each of which a strict RP
+    // rejects, failing every login while this suite stays green.
+    $digest = hash('sha256', (string) $accessToken, true);
+
+    expect($atHash)->toBe(Base64Url::encode(substr($digest, 0, 16)))
+        // 128 bits base64url = 22 chars unpadded; the full digest would be 43.
+        ->and($atHash)->toHaveLength(22)
+        // Explicitly NOT the whole digest, NOT the right half, NOT the id_token's hash.
+        ->and($atHash)->not->toBe(Base64Url::encode($digest))
+        ->and($atHash)->not->toBe(Base64Url::encode(substr($digest, 16, 16)))
+        ->and($atHash)->not->toBe(Base64Url::encode(substr(hash('sha256', (string) $idToken, true), 0, 16)));
+});
+
+/**
+ * RFC 7636 Appendix B publishes one S256 pair. id-js and id-python both assert the
+ * client-side derivation against it; until now nothing proved the SERVER accepts
+ * that exact pair. Every other exchange in this suite either invents a verifier and
+ * hashes it with the same code the server compares against, or (in
+ * PushedAuthorizationTest) carries the challenge as an opaque string never paired
+ * with its verifier — so a base64url or padding regression in the server's
+ * comparison would reject every conforming client with the suite still green.
+ */
+const RFC7636_VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+const RFC7636_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+
+it('accepts the RFC 7636 Appendix B verifier against its published challenge', function (): void {
+    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+
+    // The challenge is stored exactly as the RFC prints it — no local derivation.
+    $code = app(AuthorizationCodes::class)->issue(
+        $clientId,
+        'user_42',
+        'org_a',
+        'https://app.test/cb',
+        ['openid'],
+        RFC7636_CHALLENGE,
+        'S256',
+    );
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => RFC7636_VERIFIER,
+    ])->assertOk()->assertJsonStructure(['access_token', 'id_token']);
+});
+
+it('rejects any verifier other than the RFC 7636 Appendix B one for its challenge', function (): void {
+    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+
+    // Same-length, same-alphabet, one character different — the comparison must be
+    // over the hash, not a prefix or a length check.
+    $tampered = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXj';
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $clientId, 'user_42', 'org_a', 'https://app.test/cb', ['openid'], RFC7636_CHALLENGE, 'S256',
+    );
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => $tampered,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
+it('does not accept the RFC 7636 challenge as its own verifier under S256', function (): void {
+    // A server that compared the raw values (or fell back to `plain`) would accept
+    // this — and would then accept any intercepted challenge as proof of possession,
+    // defeating PKCE entirely.
+    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $clientId, 'user_42', 'org_a', 'https://app.test/cb', ['openid'], RFC7636_CHALLENGE, 'S256',
+    );
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => RFC7636_CHALLENGE,
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+});
+
 it('issues a refresh token only when offline_access is granted', function (): void {
     $clientId = $this->makeClient(['openid', 'offline_access'], ClientType::Public, grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'])->client->client_id;
     $code = issueCode($clientId, ['openid', 'offline_access']);

@@ -23,12 +23,14 @@ use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Events\EventsServiceProvider;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\Kernel\Usage\UsageServiceProvider;
+use Cbox\Id\Maintenance\MaintenanceServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
 use Cbox\Id\Otp\OtpServiceProvider;
 use Cbox\Id\Platform\PlatformServiceProvider;
 use Cbox\Id\Provisioning\ProvisioningServiceProvider;
 use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
+use Cbox\Id\Support\PackageConfigMerger;
 use Cbox\Id\TokenVault\TokenVaultServiceProvider;
 use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
@@ -89,6 +91,10 @@ class IdServiceProvider extends ServiceProvider
         // exists to decorate; composes cboxdk/laravel-siem for env-isolated SIEM
         // audit streaming.
         AuditStreamingServiceProvider::class,
+        // Data-lifecycle sweep (`cbox-id:prune`). Last of the domain modules: it
+        // names tables owned by Identity, OAuthServer, Webhooks and Provisioning, so
+        // it registers once those modules' enums and schema are in place.
+        MaintenanceServiceProvider::class,
         ApiServiceProvider::class,
     ];
 
@@ -96,7 +102,15 @@ class IdServiceProvider extends ServiceProvider
     {
         // Merge package defaults so config('cbox-id.*') resolves in a host app
         // even before the config is published.
-        $this->mergeConfigFrom(__DIR__.'/../config/cbox-id.php', 'cbox-id');
+        //
+        // NOT `mergeConfigFrom()`: that helper is a single `array_merge`, so a host
+        // that publishes a PARTIAL `config/cbox-id.php` — naming one key under
+        // `oauth`, say — replaces the package's entire `oauth` block and deletes
+        // every default it did not restate. The deleted defaults are all env-backed,
+        // so the visible symptom is an operator setting `CBOX_ID_ACCESS_TOKEN_TTL`
+        // and nothing happening. PackageConfigMerger fills in only what the host is
+        // silent about; see the rules documented on that class.
+        PackageConfigMerger::mergeInto($this->app, __DIR__.'/../config/cbox-id.php', 'cbox-id');
 
         foreach (self::MODULE_PROVIDERS as $provider) {
             $this->app->register($provider);

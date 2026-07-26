@@ -26,6 +26,61 @@ interface Roles
      */
     public function grantPermission(string $organizationId, string $roleId, string $permission): void;
 
+    /*
+     * --------------------------------------------------------------------------
+     * Role lifecycle (control plane)
+     * --------------------------------------------------------------------------
+     * The three methods below manage the role CATALOG rather than a tenant's grants,
+     * so they are keyed by role id alone and carry no organization argument: an
+     * environment-wide role (organization_id null) is precisely the case an org-scoped
+     * signature cannot express. Authorization is the caller's (an environment console
+     * is already gated to its plane, and every model here is environment-scoped).
+     *
+     * They exist because these writes used to be raw `DB::table()` deletes in the
+     * console: a change to privileged access affecting every holder of a role left NO
+     * trace on the audit trail and emitted nothing, so no SIEM saw it and no
+     * downstream app mirroring roles off `role.unassigned` ever learned.
+     */
+
+    /**
+     * Rename a role / edit its description, recording the change.
+     *
+     * @throws UnknownRole
+     */
+    public function updateRole(string $roleId, string $name, ?string $description = null): Role;
+
+    /**
+     * Attach an ALREADY-DECLARED permission to a role by id, recording the change.
+     * Unlike {@see grantPermission()} this never mints a permission, and the
+     * permission need not share the role's scope — it is the console's "tick a key
+     * from the catalog" operation. A no-op when already attached.
+     *
+     * @throws UnknownRole
+     */
+    public function attachPermission(string $roleId, string $permissionId): void;
+
+    /**
+     * Detach a permission from a role by id, recording the change. A no-op (and
+     * silent) when the role never held it.
+     *
+     * @throws UnknownRole
+     */
+    public function revokePermission(string $roleId, string $permissionId): void;
+
+    /**
+     * Delete a role: its permission pivot rows, every live assignment of it, and the
+     * role itself.
+     *
+     * Emits a `role.unassigned` per holder — the event downstream apps mirror grants
+     * off — plus a single `role.deleted` naming the affected subjects, and audits
+     * both. Roles are resolved live at token-mint time, so the privilege itself is
+     * gone the moment the rows are, exactly as with {@see unassign()}; what this adds
+     * is the record that it happened.
+     *
+     * @throws UnknownRole
+     */
+    public function deleteRole(string $roleId): void;
+
     /**
      * Assert a role may be assigned within this organization — its own, or an
      * environment-wide system role. Throws UnknownRole otherwise.

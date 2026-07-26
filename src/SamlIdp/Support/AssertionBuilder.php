@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\SamlIdp\Support;
 
 use Cbox\Id\SamlIdp\Enums\AuthnContext;
+use Cbox\Id\SamlIdp\Enums\SamlStatusCode;
 use Cbox\Id\SamlIdp\ValueObjects\SigningMaterial;
 use DOMDocument;
 use DOMElement;
@@ -31,8 +32,6 @@ class AssertionBuilder
     private const NS_PROTOCOL = 'urn:oasis:names:tc:SAML:2.0:protocol';
 
     private const NS_ASSERTION = 'urn:oasis:names:tc:SAML:2.0:assertion';
-
-    private const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 
     private const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:2.0:cm:bearer';
 
@@ -78,12 +77,7 @@ class AssertionBuilder
         }
 
         $response->appendChild($this->issuerElement($document, $idpEntityId));
-
-        $status = $document->createElementNS(self::NS_PROTOCOL, 'samlp:Status');
-        $statusCode = $document->createElementNS(self::NS_PROTOCOL, 'samlp:StatusCode');
-        $statusCode->setAttribute('Value', self::STATUS_SUCCESS);
-        $status->appendChild($statusCode);
-        $response->appendChild($status);
+        $response->appendChild($this->statusElement($document, SamlStatusCode::Success));
 
         $assertion = $this->buildAssertion(
             $document,
@@ -113,6 +107,82 @@ class AssertionBuilder
             XMLSecurityKey::RSA_SHA256,
             XMLSecurityDSig::SHA256,
         );
+    }
+
+    /**
+     * A signed SAML `Response` that carries NO assertion — only a failure status.
+     * This is how SAML says "no" (core §3.2.2): the SP gets the refusal on its own
+     * ACS, in its own protocol, and can log it and show its own error page instead
+     * of the user landing on an unbranded HTTP 400 the SP never learns about.
+     *
+     * The Response itself is signed (there is no assertion to sign), so an SP that
+     * verifies message signatures can trust the refusal came from this IdP.
+     *
+     * @return string the signed Response XML
+     */
+    public function buildStatus(
+        SigningMaterial $material,
+        string $idpEntityId,
+        string $destination,
+        SamlStatusCode $status,
+        ?SamlStatusCode $subStatus = null,
+        ?string $inResponseTo = null,
+        ?string $message = null,
+    ): string {
+        $document = new DOMDocument('1.0', 'UTF-8');
+
+        $response = $document->createElementNS(self::NS_PROTOCOL, 'samlp:Response');
+        $document->appendChild($response);
+        $response->setAttribute('ID', $this->id());
+        $response->setAttribute('Version', '2.0');
+        $response->setAttribute('IssueInstant', $this->instant(time()));
+        $response->setAttribute('Destination', $destination);
+        if ($inResponseTo !== null && $inResponseTo !== '') {
+            $response->setAttribute('InResponseTo', $inResponseTo);
+        }
+
+        $response->appendChild($this->issuerElement($document, $idpEntityId));
+        $response->appendChild($this->statusElement($document, $status, $subStatus, $message));
+
+        return SamlUtils::addSign(
+            $document,
+            $material->privateKeyPem,
+            $material->certificatePem,
+            XMLSecurityKey::RSA_SHA256,
+            XMLSecurityDSig::SHA256,
+        );
+    }
+
+    /**
+     * `<samlp:Status>` with its top-level code and, when given, the nested
+     * second-level code that says precisely what was wrong.
+     */
+    private function statusElement(
+        DOMDocument $document,
+        SamlStatusCode $status,
+        ?SamlStatusCode $subStatus = null,
+        ?string $message = null,
+    ): DOMElement {
+        $element = $document->createElementNS(self::NS_PROTOCOL, 'samlp:Status');
+
+        $statusCode = $document->createElementNS(self::NS_PROTOCOL, 'samlp:StatusCode');
+        $statusCode->setAttribute('Value', $status->value);
+
+        if ($subStatus !== null) {
+            $nested = $document->createElementNS(self::NS_PROTOCOL, 'samlp:StatusCode');
+            $nested->setAttribute('Value', $subStatus->value);
+            $statusCode->appendChild($nested);
+        }
+
+        $element->appendChild($statusCode);
+
+        if ($message !== null && $message !== '') {
+            $statusMessage = $document->createElementNS(self::NS_PROTOCOL, 'samlp:StatusMessage');
+            $statusMessage->appendChild($document->createTextNode($message));
+            $element->appendChild($statusMessage);
+        }
+
+        return $element;
     }
 
     /**

@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Confirmed security vulnerabilities and their fixes are cross-referenced under
 **Security** below and in the repository's security advisories.
 
+**Released entries are immutable.** A changelog is a historical record: what an entry
+said at the time it shipped is part of what shipped. Entries below the newest released
+heading are not edited for wording, tone or policy — only appended to, and only with a
+dated note that says what changed and why. From 0.56.1 onward the house style avoids
+naming competitor products in prose; that applies to entries written from here on and is
+deliberately NOT applied backwards, because a silent rewrite of shipped history costs
+more trust than the wording it removes.
+
+## [0.57.0] - 2026-07-26
+
+Output of a whole-platform review loop: ten specialist passes, an independent
+second-vendor review, adversarial verification of every high-severity finding, and a
+re-review that caught eight regressions the fixes themselves introduced. Four findings
+were refuted and dropped rather than "fixed"; several were re-priced down. See
+`UPGRADING.md` — **this release refuses things earlier versions accepted.**
+
+### Security
+
+- **Invitations are environment-scoped.** `invitations` was the only credential-bearing
+  table without an `environment_id`, and `byToken()` matched on the hash alone — so a
+  token minted in one environment was redeemable on any host, minting an active user, a
+  session, and tokens from the *victim* environment's issuer. Adding a plane gate would
+  not have fixed it: a tenant subdomain is a valid subject-plane host.
+- **`MembershipService::add()` refuses an organization from another environment.**
+  `runAs()` sets only the tenant dimension, `BelongsToEnvironment` auto-fills on INSERT,
+  and `memberships` has no foreign key — so a foreign org id was taken on trust.
+- **Singletons no longer capture the `scoped` tenancy context.** A queue worker's
+  `forgetScopedInstances()` unsets the binding without resetting an object a singleton
+  already holds, so job B was written, keyed and delivered under job A's environment.
+  Environment-owned models failed closed; the outbox, the audit chain and the JWKS cache
+  did not. **Fifteen** classes were affected. `ScopedContextCaptureTest` now enforces the
+  rule that a code comment had failed to.
+- DPoP replay keys on `(jkt, jti)` rather than a global `jti`, closing a
+  pre-registration DoS; proofs carry `environment_id`.
+- `Permission`'s global scope fails closed instead of exposing the cross-environment
+  catalog when no environment is in context.
+- Entra directory pagination pins `@odata.nextLink` to the Graph host — the last
+  outbound path not behind the SSRF gate.
+- Webhook endpoints refuse plaintext `http://`.
+- Tenant-routing cache keys use SHA-256 rather than a non-cryptographic hash.
+
+### Added
+
+- `cbox-id:prune` with per-table retention. **`audit_logs` is deliberately excluded**:
+  the chain is hash-linked and checkpoint-anchored, so pruning below a checkpoint breaks
+  verification and pruning to one removes the row the tamper check reads. Bounding audit
+  growth needs export-then-rechain, not a sweep.
+- `cbox-id:events:backlog` (`--json`, `--fail-over=N`), a `RelayBacklog` contract, and a
+  configurable relay limit/cadence. Relay lag was previously silent.
+- Webhook circuit breaker with self-healing, and outbox dead-lettering with an attempt
+  counter — a listener that always throws no longer retries forever.
+- SAML: POST-binding SLO, per-environment frozen EntityID, SP key material (so logout
+  responses are signed and SP metadata carries a `KeyDescriptor`), multi-cert IdP
+  rollover.
+- `PackageConfigMerger` — published config now merges key-by-key, so a partial host
+  config no longer discards package defaults. Lists replace rather than append.
+- Cross-language golden fixtures for webhook signing and RFC 7638 thumbprints; real-vector
+  tests for PKCE (RFC 7636 App. B), `at_hash`, and JWKS-only verification.
+
+### Changed — behaviour visible to integrators
+
+- Webhook delivery is **queued**. A host without a running queue worker will persist
+  delivery rows and send nothing.
+- `/authorize` returns `invalid_scope` for scopes outside the client's registered set,
+  instead of silently narrowing. **Audit registered scope lists before deploying.**
+- `scope` is echoed from `/oauth/token` whenever granted differs from requested
+  (RFC 6749 §5.1).
+- `max_age` and `acr_values` are honoured; an unsatisfiable request returns
+  `unmet_authentication_requirements` rather than a downgraded token.
+- SCIM: malformed `Operations` → 400; unknown-id DELETE → 404; `active` parsed strictly
+  (case-insensitively); `GET /Groups` omits `members` unless requested;
+  `userName`/email equality is case-insensitive on **all** drivers — Postgres tenants
+  with case-variant duplicates will newly see `409` and need reconciliation first.
+- SAML: `NameIDPolicy` enforced; signed `AuthnRequest`s require `Destination` and must
+  address the receiving location; requests are single-use and time-bounded.
+- `/up` returns JSON.
+
+### Fixed
+
+- `deleteRole()` left `group_role_mappings` behind, wedging directory reconciliation and,
+  because the relay released the claim, blocking every listener registered after it —
+  permanently.
+- Orphaned webhook deliveries starved the retry sweep at the head of an ascending queue.
+- The whole env-console role surface wrote through the query builder, leaving privileged
+  changes with no audit entry and no domain event.
+- `CachedEntitlements` no longer resurrects a pre-invalidation snapshot when its version
+  counter is evicted.
+- Redirect-binding SAML signatures verify over the transmitted octets, and survive the
+  login hand-off.
+- Missing indexes on token, session and delivery sweep columns.
+
 ## [0.56.0] - 2026-07-25
 
 **Upgrading:** two contract changes. `PasswordPolicyGuard::assertAcceptable()` now

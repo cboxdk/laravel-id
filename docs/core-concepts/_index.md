@@ -32,6 +32,9 @@ How the platform is put together and the ideas you build against:
   for analytics and future soft gates; local measurement, distinct from billing.
 - **[SIEM audit streaming](audit-streaming.md)** — mirror the hash-chained,
   environment-scoped audit trail out to a customer's SIEM, isolation intact.
+- **[Inbound SCIM provisioning server](scim.md)** — the SCIM 2.0 endpoint a
+  customer's IdP pushes users and groups INTO: directory-scoped bearer auth, the
+  full User and Group lifecycle, type-checked filters and RFC 7644 error semantics.
 - **[Outbound SCIM provisioning](outbound-provisioning.md)** — push user and
   membership changes OUT to downstream apps over their SCIM 2.0 endpoints; the
   stateful mirror of the inbound directory.

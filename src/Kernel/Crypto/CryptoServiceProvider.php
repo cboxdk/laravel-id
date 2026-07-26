@@ -9,13 +9,14 @@ use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
+use Cbox\Id\Support\PackageConfigMerger;
 use Illuminate\Support\ServiceProvider;
 
 class CryptoServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__.'/../../../config/cbox-id.php', 'cbox-id');
+        PackageConfigMerger::mergeInto($this->app, __DIR__.'/../../../config/cbox-id.php', 'cbox-id');
 
         $this->app->singleton(SecretBox::class, static function (): SecretBox {
             $configured = config('cbox-id.crypto.key');

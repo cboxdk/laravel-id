@@ -22,12 +22,16 @@ Environment   ── hard boundary: own users, signing keys, issuer, discovery, 
 └── Clients          ── your OAuth apps / products
 ```
 
-The organization layer is an **arbitrary-depth tree** — closer to Active
-Directory's nested OUs than to the usually-flat "Organizations" of other IdPs.
-Delegated administration and role inheritance run down that tree, but always
+The organization layer is an **arbitrary-depth tree**, because that is the shape
+real customers actually have: a group owns companies, a company has divisions, a
+division has teams. Modelling that directly — rather than flattening it into one
+list and pushing the hierarchy into naming conventions or custom attributes — is
+what lets delegated administration and role inheritance run *down* the tree, always
 **bounded by the environment**.
 
-| This platform | Active Directory |
+If you are coming from a directory service or another IdP, the layers map like this:
+
+| This platform | Active Directory | Common IdP vocabulary |
 |---|---|---|
 | **Environment** | Forest / Domain | Environment / Tenant / Org |
 | **Organization** (closure-tree) | OU tree | Organizations |
@@ -57,6 +61,50 @@ your one environment key and every host resolves to it. In a multi-tenant
 deployment, a host that maps to no environment is **refused** (404) rather than
 served the wrong plane. Swap the bound `EnvironmentResolver` to resolve by API
 key or header instead.
+
+### Resolution is cached
+
+The bound `EnvironmentResolver` is a `CachedEnvironmentResolver` wrapping the database
+one. Uncached, the lookup above is 2–3 queries on *every* request — the custom-domain
+match, then the slug match, then the owning account's liveness — against a table that
+changes approximately never, so the result is cached for
+`cbox-id.environments.resolution_cache_ttl`
+(`CBOX_ID_ENVIRONMENT_RESOLUTION_CACHE_TTL`), **60 seconds** by default. Set it to `0` to
+bypass the cache entirely and resolve live on every request.
+
+Entries are two-level, and only **positive** results are cached:
+
+- `host:{sha256(host)}` → the environment key that host resolves to
+- `env:{key}` → the resolved, liveness-gated environment
+
+The split is what makes the off-switch exact: suspending an environment (or its owning
+account) drops the `env:` entry only, so the next request still finds the host mapping,
+misses the environment and falls through to a full live resolution — which now refuses.
+Because a refusal is never cached, reactivating restores service just as promptly.
+`forKey()` is deliberately *not* cached — it is a primary-key lookup off the request path
+that intentionally does not gate liveness.
+
+**Operationally**, invalidation is explicit rather than TTL-driven for everything the
+model can see. Saving or deleting an `Environment` forgets its resolved entry, its current
+*and previous* custom `domain`, and the `{slug}.{base}` host for its previous *and*
+current slug across every configured `base_domain` — so a rename or a re-pointed custom
+domain is visible on the next request. Account suspension and reactivation invalidate
+explicitly too (the environment rows are untouched by that write, so their model events do
+not fire).
+
+The TTL is what bounds the cases that invalidation cannot reach — up to
+`resolution_cache_ttl` seconds of staleness after:
+
+- a write that fires no model events (a mass `update()`, raw SQL, a direct database edit),
+  or
+- a slug rename where the serving host sits under a base domain that is not listed in
+  `cbox-id.environments.base_domains`, since that is exactly the list the slug-derived
+  host keys are enumerated from.
+
+There is no flush command. Invalidate from code —
+`app(Cbox\Id\Organization\EnvironmentResolutionCache::class)` exposes
+`forgetEnvironment($environmentKey)` (which also drops the cached default) and
+`forgetHost($host)` — or clear the application cache.
 
 ## Isolation guarantees — and how they're proven
 

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Cbox\Id\ExternalActions;
 
-use Cbox\Id\ExternalActions\Contracts\ActionTransport;
+use Cbox\Id\ExternalActions\Contracts\ConcurrentActionTransport;
 use Cbox\Id\ExternalActions\Models\ExternalActionEndpoint;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\ExternalActions\ValueObjects\ActionResult;
+use Cbox\Id\ExternalActions\ValueObjects\PreparedActionRequest;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Ssrf\Contracts\UrlGuard;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -26,7 +30,7 @@ use Throwable;
  * signed HMAC-SHA256 over `"{timestamp}.{body}"` with `X-Cbox-Signature: t=..,v1=..`,
  * the same scheme (and same receiver verification) as webhooks.
  */
-class HttpActionTransport implements ActionTransport
+class HttpActionTransport implements ConcurrentActionTransport
 {
     private const DEFAULT_TIMEOUT = 3;
 
@@ -40,25 +44,15 @@ class HttpActionTransport implements ActionTransport
     public function send(ExternalActionEndpoint $endpoint, ActionContext $context): ActionResult
     {
         try {
-            $pinned = config('cbox-id.external_actions.verify_url', true) === true
-                ? $this->ssrf->pinnedOptions($endpoint->url)
-                : [];
+            $prepared = $this->prepare($endpoint, $context);
 
-            $body = json_encode(['context' => $context->toArray()], JSON_THROW_ON_ERROR);
-            $secret = $this->secretBox->open($endpoint->secret_encrypted, $endpoint->secretContext());
-            $timestamp = time();
-            $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
-
-            $response = Http::withHeaders([
-                'X-Cbox-Timestamp' => (string) $timestamp,
-                'X-Cbox-Signature' => 't='.$timestamp.',v1='.$signature,
-            ])
-                ->withOptions($pinned)          // pinned resolution + no redirects (TOCTOU)
-                ->withoutRedirecting()          // a 30x to an internal host must not be followed
+            $response = Http::withHeaders($prepared->headers)
+                ->withOptions($prepared->options)   // pinned resolution + no redirects (TOCTOU)
+                ->withoutRedirecting()              // a 30x to an internal host must not be followed
                 ->connectTimeout($this->connectTimeout())
                 ->timeout($this->timeout())
-                ->withBody($body, 'application/json')
-                ->post($endpoint->url);
+                ->withBody($prepared->body, 'application/json')
+                ->post($prepared->url);
         } catch (Throwable) {
             return $this->onFailure();
         }
@@ -68,6 +62,103 @@ class HttpActionTransport implements ActionTransport
         }
 
         return $this->interpret($response->json());
+    }
+
+    /**
+     * Fire the whole fan-out at once.
+     *
+     * Sequentially, N hooks cost N × (connect timeout + read timeout) on the token
+     * path. Pooled, they cost ONE endpoint's budget however many there are — which is
+     * the total pipeline budget this module previously had no way to state.
+     *
+     * Every guarantee of the single send is preserved per request: the same signature,
+     * the same pinned resolution, the same refusal to follow redirects, the same
+     * fail-closed reading of the reply. A preparation that throws (an SSRF rejection,
+     * an unopenable secret) becomes that endpoint's deny alone and does not disturb
+     * the others.
+     *
+     * @param  Collection<int, ExternalActionEndpoint>  $endpoints
+     * @return array<string, ActionResult>
+     */
+    public function sendMany(Collection $endpoints, ActionContext $context): array
+    {
+        /** @var array<string, PreparedActionRequest> $prepared */
+        $prepared = [];
+        /** @var array<string, ActionResult> $results */
+        $results = [];
+
+        foreach ($endpoints as $endpoint) {
+            try {
+                $prepared[$endpoint->id] = $this->prepare($endpoint, $context);
+            } catch (Throwable) {
+                $results[$endpoint->id] = $this->onFailure();
+            }
+        }
+
+        if ($prepared === []) {
+            return $results;
+        }
+
+        $connectTimeout = $this->connectTimeout();
+        $timeout = $this->timeout();
+
+        /** @var array<string, mixed> $responses */
+        $responses = Http::pool(static function (Pool $pool) use ($prepared, $connectTimeout, $timeout): array {
+            $requests = [];
+
+            foreach ($prepared as $id => $request) {
+                $requests[] = $pool->as($id)
+                    ->withHeaders($request->headers)
+                    ->withOptions($request->options)
+                    ->withoutRedirecting()
+                    ->connectTimeout($connectTimeout)
+                    ->timeout($timeout)
+                    ->withBody($request->body, 'application/json')
+                    ->post($request->url);
+            }
+
+            return $requests;
+        });
+
+        foreach ($prepared as $id => $request) {
+            // A pooled request surfaces its transport failure as the exception object
+            // in the result array rather than throwing — anything that is not a
+            // successful Response is a fail-closed deny, exactly as in send().
+            $response = $responses[$id] ?? null;
+
+            $results[$id] = $response instanceof Response && $response->successful()
+                ? $this->interpret($response->json())
+                : $this->onFailure();
+        }
+
+        return $results;
+    }
+
+    /**
+     * Assemble one signed, SSRF-pinned request. Shared by the single and pooled paths
+     * so neither can drift from the other's hardening.
+     */
+    private function prepare(ExternalActionEndpoint $endpoint, ActionContext $context): PreparedActionRequest
+    {
+        $pinned = config('cbox-id.external_actions.verify_url', true) === true
+            ? $this->ssrf->pinnedOptions($endpoint->url)
+            : [];
+
+        $body = json_encode(['context' => $context->toArray()], JSON_THROW_ON_ERROR);
+        $secret = $this->secretBox->open($endpoint->secret_encrypted, $endpoint->secretContext());
+        $timestamp = time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
+
+        return new PreparedActionRequest(
+            endpointId: $endpoint->id,
+            url: $endpoint->url,
+            body: $body,
+            headers: [
+                'X-Cbox-Timestamp' => (string) $timestamp,
+                'X-Cbox-Signature' => 't='.$timestamp.',v1='.$signature,
+            ],
+            options: $pinned,
+        );
     }
 
     private function interpret(mixed $json): ActionResult

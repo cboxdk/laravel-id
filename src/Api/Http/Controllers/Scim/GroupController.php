@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers\Scim;
 
+use Cbox\Id\Api\Exceptions\InvalidScimRequest;
+use Cbox\Id\Api\Support\ScimAttributeSelection;
 use Cbox\Id\Api\Support\ScimGroupMapper;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectoryGroups;
@@ -22,24 +24,32 @@ use Illuminate\Http\Response;
  * lives behind the {@see DirectoryGroups} contract; the controller validates and
  * maps SCIM only.
  */
-class GroupController
+class GroupController extends ScimController
 {
     public function __construct(private readonly DirectoryGroups $groups) {}
 
     public function index(Request $request): JsonResponse
     {
+        // Membership is off by default in a LISTING and loaded only when the client
+        // asks (`?attributes=members`) — a page of 200 enterprise groups otherwise
+        // serializes every member of every one of them. See ScimAttributeSelection.
+        $withMembers = ScimAttributeSelection::fromRequest($request)->includeMembersInListing();
+
         try {
             $page = $this->groups->list(
                 $this->directory($request),
                 $request->string('filter')->toString(),
                 $request->has('startIndex') ? $request->integer('startIndex') : null,
                 $request->has('count') ? $request->integer('count') : null,
+                $withMembers,
             );
         } catch (UnsupportedDirectoryFilter) {
             return $this->error('400', 'Unsupported filter.', 'invalidFilter');
         }
 
-        $resources = array_values($page->resources->map(ScimGroupMapper::toResource(...))->all());
+        $resources = array_values($page->resources
+            ->map(static fn ($group): array => ScimGroupMapper::toResource($group, $withMembers))
+            ->all());
 
         return new JsonResponse(ScimMapper::listResponse($resources, $page->total, $page->startIndex, count($resources)));
     }
@@ -61,14 +71,19 @@ class GroupController
             ScimGroupMapper::memberIds($body),
         );
 
-        return new JsonResponse(ScimGroupMapper::toResource($group), 201);
+        return $this->resource(ScimGroupMapper::toResource($group), 201);
     }
 
     public function show(Request $request, string $id): JsonResponse
     {
         $group = $this->groups->find($this->directory($request), $id);
 
-        return $group === null ? $this->notFound() : new JsonResponse(ScimGroupMapper::toResource($group));
+        // Reading ONE group returns its membership by default — asking for a single
+        // group is how a client asks for its members — unless it was excluded.
+        return $group === null ? $this->notFound() : $this->resource(ScimGroupMapper::toResource(
+            $group,
+            ScimAttributeSelection::fromRequest($request)->includeMembers(),
+        ));
     }
 
     public function replace(Request $request, string $id): JsonResponse
@@ -97,7 +112,7 @@ class GroupController
             ScimGroupMapper::memberIds($body),
         );
 
-        return new JsonResponse(ScimGroupMapper::toResource($group));
+        return $this->resource(ScimGroupMapper::toResource($group));
     }
 
     public function patch(Request $request, string $id): JsonResponse
@@ -109,37 +124,32 @@ class GroupController
             return $this->notFound();
         }
 
-        $operations = $this->body($request)['Operations'] ?? [];
-
         try {
-            $group = $this->groups->applyPatch($group, is_array($operations) ? $operations : []);
-        } catch (UnsupportedGroupPatch $e) {
+            // A missing or misspelled `Operations` used to degrade to `[]` and answer
+            // 200 with the untouched group — the IdP then recorded the membership edit
+            // as applied and never sent it again. A merely lower-cased `operations` is
+            // legal SCIM (RFC 7643 §2.1) and is matched, not refused.
+            $group = $this->groups->applyPatch($group, $this->operations($request));
+        } catch (InvalidScimRequest|UnsupportedGroupPatch $e) {
             return $this->error('400', $e->getMessage(), $e->scimType);
         }
 
-        return new JsonResponse(ScimGroupMapper::toResource($group));
+        return $this->resource(ScimGroupMapper::toResource($group));
     }
 
-    public function destroy(Request $request, string $id): Response
+    public function destroy(Request $request, string $id): Response|JsonResponse
     {
         $group = $this->groups->find($this->directory($request), $id);
 
-        if ($group !== null) {
-            $this->groups->delete($group);
+        // RFC 7644 §3.6: a delete of an unknown id is a 404, not a 204 that tells the
+        // IdP a group it never had is now gone.
+        if ($group === null) {
+            return $this->notFound();
         }
+
+        $this->groups->delete($group);
 
         return response()->noContent();
-    }
-
-    private function directory(Request $request): Directory
-    {
-        $directory = $request->attributes->get('scim_directory');
-
-        if (! $directory instanceof Directory) {
-            abort(401);
-        }
-
-        return $directory;
     }
 
     /**
@@ -162,20 +172,5 @@ class GroupController
     private function notFound(): JsonResponse
     {
         return $this->error('404', 'Group not found.');
-    }
-
-    private function error(string $status, string $detail, ?string $scimType = null): JsonResponse
-    {
-        $body = [
-            'schemas' => ['urn:ietf:params:scim:api:messages:2.0:Error'],
-            'status' => $status,
-            'detail' => $detail,
-        ];
-
-        if ($scimType !== null) {
-            $body['scimType'] = $scimType;
-        }
-
-        return new JsonResponse($body, (int) $status);
     }
 }

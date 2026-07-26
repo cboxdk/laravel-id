@@ -97,6 +97,42 @@ it('does not redirect when no client can be identified', function (): void {
     ]))->assertOk();
 });
 
+// Dropping the redirect is the right call, but a five-word page told integrators
+// nothing. Under app.debug the response names the reason; in production it stays bare.
+it('explains a dropped post_logout_redirect_uri under app.debug only', function (): void {
+    logoutClient();
+
+    config(['app.debug' => true]);
+    $this->get('/oauth/logout?'.http_build_query([
+        'post_logout_redirect_uri' => POST_LOGOUT_URI,
+    ]))->assertOk()->assertSee('identified no client', false);
+
+    config(['app.debug' => false]);
+    $response = $this->get('/oauth/logout?'.http_build_query([
+        'post_logout_redirect_uri' => POST_LOGOUT_URI,
+    ]))->assertOk();
+
+    expect($response->getContent())->toBe('You are signed out.');
+});
+
+it('names the allow-list as the reason when the client WAS identified', function (): void {
+    $client = logoutClient();
+    config(['app.debug' => true]);
+
+    $this->get('/oauth/logout?'.http_build_query([
+        'client_id' => $client->client->client_id,
+        'post_logout_redirect_uri' => 'https://rp.example/not-registered',
+    ]))->assertOk()->assertSee('not on that client', false);
+});
+
+it('says nothing extra when the RP asked for no redirect at all', function (): void {
+    config(['app.debug' => true]);
+
+    $response = $this->get('/oauth/logout')->assertOk();
+
+    expect($response->getContent())->toBe('You are signed out.');
+});
+
 it('ignores an unverifiable id_token_hint rather than trusting it', function (): void {
     $client = logoutClient();
 

@@ -71,6 +71,22 @@ Publish the config if you want to review it:
 php artisan vendor:publish --tag=cbox-id-config
 ```
 
+You do not have to keep the whole file. Package defaults are merged UNDER your published
+config key by key, at every depth, so a `config/cbox-id.php` containing only the settings
+you actually override is enough — everything you leave out keeps working, and the env vars
+behind it keep working too.
+
+Two rules are worth knowing before you trim it:
+
+- **Your value always wins**, including `null`, `false` and `0`. Omitting a key is not the
+  same as setting it — an omitted key takes the package default.
+- **A list replaces, it never appends.** Where a setting is a sequential array
+  (`api.middleware`, `oauth.dynamic_registration.allowed_scopes`) yours is used whole, so
+  you can shrink one, or empty it with `[]`, without the package's entries coming back.
+
+`php artisan config:show cbox-id` prints the merged result — what your deployment actually
+resolves, not what is in the file.
+
 ## Migrate
 
 ```bash

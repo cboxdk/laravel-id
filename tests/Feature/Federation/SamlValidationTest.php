@@ -48,6 +48,7 @@ final class SamlIdp
         ?string $inResponseTo = null,
         bool $sha1 = false,
         ?string $wrapAs = null,
+        ?string $destination = null,
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
@@ -57,9 +58,10 @@ final class SamlIdp
         $issuer = FED_IDP_ENTITY;
         $recipient = FED_SP_ACS;
         $inResponseToAttr = $inResponseTo !== null ? ' InResponseTo="'.htmlspecialchars($inResponseTo, ENT_QUOTES).'"' : '';
+        $destinationAttr = $destination !== null ? ' Destination="'.htmlspecialchars($destination, ENT_QUOTES).'"' : '';
 
         $xml = <<<XML
-<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}"{$inResponseToAttr}>
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}"{$inResponseToAttr}{$destinationAttr}>
   <saml:Issuer>{$issuer}</saml:Issuer>
   <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
   <saml:Assertion ID="{$assertionId}" Version="2.0" IssueInstant="{$now}">
@@ -418,4 +420,29 @@ it('refuses an unsolicited assertion unless the connection opts in', function ()
 
     expect(fn () => app(AssertionValidator::class)->validate($connection->refresh(), $response))
         ->toThrow(InvalidAssertion::class);
+});
+
+/**
+ * Destination binds a response to the endpoint it was addressed to. php-saml
+ * compares it with `strncmp` over the shorter of the two strings unless
+ * `destinationStrictlyMatches` is set — so a Destination that merely has our ACS
+ * as a PREFIX sails through an otherwise strict validator.
+ */
+it('rejects a response whose Destination only prefixes the ACS', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    $response = $idp->response(destination: FED_SP_ACS.'/somewhere-else');
+
+    expect(fn () => app(AssertionValidator::class)->validate($connection, $response))
+        ->toThrow(InvalidAssertion::class);
+});
+
+it('still accepts a response whose Destination is exactly the ACS', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    $principal = app(AssertionValidator::class)->validate($connection, $idp->response(destination: FED_SP_ACS));
+
+    expect($principal->subject)->toBe('alice@corp.com');
 });

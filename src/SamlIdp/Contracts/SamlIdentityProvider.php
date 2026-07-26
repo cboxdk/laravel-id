@@ -7,6 +7,7 @@ namespace Cbox\Id\SamlIdp\Contracts;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
 use Cbox\Id\SamlIdp\ValueObjects\AuthnRequest;
+use Cbox\Id\SamlIdp\ValueObjects\SamlError;
 use Cbox\Id\SamlIdp\ValueObjects\SamlResponse;
 
 /**
@@ -36,6 +37,14 @@ interface SamlIdentityProvider
      * `$signature`/`$sigAlg` (the query-string signature); for the HTTP-POST binding
      * it is base64 only and the signature (if any) is the embedded XML-DSig.
      *
+     * @param  string|null  $rawQueryString  the query string EXACTLY as transmitted,
+     *                                       still percent-encoded — what a redirect-binding signature actually covers
+     *                                       (SAML bindings §3.4.4.1). Pass it whenever the octets are available;
+     *                                       anything re-encoded (`Request::fullUrl()`, `http_build_query()`) is a
+     *                                       different byte string and verifies a different message. Omitted, the
+     *                                       verifier reads the current request's own query string and falls back to
+     *                                       re-encoding the decoded parameters.
+     *
      * @throws InvalidAuthnRequest malformed XML/XXE, missing issuer or id, ACS
      *                             mismatch, unknown/absent required signature, or a
      *                             signature that fails to verify
@@ -47,6 +56,7 @@ interface SamlIdentityProvider
         ?string $signature = null,
         ?string $sigAlg = null,
         bool $fromRedirectBinding = true,
+        ?string $rawQueryString = null,
     ): AuthnRequest;
 
     /**
@@ -59,7 +69,22 @@ interface SamlIdentityProvider
      *
      * @param  array<string, string|list<string>>  $attributes
      *
+     * @throws InvalidAuthnRequest the request has already been answered (replay)
      * @throws UnknownServiceProvider the SP referenced by the request is no longer active
      */
     public function issueResponse(AuthnRequest $request, string $subjectId, array $attributes = []): SamlResponse;
+
+    /**
+     * Mint a signed SAML `Response` that carries a failure `StatusCode` and no
+     * assertion, for POSTing to the SP's registered ACS — how SAML says "no"
+     * (core §3.2.2), instead of stranding the user on an HTTP error page the SP
+     * never hears about.
+     *
+     * A {@see SamlError} is only produced for a request that already cleared the
+     * trust gates, and the ACS is re-resolved from the CURRENT registration here,
+     * never taken from the error object.
+     *
+     * @throws UnknownServiceProvider the SP is no longer registered or active
+     */
+    public function issueErrorResponse(SamlError $error): SamlResponse;
 }

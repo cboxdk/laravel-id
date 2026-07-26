@@ -133,3 +133,36 @@ it('detects an entry moved between environments', function (): void {
         expect($verification->valid)->toBeFalse();
     });
 });
+
+it('appends each job\'s entry to its OWN chain across a worker reset', function (): void {
+    // Same class of bug as the outbox sibling in EventBusTest, with a worse failure
+    // mode. EnvironmentContext is `scoped`; this log is a `singleton`. A queue worker's
+    // forgetScopedInstances() unsets the BINDING but does not reset the object, so a
+    // captured manager keeps the first job's environment for the life of the process.
+    //
+    // Every later job would then append to the FIRST job's chain and take its head lock,
+    // and — because AuditEntry IS environment-owned — throw CrossEnvironmentAccess on
+    // save. Callers that report() and swallow that exception (SyncAppManifestJob does)
+    // lose the entry silently while the surrounding transaction commits, so a privileged
+    // change leaves no trace at all.
+    $log = app(AuditLog::class);
+
+    // Job A.
+    $this->actingAsEnvironment('env_a');
+    $log->record(AuditEvent::forSystem('thing.happened'));
+
+    // The between-jobs container reset a queue worker performs.
+    $this->app->forgetScopedInstances();
+
+    // Job B — same worker, same captured log instance.
+    $this->actingAsEnvironment('env_b');
+    expect(app(AuditLog::class))->toBe($log); // the singleton really is reused
+    $log->record(AuditEvent::forSystem('thing.happened'));
+
+    $chains = $this->withoutEnvironmentScope(
+        fn () => AuditEntry::query()->orderBy('sequence')->pluck('environment_id')->all()
+    );
+
+    expect($chains)->toContain('env_a')
+        ->and($chains)->toContain('env_b');
+});

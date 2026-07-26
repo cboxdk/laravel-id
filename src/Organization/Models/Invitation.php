@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Models;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Organization\Enums\InvitationStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -15,7 +17,16 @@ use Illuminate\Support\Carbon;
  * is stored. This is what keeps joining consensual: an admin cannot add an
  * existing user to their org without that user's action.
  *
+ * ENVIRONMENT-OWNED, like every other credential-bearing model (magic links,
+ * password-reset and email-verification tokens, sessions, memberships). Without
+ * this the token was a cross-environment primitive: redeeming it on another
+ * tenant's host resolved that host's environment, minted a user and a session
+ * there, and produced tokens from that environment's issuer. The token is the
+ * only proof the accept route has, so it must be bound to the environment that
+ * issued it — the hard boundary above the organization tenant.
+ *
  * @property string $id
+ * @property string $environment_id
  * @property string $organization_id
  * @property string $email
  * @property string $role
@@ -25,8 +36,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon $expires_at
  * @property Carbon|null $accepted_at
  */
-class Invitation extends Model
+class Invitation extends Model implements EnvironmentOwned
 {
+    use BelongsToEnvironment;
     use HasUlids;
 
     protected $table = 'invitations';

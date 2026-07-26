@@ -4,33 +4,30 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory\Support;
 
+use Cbox\Id\Directory\Enums\ScimFilterAttribute;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Parses and applies the subset of SCIM 2.0 filter syntax (RFC 7644 §3.4.2.2)
  * identity providers actually send against `/Users`: the comparison operators
- * `eq`/`ne`/`co`/`sw`/`ew` and the presence test `pr`, over a fixed set of known
- * attributes, combined by a single top-level `and` or `or`. That covers the real
- * traffic — `userName eq "x"` existence checks before provisioning, and Entra-style
- * `userName eq "x" and active eq true` — without pretending to implement the whole
- * grammar. Grouping parentheses, nested/value-path filters, and mixing `and` with
- * `or` are out of scope and return null, so the caller surfaces `invalidFilter`
- * rather than silently mis-matching.
+ * `eq`/`ne`/`co`/`sw`/`ew`, the ordering comparisons `gt`/`ge`/`lt`/`le` on the
+ * timestamp attributes, and the presence test `pr` — over the closed set of
+ * {@see ScimFilterAttribute}, combined by a single top-level `and` or `or`.
+ *
+ * That covers the real traffic: `userName eq "x"` existence checks before
+ * provisioning, Entra-style `userName eq "x" and active eq true`, and the
+ * `meta.lastModified gt "<watermark>"` every delta sync is built on. Grouping
+ * parentheses, nested/value-path filters, mixing `and` with `or`, an operator the
+ * attribute's type cannot answer, and a literal that is not a value of that type all
+ * return null, so the caller surfaces `invalidFilter` rather than silently
+ * mis-matching.
  */
 readonly class ScimUserFilter
 {
-    private const ATTRIBUTES = [
-        'username' => 'resource->userName',
-        'externalid' => 'external_id',
-        'active' => 'active',
-        'emails.value' => 'resource->email',
-        'emails' => 'resource->email',
-    ];
-
     // A clause is a presence test (`attr pr`) or a comparison whose value is a
     // quoted string or an unquoted boolean literal (`active eq true`, RFC 7644).
-    private const CLAUSE = '(?<attr>[\w.]+)\s+(?:(?<presence>pr)|(?<op>eq|ne|co|sw|ew)\s+(?:"(?<val>[^"]*)"|(?<lit>true|false)))';
+    private const CLAUSE = '(?<attr>[\w.]+)\s+(?:(?<presence>pr)|(?<op>eq|ne|co|sw|ew|gt|ge|lt|le)\s+(?:"(?<val>[^"]*)"|(?<lit>true|false)))';
 
     /**
      * @param  non-empty-list<ScimFilterClause>  $clauses
@@ -105,21 +102,38 @@ readonly class ScimUserFilter
      */
     private static function clause(array $matches): ?ScimFilterClause
     {
-        $column = self::ATTRIBUTES[strtolower($matches['attr'])] ?? null;
+        $attribute = ScimFilterAttribute::tryParse($matches['attr']);
 
-        if ($column === null) {
+        if ($attribute === null) {
             return null;
         }
 
         if (($matches['presence'] ?? '') !== '') {
-            return new ScimFilterClause($column, 'pr', null);
+            return new ScimFilterClause($attribute->column(), 'pr', null);
+        }
+
+        $operator = strtolower($matches['op']);
+        $type = $attribute->type();
+
+        // An operator the attribute's type cannot answer (a substring match on a
+        // boolean, an ordering comparison this server does not implement) is refused,
+        // not approximated.
+        if (! $type->supports($operator)) {
+            return null;
         }
 
         // An unquoted boolean literal (`lit`) wins over the quoted `val`; only one
         // of the two alternation branches ever participates in a match.
         $literal = $matches['lit'] ?? '';
-        $value = $literal !== '' ? $literal : ($matches['val'] ?? '');
+        $value = $type->coerce($literal !== '' ? $literal : ($matches['val'] ?? ''));
 
-        return new ScimFilterClause($column, strtolower($matches['op']), $value);
+        // A literal that is not a value of the attribute's type at all — `active eq
+        // "fasle"` used to become `active = false` and answer, confidently, with every
+        // deactivated user.
+        if ($value === null) {
+            return null;
+        }
+
+        return new ScimFilterClause($attribute->column(), $operator, $value);
     }
 }

@@ -6,19 +6,28 @@ namespace Cbox\Id\Federation\ValueObjects;
 
 /**
  * The IdP fields extracted from a SAML 2.0 metadata document — the entity id, the
- * SingleSignOnService URL, the signing certificate, and (optionally) the
+ * SingleSignOnService URL, the signing certificate(s), and (optionally) the
  * SingleLogoutService URL. This is a PREFILL for the connection form: it carries
  * only the IdP half of the relationship (the SP half — ACS/entity id — is the
  * platform's own, derived from the connection's route), and creating the connection
  * stays an explicit admin action.
+ *
+ * `x509cert` is the PRIMARY signing certificate; `extraCertificates` holds every
+ * further signing certificate the document advertised. Okta and Entra publish two
+ * during a key rollover and switch over unannounced, so dropping the spare turns
+ * rollover day into a tenant-wide login outage.
  */
 readonly class ImportedIdpMetadata
 {
+    /**
+     * @param  list<string>  $extraCertificates  further signing certificates, in metadata order
+     */
     public function __construct(
         public string $entityId,
         public string $ssoUrl,
         public string $x509cert,
         public ?string $sloUrl = null,
+        public array $extraCertificates = [],
     ) {}
 
     /** Whether every field the SAML validator requires was found in the metadata. */
@@ -31,7 +40,7 @@ readonly class ImportedIdpMetadata
      * The connection-config keys the SAML settings/validator expect. Only the IdP
      * side — merged with the platform-generated SP keys when the connection is saved.
      *
-     * @return array<string, string>
+     * @return array<string, string|list<string>>
      */
     public function toConfig(): array
     {
@@ -40,6 +49,10 @@ readonly class ImportedIdpMetadata
             'idp_sso_url' => $this->ssoUrl,
             'idp_x509cert' => $this->x509cert,
         ];
+
+        if ($this->extraCertificates !== []) {
+            $config['idp_x509cert_extra'] = $this->extraCertificates;
+        }
 
         if ($this->sloUrl !== null && $this->sloUrl !== '') {
             $config['idp_slo_url'] = $this->sloUrl;

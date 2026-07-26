@@ -7,6 +7,7 @@ namespace Cbox\Id\Api\Http\Controllers\Sso;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
+use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Exceptions\InvalidLogoutRequest;
 use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
 use Cbox\Id\SamlIdp\ValueObjects\SamlLogoutOutcome;
@@ -58,6 +59,7 @@ class SamlIdpLogoutController
                 relayState: $this->param($request, 'RelayState'),
                 signature: $this->param($request, 'Signature'),
                 sigAlg: $this->param($request, 'SigAlg'),
+                binding: $request->isMethod('get') ? SamlBinding::Redirect : SamlBinding::Post,
             ));
         } catch (InvalidLogoutRequest) {
             return new Response('SLO rejected.', 400, ['Content-Type' => 'text/plain; charset=UTF-8']);
@@ -65,7 +67,12 @@ class SamlIdpLogoutController
 
         $this->terminateSubject($outcome);
 
-        return new RedirectResponse($outcome->redirectUrl);
+        // Answer on the binding the request arrived on: a 302 carrying the signed
+        // redirect (HTTP-Redirect), or a self-submitting form (HTTP-POST, which is
+        // what Okta and ADFS prefer for SLO).
+        return $outcome->binding === SamlBinding::Post
+            ? new Response($outcome->postForm, 200, ['Content-Type' => 'text/html; charset=UTF-8'])
+            : new RedirectResponse($outcome->redirectUrl);
     }
 
     /** Revoke every session for the currently-authenticated subject (plain logout). */

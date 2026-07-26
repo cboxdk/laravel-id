@@ -172,7 +172,7 @@ class JwtTokenIssuer implements TokenIssuer
             $claims['cnf'] = ['jkt' => $dpopJkt];
         }
 
-        // Hybrid entitlements (WorkOS-style): the coarse, Claims-mode entitlements
+        // Hybrid entitlements: the coarse, Claims-mode entitlements
         // are embedded so a resource server can gate statelessly with no round trip.
         // Only Claims-mode keys are included; instant-critical ones stay DecisionApi
         // (live via /oauth/decisions). `ent_ver` lets a consumer detect staleness.
@@ -228,6 +228,10 @@ class JwtTokenIssuer implements TokenIssuer
             'expires_at' => now()->addSeconds($this->accessTokenTtl),
         ]);
 
-        return new IssuedToken($token, $jti, $this->accessTokenTtl, $dpopJkt !== null ? 'DPoP' : 'Bearer');
+        // Carry the GRANTED scopes back: grantScopes() may have filtered the request
+        // down to the client's registered set, and RFC 6749 §5.1 makes the token
+        // endpoint echo `scope` whenever that happened. Without this the caller had no
+        // way to know what it actually got.
+        return new IssuedToken($token, $jti, $this->accessTokenTtl, $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes);
     }
 }

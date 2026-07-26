@@ -52,11 +52,14 @@ class SamlMetadataImporter
             }
         }
 
+        $certificates = $this->certificates($idp);
+
         $metadata = new ImportedIdpMetadata(
             entityId: $this->string($idp, 'entityId'),
             ssoUrl: $this->nestedUrl($idp, 'singleSignOnService'),
-            x509cert: $this->certificate($idp),
+            x509cert: $certificates[0] ?? '',
             sloUrl: $this->optionalNestedUrl($idp, 'singleLogoutService'),
+            extraCertificates: array_slice($certificates, 1),
         );
 
         if (! $metadata->isComplete()) {
@@ -125,18 +128,24 @@ class SamlMetadataImporter
     }
 
     /**
-     * The parser exposes a single signing cert as `x509cert`, or several as
-     * `x509certMulti['signing']`. Prefer the first signing cert; the validator
-     * pins signatures to it.
+     * EVERY signing certificate the document advertises, in metadata order. The
+     * parser exposes a lone cert as `x509cert` and several as
+     * `x509certMulti['signing']` — we keep them all, because an IdP mid-rollover
+     * (Okta, Entra) publishes the outgoing and incoming certs side by side and
+     * may sign with either. Taking only the first is a login outage waiting for
+     * the switchover.
      *
      * @param  array<string, mixed>  $idp
+     * @return list<string>
      */
-    private function certificate(array $idp): string
+    private function certificates(array $idp): array
     {
+        $certificates = [];
+
         $single = $idp['x509cert'] ?? null;
 
         if (is_string($single) && $single !== '') {
-            return $single;
+            $certificates[] = $single;
         }
 
         $multi = $idp['x509certMulti'] ?? null;
@@ -144,11 +153,15 @@ class SamlMetadataImporter
         if (is_array($multi)) {
             $signing = $multi['signing'] ?? null;
 
-            if (is_array($signing) && isset($signing[0]) && is_string($signing[0])) {
-                return $signing[0];
+            if (is_array($signing)) {
+                foreach ($signing as $certificate) {
+                    if (is_string($certificate) && $certificate !== '' && ! in_array($certificate, $certificates, true)) {
+                        $certificates[] = $certificate;
+                    }
+                }
             }
         }
 
-        return '';
+        return $certificates;
     }
 }

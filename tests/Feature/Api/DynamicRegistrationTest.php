@@ -78,6 +78,24 @@ it('reduces requested scopes to the configured allow-list', function (): void {
     expect($response->json('scope'))->toBe('openid email');
 });
 
+/**
+ * `organizations` is advertised in `scopes_supported` and the token/UserInfo layer
+ * emits the claim, but it was missing from the default allow-list — so a
+ * dynamically-registered client could never obtain it. Advertised and unreachable.
+ */
+it('lets a dynamically registered client obtain every advertised sign-in scope', function (): void {
+    openDcr();
+
+    $response = $this->postJson('/oauth/register', [
+        'token_endpoint_auth_method' => 'none',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+        'scope' => 'openid profile email offline_access organizations',
+    ])->assertStatus(201);
+
+    expect($response->json('scope'))->toBe('openid profile email offline_access organizations');
+});
+
 it('accepts plain-http redirect URIs on any host only in a sandbox environment', function (): void {
     openDcr();
     $registrar = app(DynamicClientRegistration::class);

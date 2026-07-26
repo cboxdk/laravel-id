@@ -1,0 +1,58 @@
+{
+    "_comment": "Golden webhook-signature vectors shared by laravel-id (the sender) and every Cbox ID SDK that verifies (id-js, id-python, id-go, laravel-id-client). Each side used to re-implement the signing formula inside its own test, so flipping the signed string from \"{timestamp}.{body}\" to \"{body}.{timestamp}\" in one repo left every suite green while every customer's verification broke. These signatures are fixed bytes, independently reproduced with OpenSSL and Python — nothing here is derived from the code under test. reversed_order_* is the SAME input under the flipped concatenation: a verifier must reject it.",
+    "algorithm": "HMAC-SHA256, lowercase hex",
+    "signature_header": "X-Cbox-Signature",
+    "timestamp_header": "X-Cbox-Timestamp",
+    "signed_payload_template": "{timestamp}.{body}",
+    "header_template": "t={timestamp},v1={signature}",
+    "cases": [
+        {
+            "name": "envelope",
+            "note": "The exact delivery envelope Cbox ID builds: type, sequence, data, delivery_id.",
+            "secret": "whsec_7f3c1a9b2e5d48f0a6c3b1d7e9f24a58c0b6d3e1f7a94c25d8b0e6f3a1c7d495",
+            "timestamp": 1700000000,
+            "body": "{\"type\":\"organization.member_added\",\"sequence\":1,\"data\":{\"user_id\":\"user_1\",\"organization_id\":\"org_a\"},\"delivery_id\":\"01HF3QK9Z8VN0T7M2XW5RB4YCD\"}",
+            "signed_payload": "1700000000.{\"type\":\"organization.member_added\",\"sequence\":1,\"data\":{\"user_id\":\"user_1\",\"organization_id\":\"org_a\"},\"delivery_id\":\"01HF3QK9Z8VN0T7M2XW5RB4YCD\"}",
+            "signature": "e8deb33a46ac21dc9a55897e7eb4469993db19e845d786c453b280c24eadb1b0",
+            "header": "t=1700000000,v1=e8deb33a46ac21dc9a55897e7eb4469993db19e845d786c453b280c24eadb1b0",
+            "reversed_order_signature": "5517c17bc8120125873abae447c99d523f8275895b9812ef5811afd8448bf555",
+            "reversed_order_header": "t=1700000000,v1=5517c17bc8120125873abae447c99d523f8275895b9812ef5811afd8448bf555"
+        },
+        {
+            "name": "unicode_and_escaped_slashes",
+            "note": "The sender escapes / as \\/ and non-ASCII as \\uXXXX. The MAC covers the RAW bytes on the wire, so a receiver that re-serializes the parsed body computes a different signature.",
+            "secret": "whsec_7f3c1a9b2e5d48f0a6c3b1d7e9f24a58c0b6d3e1f7a94c25d8b0e6f3a1c7d495",
+            "timestamp": 1735689600,
+            "body": "{\"type\":\"user.updated\",\"sequence\":42,\"data\":{\"name\":\"Se konti \\u2014 \\u65e5\\u672c\\u8a9e caf\\u00e9 \\ud83d\\ude00\",\"url\":\"https:\\/\\/app.example.com\\/a\\/b\",\"quote\":\"he said \\\"hi\\\"\"},\"delivery_id\":\"01HF3QK9Z8VN0T7M2XW5RB4YCE\"}",
+            "signed_payload": "1735689600.{\"type\":\"user.updated\",\"sequence\":42,\"data\":{\"name\":\"Se konti \\u2014 \\u65e5\\u672c\\u8a9e caf\\u00e9 \\ud83d\\ude00\",\"url\":\"https:\\/\\/app.example.com\\/a\\/b\",\"quote\":\"he said \\\"hi\\\"\"},\"delivery_id\":\"01HF3QK9Z8VN0T7M2XW5RB4YCE\"}",
+            "signature": "24137009f16f84725e9aac31c3a4e5bae3dcd1b89813f4d2d4095db67f9a59ce",
+            "header": "t=1735689600,v1=24137009f16f84725e9aac31c3a4e5bae3dcd1b89813f4d2d4095db67f9a59ce",
+            "reversed_order_signature": "3127e15e96cf2a9d2e567527e897c9f5e87761758aa447380b9b0614c94fd062",
+            "reversed_order_header": "t=1735689600,v1=3127e15e96cf2a9d2e567527e897c9f5e87761758aa447380b9b0614c94fd062"
+        },
+        {
+            "name": "empty_body",
+            "note": "Degenerate but legal: the delimiter is still present, so the signed string is \"1.\" and not \"1\".",
+            "secret": "whsec_7f3c1a9b2e5d48f0a6c3b1d7e9f24a58c0b6d3e1f7a94c25d8b0e6f3a1c7d495",
+            "timestamp": 1,
+            "body": "",
+            "signed_payload": "1.",
+            "signature": "3acceb8c792020be4ec47db9319fbcced517b86d1e1e201e87979b35c8a8589a",
+            "header": "t=1,v1=3acceb8c792020be4ec47db9319fbcced517b86d1e1e201e87979b35c8a8589a",
+            "reversed_order_signature": "c65ee897605835cb25487c2262df8f9ac06c6048dc66ed1200f414122af0b0ad",
+            "reversed_order_header": "t=1,v1=c65ee897605835cb25487c2262df8f9ac06c6048dc66ed1200f414122af0b0ad"
+        },
+        {
+            "name": "ambiguous_concatenation",
+            "note": "Chosen so \"{timestamp}.{body}\" and \"{body}.{timestamp}\" have the SAME LENGTH but different bytes — a length check alone cannot tell the two concatenation orders apart.",
+            "secret": "whsec_short",
+            "timestamp": 1700000000,
+            "body": ".1700000000",
+            "signed_payload": "1700000000..1700000000",
+            "signature": "870f84b8acc24c18e990934852dcc82d0ba36328d61655dd9b4ef426fc996c3c",
+            "header": "t=1700000000,v1=870f84b8acc24c18e990934852dcc82d0ba36328d61655dd9b4ef426fc996c3c",
+            "reversed_order_signature": "c54ba0ba6140b8e810e1f9f280452e79b0b1972aa1e50df1789e03fead719f69",
+            "reversed_order_header": "t=1700000000,v1=c54ba0ba6140b8e810e1f9f280452e79b0b1972aa1e50df1789e03fead719f69"
+        }
+    ]
+}

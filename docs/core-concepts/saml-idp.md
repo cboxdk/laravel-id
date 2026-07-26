@@ -92,8 +92,17 @@ must therefore **exempt the SSO endpoint from CSRF verification**:
 // app/Http/Middleware/VerifyCsrfToken.php  (host app)
 protected $except = [
     'sso/saml/idp/sso',   // SAML HTTP-POST binding: cross-site SP POST, no CSRF token
+    'sso/saml/idp/slo',   // …and the same for POST-binding Single Logout
 ];
 ```
+
+The SLO endpoint needs the same exemption: Okta and ADFS **prefer** the HTTP-POST
+binding for logout, and a POST-bound `LogoutRequest` is authenticated by an
+enveloped XML-DSig over the request root (verified with the same XSW-hardened,
+RSA-SHA256-pinned check the POST-binding `AuthnRequest` uses), not by a session
+token. The `LogoutResponse` goes back on the binding the request arrived on: a
+signed redirect for HTTP-Redirect, a self-submitting form carrying an
+XML-DSig-signed `LogoutResponse` for HTTP-POST.
 
 This is **fail-closed**: forgetting the exemption breaks the POST binding (SPs get a
 `419`), it does not weaken security. The endpoint's own trust checks are unchanged
@@ -156,10 +165,53 @@ the active key is ever non-RSA the IdP refuses to sign rather than downgrade.
 | Request signature does not verify against the SP cert | refused |
 | POST-binding signature does not cover the request root (XML Signature Wrapping) | refused — the `ds:Signature` must be an enveloped signature that is a direct child of the root, its `Reference` must cover that root, and verification is pinned to it |
 | Malformed XML, or a DOCTYPE/ENTITY (XXE) payload | refused (parsed via the XXE-safe loader) |
+| Request `Destination` ≠ the published SingleSignOnService URL, or absent on a signed request | refused (SAML core §3.2.1) |
+| Request `IssueInstant` outside a 15-minute window (or missing) | refused — the window covers the host login hand-off, so a request survives a real sign-in |
+| A second assertion for the same request id | refused — one `AuthnRequest` buys exactly one assertion (the id is burned at *issuance*, so re-parsing it across the login hand-off is fine) |
+| `NameIDPolicy/@Format` is neither `unspecified` nor the SP's registered format | refused with `Requester` / `InvalidNameIDPolicy` (SAML core §3.4.1.1) |
 
 The assertion is always addressed to the **registered** ACS and audience-restricted
 to the **registered** EntityID, both re-pinned at issuance time — never copied from
 the request.
+
+### How the IdP says "no"
+
+A refusal that has already cleared the trust gates — the issuer is a registered,
+active SP, its ACS matched, and any required signature verified — is reported to
+the SP **in SAML**: a signed `Response` carrying a failure `StatusCode` and no
+assertion, POSTed to the registered ACS. The SP logs the refusal and shows its own
+error page instead of the user landing on an unbranded HTTP 400 the SP never hears
+about.
+
+Refusals that have **not** cleared those gates (unknown SP, ACS mismatch, bad
+signature) stay opaque HTTP statuses. Sending a SAML error would mean POSTing to a
+location we have not established trust in — exactly the open-redirect the ACS
+pinning exists to prevent.
+
+### Metadata says only what the IdP does
+
+An SP treats metadata as authoritative, so over-promising there is not cosmetic —
+it is an outage on the SP's side that nothing here explains. Therefore:
+
+- `WantAuthnRequestsSigned` is **derived** from the registered SPs (true as soon as
+  any active SP requires signed requests), because enforcement is per-SP but
+  metadata has one attribute for it. Pin it with
+  `cbox-id.saml_idp.want_authn_requests_signed`.
+- The advertised `NameIDFormat`s are the formats the registered SPs actually get,
+  plus `unspecified` (which is honoured by falling back to the SP's own format).
+- Both SLO bindings are advertised because both are verified.
+- One `KeyDescriptor` is published **per currently-trusted key** — the active one
+  first, then any key that is rotating out — so a key rotation has an overlap
+  window instead of a cliff.
+
+### The EntityID is frozen
+
+An EntityID is an opaque, permanent name: every SP stores it at import and rejects
+any assertion whose `Issuer` differs. It defaults to `{issuer}/sso/saml/idp`, and
+the issuer follows the host — so the derived value is **frozen per environment on
+first publication** (`saml_idp_entity_ids`) and read back from that row afterwards.
+Verifying a custom domain later moves the endpoint URLs, as SAML expects, but never
+the EntityID. `cbox-id.saml_idp.entity_id` still overrides globally.
 
 ## Proven against a real verifier
 
@@ -181,8 +233,12 @@ verification (redirect and POST bindings), IdP metadata.
 
 **Not yet implemented** — do not assume these:
 
-- **Assertion encryption** (`EncryptedAssertion`). Assertions are signed, not
-  encrypted. SPs that mandate encrypted assertions are not yet supported.
+- **Assertion encryption** (`EncryptedAssertion`) — on the **IdP** side. Issued
+  assertions are signed, not encrypted, so an SP that *mandates* encrypted
+  assertions is not yet supported. (The **SP** side is a different story: a
+  connection now carries the platform key material, so an `EncryptedAssertion`
+  from an upstream IdP — what Salesforce and Shibboleth send by default — is
+  decrypted normally.)
 - **Front-channel logout fan-out.** SP-initiated Single Logout is supported: a
   signed `LogoutRequest` is verified against the SP's certificate, the local session
   is revoked, and a signed `LogoutResponse` is returned to the SP's SLO endpoint. The

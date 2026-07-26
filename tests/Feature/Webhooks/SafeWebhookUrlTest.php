@@ -31,6 +31,19 @@ it('allows a public address', function (): void {
     expect(SafeWebhookUrl::isSafe('https://93.184.216.34/hook'))->toBeTrue(); // public IP literal
 });
 
+/**
+ * A delivery carries the full event payload — emails, names, org ids. The HMAC
+ * authenticates it but does not encrypt it, so a plaintext endpoint puts every
+ * subscriber's PII on the wire in the clear, signed and readable.
+ */
+it('refuses a plaintext http endpoint even on a perfectly public host', function (): void {
+    expect(SafeWebhookUrl::isSafe('http://93.184.216.34/hook'))->toBeFalse();
+});
+
+it('refuses to register a plaintext http webhook', function (): void {
+    app(WebhookRegistry::class)->register('org_a', 'http://93.184.216.34/hook', ['user.created']);
+})->throws(UnsafeWebhookUrl::class);
+
 it('refuses to register a webhook that points at a private address', function (): void {
     app(WebhookRegistry::class)->register('org_a', 'http://169.254.169.254/', ['user.created']);
 })->throws(UnsafeWebhookUrl::class);

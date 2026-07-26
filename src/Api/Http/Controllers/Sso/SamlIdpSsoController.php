@@ -47,11 +47,34 @@ class SamlIdpSsoController
                 $this->stringParam($request, 'Signature'),
                 $this->stringParam($request, 'SigAlg'),
                 $request->isMethod('get'),
+                $this->rawQueryString($request),
             );
         } catch (UnknownServiceProvider) {
             return new Response('Unknown or inactive SAML service provider.', 403);
-        } catch (InvalidAuthnRequest) {
-            return new Response('SAML AuthnRequest rejected.', 400);
+        } catch (InvalidAuthnRequest $exception) {
+            // A refusal the SP can be told about in SAML goes back to its ACS as a
+            // signed Response with a failure StatusCode — the SP logs it and shows
+            // its own error page, instead of the user landing on an unbranded 400
+            // the SP never hears about. Everything else stays an opaque refusal.
+            $error = $exception->samlError();
+
+            if ($error === null) {
+                return new Response('SAML AuthnRequest rejected.', 400);
+            }
+
+            try {
+                $errorResponse = $this->idp->issueErrorResponse($error);
+            } catch (UnknownServiceProvider) {
+                // The SP was disabled between parsing and answering — there is no
+                // trusted ACS left to deliver to.
+                return new Response('Unknown or inactive SAML service provider.', 403);
+            }
+
+            return new Response(
+                $errorResponse->toPostForm(),
+                200,
+                ['Content-Type' => 'text/html; charset=UTF-8'],
+            );
         }
 
         // The host owns "who is logged in": no subject → hand off to its login and
@@ -107,11 +130,20 @@ class SamlIdpSsoController
             return new Response('Authentication required to complete SAML single sign-on.', 401);
         }
 
-        // Carry the full SSO URL so the host can return the browser here to resume
-        // once the subject is authenticated.
+        // Carry the SSO URL so the host can return the browser here to resume once
+        // the subject is authenticated — built from the RAW query string, never
+        // `fullUrl()`. `fullUrl()` goes through Symfony's `normalizeQueryString()`,
+        // which re-parses, `ksort()`s and re-encodes with `PHP_QUERY_RFC3986`: the
+        // transmitted octets are gone, and a redirect-binding signature covers
+        // exactly those octets. SimpleSAMLphp (and every PHP-based SP) writes a
+        // space in `RelayState` as `+`, which comes back as `%20` — a request that
+        // verified on the way in would then fail on the way back, after the user has
+        // already logged in.
         $separator = str_contains($loginUrl, '?') ? '&' : '?';
+        $rawQuery = $this->rawQueryString($request);
+        $resumeUrl = $request->url().($rawQuery !== null ? '?'.$rawQuery : '');
 
-        return new RedirectResponse($loginUrl.$separator.http_build_query(['return_to' => $request->fullUrl()]));
+        return new RedirectResponse($loginUrl.$separator.http_build_query(['return_to' => $resumeUrl]));
     }
 
     private function stringParam(Request $request, string $key): ?string
@@ -119,5 +151,17 @@ class SamlIdpSsoController
         $value = $request->input($key);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * The query string exactly as received, still percent-encoded. Read from the
+     * request's own server bag rather than the `$_SERVER` superglobal, which is not
+     * per-request under Octane/Swoole.
+     */
+    private function rawQueryString(Request $request): ?string
+    {
+        $query = $request->server->get('QUERY_STRING');
+
+        return is_string($query) && $query !== '' ? $query : null;
     }
 }

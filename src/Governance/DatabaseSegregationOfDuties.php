@@ -14,7 +14,7 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Authorization\ValueObjects\Decision;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Illuminate\Support\Str;
 
 /**
@@ -25,15 +25,19 @@ use Illuminate\Support\Str;
  */
 class DatabaseSegregationOfDuties implements SegregationOfDuties
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (GovernanceServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     public function __construct(
         private readonly Roles $roles,
         private readonly AuditLog $audit,
-        private readonly EnvironmentContext $environments,
     ) {}
 
     public function definePolicy(?string $organizationId, string $name, array $roleIds, ?string $description = null): SodPolicy
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $policy = new SodPolicy;
         $policy->id = (string) Str::ulid();
@@ -60,7 +64,21 @@ class DatabaseSegregationOfDuties implements SegregationOfDuties
 
     public function setActive(string $policyId, bool $active): void
     {
-        $this->environments->requireEnvironment();
+        $this->toggle($policyId, $active, null);
+    }
+
+    public function setActiveForOrganization(string $organizationId, string $policyId, bool $active): void
+    {
+        $this->toggle($policyId, $active, $organizationId);
+    }
+
+    /**
+     * @param  string|null  $owningOrganizationId  when given, the policy MUST be scoped to that
+     *                                             org — an environment-wide policy is not the org's to disable
+     */
+    private function toggle(string $policyId, bool $active, ?string $owningOrganizationId): void
+    {
+        $this->environments()->requireEnvironment();
 
         $policy = SodPolicy::query()->whereKey($policyId)->first();
 
@@ -68,13 +86,31 @@ class DatabaseSegregationOfDuties implements SegregationOfDuties
             throw UnknownSodPolicy::forId($policyId);
         }
 
+        // Refused as "unknown" rather than "forbidden": an org admin should not be able
+        // to probe for the existence of another scope's policies.
+        if ($owningOrganizationId !== null && $policy->organization_id !== $owningOrganizationId) {
+            throw UnknownSodPolicy::forId($policyId);
+        }
+
         $policy->active = $active;
         $policy->save();
+
+        // A control that can be switched off is a control whose switching must be on
+        // the record — the audit trail previously showed the policy being DEFINED and
+        // nothing at all when it was disabled.
+        $this->audit->record(new AuditEvent(
+            action: $active ? 'sod.policy_activated' : 'sod.policy_deactivated',
+            actorType: ActorType::System,
+            organizationId: $policy->organization_id,
+            targetType: 'sod_policy',
+            targetId: $policy->id,
+            context: ['name' => $policy->name],
+        ));
     }
 
     public function evaluate(string $organizationId, string $subjectId, string $proposedRoleId): Decision
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $held = $this->heldRoleIds($organizationId, $subjectId);
 
@@ -104,7 +140,7 @@ class DatabaseSegregationOfDuties implements SegregationOfDuties
 
     public function violationsFor(string $organizationId, string $subjectId): array
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $held = $this->heldRoleIds($organizationId, $subjectId);
         $violations = [];
@@ -129,7 +165,7 @@ class DatabaseSegregationOfDuties implements SegregationOfDuties
 
     public function scan(string $organizationId): array
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $subjectIds = array_values(array_unique(array_map(
             static fn (RoleAssignment $a): string => $a->user_id,

@@ -7,7 +7,7 @@ namespace Cbox\Id\Kernel\Authorization;
 use Cbox\Id\Kernel\Authorization\Contracts\RelationshipStore;
 use Cbox\Id\Kernel\Authorization\Models\RelationshipTuple;
 use Cbox\Id\Kernel\Authorization\ValueObjects\Relationship;
-use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesTenant;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 
 /**
@@ -18,13 +18,16 @@ use Cbox\Id\Kernel\Tenancy\GenericTenant;
  */
 class DatabaseRelationshipStore implements RelationshipStore
 {
-    private const MAX_DEPTH = 12;
+    // Lazy per-call resolution of the ambient tenant. This class is a `singleton`
+    // (AuthorizationServiceProvider) and TenantContext is `scoped`: injected, every runAs()
+    // would set and restore on the first job's manager, scoping nothing.
+    use ResolvesTenant;
 
-    public function __construct(private readonly TenantContext $tenant) {}
+    private const MAX_DEPTH = 12;
 
     public function write(Relationship $relationship): void
     {
-        $this->tenant->runAs(
+        $this->tenant()->runAs(
             GenericTenant::of($relationship->organizationId),
             fn () => RelationshipTuple::query()->updateOrCreate($this->identity($relationship)),
         );
@@ -32,7 +35,7 @@ class DatabaseRelationshipStore implements RelationshipStore
 
     public function delete(Relationship $relationship): void
     {
-        $this->tenant->runAs(
+        $this->tenant()->runAs(
             GenericTenant::of($relationship->organizationId),
             fn () => RelationshipTuple::query()->where($this->identity($relationship))->delete(),
         );
@@ -49,7 +52,7 @@ class DatabaseRelationshipStore implements RelationshipStore
         // Run the whole traversal inside the tenant scope: the tuple models are
         // tenant-owned, so every query is confined to this org (defense-in-depth
         // beyond the explicit organization_id filters below).
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $objectType, $objectId, $relation, $subjectType, $subjectId): bool {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($organizationId, $objectType, $objectId, $relation, $subjectType, $subjectId): bool {
             $visited = [];
 
             return $this->checkAtDepth($organizationId, $objectType, $objectId, $relation, $subjectType, $subjectId, 0, $visited);

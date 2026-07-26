@@ -6,6 +6,7 @@ namespace Cbox\Id\SamlIdp;
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
@@ -56,6 +57,45 @@ class PlatformKeyMaterial implements IdpKeyMaterial
             certificatePem: $this->certificateFor($signingKey, $privatePem),
             kid: $signingKey->kid,
         );
+    }
+
+    /**
+     * The active certificate plus the certificates of every key that is rotating
+     * out — the overlap window that keeps SPs verifying across a rotation.
+     *
+     * A rotating key's certificate was already generated (and persisted) while
+     * that key was active, so this needs no private-key material: it reads the
+     * public certs straight out of {@see IdpCertificate}. Both models are
+     * environment-scoped, so one tenant never publishes another's certificate.
+     *
+     * @return non-empty-list<string>
+     */
+    public function published(): array
+    {
+        $certificates = [$this->active()->certificatePem];
+
+        $rotatingKids = SigningKey::query()
+            ->where('alg', SigningAlg::RS256)
+            ->where('status', KeyStatus::Rotating)
+            ->pluck('kid')
+            ->all();
+
+        if ($rotatingKids === []) {
+            return $certificates;
+        }
+
+        $rotating = IdpCertificate::query()
+            ->whereIn('kid', $rotatingKids)
+            ->orderByDesc('created_at')
+            ->pluck('certificate');
+
+        foreach ($rotating as $certificate) {
+            if (is_string($certificate) && $certificate !== '' && ! in_array($certificate, $certificates, true)) {
+                $certificates[] = $certificate;
+            }
+        }
+
+        return $certificates;
     }
 
     /**

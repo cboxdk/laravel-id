@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Webhooks\Enums\EndpointStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * A subscriber endpoint. `organization_id` null = a platform-wide endpoint —
@@ -16,6 +17,12 @@ use Illuminate\Database\Eloquent\Model;
  * so a null-org endpoint never receives another environment's events. The
  * signing secret is stored sealed (Crypto SecretBox) and only opened at delivery
  * time to compute the HMAC signature.
+ *
+ * `status` is the operator's INTENT (active/paused, changed only by hand). The
+ * `consecutive_failures` / `circuit_opened_at` / `last_success_at` / `last_error`
+ * columns are transient HEALTH, driven by
+ * \Cbox\Id\Webhooks\Support\EndpointCircuitBreaker and self-healing after the
+ * cooldown — see that class for why the two are kept apart.
  *
  * @property string $id
  * @property string $environment_id
@@ -25,6 +32,10 @@ use Illuminate\Database\Eloquent\Model;
  * @property array<int, string> $event_types
  * @property int $last_sequence
  * @property EndpointStatus $status
+ * @property int $consecutive_failures
+ * @property Carbon|null $circuit_opened_at
+ * @property Carbon|null $last_success_at
+ * @property string|null $last_error
  */
 class WebhookEndpoint extends Model implements EnvironmentOwned
 {
@@ -49,6 +60,9 @@ class WebhookEndpoint extends Model implements EnvironmentOwned
             'event_types' => 'array',
             'last_sequence' => 'integer',
             'status' => EndpointStatus::class,
+            'consecutive_failures' => 'integer',
+            'circuit_opened_at' => 'datetime',
+            'last_success_at' => 'datetime',
         ];
     }
 }

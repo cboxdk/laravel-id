@@ -25,6 +25,27 @@ class MicrosoftEntraConnector implements DirectoryConnector
 
     private const SELECT = 'id,userPrincipalName,displayName,mail,accountEnabled';
 
+    /**
+     * The next page of a Graph collection, or null when the body ends the collection.
+     *
+     * `@odata.nextLink` is a URL taken from a RESPONSE BODY and then followed while
+     * carrying the Graph bearer token — the one outbound request in the platform not
+     * routed through `cboxdk/laravel-ssrf`. graph.microsoft.com is TLS-authenticated,
+     * so there is no attacker in the current model, but a body that ever named another
+     * host would send the tenant's Graph token there. Pin the continuation to the Graph
+     * base instead of trusting the string.
+     *
+     * @param  array<mixed>  $body  a JSON-decoded Graph collection response
+     */
+    private function nextLink(array $body): ?string
+    {
+        // The pagination key is the LITERAL string '@odata.nextLink' — read it
+        // directly, not via dot-path lookup (the '.' is part of the key name).
+        $next = $body['@odata.nextLink'] ?? null;
+
+        return is_string($next) && str_starts_with($next, self::GRAPH.'/') ? $next : null;
+    }
+
     public function provider(): DirectoryProvider
     {
         return DirectoryProvider::MicrosoftEntra;
@@ -57,10 +78,7 @@ class MicrosoftEntraConnector implements DirectoryConnector
                 }
             }
 
-            // The pagination key is the LITERAL string '@odata.nextLink' — read it
-            // directly, not via dot-path lookup (the '.' is part of the key name).
-            $next = $body['@odata.nextLink'] ?? null;
-            $url = is_string($next) && $next !== '' ? $next : null;
+            $url = $this->nextLink($body);
         }
     }
 
@@ -89,8 +107,7 @@ class MicrosoftEntraConnector implements DirectoryConnector
                 }
             }
 
-            $next = $body['@odata.nextLink'] ?? null;
-            $url = is_string($next) && $next !== '' ? $next : null;
+            $url = $this->nextLink($body);
         }
     }
 
@@ -118,8 +135,7 @@ class MicrosoftEntraConnector implements DirectoryConnector
                 }
             }
 
-            $next = $body['@odata.nextLink'] ?? null;
-            $url = is_string($next) && $next !== '' ? $next : null;
+            $url = $this->nextLink($body);
         }
 
         return $ids;

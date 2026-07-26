@@ -51,11 +51,20 @@ if (! function_exists('registerSp')) {
 }
 
 if (! function_exists('logoutRequestXml')) {
-    function logoutRequestXml(string $entityId, string $id, ?string $issueInstant = null): string
+    /**
+     * `$destination` defaults to the published SingleLogoutService endpoint — the
+     * IdP validates it (SAML core §3.2.1 makes it a MUST on a signed message, and
+     * every LogoutRequest here must be signed), so pass it explicitly to drive the
+     * wrong-endpoint refusal. Pass '' to omit the attribute entirely.
+     */
+    function logoutRequestXml(string $entityId, string $id, ?string $issueInstant = null, ?string $destination = null): string
     {
+        $destination ??= IdpDescriptor::sloUrl();
+
         return '<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" '
             .'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="'.$id.'" Version="2.0" '
-            .'IssueInstant="'.($issueInstant ?? gmdate('Y-m-d\TH:i:s\Z')).'" Destination="https://id.test'.IDP_SLO_ENDPOINT.'">'
+            .'IssueInstant="'.($issueInstant ?? gmdate('Y-m-d\TH:i:s\Z')).'"'
+            .($destination !== '' ? ' Destination="'.htmlspecialchars($destination, ENT_QUOTES).'"' : '').'>'
             .'<saml:Issuer>'.$entityId.'</saml:Issuer>'
             .'<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">alice@example.test</saml:NameID>'
             .'</samlp:LogoutRequest>';
@@ -168,6 +177,32 @@ it('refuses a LogoutRequest signed by a key the SP did not register', function (
 
     $xml = logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16)));
     $query = signedRedirectQuery($xml, $attackerPrivate, 'SAMLRequest');
+
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
+});
+
+it('refuses a signed LogoutRequest addressed to a different endpoint', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    // SAML bindings §3.5.5.2 makes verifying Destination a MUST on receipt, exactly
+    // as on the SSO path. Without it, a LogoutRequest captured at another endpoint
+    // (or another tenant's IdP) replays here inside its freshness window and forces
+    // a logout.
+    $xml = logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16)), destination: 'https://other-idp.test/slo');
+    $query = signedRedirectQuery($xml, $spPrivate, 'SAMLRequest');
+
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
+});
+
+it('refuses a signed LogoutRequest that carries no Destination at all', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $xml = logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16)), destination: '');
+    $query = signedRedirectQuery($xml, $spPrivate, 'SAMLRequest');
 
     $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
 });

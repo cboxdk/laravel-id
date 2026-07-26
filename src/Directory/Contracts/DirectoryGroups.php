@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory\Contracts;
 
+use Cbox\Id\Api\Support\ScimAttributeSelection;
 use Cbox\Id\Directory\Exceptions\UnsupportedDirectoryFilter;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryGroup;
@@ -18,15 +19,22 @@ use Cbox\Id\Directory\ValueObjects\DirectoryPage;
 interface DirectoryGroups
 {
     /**
-     * A filtered, paginated page of the directory's groups (members eager-loaded).
+     * A filtered, paginated page of the directory's groups.
+     *
      * `$filter` is a SCIM filter expression (empty for none); `$startIndex`/`$count`
      * are the SCIM pagination parameters (null when omitted).
+     *
+     * `$withMembers` defaults to FALSE and eager-loads membership only when asked.
+     * A listing multiplies the cost of membership by the page size, and a page of 200
+     * enterprise groups can carry hundreds of thousands of members — see
+     * {@see ScimAttributeSelection} for how a client asks for
+     * them (`?attributes=members`) and why a single-group read still includes them.
      *
      * @return DirectoryPage<DirectoryGroup>
      *
      * @throws UnsupportedDirectoryFilter
      */
-    public function list(Directory $directory, string $filter, ?int $startIndex, ?int $count): DirectoryPage;
+    public function list(Directory $directory, string $filter, ?int $startIndex, ?int $count, bool $withMembers = false): DirectoryPage;
 
     /**
      * A single group scoped to the directory (members eager-loaded), or null.

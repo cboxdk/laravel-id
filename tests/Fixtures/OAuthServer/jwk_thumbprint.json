@@ -1,0 +1,31 @@
+{
+    "_comment": "Published JWK Thumbprint (RFC 7638) vectors. These are the exact key documents and expected thumbprints printed in the RFCs — NOT values recomputed with our own canonicalization. A DPoP `jkt` is the identifier every client and every resource server derives independently, so the canonical member set and their order are wire contract: including `alg`/`kid`, dropping a member, or ordering `kty` before `crv` all still round-trip inside one codebase while breaking every conforming peer.",
+    "cases": [
+        {
+            "name": "rfc7638_section_3_1_rsa",
+            "source": "RFC 7638 Section 3.1",
+            "jwk": {
+                "kty": "RSA",
+                "n": "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw",
+                "e": "AQAB",
+                "alg": "RS256",
+                "kid": "2011-04-29"
+            },
+            "canonical_json": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw\"}",
+            "sha256_hex": "3736cbb1787cb8309c77ee8c3705c5e16ffb9e859715901f1e4c59b11182f57b",
+            "thumbprint": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"
+        },
+        {
+            "name": "rfc8037_appendix_a_3_okp_ed25519",
+            "source": "RFC 8037 Appendix A.3",
+            "jwk": {
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+            },
+            "canonical_json": "{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\"}",
+            "sha256_hex": "90facafea9b1556698540f70c0117a22ea37bd5cf3ed3c47093c1707282b4b89",
+            "thumbprint": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+        }
+    ]
+}

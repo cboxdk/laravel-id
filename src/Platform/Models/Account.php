@@ -57,7 +57,7 @@ class Account extends Model
     }
 
     /**
-     * The IdP products (Clerk "Applications") this account owns. Environments nest
+     * The IdP products this account owns. Environments nest
      * under a project; the account owns environments transitively through them.
      *
      * @return HasMany<Project, $this>

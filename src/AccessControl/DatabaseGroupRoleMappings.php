@@ -8,8 +8,10 @@ use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
+use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Directory-group → role mappings + the reconciliation that keeps the derived
@@ -77,6 +79,19 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
                 ->pluck('role_id')
                 ->all());
 
+        // Drop mapped ids that no longer resolve to a role this org may assign, rather
+        // than letting assign() throw on one of them.
+        //
+        // A reconcile is not a user action: it runs from a directory sync and from the
+        // relay's `role.*` listener, where a throw releases the outbox claim and the
+        // event is retried on every pass forever — never dispatched, never prunable, and
+        // blocking every listener registered after this one. One stale row must not be
+        // able to do that. map() refuses a foreign role up front and deleteRole() now
+        // removes the mappings with the role, so reaching this is already a repair; the
+        // roles simply drop out of the desired set, and anything still held via the
+        // directory for them is unassigned below, which is the correct end state.
+        $mappedRoleIds = $this->assignableOnly($organizationId, $mappedRoleIds);
+
         // Roles they currently hold VIA the directory (pushed only — manual/system
         // grants are the admin's, never reconciled away).
         $currentPushed = $this->stringIds(RoleAssignment::query()
@@ -135,6 +150,39 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
         foreach (array_unique([...$currentMembers, ...$priorHolders]) as $userId) {
             $this->reconcileUser($organizationId, $userId);
         }
+    }
+
+    /**
+     * The subset of `$roleIds` this organization may actually be granted — its own roles
+     * plus environment-wide system roles. Anything else is reported and dropped.
+     *
+     * @param  list<string>  $roleIds
+     * @return list<string>
+     */
+    private function assignableOnly(string $organizationId, array $roleIds): array
+    {
+        if ($roleIds === []) {
+            return [];
+        }
+
+        $assignable = $this->stringIds(Role::query()
+            ->whereIn('id', $roleIds)
+            ->where(fn ($query) => $query
+                ->whereNull('organization_id')
+                ->orWhere('organization_id', $organizationId))
+            ->pluck('id')
+            ->all());
+
+        $dropped = array_values(array_diff($roleIds, $assignable));
+
+        if ($dropped !== []) {
+            Log::warning('cbox-id: directory group→role mapping names a role this organization cannot be granted; skipping it.', [
+                'organization_id' => $organizationId,
+                'role_ids' => $dropped,
+            ]);
+        }
+
+        return $assignable;
     }
 
     private function organizationOf(string $groupId): ?string

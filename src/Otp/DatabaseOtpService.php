@@ -7,7 +7,7 @@ namespace Cbox\Id\Otp;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Otp\Contracts\OtpChannels;
 use Cbox\Id\Otp\Contracts\OtpHasher;
 use Cbox\Id\Otp\Contracts\OtpService;
@@ -44,11 +44,15 @@ use Illuminate\Support\Facades\DB;
  */
 class DatabaseOtpService implements OtpService
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (OtpServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     public function __construct(
         private readonly OtpChannels $channels,
         private readonly OtpHasher $hasher,
         private readonly AuditLog $audit,
-        private readonly EnvironmentContext $environments,
         private readonly RateLimiter $limiter,
         private readonly int $codeLength,
         private readonly int $ttlSeconds,
@@ -66,7 +70,7 @@ class DatabaseOtpService implements OtpService
         // Deny-by-default on both dimensions BEFORE any state changes: refuse if no
         // environment is in context (env isolation), and refuse an unregistered
         // channel key rather than silently dropping the request.
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
         $sender = $this->channels->channel($channel);
 
         // Two independent issue caps, both checked BEFORE either is charged so a
@@ -128,7 +132,7 @@ class DatabaseOtpService implements OtpService
 
     public function verify(string $challengeId, string $code, ?string $ip = null): OtpResult
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         if ($this->verifyThrottled($ip)) {
             return OtpResult::rateLimited();
@@ -142,7 +146,7 @@ class DatabaseOtpService implements OtpService
 
     public function verifyLatest(string $purpose, string $recipient, string $code, ?string $ip = null): OtpResult
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         // Per-IP throttle AND a per-recipient throttle: the finder below resolves the
         // recipient's latest LIVE challenge, so without a recipient-scoped cap an

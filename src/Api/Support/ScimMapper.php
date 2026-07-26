@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Support;
 
+use Cbox\Id\Api\Exceptions\InvalidScimRequest;
 use Cbox\Id\Api\Exceptions\UnsupportedScimPath;
+use Cbox\Id\Api\Http\Controllers\Scim\ScimController;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
+use Cbox\Id\Scim\Enums\ScimPatchOp;
 use Cbox\Id\Scim\ScimSchema;
+use Cbox\Id\Scim\Support\ScimBoolean;
 use Illuminate\Http\Request;
 
 /**
@@ -39,13 +43,20 @@ class ScimMapper
         $userName = $request->string('userName')->toString();
         $externalId ??= $request->string('externalId')->toString() ?: $userName;
 
-        $emailRaw = $request->input('emails.0.value');
-        $email = is_string($emailRaw) ? $emailRaw : null;
+        $email = self::extractEmail($request->input('emails'));
+
+        // Okta's default SCIM profile sends the name PARTS and NEVER name.formatted or
+        // displayName. Reading only `name.formatted` here meant a create landed with no
+        // stored name at all: displayName fell back to the userName (an email address),
+        // and a later single-part PATCH had nothing to merge against. The parts are
+        // persisted, and the display name is composed from them.
+        $givenName = self::nullableStr($request->input('name.givenName'));
+        $familyName = self::nullableStr($request->input('name.familyName'));
 
         $displayName = $request->string('displayName')->toString();
         if ($displayName === '') {
-            $formatted = $request->input('name.formatted');
-            $displayName = is_string($formatted) ? $formatted : $userName;
+            $formatted = self::nullableStr($request->input('name.formatted'));
+            $displayName = $formatted ?? trim(($givenName ?? '').' '.($familyName ?? ''));
         }
 
         // NB: read the extension by literal top-level key — the URN contains a
@@ -56,20 +67,50 @@ class ScimMapper
             $externalId,
             $userName,
             $email,
-            $displayName,
-            $request->boolean('active', true),
+            $displayName !== '' ? $displayName : $userName,
+            self::activeFromRequest($request),
             self::normalizeEnterprise($enterprise),
+            $givenName,
+            $familyName,
         );
+    }
+
+    /**
+     * The `active` flag of a create/replace body.
+     *
+     * RFC 7643 §4.1.1 makes `active` optional and an absent (or explicitly null) value
+     * means "in service", so it defaults to true. A PRESENT but unparsable value is a
+     * client error: `Request::boolean()` coerced `"fasle"`, `"no"` and `0` to false,
+     * which on this code path deactivates the account, drops org membership and revokes
+     * every session — a deprovision caused by a typo, reported to the IdP as success.
+     */
+    private static function activeFromRequest(Request $request): bool
+    {
+        $value = $request->input('active');
+
+        if ($value === null) {
+            return true;
+        }
+
+        return ScimBoolean::parse($value) ?? throw InvalidScimRequest::notABoolean('active');
     }
 
     /**
      * Apply a SCIM PATCH request onto an existing user, returning the updated
      * resource to re-provision. Supports both `path`-based operations and the
      * pathless "replace whole value object" form (Azure/Entra), across the
-     * attributes IdPs actually patch: active, userName, displayName,
-     * name.formatted and emails.
+     * attributes IdPs actually patch: active, userName, displayName, the `name`
+     * sub-attributes and emails.
+     *
+     * The operations arrive already validated as a non-empty list of objects (see
+     * {@see ScimController::operations()}) — a
+     * missing or misspelled `Operations` member never reaches here as "no work to do".
+     *
+     * @param  list<array<array-key, mixed>>  $operations
+     *
+     * @throws InvalidScimRequest
      */
-    public static function applyPatch(DirectoryUser $existing, Request $request): ScimUser
+    public static function applyPatch(DirectoryUser $existing, array $operations): ScimUser
     {
         $resource = $existing->resource;
         $attributes = [
@@ -86,33 +127,33 @@ class ScimMapper
             'enterprise' => self::normalizeEnterprise($resource['enterprise'] ?? null),
         ];
 
-        $operations = $request->input('Operations');
-
         /** @var list<string> $touched canonical paths this request explicitly set */
         $touched = [];
 
-        foreach (is_array($operations) ? $operations : [] as $operation) {
-            if (! is_array($operation)) {
-                continue;
-            }
+        foreach ($operations as $operation) {
+            // Deny-by-default: RFC 7644 §3.5.2 defines only add/remove/replace, and the
+            // enum is the single source of that list (the Group path parses it the same
+            // way). An unknown or missing op is a client error — a 400 `invalidSyntax`,
+            // never a silent 200 that lets the IdP believe a mis-typed write applied.
+            $op = ScimPatchOp::tryParse($operation['op'] ?? null)
+                ?? throw UnsupportedScimPath::forOp(ScimPatchOp::label($operation['op'] ?? null));
 
-            $op = strtolower(self::str($operation['op'] ?? ''));
             $path = $operation['path'] ?? null;
             $value = $operation['value'] ?? null;
 
-            // Deny-by-default: RFC 7644 §3.5.2 defines only add/remove/replace. An
-            // unknown or missing op is a client error — a 400 `invalidSyntax`, never a
-            // silent 200 that lets the IdP believe a mis-typed write applied. This is the
-            // same guard the Group PATCH path enforces; leaving it off Users let a
-            // typo'd op mutate the resource under a `replace` default and drift silently.
-            if (! in_array($op, ['add', 'remove', 'replace'], true)) {
-                throw UnsupportedScimPath::forOp($op);
-            }
-
             // `remove` clears the targeted attribute (RFC 7644 §3.5.2.2) rather
             // than being ignored — e.g. an IdP removing a user's display name.
-            if ($op === 'remove') {
-                if (is_string($path) && ! self::removeAttribute($attributes, $path)) {
+            if ($op === ScimPatchOp::Remove) {
+                // §3.5.2.2 is explicit: "If 'path' is unspecified, the operation fails
+                // with HTTP status code 400 and a 'scimType' error code of 'noTarget'."
+                // Falling through to `continue` answered 200 for an op that named
+                // nothing and did nothing — the same silent success every other guard
+                // on this path exists to prevent.
+                if (! is_string($path) || trim($path) === '') {
+                    throw InvalidScimRequest::noTarget();
+                }
+
+                if (! self::removeAttribute($attributes, $path)) {
                     throw UnsupportedScimPath::forPath($path);
                 }
 
@@ -120,18 +161,22 @@ class ScimMapper
             }
 
             if (is_string($path)) {
-                if (! self::setAttribute($attributes, $path, $value)) {
+                if (! self::setAttribute($attributes, $path, $value, $touched)) {
                     throw UnsupportedScimPath::forPath($path);
                 }
-
-                $touched[] = self::canonicalPath($path);
             } elseif (is_array($value)) {
                 // A pathless operation carries a partial resource; each key is a path.
                 // Unknown keys here are tolerated rather than fatal — an IdP routinely
                 // sends the whole resource, including attributes we deliberately do not
                 // map — whereas an explicit `path` names ONE target and expects it hit.
+                //
+                // Tolerated is not the same as DISCARDED: the return value used to be
+                // thrown away wholesale, so Entra's pathless `{"name": {...}}` mapping
+                // was dropped on every push while the identical content under an explicit
+                // path was a hard 400. setAttribute now descends into complex values, so
+                // both spellings land — and both register in $touched below.
                 foreach ($value as $key => $nested) {
-                    self::setAttribute($attributes, (string) $key, $nested);
+                    self::setAttribute($attributes, (string) $key, $nested, $touched);
                 }
             }
         }
@@ -233,49 +278,91 @@ class ScimMapper
     }
 
     /**
+     * Apply one attribute of a PATCH operation, recording the canonical path in
+     * `$touched` when a value was actually written. Returns false when the path names
+     * something this server cannot interpret at all (the caller turns that into a 400).
+     *
      * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $touched
+     *
+     * @throws InvalidScimRequest
      */
-    private static function setAttribute(array &$attributes, string $path, mixed $value): bool
+    private static function setAttribute(array &$attributes, string $path, mixed $value, array &$touched): bool
     {
         // Enterprise extension: paths arrive fully qualified with the schema URN
         // (Okta: "urn:...:User:department") or, pathless, as a nested object under
         // the URN key. Normalize either form onto the enterprise sub-array.
         if (self::applyEnterprisePatch($attributes, $path, $value)) {
+            $touched[] = self::canonicalPath($path);
+
             return true;
         }
 
-        switch (self::canonicalPath($path)) {
-            case 'active':
-                $attributes['active'] = filter_var($value, FILTER_VALIDATE_BOOLEAN);
+        $canonical = self::canonicalPath($path);
 
-                return true;
+        switch ($canonical) {
+            case 'active':
+                // Strict, never coercive: FILTER_VALIDATE_BOOLEAN answered false for any
+                // value it did not recognise, so `"active": "fasle"` deactivated the
+                // subject, dropped membership and revoked every session — and the IdP
+                // recorded it as a successful write.
+                $attributes['active'] = ScimBoolean::parse($value)
+                    ?? throw InvalidScimRequest::notABoolean('active');
+                break;
             case 'username':
                 $attributes['userName'] = self::str($value);
-
-                return true;
+                break;
             case 'displayname':
             case 'name.formatted':
                 $attributes['displayName'] = self::str($value);
-
-                return true;
+                break;
                 // Okta's default SCIM profile sends givenName/familyName and NEVER
                 // name.formatted or displayName. Dropping them meant every Okta-provisioned
                 // user's display name fell back to their email address, permanently.
             case 'name.givenname':
                 $attributes['givenName'] = self::str($value);
-
-                return true;
+                break;
             case 'name.familyname':
                 $attributes['familyName'] = self::str($value);
-
-                return true;
+                break;
             case 'emails':
                 $attributes['email'] = self::extractEmail($value);
-
-                return true;
+                break;
+            case 'name':
+                // The whole complex attribute in one value — what Entra's PATHLESS
+                // mapping sends, and what an explicit `"path": "name"` op sends. Recurse
+                // so each sub-attribute takes exactly the same route (and the same
+                // $touched bookkeeping) as its dotted spelling.
+                return self::setComplexAttribute($attributes, 'name', $value, $touched);
             default:
-                return self::isTolerated(self::canonicalPath($path));
+                return self::isTolerated($canonical);
         }
+
+        $touched[] = $canonical;
+
+        return true;
+    }
+
+    /**
+     * Apply a complex attribute supplied as a whole object by descending into its
+     * sub-attributes.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $touched
+     */
+    private static function setComplexAttribute(array &$attributes, string $path, mixed $value, array &$touched): bool
+    {
+        if (! is_array($value)) {
+            return false;
+        }
+
+        foreach ($value as $key => $sub) {
+            if (! self::setAttribute($attributes, $path.'.'.$key, $sub, $touched)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -381,22 +468,41 @@ class ScimMapper
         return $out;
     }
 
+    /**
+     * The single address this platform keeps out of a SCIM `emails` multi-value.
+     *
+     * RFC 7643 §2.4: at most one value of a multi-valued attribute may be `primary`,
+     * and it is the preferred one. Taking the first entry regardless meant an IdP that
+     * lists `home` before `work` (Entra does, for some profiles) provisioned the wrong
+     * address — and email is the platform's account identity.
+     */
     private static function extractEmail(mixed $value): ?string
     {
         if (is_string($value)) {
             return $value !== '' ? $value : null;
         }
 
-        // emails as a list of {value: ...} — take the first usable address.
-        if (is_array($value)) {
-            foreach ($value as $entry) {
-                if (is_array($entry) && isset($entry['value']) && is_string($entry['value'])) {
-                    return $entry['value'];
-                }
-            }
+        if (! is_array($value)) {
+            return null;
         }
 
-        return null;
+        $first = null;
+
+        foreach ($value as $entry) {
+            $address = self::nullableStr(is_array($entry) ? ($entry['value'] ?? null) : $entry);
+
+            if ($address === null) {
+                continue;
+            }
+
+            if (is_array($entry) && ($entry['primary'] ?? null) === true) {
+                return $address;
+            }
+
+            $first ??= $address;
+        }
+
+        return $first;
     }
 
     /**
@@ -436,6 +542,14 @@ class ScimMapper
         );
     }
 
+    /**
+     * The absolute URI of a User resource — `meta.location` and `Content-Location` both.
+     */
+    public static function location(string $id): string
+    {
+        return rtrim((string) url('/'), '/').'/scim/v2/Users/'.$id;
+    }
+
     private static function str(mixed $value): string
     {
         return is_string($value) ? $value : '';
@@ -461,15 +575,43 @@ class ScimMapper
             'externalId' => $directoryUser->external_id,
             'userName' => self::str($resource['userName'] ?? null),
             'active' => $directoryUser->active,
-            'meta' => [
-                'resourceType' => 'User',
-                'location' => '/scim/v2/Users/'.$directoryUser->id,
-            ],
+            // created/lastModified are mandatory for any connector doing delta sync
+            // (`meta.lastModified gt "<watermark>"`). Omitting them left every
+            // connector no choice but a FULL sweep on each run — straight into the
+            // rate limit, on a schedule.
+            // An ABSOLUTE URI, and the same one the response's Content-Location header
+            // carries: RFC 7643 §3.1 defines meta.location as "The URI of the resource"
+            // and RFC 7644 §3.1 requires the two to be equal. A relative path is neither
+            // a URI nor equal to a header the server was not sending at all, and a
+            // connector that follows meta.location — Okta does, to re-read a resource
+            // after a write — resolved it against its own base and 404'd.
+            'meta' => ScimSchema::meta(
+                'User',
+                self::location($directoryUser->id),
+                $directoryUser->created_at,
+                $directoryUser->updated_at,
+            ),
         ];
 
         if ($displayName !== null) {
             $out['displayName'] = $displayName;
-            $out['name'] = ['formatted' => $displayName];
+        }
+
+        // The name PARTS, not just the composed `formatted`. /Schemas declares
+        // givenName/familyName and both are persisted and accepted on write, so
+        // omitting them here broke the resource in two directions at once: an Okta
+        // admin who mapped `user.firstName ← name.givenName` imported every user with a
+        // blank first name, and Entra's read-modify-write PUT reconciliation read the
+        // resource back WITHOUT them and pushed that omission straight over the stored
+        // values — blanking them on the next cycle.
+        $name = array_filter([
+            'formatted' => $displayName,
+            'givenName' => self::nullableStr($resource['givenName'] ?? null),
+            'familyName' => self::nullableStr($resource['familyName'] ?? null),
+        ], static fn (?string $value): bool => $value !== null);
+
+        if ($name !== []) {
+            $out['name'] = $name;
         }
 
         if ($email !== null) {

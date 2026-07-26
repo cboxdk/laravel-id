@@ -29,6 +29,26 @@ class UnboundRoles implements Roles
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
+    public function updateRole(string $roleId, string $name, ?string $description = null): Role
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function attachPermission(string $roleId, string $permissionId): void
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function revokePermission(string $roleId, string $permissionId): void
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function deleteRole(string $roleId): void
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
     public function assertAssignableIn(string $organizationId, string $roleId): void
     {
         throw ExternalRbacNotBound::forContract(Roles::class);

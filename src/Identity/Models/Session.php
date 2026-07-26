@@ -25,6 +25,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_active_at
  * @property Carbon $expires_at
  * @property Carbon|null $revoked_at
+ * @property Carbon|null $created_at The authentication time. Read by OIDC `max_age` /
+ *                                   `auth_time`, so it is part of this model's contract, not bookkeeping.
+ * @property Carbon|null $updated_at
  */
 class Session extends Model implements EnvironmentOwned
 {

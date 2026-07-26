@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\TokenVault\Contracts\SecretVault;
 use Cbox\Id\TokenVault\Exceptions\LeaseDenied;
@@ -38,10 +39,14 @@ use Illuminate\Support\Str;
  */
 class DatabaseSecretVault implements SecretVault
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (TokenVaultServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     public function __construct(
         private readonly SecretBox $secretBox,
         private readonly AuditLog $audit,
-        private readonly EnvironmentContext $environments,
         private readonly int $defaultLeaseTtlSeconds,
     ) {}
 
@@ -52,7 +57,7 @@ class DatabaseSecretVault implements SecretVault
         ?VaultOwner $owner = null,
         ?DateTimeInterface $expiresAt = null,
     ): VaultSecret {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $model = new VaultSecret;
         // The id is assigned before sealing so secretContext() (which binds the
@@ -82,7 +87,7 @@ class DatabaseSecretVault implements SecretVault
 
     public function rotate(string $secretId, string $newSecret, ?VaultOwner $owner): VaultSecret
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $secret = $this->ownedSecret($secretId, $owner);
 
@@ -109,7 +114,7 @@ class DatabaseSecretVault implements SecretVault
 
     public function revoke(string $secretId, ?VaultOwner $owner): void
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $secret = $this->ownedSecret($secretId, $owner);
 
@@ -134,7 +139,7 @@ class DatabaseSecretVault implements SecretVault
 
     public function grant(string $secretId, string $clientId, ?VaultOwner $owner, ?int $maxTtlSeconds = null): VaultGrant
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         // Deny-by-default: you can only grant access to a secret that exists in
         // this environment.
@@ -173,7 +178,7 @@ class DatabaseSecretVault implements SecretVault
 
     public function revokeGrant(string $secretId, string $clientId, ?VaultOwner $owner): void
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         // Resolve the secret under the caller's own ownership first: revoking a grant on
         // a secret you do not own is another tenant's business.
@@ -205,7 +210,7 @@ class DatabaseSecretVault implements SecretVault
 
     public function lease(string $secretId, string $clientId, string $purpose, ?VaultOwner $owner): SecretLease
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $secret = $this->ownedSecret($secretId, $owner);
         $grant = $secret === null

@@ -20,7 +20,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Exceptions\LastOwner;
 use Cbox\Id\Organization\Models\Membership;
@@ -37,12 +37,16 @@ use Illuminate\Support\Str;
  */
 class DatabaseAccessReviews implements AccessReviews
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (GovernanceServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     public function __construct(
         private readonly Roles $roles,
         private readonly Memberships $memberships,
         private readonly AuditLog $audit,
         private readonly EventBus $events,
-        private readonly EnvironmentContext $environments,
     ) {}
 
     public function open(
@@ -52,7 +56,7 @@ class DatabaseAccessReviews implements AccessReviews
         PendingPolicy $pendingPolicy = PendingPolicy::Revoke,
         ?string $createdBy = null,
     ): CertificationCampaign {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $campaign = new CertificationCampaign;
         $campaign->id = (string) Str::ulid();
@@ -98,7 +102,7 @@ class DatabaseAccessReviews implements AccessReviews
 
     public function close(string $campaignId, string $organizationId): CertificationCampaign
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         // Scope the lookup to the acting org. Closing APPLIES every revoke against real
         // memberships and roles, so a campaign id from another tenant would strip that
@@ -196,7 +200,7 @@ class DatabaseAccessReviews implements AccessReviews
 
     private function decide(string $itemId, string $reviewerId, string $organizationId, ReviewDecision $decision, string $action, ?string $note): CertificationItem
     {
-        $this->environments->requireEnvironment();
+        $this->environments()->requireEnvironment();
 
         $item = CertificationItem::query()->whereKey($itemId)->first();
 

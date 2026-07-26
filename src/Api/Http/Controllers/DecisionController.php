@@ -29,6 +29,9 @@ use Illuminate\Http\Request;
  */
 class DecisionController
 {
+    /** Checks per request, per field, before the endpoint refuses with 422. */
+    private const DEFAULT_MAX_BATCH = 50;
+
     public function __construct(
         private readonly TokenIntrospector $introspector,
         private readonly PolicyDecisionPoint $pdp,
@@ -66,6 +69,22 @@ class DecisionController
         // A client_credentials token's subject is the client itself (a service).
         $subject = $sub === $introspection->clientId ? Subject::service($sub) : Subject::user($sub);
 
+        // Bound the batch BEFORE any of it is evaluated. Each permission check walks
+        // the relationship graph to MAX_DEPTH with two queries per node, so an
+        // unbounded array turns one authenticated HTTP request into an arbitrary
+        // number of database round trips — a self-inflicted amplification any holder
+        // of a valid token could aim at the decision plane.
+        $limit = $this->batchLimit();
+
+        foreach (['permissions', 'entitlements'] as $field) {
+            if (count($this->list($request->input($field))) > $limit) {
+                return new JsonResponse([
+                    'error' => 'batch_too_large',
+                    'error_description' => "at most {$limit} {$field} may be checked in one request",
+                ], 422);
+            }
+        }
+
         return new JsonResponse([
             'subject' => ['type' => $subject->type, 'id' => $subject->id],
             'organization' => $org,
@@ -81,6 +100,18 @@ class DecisionController
     {
         $out = [];
 
+        // Memoized per REQUEST, not per instance-lifetime: this controller is
+        // constructed fresh for each request, so the array cannot outlive it even in
+        // a long-lived worker. That distinction matters — a memo held on one of this
+        // codebase's singletons is exactly how three separate cross-environment bugs
+        // were introduced (DatabaseEventBus, DatabaseAuditLog, DatabaseKeyManager).
+        //
+        // Within one batch the org and subject are fixed, so a repeated
+        // (relation, resource) pair can only produce the same answer — and clients
+        // batching a screen's worth of checks repeat pairs constantly.
+        /** @var array<string, bool> $memo */
+        $memo = [];
+
         foreach ($this->list($request->input('permissions')) as $check) {
             if (! is_array($check)) {
                 continue;
@@ -93,14 +124,27 @@ class DecisionController
                 continue;
             }
 
+            $key = $relation."\0".$resource;
+
             $out[] = [
                 'relation' => $relation,
                 'resource' => $resource,
-                'allowed' => $this->pdp->can($org, $subject, $relation, $this->ref($resource)),
+                'allowed' => $memo[$key] ??= $this->pdp->can($org, $subject, $relation, $this->ref($resource)),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * The most checks one request may ask for. Configurable because the right
+     * number depends on how a deployment's clients batch, but never unbounded.
+     */
+    private function batchLimit(): int
+    {
+        $limit = config('cbox-id.oauth.decisions.max_batch', self::DEFAULT_MAX_BATCH);
+
+        return is_numeric($limit) ? max(1, (int) $limit) : self::DEFAULT_MAX_BATCH;
     }
 
     /**

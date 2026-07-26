@@ -46,7 +46,19 @@ it('resolves nothing for an unknown host', function (): void {
 it('refuses a request whose host maps to no environment and no default', function (): void {
     config(['cbox-id.environments.default' => null]);
 
-    $this->getJson('http://stranger.example.com/up')->assertStatus(404);
+    // Probed through a protocol endpoint, not /up: the liveness probe deliberately
+    // sits OUTSIDE ResolveEnvironment (see below), so it can never demonstrate this.
+    $this->getJson('http://stranger.example.com/.well-known/jwks.json')->assertStatus(404);
+});
+
+it('answers the liveness probe even when the host maps to no environment', function (): void {
+    // A kubelet probes the POD, so the Host header maps to nothing. If /up resolved an
+    // environment it would 404 there — and Kubernetes would restart healthy pods.
+    config(['cbox-id.environments.default' => null]);
+
+    $this->getJson('http://stranger.example.com/up')
+        ->assertOk()
+        ->assertExactJson(['status' => 'ok']);
 });
 
 it('falls back to the database default environment when the host maps to none', function (): void {
@@ -57,7 +69,7 @@ it('falls back to the database default environment when the host maps to none', 
     $prod->makeDefault();
 
     expect(app(EnvironmentResolver::class)->defaultEnvironment()?->slug)->toBe('prod');
-    $this->getJson('http://stranger.example.com/up')->assertOk();
+    $this->getJson('http://stranger.example.com/.well-known/jwks.json')->assertOk();
 });
 
 it('keeps exactly one default when another environment is promoted', function (): void {
@@ -72,5 +84,5 @@ it('keeps exactly one default when another environment is promoted', function ()
 it('serves a request on a resolved environment host', function (): void {
     config(['cbox-id.environments.default' => null]);
 
-    $this->getJson('http://id.staging.acme.com/up')->assertOk();
+    $this->getJson('http://id.staging.acme.com/.well-known/jwks.json')->assertOk();
 });

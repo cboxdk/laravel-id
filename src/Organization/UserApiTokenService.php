@@ -10,7 +10,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesTenant;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Cbox\Id\Organization\Contracts\ResourceAccess;
 use Cbox\Id\Organization\Contracts\UserApiTokens;
@@ -35,6 +35,11 @@ use Illuminate\Support\Str;
  */
 class UserApiTokenService implements UserApiTokens
 {
+    // Lazy per-call resolution of the ambient tenant. This class is a `singleton`
+    // (OrganizationServiceProvider) and TenantContext is `scoped`: injected, every runAs()
+    // would set and restore on the first job's manager, scoping nothing.
+    use ResolvesTenant;
+
     /** Brand root `cbid` + plane marker `pat` (a user-bound personal token). */
     private const PREFIX = 'cbid_pat_';
 
@@ -42,7 +47,6 @@ class UserApiTokenService implements UserApiTokens
     private const DEFAULT_TTL_DAYS = 90;
 
     public function __construct(
-        private readonly TenantContext $tenant,
         private readonly ResourceAccess $access,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
@@ -70,7 +74,7 @@ class UserApiTokenService implements UserApiTokens
         $ttlDays = is_numeric($configured) ? (int) $configured : self::DEFAULT_TTL_DAYS;
         $expiry = $expiresAt ?? CarbonImmutable::now()->addDays($ttlDays);
 
-        $token = $this->tenant->runAs(GenericTenant::of($organizationId), fn (): UserApiToken => DB::transaction(function () use ($organizationId, $userId, $name, $scope, $resourceFamilies, $expiry, $plaintext): UserApiToken {
+        $token = $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): UserApiToken => DB::transaction(function () use ($organizationId, $userId, $name, $scope, $resourceFamilies, $expiry, $plaintext): UserApiToken {
             $token = new UserApiToken;
             $token->fill([
                 'user_id' => $userId,
@@ -103,7 +107,7 @@ class UserApiTokenService implements UserApiTokens
 
         // Authentication happens before any tenant context exists, so the
         // lookup runs unscoped; the returned token carries its organization.
-        $token = $this->tenant->withoutScope(
+        $token = $this->tenant()->withoutScope(
             fn (): ?UserApiToken => UserApiToken::query()->where('token_hash', $this->hash($plaintext))->first(),
         );
 
@@ -111,7 +115,7 @@ class UserApiTokenService implements UserApiTokens
             return null;
         }
 
-        $this->tenant->runAs(
+        $this->tenant()->runAs(
             GenericTenant::of($token->organization_id),
             fn () => $token->forceFill(['last_used_at' => now()])->save(),
         );
@@ -121,7 +125,7 @@ class UserApiTokenService implements UserApiTokens
 
     public function revoke(string $organizationId, string $tokenId): void
     {
-        $this->tenant->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $tokenId): void {
+        $this->tenant()->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $tokenId): void {
             $token = UserApiToken::query()->whereKey($tokenId)->whereNull('revoked_at')->first();
 
             if ($token === null) {
@@ -140,7 +144,7 @@ class UserApiTokenService implements UserApiTokens
     {
         // ULIDs are monotonic: ordering by id is newest-first and deterministic
         // even for tokens minted within the same clock tick.
-        return $this->tenant->runAs(
+        return $this->tenant()->runAs(
             GenericTenant::of($organizationId),
             fn (): Collection => UserApiToken::query()
                 ->where('user_id', $userId)

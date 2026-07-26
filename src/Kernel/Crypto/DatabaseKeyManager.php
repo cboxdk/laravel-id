@@ -25,7 +25,6 @@ class DatabaseKeyManager implements KeyManager
 
     public function __construct(
         private readonly SecretBox $secretBox,
-        private readonly EnvironmentContext $environment,
     ) {}
 
     public function activeSigningKey(SigningAlg $alg = SigningAlg::RS256): SigningKey
@@ -140,9 +139,24 @@ class DatabaseKeyManager implements KeyManager
         return 'cbox-id:crypto:'.$this->envId().':'.$suffix;
     }
 
+    /**
+     * The environment this key material belongs to — resolved LAZILY, never captured.
+     *
+     * `EnvironmentContext` is a `scoped` binding while this manager is a `singleton`. A
+     * queue worker's `forgetScopedInstances()` unsets the binding but does not reset the
+     * object, so a captured manager would keep the first job's environment for the life
+     * of the process — and this value is the CACHE KEY for the JWKS and the verification
+     * keys. Rotating in a second environment would then flush the first environment's
+     * entry and leave its own stale, so the JWKS served after a rotation would still
+     * advertise the retired `kid` and every relying party would reject the new tokens.
+     *
+     * The class already refuses to memoize the active signing key for the same family of
+     * reason (see {@see activeSigningKey()}); capturing the context defeated that care
+     * one level up.
+     */
     private function envId(): string
     {
-        return $this->environment->current()?->environmentKey() ?? 'global';
+        return app(EnvironmentContext::class)->current()?->environmentKey() ?? 'global';
     }
 
     /**

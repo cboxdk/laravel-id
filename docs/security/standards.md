@@ -26,15 +26,16 @@ canonical list of what is implemented. Status is one of **✅ implemented**,
 | **RFC 8707** | Resource Indicators — `resource` binds the access token's `aud` | ✅ |
 | **RFC 7591** | Dynamic Client Registration (`/oauth/register`) — gated (disabled/protected/open) | ✅ |
 | **RFC 7592** | Registration management (GET/PUT/DELETE by registration access token) | ✅ |
-| **OIDC Core** | `id_token` with `nonce`, `at_hash`, `auth_time`, `amr`, `acr`; UserInfo endpoint | ✅ |
+| **OIDC Core** | `id_token` with `nonce`, `at_hash`, `auth_time`, `amr`, `acr`; UserInfo endpoint. **`acr_values` and `max_age` are ENFORCED at `/authorize`, not merely echoed:** `max_age` compares the session's own age against the client's ceiling and returns `login_required` when it is exceeded (`max_age=0` demands a fresh authentication); `acr_values` is answered from `AuthenticationContextClass`, the one enum that also drives `acr_values_supported` in discovery and the `acr` claim, so the advertisement, the gate and the claim cannot drift apart. A class the server does not assert is refused rather than silently downgraded | ✅ |
+| **RFC 6749 §3.3** | **A scope the client is not registered for is refused at `/authorize` with `invalid_scope`**, rather than accepted and quietly filtered down at mint time. A client that registered no scopes at all is exempt (it has declared no surface to check against). The `/oauth/token` response **echoes the granted `scope`**, so a narrowed grant is visible in the response instead of surfacing later as an unexplained 403 | ✅ |
 | **OAuth 2.0 Security BCP** | Refresh-token rotation with reuse detection (family revocation) | ✅ |
 | **RFC 9449** | DPoP — sender-constrained tokens (`cnf.jkt`, `token_type: DPoP`); proof validated for typ/alg/signature/htm/htu/iat with single-use `jti` replay guard; advertised in metadata | ✅ |
 | **RFC 9126** | Pushed Authorization Requests (`/oauth/par`) — client-authenticated, single-use short-lived `request_uri` consumed by `/authorize`; `require_pushed_authorization_requests` advertised | ✅ |
 | **RFC 8628** | Device Authorization Grant (`/oauth/device_authorization`) — `user_code` (unambiguous alphabet) + `verification_uri`; token polling with `authorization_pending` / `slow_down` / `access_denied` / `expired_token`; device_code stored hashed | ✅ |
 | **RFC 9207** | Issuer identification in the authorization response (`iss`) — IdP mix-up defense, always on | ✅ |
-| **FAPI 2.0 baseline** | Enforceable profile: mandatory PAR + PKCE + DPoP sender-constraining + exact redirect matching + `iss` — see [FAPI hardening](fapi.md) | ✅ |
+| **FAPI 2.0 baseline** | Building blocks shipped: mandatory PAR, PKCE `S256`, DPoP, `private_key_jwt`, exact redirect matching, `iss`. **Not met:** tokens are signed `RS256` (the profile permits only `PS256`/`ES256`/`EdDSA`) and there is no switch to *require* sender-constrained tokens. Not certified — see [FAPI hardening](fapi.md) | ◐ |
 | M2M service accounts (client_credentials) — **overlap credential rotation**: mint a successor with the same privileges, cut over with zero downtime, then retire the predecessor (revoking its tokens) | ✅ |
-| Authorization decision endpoint (`POST /oauth/decisions`) — live, deny-by-default permission (ReBAC) + entitlement checks in one round trip; version-invalidated hot-path cache; see [Authorization](../core-concepts/authorization.md) | ✅ |
+| Authorization decision endpoint (`POST /oauth/decisions`) — live, deny-by-default permission (ReBAC) + entitlement checks in one round trip; version-invalidated hot-path cache; **batch size capped per field by `cbox-id.oauth.decisions.max_batch` (default 50), over which the request is `422 batch_too_large`** — distinct from the `422 no_organization_context` returned when the token carries no `org` claim; see [Authorization](../core-concepts/authorization.md) | ✅ |
 | Hybrid entitlement claims — coarse `EnforcementMode::Claims` entitlements embedded as the `ent` claim (`ent_ver` staleness signal); instant-critical ones stay live | ✅ |
 
 ### Scope: what the framework provides vs. the integrator
@@ -80,11 +81,14 @@ MCP server it intends to call.
 | **RFC 7644** | `/Users` CRUD + PATCH (path and pathless), pagination, `scimType` errors | ✅ |
 | **RFC 7643** | Core User schema | ✅ |
 | **RFC 7644** | Filtering — `eq/ne/co/sw/ew/pr` (LIKE metacharacters escaped) | ◐ |
-| **RFC 7643** | `/Groups` + membership sync (create/list/PATCH add-remove/PUT/delete) | ✅ |
+| **RFC 7643** | `/Groups` + membership sync (create/list/PATCH add-remove/PUT/delete). `members` is omitted from a `/Groups` **listing** unless the client asks for it with `?attributes=members` (RFC 7643 §7 `returned: "request"`); reading a single group still returns it | ✅ |
 | **RFC 7644** | ServiceProviderConfig / ResourceTypes / Schemas discovery | ✅ |
 | **RFC 7643** | Enterprise User extension (`employeeNumber`, `costCenter`, `organization`, `division`, `department`, `manager`) — ingested, patched, returned, advertised in discovery | ✅ |
 
 Deprovision / deactivation drops membership **and revokes sessions immediately**.
+
+Full endpoint reference, error semantics and the honest list of what is not
+implemented: [Inbound SCIM provisioning server](../core-concepts/scim.md).
 
 ## SAML 2.0 & federation (as a relying party)
 

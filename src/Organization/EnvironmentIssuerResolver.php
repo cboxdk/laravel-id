@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization;
 
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\Organization\Models\Environment;
 
@@ -20,14 +20,17 @@ use Cbox\Id\Organization\Models\Environment;
  */
 class EnvironmentIssuerResolver implements IssuerResolver
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (OrganizationServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     /** @var array<string, string> */
     private array $cache = [];
 
-    public function __construct(private readonly EnvironmentContext $environments) {}
-
     public function issuer(): string
     {
-        $key = $this->environments->current()?->environmentKey();
+        $key = $this->environments()->current()?->environmentKey();
 
         return $key !== null ? $this->forEnvironment($key) : $this->fallback();
     }

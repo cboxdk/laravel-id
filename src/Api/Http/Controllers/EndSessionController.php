@@ -10,6 +10,7 @@ use Cbox\Id\OAuthServer\ValueObjects\EndSessionRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 /**
  * `GET|POST /oauth/logout` — the OIDC `end_session_endpoint` (OpenID Connect
@@ -30,12 +31,14 @@ class EndSessionController
 
     public function __invoke(Request $request): RedirectResponse|Response
     {
-        $result = $this->endSession->resolve(new EndSessionRequest(
+        $endSessionRequest = new EndSessionRequest(
             idTokenHint: $this->param($request, 'id_token_hint'),
             clientId: $this->param($request, 'client_id'),
             postLogoutRedirectUri: $this->param($request, 'post_logout_redirect_uri'),
             state: $this->param($request, 'state'),
-        ));
+        );
+
+        $result = $this->endSession->resolve($endSessionRequest);
 
         $this->terminate($request);
 
@@ -43,7 +46,46 @@ class EndSessionController
             return new RedirectResponse((string) $result->redirectTo);
         }
 
-        return new Response('You are signed out.', 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        return new Response(
+            'You are signed out.'.$this->droppedRedirectNotice($endSessionRequest),
+            200,
+            ['Content-Type' => 'text/plain; charset=UTF-8'],
+        );
+    }
+
+    /**
+     * The RP asked to be redirected and we refused. That is the correct outcome for
+     * an unidentifiable or unregistered URI, but silence here costs integrators hours
+     * — so say why. The reason is always logged; the text is appended to the response
+     * only under `app.debug`, since it echoes back what the caller sent and names our
+     * allow-list decision (both fine locally, neither belongs on a production page).
+     */
+    private function droppedRedirectNotice(EndSessionRequest $request): string
+    {
+        if ($request->postLogoutRedirectUri === null) {
+            return '';
+        }
+
+        $identified = $request->clientId !== null || $request->idTokenHint !== null;
+
+        $reason = $identified
+            ? 'the URI is not on that client\'s registered post_logout_redirect_uris (matching is exact — scheme, host, path and trailing slash all count)'
+            : 'the request identified no client: send `client_id`, or an `id_token_hint` we can verify, so we know whose allow-list to check';
+
+        Log::info('RP-initiated logout dropped post_logout_redirect_uri', [
+            'reason' => $identified ? 'uri_not_allowed' : 'client_unidentified',
+            'client_id' => $request->clientId,
+            'had_id_token_hint' => $request->idTokenHint !== null,
+            'post_logout_redirect_uri' => $request->postLogoutRedirectUri,
+        ]);
+
+        if (config('app.debug') !== true) {
+            return '';
+        }
+
+        return "\n\npost_logout_redirect_uri was ignored because ".$reason.".\n"
+            ."Requested: {$request->postLogoutRedirectUri}\n"
+            .'Register it on the client (Applications → Sign-out URIs) and have the app send `client_id` on the logout request.';
     }
 
     /**

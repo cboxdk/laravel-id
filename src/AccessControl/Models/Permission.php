@@ -56,7 +56,16 @@ class Permission extends Model
 
             $environment = $context->current();
 
+            // No environment resolved and scoping NOT suspended: fall back to the
+            // platform-global rows only. Returning unconstrained here failed OPEN — a
+            // permission key is tenant-identifying (`acme.billing.refund` names the
+            // customer and what they bought), and every other environment-owned model
+            // fails closed in this state (EnvironmentScope emits `1 = 0`). Suspension
+            // stays the ONE explicit way to read the whole catalog, so operator and
+            // manifest-sync paths keep working through the branch above.
             if ($environment === null) {
+                $query->whereNull($query->qualifyColumn('environment_id'));
+
                 return;
             }
 

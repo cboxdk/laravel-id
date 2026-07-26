@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Authorization\ValueObjects\Relationship;
 use Cbox\Id\Kernel\Authorization\ValueObjects\ResourceRef;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
-use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesTenant;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Cbox\Id\Organization\Contracts\ResourceAccess;
 use Cbox\Id\Organization\Enums\MembershipRole;
@@ -33,8 +33,12 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class ResourceAccessService implements ResourceAccess
 {
+    // Lazy per-call resolution of the ambient tenant. This class is a `singleton`
+    // (OrganizationServiceProvider) and TenantContext is `scoped`: injected, every runAs()
+    // would set and restore on the first job's manager, scoping nothing.
+    use ResolvesTenant;
+
     public function __construct(
-        private readonly TenantContext $tenant,
         private readonly RelationshipStore $relationships,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
@@ -45,7 +49,7 @@ class ResourceAccessService implements ResourceAccess
         // A grant to a nonexistent group would silently confer access to
         // whoever later gets that id — refuse it up front.
         if ($subject->isGroup()) {
-            $this->tenant->runAs(
+            $this->tenant()->runAs(
                 GenericTenant::of($organizationId),
                 fn () => UserGroup::query()->whereKey($subject->id)->firstOrFail(),
             );
@@ -65,7 +69,7 @@ class ResourceAccessService implements ResourceAccess
 
     public function grantsOn(string $organizationId, ResourceRef $resource): array
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($resource): array {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($resource): array {
             $grants = [];
 
             $tuples = RelationshipTuple::query()
@@ -94,7 +98,7 @@ class ResourceAccessService implements ResourceAccess
 
     public function effectiveRole(string $organizationId, string $userId, ResourceRef ...$resources): ?MembershipRole
     {
-        return $this->tenant->runAs(GenericTenant::of($organizationId), function () use ($userId, $resources): ?MembershipRole {
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), function () use ($userId, $resources): ?MembershipRole {
             $candidates = [];
 
             // Source 1: active org membership. Suspended members keep their

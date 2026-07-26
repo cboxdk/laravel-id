@@ -7,7 +7,7 @@ namespace Cbox\Id\Identity\ValueObjects;
 use Cbox\Id\Identity\Contracts\HashVerifier;
 
 /**
- * One user to import from another provider (Auth0/Cognito/Firebase/a CSV export).
+ * One user to import from another provider (a hosted IdP, a legacy app, a CSV export).
  *
  * The credential is the whole point of the migration wedge:
  *   - {@see $passwordHash} — the provider's EXISTING hash, stored verbatim so the

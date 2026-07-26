@@ -22,6 +22,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $dispatched_at
  * @property Carbon|null $claimed_at
  * @property string|null $claim_token
+ * @property int $attempts
+ * @property Carbon|null $dead_lettered_at
  */
 class Event extends Model
 {
@@ -43,6 +45,8 @@ class Event extends Model
             'occurred_at' => 'datetime',
             'dispatched_at' => 'datetime',
             'claimed_at' => 'datetime',
+            'dead_lettered_at' => 'datetime',
+            'attempts' => 'integer',
         ];
     }
 }

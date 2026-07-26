@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  * This is the production {@see Tenant}: its key is its own id.
  *
  * @property string $id
+ * @property string $environment_id
  * @property string $name
  * @property string $slug
  * @property string|null $parent_id

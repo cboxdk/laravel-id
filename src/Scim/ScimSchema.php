@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Scim;
 
+use Carbon\CarbonImmutable;
+use DateTimeInterface;
+
 /**
  * Pure, transport-agnostic SCIM 2.0 schema constants and body builders — the
  * single source of truth for the URNs (RFC 7643) and message shapes (RFC 7644)
@@ -119,6 +122,45 @@ class ScimSchema
             'itemsPerPage' => $itemsPerPage,
             'Resources' => $resources,
         ];
+    }
+
+    /**
+     * The `meta` attribute every SCIM resource carries (RFC 7643 §3.1).
+     *
+     * `created`/`lastModified` are not decoration. Every delta-sync connector asks for
+     * the changes since a watermark (`meta.lastModified gt "…"`), and a resource that
+     * never reports one leaves the connector no option but a FULL directory sweep on
+     * every run — for a large tenant, straight into the server's rate limit, on a
+     * schedule, forever.
+     *
+     * @return array<string, string>
+     */
+    public static function meta(string $resourceType, ?string $location = null, ?DateTimeInterface $created = null, ?DateTimeInterface $lastModified = null): array
+    {
+        $meta = ['resourceType' => $resourceType];
+
+        if ($created !== null) {
+            $meta['created'] = self::dateTime($created);
+        }
+
+        if ($lastModified !== null) {
+            $meta['lastModified'] = self::dateTime($lastModified);
+        }
+
+        if ($location !== null) {
+            $meta['location'] = $location;
+        }
+
+        return $meta;
+    }
+
+    /**
+     * A SCIM DateTime (RFC 7643 §2.3.5 — xsd:dateTime), always normalized to UTC so a
+     * client's watermark comparison is against one timeline.
+     */
+    public static function dateTime(DateTimeInterface $value): string
+    {
+        return CarbonImmutable::instance($value)->utc()->toIso8601ZuluString();
     }
 
     /**

@@ -37,9 +37,27 @@ interface SegregationOfDuties
      * Activate or deactivate a policy (inactive policies are ignored by the gate and
      * the detector).
      *
+     * UNSCOPED — it will toggle an ENVIRONMENT-WIDE policy, so it belongs to the
+     * environment/operator control plane. A per-organization console must use
+     * {@see setActiveForOrganization()} instead.
+     *
      * @throws UnknownSodPolicy
      */
     public function setActive(string $policyId, bool $active): void;
+
+    /**
+     * Activate or deactivate a policy an organization OWNS. The policy must be scoped
+     * to `$organizationId`; an environment-wide policy (organization_id null) or
+     * another org's is refused with {@see UnknownSodPolicy}.
+     *
+     * This exists because an environment-wide policy is the control plane's own
+     * toxic-combination rule and applies to every tenant: an org admin who could
+     * deactivate it could then grant themselves the conflicting pair. Asserting
+     * ownership in the framework means the check cannot be forgotten by a host's UI.
+     *
+     * @throws UnknownSodPolicy
+     */
+    public function setActiveForOrganization(string $organizationId, string $policyId, bool $active): void;
 
     /**
      * The pre-grant gate: would assigning `proposedRoleId` to the subject at this org

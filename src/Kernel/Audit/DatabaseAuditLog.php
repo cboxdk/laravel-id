@@ -37,19 +37,27 @@ class DatabaseAuditLog implements AuditLog
 
     public function __construct(
         private readonly TokenSigner $signer,
-        private readonly EnvironmentContext $environments,
     ) {}
 
     /**
-     * The chain's environment dimension, resolved EXPLICITLY.
+     * The chain's environment dimension, resolved EXPLICITLY and LAZILY.
      *
      * Never taken from the global scope: a chain head read through an ambient scope
      * returns null when no environment is set (EnvironmentScope emits `1 = 0`), which
      * restarts the chain on every write instead of extending it.
+     *
+     * And never CAPTURED: `EnvironmentContext` is a `scoped` binding while this log is
+     * a `singleton`. A queue worker's `forgetScopedInstances()` unsets the binding but
+     * does not reset the object, so a captured manager keeps the first job's environment
+     * for the life of the process — every later job would then append to the FIRST job's
+     * chain, take a lock on the wrong chain head, and (because AuditEntry is
+     * environment-owned) throw CrossEnvironmentAccess on save. Callers that report and
+     * swallow that exception lose the audit entry silently while their transaction
+     * commits. Resolving per call is the same rule EnvironmentScope::apply() states.
      */
     private function environmentKey(): string
     {
-        return $this->environments->current()?->environmentKey() ?? self::PLATFORM_ENVIRONMENT;
+        return app(EnvironmentContext::class)->current()?->environmentKey() ?? self::PLATFORM_ENVIRONMENT;
     }
 
     /**

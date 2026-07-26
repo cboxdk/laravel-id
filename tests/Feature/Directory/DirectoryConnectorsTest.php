@@ -76,6 +76,37 @@ it('pulls and maps Microsoft Entra users across pages (disabled → inactive)', 
         ->and($users[1]->active)->toBeFalse();
 });
 
+/**
+ * `@odata.nextLink` is a URL read out of a RESPONSE BODY and then followed while
+ * carrying the tenant's Graph bearer token — the one outbound request not routed
+ * through the SSRF guard. Pin the continuation to the Graph base rather than trusting
+ * the string.
+ */
+it('never follows an @odata.nextLink that points off graph.microsoft.com', function (string $next): void {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'graph.token']),
+        'graph.microsoft.com/*' => Http::response([
+            'value' => [['id' => 'e1', 'userPrincipalName' => 'ada@acme.com', 'accountEnabled' => true]],
+            '@odata.nextLink' => $next,
+        ]),
+        '*' => Http::response(['value' => [['id' => 'leaked', 'userPrincipalName' => 'evil@attacker.test']]]),
+    ]);
+
+    $users = iterator_to_array((new MicrosoftEntraConnector)->fetchUsers([
+        'tenant_id' => 'tenant-123', 'client_id' => 'app-id', 'client_secret' => 'shh',
+    ]));
+
+    // Pagination stops at the first page; the token never leaves Graph.
+    expect($users)->toHaveCount(1)->and($users[0]->externalId)->toBe('e1');
+    Http::assertNotSent(fn ($request): bool => ! str_starts_with($request->url(), 'https://graph.microsoft.com/')
+        && ! str_starts_with($request->url(), 'https://login.microsoftonline.com/'));
+})->with([
+    'another host entirely' => ['https://attacker.test/v1.0/users'],
+    'graph as a path prefix on another host' => ['https://attacker.test/https://graph.microsoft.com/v1.0/users'],
+    'a lookalike host' => ['https://graph.microsoft.com.attacker.test/v1.0/users'],
+    'plaintext graph' => ['http://graph.microsoft.com/v1.0/users'],
+]);
+
 it('pulls Google Workspace groups with their user members', function (): void {
     Http::fake([
         'oauth2.googleapis.com/token' => Http::response(['access_token' => 'ya29.token']),

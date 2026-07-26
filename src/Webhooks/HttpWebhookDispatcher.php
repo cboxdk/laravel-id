@@ -9,8 +9,10 @@ use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
 use Cbox\Id\Webhooks\Exceptions\UnsafeWebhookUrl;
+use Cbox\Id\Webhooks\Jobs\DeliverWebhook;
 use Cbox\Id\Webhooks\Models\WebhookDelivery;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
+use Cbox\Id\Webhooks\Support\EndpointCircuitBreaker;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -19,12 +21,19 @@ use Throwable;
 /**
  * Delivers events over HTTP with an HMAC-SHA256 signature (secret opened from
  * the sealed store). Failures are recorded and retried with exponential backoff.
+ *
+ * Fan-out and SENDING are deliberately separated. {@see dispatch()} only writes
+ * the delivery rows and queues a {@see DeliverWebhook} job for each; the blocking
+ * `Http` call happens inside {@see deliver()}, on a worker. Doing the send inline
+ * coupled every tenant's event throughput to the slowest receiver — see the job's
+ * class docblock for the full account.
  */
 class HttpWebhookDispatcher implements WebhookDispatcher
 {
     public function __construct(
         private readonly WebhookRegistry $registry,
         private readonly SecretBox $secretBox,
+        private readonly EndpointCircuitBreaker $breaker,
     ) {}
 
     public function dispatch(string $eventType, array $payload, ?string $organizationId = null): void
@@ -43,7 +52,9 @@ class HttpWebhookDispatcher implements WebhookDispatcher
             ]);
             $delivery->save();
 
-            $this->attempt($endpoint, $delivery);
+            // The row is durable BEFORE the job exists, so a queue that drops the
+            // message still leaves the delivery visible to the retry sweep.
+            $this->enqueue($delivery);
         }
     }
 
@@ -67,30 +78,138 @@ class HttpWebhookDispatcher implements WebhookDispatcher
         });
     }
 
+    /**
+     * Hand one delivery to the queue, honouring the host's connection/queue choice
+     * so webhook egress can be isolated from the rest of the application's work.
+     */
+    private function enqueue(WebhookDelivery $delivery): void
+    {
+        $pending = DeliverWebhook::dispatch($delivery->id);
+
+        $connection = config('cbox-id.webhooks.queue_connection');
+
+        if (is_string($connection) && $connection !== '') {
+            $pending->onConnection($connection);
+        }
+
+        $queue = config('cbox-id.webhooks.queue');
+
+        if (is_string($queue) && $queue !== '') {
+            $pending->onQueue($queue);
+        }
+    }
+
     public function retryPending(int $limit = 50): int
     {
+        // Terminalise ORPHANS first — deliveries whose endpoint has been deleted — and do
+        // it in the QUERY rather than by skipping them after selection.
+        //
+        // Deleting an endpoint does not cascade, and now that the send is asynchronous the
+        // row outlives its job: deliver() finds no endpoint and returns, leaving the row
+        // `Pending` forever. It is then re-selected by the stranded-rescue clause below on
+        // every sweep, it consumed one of the `$limit` slots before being skipped, and —
+        // because the sweep is ordered by `created_at` ASCENDING — orphans sit permanently
+        // at the head of it. With `retry_limit` (50 by default) orphans, no legitimate
+        // failed delivery was ever re-enqueued again, and the pruner could not remove them
+        // either (it takes only Delivered/Exhausted). Exhausted is the honest status: the
+        // endpoint is gone, so the delivery can never succeed.
+        $this->terminaliseOrphans();
+
         $due = WebhookDelivery::query()
-            ->where('status', DeliveryStatus::Failed->value)
-            ->whereNotNull('next_retry_at')
-            ->where('next_retry_at', '<=', now())
+            // The endpoint must still exist. Stated as a predicate so an orphan never
+            // occupies a slot in the first place — the previous `continue` inside the loop
+            // ran AFTER the limit had already been spent on it.
+            ->whereIn('endpoint_id', WebhookEndpoint::query()->select('id'))
+            ->where(fn ($query) => $query
+                // A recorded failure whose backoff window has elapsed.
+                ->where(fn ($failed) => $failed
+                    ->where('status', DeliveryStatus::Failed->value)
+                    ->whereNotNull('next_retry_at')
+                    ->where('next_retry_at', '<=', now()))
+                // ...or a delivery that was recorded and queued but never processed:
+                // the job was lost, the worker died, the queue was flushed. While the
+                // send happened inline this state could not persist; now that the row
+                // outlives its job, the sweep is what makes "durable before enqueued"
+                // actually true. Same idea as the relay's own claim reclaim.
+                ->orWhere(fn ($stranded) => $stranded
+                    ->where('status', DeliveryStatus::Pending->value)
+                    ->where('created_at', '<=', now()->subSeconds($this->strandedAfterSeconds()))))
+            ->orderBy('created_at')
             ->limit($limit)
             ->get();
 
+        $queued = 0;
+
         foreach ($due as $delivery) {
-            $endpoint = WebhookEndpoint::query()->whereKey($delivery->endpoint_id)->first();
-
-            if ($endpoint === null) {
-                continue;
-            }
-
-            $this->attempt($endpoint, $delivery);
+            $this->enqueue($delivery);
+            $queued++;
         }
 
-        return $due->count();
+        return $queued;
+    }
+
+    /**
+     * Settle every delivery whose endpoint no longer exists.
+     *
+     * A single set-based UPDATE: this runs on the per-minute sweep, and the population it
+     * fixes is created in bulk (one endpoint deletion orphans every delivery it ever had).
+     */
+    private function terminaliseOrphans(): void
+    {
+        WebhookDelivery::query()
+            ->whereIn('status', [DeliveryStatus::Pending->value, DeliveryStatus::Failed->value])
+            ->whereNotIn('endpoint_id', WebhookEndpoint::query()->select('id'))
+            ->update([
+                'status' => DeliveryStatus::Exhausted->value,
+                'next_retry_at' => null,
+                'updated_at' => now(),
+            ]);
+    }
+
+    public function deliver(string $deliveryId): void
+    {
+        $delivery = WebhookDelivery::query()->whereKey($deliveryId)->first();
+
+        // Already settled — a duplicate job (or a replayed message) must not
+        // re-send a delivered event or resurrect a dead-lettered one.
+        if ($delivery === null
+            || $delivery->status === DeliveryStatus::Delivered
+            || $delivery->status === DeliveryStatus::Exhausted) {
+            return;
+        }
+
+        $endpoint = WebhookEndpoint::query()->whereKey($delivery->endpoint_id)->first();
+
+        // The endpoint was deleted between the row being written and the job running.
+        // SETTLE the delivery rather than returning: returning left it `Pending` forever —
+        // unsendable, unprunable, and re-selected by the stranded-delivery rescue on every
+        // sweep from then on. Endpoint deletion does not cascade, so this is the only
+        // place the row can learn its fate.
+        if ($endpoint === null) {
+            $delivery->status = DeliveryStatus::Exhausted;
+            $delivery->next_retry_at = null;
+            $delivery->save();
+
+            return;
+        }
+
+        $this->attempt($endpoint, $delivery);
     }
 
     private function attempt(WebhookEndpoint $endpoint, WebhookDelivery $delivery): void
     {
+        // Circuit breaker: an endpoint that has just tripped is left alone until its
+        // cooldown elapses. The delivery keeps its attempt count — the trip is the
+        // endpoint's fault, not this delivery's — and simply waits, so a blackholing
+        // receiver costs ONE timeout per cooldown window instead of one per event.
+        if (! $this->breaker->shouldAttempt($endpoint)) {
+            $delivery->status = DeliveryStatus::Failed;
+            $delivery->next_retry_at = $this->breaker->closesAt($endpoint);
+            $delivery->save();
+
+            return;
+        }
+
         $body = json_encode([
             'type' => $delivery->event_type,
             'sequence' => $delivery->sequence,
@@ -106,6 +225,9 @@ class HttpWebhookDispatcher implements WebhookDispatcher
         try {
             $pinned = SafeWebhookUrl::pinnedOptions($endpoint->url);
         } catch (UnsafeWebhookUrl) {
+            // A refused URL is OUR policy decision about a misconfiguration, not
+            // evidence the receiver is unhealthy — it must not trip the breaker
+            // (the same line provisioning draws between permanent and transient).
             $delivery->response_code = null;
             $this->scheduleRetry($delivery);
             $delivery->save();
@@ -138,15 +260,27 @@ class HttpWebhookDispatcher implements WebhookDispatcher
                 $delivery->status = DeliveryStatus::Delivered;
                 $delivery->delivered_at = now();
                 $delivery->next_retry_at = null;
+                $this->breaker->recordSuccess($endpoint);
             } else {
                 $this->scheduleRetry($delivery);
+                $this->breaker->recordFailure($endpoint, 'HTTP '.$response->status());
             }
-        } catch (Throwable) {
+        } catch (Throwable $e) {
             $delivery->response_code = null;
             $this->scheduleRetry($delivery);
+            $this->breaker->recordFailure($endpoint, $e->getMessage());
         }
 
         $delivery->save();
+        $endpoint->save();
+    }
+
+    /** How long a still-Pending delivery may sit before the sweep re-enqueues it. */
+    private function strandedAfterSeconds(): int
+    {
+        $configured = config('cbox-id.webhooks.stranded_after_seconds', 900);
+
+        return max(1, is_numeric($configured) ? (int) $configured : 900);
     }
 
     private function scheduleRetry(WebhookDelivery $delivery): void

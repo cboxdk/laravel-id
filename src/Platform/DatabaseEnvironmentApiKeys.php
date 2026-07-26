@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Models\EnvironmentApiKey;
@@ -26,19 +26,22 @@ use Illuminate\Support\Str;
  */
 class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
 {
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (PlatformServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
     /**
      * Brand root `cbid` + plane marker `env`, so a leaked key is identifiable at a
      * glance and never confusable with an account-plane credential (`cbid_acc_`).
      */
     private const PREFIX = 'cbid_env_';
 
-    public function __construct(private readonly EnvironmentContext $context) {}
-
     public function issue(string $environmentId, string $name, array $scopes, ?DateTimeInterface $expiresAt = null): IssuedEnvironmentApiKey
     {
         $plaintext = self::PREFIX.Str::random(40);
 
-        $key = $this->context->runAs(GenericEnvironment::of($environmentId), fn (): EnvironmentApiKey => EnvironmentApiKey::query()->create([
+        $key = $this->environments()->runAs(GenericEnvironment::of($environmentId), fn (): EnvironmentApiKey => EnvironmentApiKey::query()->create([
             'environment_id' => $environmentId,
             'name' => $name,
             // A non-secret fragment so the key is identifiable in a list.
@@ -75,7 +78,7 @@ class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
 
     public function revoke(string $environmentId, string $id): void
     {
-        $this->context->runAs(GenericEnvironment::of($environmentId), function () use ($id): void {
+        $this->environments()->runAs(GenericEnvironment::of($environmentId), function () use ($id): void {
             EnvironmentApiKey::query()->whereKey($id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         });
     }
@@ -84,7 +87,7 @@ class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
     {
         // ULIDs are monotonic, so ordering by id is newest-first AND deterministic
         // even for keys minted within the same clock tick.
-        return $this->context->runAs(
+        return $this->environments()->runAs(
             GenericEnvironment::of($environmentId),
             fn (): Collection => EnvironmentApiKey::query()->orderByDesc('id')->get(),
         );

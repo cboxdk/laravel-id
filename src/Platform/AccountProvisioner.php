@@ -35,7 +35,7 @@ use InvalidArgumentException;
  * The layering is Account → Project → Environment → Organization → Subject, one way,
  * never the reverse: the account plane never seeds the end-user plane, so a
  * provisioned environment is born EMPTY. Billing lives on the PROJECT, so one account
- * can own several independently-billed IdP products (Clerk's "Applications").
+ * can own several independently-billed IdP products.
  *
  * Everything is one transaction: a failed step never leaves a half-born account or a
  * routable-but-orphaned environment.
