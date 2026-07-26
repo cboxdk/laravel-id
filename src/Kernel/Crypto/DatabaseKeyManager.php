@@ -13,7 +13,7 @@ use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\Kernel\Crypto\ValueObjects\GeneratedKeyPair;
 use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
-use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
@@ -22,6 +22,8 @@ use Illuminate\Support\Str;
  */
 class DatabaseKeyManager implements KeyManager
 {
+    use ResolvesEnvironment;
+
     private const CACHE_TTL = 3600;
 
     public function __construct(
@@ -157,7 +159,7 @@ class DatabaseKeyManager implements KeyManager
      */
     private function envId(): string
     {
-        return app(EnvironmentContext::class)->current()?->environmentKey() ?? 'global';
+        return $this->environments()->current()?->environmentKey() ?? 'global';
     }
 
     private function generateKeyPair(SigningAlg $alg): GeneratedKeyPair

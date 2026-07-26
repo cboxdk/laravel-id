@@ -160,7 +160,8 @@ revokes on close — pending items are removed by default. See the full recipe:
 
 Add a custom claim to every access token — or block issuance — with an in-process action
 or an external HTTPS endpoint. See the full recipe:
-[Add a token claims hook](add-a-token-hook.md).
+[Add a token claims hook](add-a-token-hook.md). The same machinery gates logins, signups
+and password changes: [Hook points](../extension-points/hook-points.md).
 
 ## Register a webhook
 

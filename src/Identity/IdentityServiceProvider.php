@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity;
 
+use Cbox\Id\ExternalActions\Contracts\ActionPipeline;
 use Cbox\Id\Identity\Contracts\AdminPasswords;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\BreachedPasswordCheck;
@@ -82,6 +83,10 @@ class IdentityServiceProvider extends ServiceProvider
             return new DatabaseSessionManager(
                 $app->make(EventBus::class),
                 $app->make(AuditLog::class),
+                // Resolved lazily inside the closure: ExternalActionsServiceProvider
+                // registers after this one, so the pipeline binding only exists by the
+                // time a session manager is actually asked for.
+                $app->make(ActionPipeline::class),
                 is_numeric($ttl) ? (int) $ttl : 60 * 24,
                 is_numeric($idle) ? (int) $idle : 0,
             );

@@ -10,6 +10,7 @@ use Cbox\Id\ExternalActions\Contracts\ActionRegistry;
 use Cbox\Id\ExternalActions\Contracts\ActionTransport;
 use Cbox\Id\ExternalActions\Contracts\ConcurrentActionTransport;
 use Cbox\Id\ExternalActions\Contracts\ExternalActions;
+use Cbox\Id\ExternalActions\Enums\FailPolicy;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Models\ExternalActionEndpoint;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
@@ -27,9 +28,16 @@ use Throwable;
  * actions is merged in order (later wins). A hook point with no actions is a cheap
  * allow, so callers invoke it unconditionally.
  *
- * Fail-closed: an in-process handler that throws is treated as a deny (unless
- * `external_actions.fail_open`); the transport enforces the same policy for external
- * calls internally.
+ * Two things are decided per HOOK POINT rather than globally:
+ *
+ *  - {@see FailPolicy} — what an action that could not be CONSULTED means here. An
+ *    in-process handler that throws, or an endpoint that timed out, is a deny at a
+ *    fail-closed point and a skip at a fail-open one. An explicit deny is never
+ *    affected.
+ *  - {@see HookPoint::vetoable()} — whether a deny can stop anything at all. At a
+ *    `post_*` point the operation has already committed, so a deny is audited (it
+ *    stays visible) and then folded to an allow here, centrally, instead of every
+ *    call site having to remember to ignore the outcome.
  */
 class DefaultActionPipeline implements ActionPipeline
 {
@@ -45,10 +53,19 @@ class DefaultActionPipeline implements ActionPipeline
         $enrichment = [];
 
         foreach ($this->registry->for($hookPoint) as $action) {
-            $result = $this->runInProcess($action, $context);
+            $result = $this->runInProcess($action, $hookPoint, $context);
 
             if (! $result->allowed) {
-                return $this->denied($hookPoint, $context, $result->reason, 'in_process');
+                $veto = $this->denied($hookPoint, $context, $result->reason, 'in_process');
+
+                // A veto stops the pipeline. At a non-vetoable point `denied()` has
+                // audited and returned an allow instead — the remaining actions were
+                // not the ones being refused, so they still run.
+                if (! $veto->allowed) {
+                    return $veto;
+                }
+
+                continue;
             }
 
             $enrichment = array_merge($enrichment, $result->enrichment);
@@ -58,9 +75,15 @@ class DefaultActionPipeline implements ActionPipeline
         // its own tenant's context (plus the environment's own hooks, which apply to all).
         $endpoints = $this->endpoints->active($hookPoint, $context->string('organization_id'));
 
-        foreach ($this->results($endpoints, $context) as $endpointId => $result) {
+        foreach ($this->results($hookPoint, $endpoints, $context) as $endpointId => $result) {
             if (! $result->allowed) {
-                return $this->denied($hookPoint, $context, $result->reason, 'external:'.$endpointId);
+                $veto = $this->denied($hookPoint, $context, $result->reason, 'external:'.$endpointId);
+
+                if (! $veto->allowed) {
+                    return $veto;
+                }
+
+                continue;
             }
 
             $enrichment = array_merge($enrichment, $result->enrichment);
@@ -84,7 +107,7 @@ class DefaultActionPipeline implements ActionPipeline
      * @param  Collection<int, ExternalActionEndpoint>  $endpoints
      * @return array<string, ActionResult>
      */
-    private function results(Collection $endpoints, ActionContext $context): array
+    private function results(HookPoint $hookPoint, Collection $endpoints, ActionContext $context): array
     {
         if ($endpoints->count() > 1 && $this->transport instanceof ConcurrentActionTransport) {
             $byId = $this->transport->sendMany($endpoints, $context);
@@ -92,9 +115,9 @@ class DefaultActionPipeline implements ActionPipeline
             $ordered = [];
 
             foreach ($endpoints as $endpoint) {
-                // A transport that omitted an endpoint has not answered for it, and an
-                // unanswered security hook must not read as an allow.
-                $ordered[$endpoint->id] = $byId[$endpoint->id] ?? ActionResult::deny('external action unavailable');
+                // A transport that omitted an endpoint has not answered for it, and at a
+                // fail-closed point an unanswered security hook must not read as an allow.
+                $ordered[$endpoint->id] = $byId[$endpoint->id] ?? $this->unavailable($hookPoint);
             }
 
             return $ordered;
@@ -107,8 +130,9 @@ class DefaultActionPipeline implements ActionPipeline
             $results[$endpoint->id] = $result;
 
             // The sequential path keeps its short-circuit: a denied operation must not
-            // go on to call endpoints that had no say in the decision.
-            if (! $result->allowed) {
+            // go on to call endpoints that had no say in the decision. A non-vetoable
+            // point has no decision to short-circuit, so every endpoint is still told.
+            if (! $result->allowed && $hookPoint->vetoable()) {
                 break;
             }
         }
@@ -116,17 +140,38 @@ class DefaultActionPipeline implements ActionPipeline
         return $results;
     }
 
-    private function runInProcess(Action $action, ActionContext $context): ActionResult
+    private function runInProcess(Action $action, HookPoint $hookPoint, ActionContext $context): ActionResult
     {
         try {
             return $action->handle($context);
         } catch (Throwable) {
-            return config('cbox-id.external_actions.fail_open', false) === true
+            // A handler that threw was not consulted — same class of event as an
+            // endpoint that timed out, so it answers to the same per-hook policy.
+            return FailPolicy::for($hookPoint)->isOpen()
                 ? ActionResult::continue()
                 : ActionResult::deny('in-process action failed');
         }
     }
 
+    /**
+     * An action that could not be consulted, resolved through the hook point's fail
+     * policy.
+     */
+    private function unavailable(HookPoint $hookPoint): ActionResult
+    {
+        return FailPolicy::for($hookPoint)->isOpen()
+            ? ActionResult::continue()
+            : ActionResult::deny('external action unavailable');
+    }
+
+    /**
+     * Record the veto and produce the outcome.
+     *
+     * At a non-vetoable point the audit still happens — an endpoint denying a
+     * `post_*` hook is a real signal, usually a misconfiguration on the receiver's
+     * side, and swallowing it would leave the operator no way to see it — but the
+     * outcome is an allow, because the operation it would veto has already committed.
+     */
     private function denied(HookPoint $hookPoint, ActionContext $context, string $reason, string $by): PipelineOutcome
     {
         // Audit the veto with the hook, the deciding action and the actors — never the
@@ -140,11 +185,14 @@ class DefaultActionPipeline implements ActionPipeline
             context: [
                 'reason' => $reason,
                 'by' => $by,
+                'vetoable' => $hookPoint->vetoable(),
                 'client_id' => $context->string('client_id'),
-                'subject' => $context->string('subject'),
+                // Points other than token_minting name the principal `user_id`; fall
+                // back so the audit trail names WHO was denied at every hook point.
+                'subject' => $context->string('subject') ?? $context->string('user_id'),
             ],
         ));
 
-        return PipelineOutcome::deny($reason);
+        return $hookPoint->vetoable() ? PipelineOutcome::deny($reason) : PipelineOutcome::allow();
     }
 }

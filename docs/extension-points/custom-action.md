@@ -23,6 +23,7 @@ interface Action
 
 - `ActionContext::string($key)` reads the point's payload (for `token_minting`:
   `client_id`, `subject`, `user_id`, `organization_id`, `grant`, plus `scopes`/`claims`).
+  Every point's shape is listed under [Hook points](hook-points.md).
 - Return `ActionResult::continue([...])` to allow (optionally with enrichment) or
   `ActionResult::deny($reason)` to veto.
 - Actions are resolved from the container, so constructor-inject whatever you need.
@@ -49,9 +50,15 @@ a message-queue bridge) while keeping the pipeline and fail-closed semantics:
 $this->app->singleton(ActionTransport::class, MyMtlsActionTransport::class);
 ```
 
-If you rebind it, preserve the guarantees callers rely on: **fail closed** on any error
-(unless `fail_open`), **never follow redirects**, keep TLS verification on, and return a
-deny — never throw — on failure.
+If you rebind it, preserve the guarantees callers rely on: **never follow redirects**,
+keep TLS verification on, and return a result — never throw — on failure. For a failure,
+resolve `FailPolicy::for($context->hookPoint)` rather than hardcoding a deny: that is what
+keeps a gate closed while letting a login through when the host asked for that (see
+[Hook points](hook-points.md#fail-policy)).
+
+Implement `ConcurrentActionTransport` as well if your transport can call several endpoints
+at once — the pipeline falls back to one-at-a-time sends without it, and with it comes the
+old additive cost of one timeout per endpoint on the auth path.
 
 ## Test with the shipped fake
 

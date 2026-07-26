@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Contracts;
 
+use Cbox\Id\ExternalActions\Enums\HookPoint;
+use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Exceptions\PolicyViolation;
@@ -43,6 +45,9 @@ interface Subjects
     /**
      * @throws PolicyViolation when a supplied password does not satisfy the tenant's
      *                         {@see AuthPolicy}
+     * @throws ActionDenied when a {@see HookPoint::PreRegistration} hook refuses the
+     *                      account. The default resolver also fires
+     *                      {@see HookPoint::PostRegistration} once the subject exists.
      */
     public function create(string $email, ?string $name = null, ?string $password = null): Subject;
 
@@ -93,6 +98,9 @@ interface Subjects
      * is a resolver on which the tenant's policy is advisory.
      *
      * @throws PolicyViolation when the password does not satisfy the effective policy
+     * @throws ActionDenied when a {@see HookPoint::PrePasswordChange} hook refuses the
+     *                      change. {@see HookPoint::PostPasswordChange} fires once it
+     *                      is written.
      */
     public function setPassword(string $subjectId, string $password): void;
 

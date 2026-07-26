@@ -73,7 +73,15 @@ $expected = hash_hmac('sha256', $request->header('X-Cbox-Timestamp').'.'.$reques
 
 ## Fail-closed
 
-If your hook is unreachable or errors, issuance is **denied** by default (a control that
-fails open is not a control). For an enrichment-only hook where you'd rather issue without the
-claim than block, set `external_actions.fail_open` to `true`. See
+If your hook is unreachable or errors, issuance is **denied** — `token_minting` is a gate,
+and a control that fails open is not a control. If you'd rather issue without the claim
+than block, set `external_actions.fail_policy.token_minting` to `'open'`. Each hook point
+has its own default and its own override; see
+[Hook points](../extension-points/hook-points.md#fail-policy) and
 [Security: external actions](../security/external-actions.md).
+
+## The other five points
+
+The same two mechanisms gate logins, signups and password changes — `post_login`,
+`pre_registration`, `post_registration`, `pre_password_change`, `post_password_change`.
+Payloads and fail policies: [Hook points](../extension-points/hook-points.md).

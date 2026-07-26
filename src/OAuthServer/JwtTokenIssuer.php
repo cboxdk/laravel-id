@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\ExternalActions\Contracts\ActionPipeline;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
+use Cbox\Id\ExternalActions\Payloads\TokenMintingPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
@@ -198,15 +199,14 @@ class JwtTokenIssuer implements TokenIssuer
         // Inline hook: let registered actions enrich the claims or veto issuance,
         // with the fully-assembled base claims in context. Runs before the jti row is
         // written, so a veto leaves nothing behind.
-        $outcome = $this->actions->run(HookPoint::TokenMinting, new ActionContext(HookPoint::TokenMinting, [
-            'client_id' => $client->client_id,
-            'subject' => $subject,
-            'user_id' => $userId,
-            'organization_id' => $organizationId,
-            'scopes' => $scopes,
-            'grant' => $userId === null ? 'client_credentials' : 'user',
-            'claims' => $claims,
-        ]));
+        $outcome = $this->actions->run(HookPoint::TokenMinting, ActionContext::for(new TokenMintingPayload(
+            clientId: $client->client_id,
+            subject: $subject,
+            userId: $userId,
+            organizationId: $organizationId,
+            scopes: $scopes,
+            claims: $claims,
+        )));
 
         if (! $outcome->allowed) {
             throw ActionDenied::because($outcome->reason);

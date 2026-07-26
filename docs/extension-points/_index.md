@@ -19,6 +19,8 @@ Topic guides:
   one-time passcodes are delivered (e.g. wire an SMS provider behind the contract).
 - **[Custom secret vault](custom-secret-vault.md)** — back the AI token vault with
   an HSM or external secrets manager while keeping the deny-by-default grant model.
+- **[Hook points](hook-points.md)** — every inline-hook point: when it fires, the
+  payload it sends, what a deny stops, and what an unreachable endpoint means there.
 - **[Custom hook action](custom-action.md)** — write an in-process inline-hook
   handler, or swap how external hook endpoints are called.
 - **[Custom RBAC (bring your own)](custom-rbac.md)** — keep an existing authorization

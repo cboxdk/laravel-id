@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\ExternalActions;
 
 use Cbox\Id\ExternalActions\Contracts\ConcurrentActionTransport;
+use Cbox\Id\ExternalActions\Enums\FailPolicy;
+use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Models\ExternalActionEndpoint;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\ExternalActions\ValueObjects\ActionResult;
@@ -19,11 +21,13 @@ use Throwable;
 
 /**
  * The default synchronous transport for external hook endpoints. It POSTs a signed,
- * SSRF-pinned, short-timeout request (no redirects, no retry, TLS verify left ON) and
- * FAILS CLOSED — any transport error, non-2xx, unsafe/rebinding target, or
- * unparseable body becomes a deny (unless `external_actions.fail_open` is set). This
- * is the security-critical egress; it mirrors the webhook dispatcher's hardening,
- * only synchronous.
+ * SSRF-pinned, short-timeout request (no redirects, no retry, TLS verify left ON).
+ * Any transport error, non-2xx, unsafe/rebinding target, or unparseable body means
+ * the endpoint was not consulted, and what THAT means is the hook point's
+ * {@see FailPolicy} — a deny at a gate (the default at every point that guards a
+ * write), a skip where locking users out would be the worse failure. This is the
+ * security-critical egress; it mirrors the webhook dispatcher's hardening, only
+ * synchronous.
  *
  * The request body is `{"context": {...}}`; the reply is interpreted as
  * `{"action":"continue"|"deny", "claims":{...}, "reason":"..."}`. The request is
@@ -54,14 +58,14 @@ class HttpActionTransport implements ConcurrentActionTransport
                 ->withBody($prepared->body, 'application/json')
                 ->post($prepared->url);
         } catch (Throwable) {
-            return $this->onFailure();
+            return $this->onFailure($context);
         }
 
         if (! $response->successful()) {
-            return $this->onFailure();
+            return $this->onFailure($context);
         }
 
-        return $this->interpret($response->json());
+        return $this->interpret($response->json(), $context);
     }
 
     /**
@@ -91,7 +95,7 @@ class HttpActionTransport implements ConcurrentActionTransport
             try {
                 $prepared[$endpoint->id] = $this->prepare($endpoint, $context);
             } catch (Throwable) {
-                $results[$endpoint->id] = $this->onFailure();
+                $results[$endpoint->id] = $this->onFailure($context);
             }
         }
 
@@ -127,8 +131,8 @@ class HttpActionTransport implements ConcurrentActionTransport
             $response = $responses[$id] ?? null;
 
             $results[$id] = $response instanceof Response && $response->successful()
-                ? $this->interpret($response->json())
-                : $this->onFailure();
+                ? $this->interpret($response->json(), $context)
+                : $this->onFailure($context);
         }
 
         return $results;
@@ -161,10 +165,10 @@ class HttpActionTransport implements ConcurrentActionTransport
         );
     }
 
-    private function interpret(mixed $json): ActionResult
+    private function interpret(mixed $json, ActionContext $context): ActionResult
     {
         if (! is_array($json)) {
-            return $this->onFailure();
+            return $this->onFailure($context);
         }
 
         if (($json['action'] ?? 'continue') === 'deny') {
@@ -189,13 +193,19 @@ class HttpActionTransport implements ConcurrentActionTransport
     }
 
     /**
-     * Fail-closed by default: an unreachable or misbehaving hook denies the operation
-     * (a security control that fails open is not a control). Set `fail_open` to trade
-     * that for availability on enrichment-only hooks.
+     * An endpoint that could not be CONSULTED — refused, timed out, answered non-2xx,
+     * or replied with something that is not a hook reply.
+     *
+     * What that means is the hook point's decision, not the transport's: a gate fails
+     * closed (a security control that fails open is not a control) while the login
+     * hook fails open, because a customer's endpoint going down must not lock their
+     * whole tenant out. See {@see FailPolicy} for the precedence, and
+     * {@see HookPoint::failPolicy()} for each
+     * default and why it is what it is.
      */
-    private function onFailure(): ActionResult
+    private function onFailure(ActionContext $context): ActionResult
     {
-        return config('cbox-id.external_actions.fail_open', false) === true
+        return FailPolicy::for($context->hookPoint)->isOpen()
             ? ActionResult::continue()
             : ActionResult::deny('external action unavailable');
     }

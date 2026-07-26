@@ -146,10 +146,13 @@ by `campaign_id`. See [Security: access governance](governance.md).
 
 ## External actions & inline hooks
 
-Inline hooks let external logic enrich or veto security decisions, so they are hardened
-both ways: they **fail closed** (an unreachable or erroring hook denies, unless
-`fail_open`), a veto fires **before** the token's `jti` is recorded (no trace), and a hook
-can never overwrite a reserved protocol claim (`sub`/`exp`/`scope`/`aud`/…). The outbound
+Inline hooks let external logic enrich or veto security decisions at six points — token
+minting, login, registration and password change — so they are hardened both ways: every
+**gate** fails closed (an unreachable hook denies; `post_login` is the deliberate
+exception, because failing closed there locks a whole tenant out), a veto fires **before**
+the token's `jti`, the session row, the user row or the credential write (no trace), and a
+hook can never overwrite a reserved protocol claim (`sub`/`exp`/`scope`/`aud`/…). Password
+hooks carry the subject id only — no credential material ever leaves the process. The outbound
 call reuses the webhook SSRF guard (URL asserted, IPs pinned, redirects off, TLS on) and
 is HMAC-signed with a reveal-once sealed secret — only synchronous (short timeout, no
 retry). See [Security: external actions](external-actions.md).

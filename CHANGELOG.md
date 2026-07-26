@@ -15,6 +15,57 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.59.0] - 2026-07-27
+
+### Added
+
+- **Five new inline-hook points, so a host can gate more than token issuance.**
+  `HookPoint` shipped exactly one point, `token_minting`, and the file's own comment
+  admitted it. The pipeline underneath it was always generic, so the gap was call sites,
+  not machinery. Added `post_login` (after authentication, before the session row is
+  written — every login path, because it fires from `SessionManager::start()`),
+  `pre_registration` / `post_registration` (around subject creation) and
+  `pre_password_change` / `post_password_change` (around a credential write). Each has a
+  typed payload value object under `ExternalActions\Payloads\`, so the wire shape lives
+  somewhere a change to it is a reviewable edit rather than an array literal buried in a
+  service. `ActionContext::for()` builds a context from one, and cannot mismatch the hook
+  point with its payload.
+- **A per-hook-point fail policy, because "fail closed" is not one answer.** A hook that
+  is consulted and denies always denies — that is not configurable. A hook that could not
+  be consulted at all now answers to `HookPoint::failPolicy()`: the gates
+  (`token_minting`, `pre_registration`, `pre_password_change`) deny, because a control
+  that fails open is not a control; `post_login` allows, because failing closed on the
+  hottest path in the product hands one customer-controlled URL the power to lock a whole
+  tenant out of everything, the admin console included. Override per point with
+  `external_actions.fail_policy.<hook>`, or globally with `external_actions.fail_open`.
+- **`docs/extension-points/hook-points.md`** — every point, its payload, what a deny
+  stops, and what an unreachable endpoint means there.
+
+### Changed
+
+- **`external_actions.fail_open` now defaults to unset rather than `false`.** A literal
+  `false` means "close every point", which would have overridden `post_login`'s
+  deliberately open default. Unset lets each point's own default apply. Behaviour for
+  `token_minting` is unchanged either way, since its default is closed.
+- **A deny at a `post_*` hook point is audited and then folded to an allow.** Those points
+  run after their operation has committed, so a veto has nothing to stop. Enforced in
+  `DefaultActionPipeline` rather than trusting each call site to ignore the outcome; the
+  `external_action.denied` audit entry carries `vetoable: false` so the operator still
+  sees it.
+- **`fakeActionTransport()` now also rebuilds the singletons that hold the pipeline**
+  (`SessionManager`, `Subjects`, `TokenIssuer`), which otherwise kept calling the real
+  transport through the instance they already had.
+
+### Notes
+
+- No separate `credentials_exchange` point was added. `token_minting` already fires on the
+  `client_credentials` grant, with `user_id` null and `grant` set — a second point would
+  be a second name for the same call, with a second endpoint to register and a second
+  timeout to pay.
+- The registration and password-change points carry no organization (neither operation
+  has one), so only environment-level endpoints fire for them. `token_minting` and
+  `post_login` are org-scoped as before.
+
 ## [0.58.0] - 2026-07-26
 
 Typed-model debt from the platform review. **Two breaking contract changes** — see

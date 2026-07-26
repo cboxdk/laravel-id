@@ -533,18 +533,34 @@ return [
     /*
      * External actions / inline hooks (src/ExternalActions/) — synchronous extension
      * points where the platform consults registered logic that can ENRICH or VETO an
-     * operation (distinct from webhooks, which only notify, async). v1 ships the
-     * `token.minting` hook: run just before an access token is signed.
+     * operation (distinct from webhooks, which only notify, async). The hook points:
+     *
+     *   token_minting         just before an access token is signed (every grant)
+     *   post_login            after authentication, before the session is written
+     *   pre_registration      before a subject is created (the signup gate)
+     *   post_registration     just after, with the new subject id — notify only
+     *   pre_password_change   before a credential is written
+     *   post_password_change  just after — notify only
      *
      * `hooks` maps a hook point to a deny-by-default list of in-process Action
      * classes. External HTTP endpoints are registered at runtime via the
      * ExternalActions contract (SSRF-guarded, signed, sealed secret).
      *
      * `verify_url` toggles the SSRF guard on registered endpoints; `timeout` /
-     * `connect_timeout` bound the synchronous call. `fail_open` decides what happens
-     * when a hook cannot be run: the default (false) FAILS CLOSED — a security
-     * control that fails open is not a control — at the cost of availability if the
-     * hook endpoint is down. Set it true only for enrichment-only hooks.
+     * `connect_timeout` bound the synchronous call.
+     *
+     * FAIL POLICY — what happens when a hook cannot be CONSULTED (timeout, refused,
+     * non-2xx). A hook that IS consulted and denies always denies; nothing here
+     * changes that. Each point ships a default it can justify: the gates
+     * (token_minting, pre_registration, pre_password_change) fail CLOSED, because a
+     * security control that fails open is not a control; post_login fails OPEN,
+     * because failing closed there means one customer's endpoint outage locks every
+     * one of their users out of everything; the notify-only points fail open because
+     * they have no decision to fail closed to.
+     *
+     * `fail_policy.<hook>` ('open' | 'closed') overrides one point. `fail_open`
+     * (a bool) overrides ALL of them — leave it unset to keep the per-point defaults;
+     * set it false to force every point closed, true to force every point open.
      *
      * `timeout` + `connect_timeout` is the WHOLE pipeline's budget, not each hook's:
      * a fan-out of several endpoints is issued concurrently, so registering a second
@@ -564,9 +580,14 @@ return [
         'timeout' => env('CBOX_ID_ACTIONS_TIMEOUT', 3),
         'connect_timeout' => env('CBOX_ID_ACTIONS_CONNECT_TIMEOUT', 2),
         'cache_ttl' => env('CBOX_ID_ACTIONS_CACHE_TTL', 60),
-        'fail_open' => env('CBOX_ID_ACTIONS_FAIL_OPEN', false),
+        // Unset by default (null) so each hook point's own default applies; see above.
+        'fail_open' => env('CBOX_ID_ACTIONS_FAIL_OPEN'),
+        'fail_policy' => [
+            // 'post_login' => 'closed',
+        ],
         'hooks' => [
             // 'token_minting' => [ App\Actions\AddTenantTierClaim::class ],
+            // 'pre_registration' => [ App\Actions\AllowlistedDomainsOnly::class ],
         ],
     ],
 

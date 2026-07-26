@@ -16,15 +16,20 @@ asynchronously and cannot change the outcome; a hook *participates* in-band and 
 
 ## Hook points
 
-v1 ships one, wired into the OAuth token flow:
+Six, spanning the token, login, registration and credential flows. Each one names when
+it fires, whether a deny stops anything, and what an *unreachable* hook means there:
 
-- **`TokenMinting`** — runs just before an access token is signed, on every grant
-  (client-credentials, authorization-code, refresh, device, CIBA). An action can add
-  claims or veto issuance. Reserved protocol/security claims can never be overwritten,
-  and a veto fires **before** the token's `jti` is recorded — a denied token leaves no
-  trace.
+| Hook point | Fires | Vetoes | Unreachable |
+|---|---|---|---|
+| `token_minting` | before an access token is signed, on every grant | yes | denies |
+| `post_login` | after authentication, before the session row | yes | allows |
+| `pre_registration` | before a subject is created | yes | denies |
+| `post_registration` | just after, with the new subject id | no | allows |
+| `pre_password_change` | before a credential is written | yes | denies |
+| `post_password_change` | just after | no | allows |
 
-(Pre-login and pre-registration points are natural extensions of the same machinery.)
+Full payload shapes, fail policies and worked examples:
+[Hook points](../extension-points/hook-points.md).
 
 ## Two kinds of action
 
@@ -61,20 +66,34 @@ $registered = app(ExternalActions::class)->register(HookPoint::TokenMinting, 'ht
 A hook point runs its in-process actions first, then its external endpoints, folding the
 results: the first **deny** short-circuits; enrichment is merged (later wins).
 
-## Fail-closed by default
+## Fail policy: closed at the gates, open on the login path
 
-If a hook can't be run — an in-process action throws, or an external endpoint times out /
-errors / returns non-2xx — the operation is **denied**. A security control that fails open
-is not a control. Set `external_actions.fail_open` to `true` only for enrichment-only hooks
-where availability matters more than the control, accepting that a downed endpoint then
-issues tokens without the enrichment.
+If a hook can't be **consulted** — an in-process action throws, or an external endpoint
+times out / errors / returns non-2xx — what happens is that hook point's decision. Every
+gate (`token_minting`, `pre_registration`, `pre_password_change`) **denies**: a security
+control that fails open is not a control. `post_login` **allows**, because failing closed
+on the hottest path in the product hands one customer-controlled URL the power to lock a
+whole tenant out of everything, admin console included; the notify-only points allow
+because they have no decision to fail closed to.
+
+A hook that *is* consulted and denies always denies. That is never configurable.
+
+Override per point with `external_actions.fail_policy.<hook>` (`'open'` / `'closed'`), or
+for all of them with `external_actions.fail_open` (a bool; leave it unset to keep the
+per-point defaults).
 
 ## Honest scope
 
-- **`TokenMinting` is the only wired hook in v1.** The pipeline is generic; other points
-  are additive.
-- **The external call is on the token hot path.** Keep the endpoint fast — the timeout is
-  short (default 3s) and there is **no retry** (a hook is synchronous, not a webhook).
+- **There is no separate `credentials_exchange` point.** `token_minting` already fires on
+  the `client_credentials` grant; its payload's `grant` field is how you filter for it.
+- **The external call is on the auth hot path.** Keep the endpoint fast — the timeout is
+  short (default 3s) and there is **no retry** (a hook is synchronous, not a webhook). A
+  fan-out of several endpoints goes out concurrently, so the whole pipeline costs one
+  endpoint's timeout rather than one per endpoint.
+- **Registration and password-change hooks are environment-scoped in practice.** Neither
+  operation carries an organization, so only environment-level endpoints
+  (`organization_id` null) fire for them. `token_minting` and `post_login` do carry one,
+  and a tenant's own endpoints fire for it.
 - **A hook cannot rewrite protocol claims.** `iss`, `sub`, `exp`, `scope`, `aud`, `cnf`,
   `ent`, … are protected; enrichment only adds non-reserved keys.
 - **This is a primitive, not a policy.** What a hook decides is the host's logic; the
@@ -83,6 +102,7 @@ issues tokens without the enrichment.
 
 ## Where to go next
 
+- [Hook points](../extension-points/hook-points.md) — every point, payload and fail policy.
 - [Add a token claims hook](../cookbook/add-a-token-hook.md) — the recipe.
 - [Custom hook action](../extension-points/custom-action.md) — the contract in detail.
 - [Security: external actions](../security/external-actions.md) — the threat model.

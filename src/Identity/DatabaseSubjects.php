@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity;
 
+use Cbox\Id\ExternalActions\Contracts\ActionPipeline;
+use Cbox\Id\ExternalActions\Enums\HookPoint;
+use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
+use Cbox\Id\ExternalActions\Payloads\PasswordChangePayload;
+use Cbox\Id\ExternalActions\Payloads\RegistrationPayload;
+use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
@@ -32,6 +38,15 @@ use Illuminate\Support\Facades\DB;
  * apps that already have users bind their own resolver instead — this class is
  * never forced on them. It returns opaque {@see Subject} value objects, never
  * the underlying model, so nothing downstream depends on the storage shape.
+ *
+ * The registration and password-change inline hooks fire from here, for the same
+ * reason the password policy is enforced from here (see {@see hashUnderPolicy()}):
+ * this class is where an account and a credential are actually WRITTEN, so every
+ * caller — signup, invitation, reset, admin assignment, JIT federated provisioning —
+ * passes the gate without having to remember to. A host that binds its own
+ * {@see Subjects} resolver owns its own store, and therefore owns running these hook
+ * points itself; {@see ActionContext::for()} and the payload value objects are public
+ * so it can, in one line, with the same wire shape.
  */
 class DatabaseSubjects implements Subjects
 {
@@ -42,6 +57,7 @@ class DatabaseSubjects implements Subjects
         private readonly HashVerifier $verifier,
         private readonly PasswordPolicyGuard $policy,
         private readonly PasswordExpiry $ages,
+        private readonly ActionPipeline $actions,
     ) {}
 
     /**
@@ -104,6 +120,18 @@ class DatabaseSubjects implements Subjects
 
     public function create(string $email, ?string $name = null, ?string $password = null): Subject
     {
+        // Inline hook: the host's gate on account creation, BEFORE anything is
+        // written — an allowlisted-domains rule, a fraud check on the address, a
+        // "this tenant's seats are full" answer only the host's billing system has.
+        //
+        // FAIL POLICY — fail-closed. This is a gate on a write that is awkward to
+        // undo, and a signup that cannot be checked is a signup that waits; the
+        // operation is user-initiated and low-volume, so the availability cost of
+        // refusing is bounded to the person clicking the button.
+        $this->assertAllowed(HookPoint::PreRegistration, ActionContext::for(
+            RegistrationPayload::before($email, $name, $password !== null),
+        ));
+
         $model = $this->newModel();
         $model->fill(['email' => $email, 'name' => $name, 'status' => UserStatus::Active]);
         $hash = null;
@@ -132,6 +160,17 @@ class DatabaseSubjects implements Subjects
             targetType: 'user',
             targetId: $subject->id,
             context: ['email' => $email],
+        ));
+
+        // The account now exists and has an id. Synchronous, in-request notification
+        // for hosts that need to act on it before the response goes out — the
+        // `user.created` webhook says the same thing, but asynchronously.
+        //
+        // Cannot veto ({@see HookPoint::vetoable()}): the row is committed and this
+        // hook has no way to unmake it. Fail-open for the same reason — there is no
+        // decision here to fail closed to.
+        $this->actions->run(HookPoint::PostRegistration, ActionContext::for(
+            RegistrationPayload::after($subject->id, $email, $name, $hash !== null),
         ));
 
         return $subject;
@@ -371,15 +410,56 @@ class DatabaseSubjects implements Subjects
             return;
         }
 
-        $model->setAttribute('password', $this->hashUnderPolicy($this->keyOf($model), $password));
+        $id = $this->keyOf($model);
+
+        // Inline hook: the host's own rule on top of the tenant's AuthPolicy — "this
+        // account may not change its password outside a change window", "an SSO-backed
+        // account has no local password", a SIEM that must approve the change.
+        //
+        // The hook is told WHO, never WHAT: no plaintext and no hash crosses the wire
+        // to a customer-controlled URL (see PasswordChangePayload). A rule that needs
+        // the secret runs in-process, behind Action or BreachedPasswordCheck.
+        //
+        // FAIL POLICY — fail-closed. It gates a credential write, and a host that put
+        // a rule here meant it; an unreachable rule must not be a bypassed rule.
+        //
+        // Not fired by storeCredential(): that path takes an ALREADY-HASHED credential
+        // during a bulk migration, where the "change" happened in the system being
+        // migrated from and where firing per user would mean one blocking HTTP call
+        // per imported row.
+        $this->assertAllowed(HookPoint::PrePasswordChange, ActionContext::for(
+            PasswordChangePayload::before($id),
+        ));
+
+        $model->setAttribute('password', $this->hashUnderPolicy($id, $password));
         $model->save();
 
         $this->audit->record(new AuditEvent(
             action: 'user.password_set',
             actorType: ActorType::System,
             targetType: 'user',
-            targetId: $this->keyOf($model),
+            targetId: $id,
         ));
+
+        // Notification only — the credential is written and cannot be taken back, so
+        // this point does not veto and fails open.
+        $this->actions->run(HookPoint::PostPasswordChange, ActionContext::for(
+            PasswordChangePayload::after($id),
+        ));
+    }
+
+    /**
+     * Run a vetoing hook point and turn a veto into the exception the caller sees.
+     *
+     * @throws ActionDenied
+     */
+    private function assertAllowed(HookPoint $hookPoint, ActionContext $context): void
+    {
+        $outcome = $this->actions->run($hookPoint, $context);
+
+        if (! $outcome->allowed) {
+            throw ActionDenied::because($outcome->reason);
+        }
     }
 
     public function storeCredential(string $subjectId, string $passwordHash): void

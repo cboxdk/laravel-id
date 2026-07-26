@@ -38,6 +38,19 @@ trait InteractsWithExternalActions
         // the code under test resolves the pipeline (as with Http::fake()).
         app()->forgetInstance(ActionPipeline::class);
 
+        // …and rebuild the singletons that CONSTRUCTOR-INJECT the pipeline, or they
+        // keep calling the real transport through the instance they already hold.
+        // Named as contract strings rather than imported: this is a test convenience
+        // reaching across modules, and it must not turn into a compile-time edge from
+        // ExternalActions back to Identity or OAuthServer.
+        foreach ([
+            'Cbox\Id\Identity\Contracts\SessionManager',
+            'Cbox\Id\Identity\Contracts\Subjects',
+            'Cbox\Id\OAuthServer\Contracts\TokenIssuer',
+        ] as $consumer) {
+            app()->forgetInstance($consumer);
+        }
+
         return $fake;
     }
 
