@@ -41,6 +41,9 @@ Token Vault, and app-manifest publishing:
 | Go | `github.com/cboxdk/id-go` | Go services |
 | Laravel / PHP | `cboxdk/laravel-id-client` | Laravel apps consuming a Cbox ID instance |
 
+These are **separate packages** — installing `cboxdk/laravel-id` does not install any of
+them, and each SDK's own repository is the authority on what it currently supports.
+
 > **Don't want to build the app layer yourself?** There's a full, deployable
 > application built on this framework — the **cbox-id app**, a separate project with the
 > admin console, hosted login, onboarding and app-layer add-ons (risk-scoring, breached-password
@@ -83,6 +86,12 @@ Token Vault, and app-manifest publishing:
 - [Start here — the mental model](getting-started/start-here.md) — what a central IdP is, and the five things you actually decide, in one page
 - [Testing](getting-started/testing.md) — the shippable `InteractsWith*` helpers and fakes
 
+### Capabilities
+
+- [What's supported](capabilities/_index.md) — the grading vocabulary and the at-a-glance table
+- [Standards & conformance](security/standards.md) — the RFC-by-RFC matrix
+- [Feature support](capabilities/feature-support.md) — everything that is not a wire protocol
+
 ### Core concepts
 
 - [Architecture & patterns](core-concepts/architecture.md) — kernels vs domain, contracts-first DI, dogfooding
@@ -102,7 +111,6 @@ Token Vault, and app-manifest publishing:
 ### Security
 
 - [Security](security/_index.md) — the invariants, tenant isolation, tamper-evident audit
-- [Standards & conformance](security/standards.md) — every RFC/spec implemented, and to what extent
 - [FAPI hardening](security/fapi.md) — the enforceable FAPI 2.0 baseline for high-assurance clients
 - [Compliance mapping](security/compliance.md) — how controls map to SOC 2, ISO 27001, NIS2, GDPR, HIPAA, PCI-DSS
 - [Threat model](security/threat-model.md) — STRIDE analysis and mitigations

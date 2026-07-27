@@ -1443,7 +1443,7 @@ breaking change: the schema and query scoping change platform-wide.
   its own user pool, signing keys, issuer and organization tree. Resolved per
   request from the host (`ResolveEnvironment` middleware + `EnvironmentResolver`;
   custom-domain or leading-subdomain-as-slug). See
-  [Environments & the isolation model](core-concepts/environments.md).
+  [Environments & the isolation model](docs/core-concepts/environments.md).
 - `Environment` model + `environments` table; `EnvironmentContext`,
   `EnvironmentScope`, `BelongsToEnvironment`, `EnvironmentOwned`,
   `GenericEnvironment`; `actingAsEnvironment*` test helpers.

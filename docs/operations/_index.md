@@ -1,7 +1,7 @@
 ---
 title: Operations
 description: What has to be running for the platform to deliver anything, and how to keep it bounded
-weight: 6
+weight: 8
 ---
 
 # Operations

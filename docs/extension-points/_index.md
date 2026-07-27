@@ -1,7 +1,7 @@
 ---
 title: Extending & Customizing
 description: Swap any contract, decorate behaviour, and implement a SAML/OIDC validator
-weight: 5
+weight: 7
 ---
 
 # Extending & Customizing

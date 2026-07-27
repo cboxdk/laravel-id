@@ -472,8 +472,11 @@ Four changes, all refusals that used to be acceptances:
 
 - **`NameIDPolicy` is enforced** against what the registered SP can actually be answered
   under. A policy the registration does not support is refused instead of being answered
-  under a different format. (`urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` still
-  means "IdP, you choose".)
+  under a different format. (`urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified` still
+  means "IdP, you choose" — note the **1.1** prefix. There is no `SAML:2.0:…:unspecified`;
+  SAML 2.0 carries the 1.1 URN forward unchanged, and `NameIdFormat::tryFromPolicyUrn()`
+  returns null for the 2.0 spelling, so an SP configured from an earlier revision of this
+  line is answered `InvalidNameIDPolicy`.)
 - **A signed `AuthnRequest` must carry a `Destination`.** A signed request with no
   `Destination` at all was previously accepted; it is now refused, because the signature
   then covers no statement about where the request was meant to go.

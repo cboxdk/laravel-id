@@ -19,6 +19,29 @@ it('publishes ServiceProviderConfig with PATCH and filter support', function ():
         ->assertJsonPath('authenticationSchemes.0.type', 'oauthbearertoken');
 });
 
+/**
+ * `documentationUri` is OPTIONAL in RFC 7643 §5, and it used to be hard-coded to
+ * `<app>/docs` — a route this package does not register. Connectors that surface the
+ * link during setup (Okta shows it) therefore sent the operator to a 404. Omitting an
+ * optional field is correct; publishing a broken one is a promise the deployment cannot
+ * keep, so the absence is pinned rather than left to chance.
+ */
+it('omits documentationUri when the host publishes no SCIM help page', function (): void {
+    config()->set('cbox-id.scim.documentation_uri', null);
+
+    $this->getJson('/scim/v2/ServiceProviderConfig', $this->scimHeaders)
+        ->assertOk()
+        ->assertJsonMissingPath('documentationUri');
+});
+
+it('publishes documentationUri when the host configures one', function (): void {
+    config()->set('cbox-id.scim.documentation_uri', 'https://docs.example.test/scim');
+
+    $this->getJson('/scim/v2/ServiceProviderConfig', $this->scimHeaders)
+        ->assertOk()
+        ->assertJsonPath('documentationUri', 'https://docs.example.test/scim');
+});
+
 it('publishes the User resource type', function (): void {
     $this->getJson('/scim/v2/ResourceTypes', $this->scimHeaders)
         ->assertOk()

@@ -17,19 +17,27 @@ Cbox ID is **not a certified FAPI 2.0 implementation**, and two of the profile's
 read [What is not met yet](#what-is-not-met-yet) first — the table below is the
 honest per-requirement status, not a conformance claim.
 
+> **Half of this profile lives at `/authorize`, which this package does not serve.**
+> Several FAPI requirements are decided at the authorization request — refusing a
+> non-PAR request, matching `redirect_uri` against the registered set, appending
+> RFC 9207 `iss`. This package ships the back-channel those depend on; your
+> application (or the deployable cbox-id app) has to enforce them. Rows marked
+> **your app** below are exactly those. Deploying this package alone and setting the
+> switches does **not** give you the profile.
+
 ## What the baseline requires — and where Cbox ID stands
 
-| FAPI 2.0 baseline requirement | Cbox ID |
+| FAPI 2.0 baseline requirement | This package |
 |---|---|
-| **Authorization Code + PKCE (`S256`)**, no implicit/hybrid | ✅ always — `code` only, PKCE mandatory, `plain` refused |
-| **PAR** — request parameters pushed back-channel (RFC 9126) | ✅ `/oauth/par`; **enforced** when `require_par` is on |
-| **Sender-constrained access tokens** (DPoP or mTLS) | ◐ DPoP (RFC 9449) implemented — `cnf.jkt`, replay-guarded proofs — but **not enforced server-side**; mTLS (RFC 8705) is not implemented |
-| **Exact `redirect_uri` matching** | ✅ always — only URIs the client registered, compared exactly |
-| **`iss` in the authorization response** (RFC 9207, mix-up defense) | ✅ always on |
+| **Authorization Code + PKCE (`S256`)**, no implicit/hybrid | ✅ `code` only; `S256` only, and `plain` cannot be redeemed. Public-client PKCE is enforced on `/oauth/par`; at `/authorize` it is **your app's** — though a code minted without a challenge can never be exchanged, so a mistake fails closed |
+| **PAR** — request parameters pushed back-channel (RFC 9126) | ◐ `/oauth/par` issues a client-authenticated, single-use, 90-second `request_uri` and `consume()` is available. **Consumption and refusal happen at `/authorize` — your app.** `CBOX_ID_REQUIRE_PAR=true` sets the discovery flag and nothing else |
+| **Sender-constrained access tokens** (DPoP or mTLS) | ◐ DPoP (RFC 9449) implemented — `cnf.jkt`, replay-guarded proofs — but **not enforced server-side** (no `require_dpop`, no per-client flag); mTLS (RFC 8705) is not implemented |
+| **Exact `redirect_uri` matching** | ◐ The token exchange compares the presented URI to the one recorded on the code, in constant time. Matching against the client's **registered** set happens at `/authorize` — **your app** |
+| **`iss` in the authorization response** (RFC 9207, mix-up defense) | ◐ **Your app.** This package emits no authorization response. It *advertises* `authorization_response_iss_parameter_supported` as soon as you configure an `authorization_endpoint` — so if your `/authorize` does not append `iss`, that advertisement is false to mix-up-hardened clients |
 | **Signing algorithm** — FAPI 2.0 permits only `PS256`, `ES256`, `EdDSA` | ❌ tokens are signed **`RS256`**, which the profile does not permit; `PS256` is not implemented |
 | **No `alg: none`, no symmetric (HS\*)** | ✅ closed alg set (RS256 / ES256 / EdDSA), per-key alg binding |
 | **Short-lived, revocable tokens** | ✅ 15-min access tokens, `jti`-tracked, `/oauth/revoke`, refresh rotation + reuse detection |
-| **Confidential clients authenticated** | ✅ `private_key_jwt` (RFC 7523) or a secret verified in constant time (public clients rely on PKCE) |
+| **Confidential clients authenticated** | ✅ `private_key_jwt` (RFC 7523 §3) or a secret verified in constant time (public clients rely on PKCE). Note a **dynamically registered** client cannot select `private_key_jwt` |
 
 ## What is not met yet
 
@@ -52,31 +60,36 @@ than a server-enforced invariant. Until that switch exists, sender-constraining 
 be enforced outside the authorization server (for example at the resource server, by
 refusing tokens without a `cnf` claim).
 
-Neither gap weakens the controls that *are* in place — PAR, PKCE, exact redirect
-matching, `iss`, rotation-with-reuse-detection and DPoP-when-presented all behave as
-described above. What they mean is that the FAPI 2.0 profile itself cannot honestly
-be claimed as met, so plan for both if a certification audit is in scope.
+**3. The front-channel requirements are not this package's to meet.** Mandatory PAR,
+registered-set redirect matching and RFC 9207 `iss` all happen at `/authorize`. They are
+listed here because the profile requires them, not because installing this package
+delivers them.
+
+None of these gaps weakens the controls that *are* in place — the PAR issuer, PKCE
+verification, constant-time redirect comparison, rotation-with-reuse-detection and
+DPoP-when-presented all behave as described. What they mean is that the FAPI 2.0 profile
+cannot honestly be claimed as met, so plan for all three if a certification audit is in
+scope.
 
 ## What you can turn on today
-
-The one switch that changes behavior is **mandatory PAR**:
 
 ```dotenv
 CBOX_ID_REQUIRE_PAR=true
 ```
 
-With it set:
+Be precise about what this does and does not do:
 
-- `/authorize` **refuses** any request that didn't come through `/oauth/par` — no
-  authorization parameters can travel on the browser URL, where they could be
-  logged, tampered with, or leaked via the Referer header.
-- The metadata advertises `require_pushed_authorization_requests: true`, so
-  conformant clients switch to PAR automatically.
+- It advertises `require_pushed_authorization_requests: true`, so conformant clients
+  switch to PAR automatically.
+- It does **not** refuse anything. This package reads that config key in exactly one
+  place — building the discovery document. The refusal of a non-PAR authorization
+  request must be implemented by whatever serves `/authorize`, by calling
+  `PushedAuthorizationRequests::consume()` and rejecting a request that carries no
+  `request_uri`. The deployable cbox-id app does this; a hand-rolled `/authorize` must.
 
-Mandatory PAR is the one server-side switch the profile calls for that Cbox ID can
-flip today; the ✅ rows above are on by default and need no configuration. Because
-the server cannot yet *require* DPoP, pair this with a client fleet that always
-sends DPoP proofs and a resource server that rejects a token without a `cnf` claim.
+The ✅ rows above are on by default and need no configuration. Because the server cannot
+*require* DPoP, pair this with a client fleet that always sends DPoP proofs and a resource
+server that rejects a token without a `cnf` claim.
 
 ## The flow, end to end
 
@@ -84,7 +97,7 @@ sends DPoP proofs and a resource server that rejects a token without a `cnf` cla
 1. Client → POST /oauth/par        (authenticated; params + PKCE + DPoP key)
              ← { request_uri, expires_in }
 2. Browser → GET /authorize?client_id=…&request_uri=urn:ietf:…   (nothing else)
-             user authenticates + consents
+             user authenticates + consents          ← YOUR APP, not this package
              ← redirect  ?code=…&iss=https://id.acme.com&state=…
 3. Client → POST /oauth/token      (code + PKCE verifier + DPoP proof)
              ← DPoP-bound access token (token_type: DPoP, cnf.jkt)
@@ -92,7 +105,7 @@ sends DPoP proofs and a resource server that rejects a token without a `cnf` cla
 
 Each step closes an attack class: PAR keeps parameters off the URL, `iss` defeats
 IdP mix-up, PKCE binds the code to the client, and DPoP binds the token to a key a
-stolen bearer doesn't have.
+stolen bearer doesn't have. Steps 1 and 3 are this package; step 2 is yours.
 
 ## Where to go next
 

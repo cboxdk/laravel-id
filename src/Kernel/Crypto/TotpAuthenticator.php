@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Crypto;
 
 /**
- * RFC 6238 (TOTP) over RFC 4238 (HOTP), built on the vetted `hash_hmac`
+ * RFC 6238 (TOTP) over RFC 4226 (HOTP), built on the vetted `hash_hmac`
  * primitive. Verified against the RFC 6238 test vectors — see the test suite.
  *
  * SHA-1, 30-second period, 6 digits — the interoperable defaults every

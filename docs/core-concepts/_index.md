@@ -1,7 +1,7 @@
 ---
 title: Core concepts
 description: The architecture, the authorization decision plane, and entitlements
-weight: 3
+weight: 5
 ---
 
 # Core concepts

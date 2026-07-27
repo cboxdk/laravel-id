@@ -139,6 +139,21 @@ return [
      * recorded on the endpoint's health columns, NOT on `status` — `paused` stays
      * the operator's own intent.
      */
+    /*
+     * SCIM 2.0 service-provider discovery.
+     *
+     * `documentation_uri` is the OPTIONAL `documentationUri` of RFC 7643 §5 — an
+     * HTTP-addressable page describing this deployment's SCIM support, which some
+     * connectors surface to the operator during setup. It is UNSET by default and the
+     * field is then omitted entirely: it used to be hard-coded to `<app>/docs`, a route
+     * this package does not register and most hosts do not either, so the link that
+     * appeared in a connector's setup screen led to a 404. An absent optional field is
+     * correct; a present broken one is a promise the deployment cannot keep.
+     */
+    'scim' => [
+        'documentation_uri' => env('CBOX_ID_SCIM_DOCUMENTATION_URI'),
+    ],
+
     'webhooks' => [
         'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
         'max_attempts' => env('CBOX_ID_WEBHOOKS_MAX_ATTEMPTS', 12),

@@ -19,9 +19,15 @@ class DiscoveryController
 
     public function serviceProviderConfig(): JsonResponse
     {
-        return $this->scim([
+        return $this->scim(array_filter([
             'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
-            'documentationUri' => rtrim((string) url('/'), '/').'/docs',
+            // OPTIONAL in RFC 7643 §5, and omitted unless the host actually publishes
+            // something. This used to hard-code `<app>/docs`, a route this package does
+            // not register and most hosts do not either — so a connector that surfaces
+            // the link during setup (Okta shows it) sent the operator to a 404. An
+            // absent optional field is correct; a present broken one is a promise the
+            // deployment cannot keep.
+            'documentationUri' => $this->documentationUri(),
             'patch' => ['supported' => true],
             'bulk' => ['supported' => false, 'maxOperations' => 0, 'maxPayloadSize' => 0],
             'filter' => ['supported' => true, 'maxResults' => 200],
@@ -35,7 +41,20 @@ class DiscoveryController
                 'primary' => true,
             ]],
             'meta' => ['resourceType' => 'ServiceProviderConfig'],
-        ]);
+        ], static fn (mixed $value): bool => $value !== null));
+    }
+
+    /**
+     * The host's SCIM help page, or null to omit the field.
+     *
+     * Filtered on `!== null` rather than a bare array_filter, so a future `false` or
+     * `0` in this document cannot be silently dropped from a protocol response.
+     */
+    private function documentationUri(): ?string
+    {
+        $uri = config('cbox-id.scim.documentation_uri');
+
+        return is_string($uri) && $uri !== '' ? $uri : null;
     }
 
     public function resourceTypes(): JsonResponse

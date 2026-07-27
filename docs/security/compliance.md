@@ -33,20 +33,20 @@ requirements to the feature that addresses it, and end with what remains yours.
 | CC6.1 | Encryption of credentials/keys at rest | XChaCha20-Poly1305 AEAD for all secrets; signing keys sealed |
 | CC6.2 | Registration & authorization of users | Explicit provisioning, SCIM, invitation flow; no silent account merge |
 | CC6.3 | Least privilege / role changes | Roles + permissions, org-scoped, cross-tenant write guard |
-| CC6.6 | Authentication (MFA) | Passwords (hashed; breach-screen is app-layer), TOTP (replay-safe), WebAuthn/passkeys (UV-enforced), step-up |
+| CC6.6 | Authentication (MFA) | Passwords (hashed, with an enforced policy; breach-screen is contract-only), TOTP (replay-safe), WebAuthn/passkeys (UV-enforced). Step-up re-auth is the **app's** decision, on `auth_time`/`amr`/`acr` signals this package records |
 | CC6.7 | Transmission protection | Bearer over TLS; SSRF-guarded webhooks; SAML/OIDC signature verification (HSTS is set by the app's security-headers middleware) |
 | CC6.8 | Prevent unauthorized software | SBOM, dependency audit, license gate in CI |
 | CC7.1–7.2 | Monitoring / anomaly detection | Hash-chained audit log (framework); request risk-scoring is an **app-layer add-on** (e.g. `cboxdk/laravel-risk`, shipped by the host app — not this package) |
 | CC7.2 | Security event logging | Audit trail of auth, provisioning, key, and admin events |
-| CC8.1 | Change management | Signed commits, CI gates, conventional commits, CHANGELOG |
+| CC8.1 | Change management | CI gates (lint, PHPStan max, tests, audit, license, SBOM), conventional commits, CHANGELOG. **Commit signing is not in force** — do not present it as a control |
 
 ## ISO/IEC 27001:2022 (Annex A controls)
 
 | Annex A | Control | Cbox ID |
 |---------|---------|---------|
 | A.5.15–5.18 | Access control, identity, authentication | RBAC, provisioning, MFA, session management |
-| A.8.2 / A.8.3 | Privileged & information access rights | Owner/admin roles, step-up ("sudo") re-auth, org scoping |
-| A.8.5 | Secure authentication | Passkeys (phishing-resistant), TOTP, hashed passwords (breach screen is app-layer) |
+| A.8.2 / A.8.3 | Privileged & information access rights | Owner/admin roles, org scoping, access-certification campaigns, Segregation-of-Duties policies |
+| A.8.5 | Secure authentication | Passkeys (phishing-resistant), TOTP, hashed passwords under an enforced policy (breach screen is contract-only) |
 | A.8.24 | Use of cryptography | Crypto kernel: alg allow-list (RFC 8725), AEAD at rest, key rotation |
 | A.8.15 | Logging | Tamper-evident, hash-chained audit log with signed checkpoints |
 | A.8.16 | Monitoring activities | Auditable security events (framework); risk-scoring pipeline at the app layer (add-on) |
@@ -60,7 +60,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 |--------------------|---------|
 | (a) risk analysis & security policies | threat model + this mapping give the technical basis |
 | (d) supply-chain security | SBOM (CycloneDX), pinned deps, license + vuln gates |
-| (g) basic cyber hygiene / access control | MFA, RBAC, least privilege, step-up |
+| (g) basic cyber hygiene / access control | MFA, RBAC, least privilege, password policy, login lockout |
 | (h) cryptography | Crypto kernel, key rotation, sealed secrets |
 | (i) HR security / access control | provisioning + immediate deprovision (SCIM revokes sessions) |
 | (j) MFA & secured comms | passkeys/TOTP; signed/verified federation (HSTS added by the app) |
@@ -75,7 +75,23 @@ requirements to the feature that addresses it, and end with what remains yours.
 | Art. 30 | Records of processing | audit trail of identity/access events |
 | Art. 33 | Breach detection & notification | tamper-evident log surfaces anomalies for your 72h clock (plus app-layer risk-scoring, if added) |
 | Art. 22 | Automated decisions | **applies at the app layer, not this framework** — if the host adds risk-scoring (e.g. `cboxdk/laravel-risk`) it is explainable (reasons breakdown) and ships in monitor mode; see that package's docs |
-| Art. 17 | Right to erasure | opaque subject model — the platform holds no PII it can't delete via your resolver |
+| Art. 17 | Right to erasure | **Not a control this package provides — see the note below.** |
+
+> **Art. 17, honestly.** The package ships **no erasure primitive**. `Subjects` can
+> `deactivate()` a user; it cannot delete one, and there is no anonymisation service,
+> command, or endpoint anywhere in `src/`. Nor is the subject model as opaque as it
+> sounds: alongside whatever your own users table holds, this package stores contact PII
+> in its own tables — `platform_operators`, `account_members`, `magic_links`,
+> `invitations`, the credential-token tables, `otp_challenges`, `directory_users` and
+> `directory_groups`. None of those are covered by the retention pruner, which sweeps
+> only ephemeral protocol state.
+>
+> Two further tensions to plan for rather than discover: `audit_logs` is **deliberately
+> never pruned** (pruning it breaks chain verification), and an erasure that rewrites a
+> chained audit entry would invalidate every entry after it. Satisfying an erasure request
+> is therefore an **operator procedure** across those tables, with a documented decision
+> about what the audit trail retains under Art. 17(3)(b)/(e). Budget for it; do not
+> assume the package does it.
 
 ## HIPAA Security Rule (§164.312 technical safeguards)
 
@@ -86,7 +102,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 | §164.312(a)(2)(iii) Automatic logoff | absolute + idle session timeout |
 | §164.312(b) Audit controls | hash-chained audit log |
 | §164.312(c) Integrity | signed checkpoints detect tampering; JWT signature verification |
-| §164.312(d) Person/entity authentication | MFA, passkeys, hashed passwords (breach screen at the app layer) |
+| §164.312(d) Person/entity authentication | MFA, passkeys, hashed passwords under an enforced policy (breach screen is contract-only) |
 | §164.312(e) Transmission security | TLS bearer, signed federation assertions (HSTS via the app's security-headers middleware) |
 
 ## PCI-DSS v4.0 (relevant requirements)
@@ -96,8 +112,8 @@ requirements to the feature that addresses it, and end with what remains yours.
 | Req 3/4 — protect & encrypt data | AEAD-sealed secrets; TLS transmission; no secret ever logged |
 | Req 6 — secure development | CI gates, SAST, dependency scanning, SBOM |
 | Req 7 — restrict access by need-to-know | RBAC, least privilege, deny-by-default |
-| Req 8 — identify & authenticate | unique IDs, **MFA (8.4)**, hashed passwords + session mgmt (strong-password rules & breach screen (8.3) are app-layer) |
-| Req 8.3.6 | password length/complexity | extension point in the framework; the deployable app enforces a 12-char minimum, NIST-aligned, + HIBP screen (app layer, not this package) |
+| Req 8 — identify & authenticate | unique IDs, **MFA (8.4)**, hashed passwords + session management + login lockout; the breach screen (8.3) is contract-only |
+| Req 8.3.6 | password length/complexity | **Length is enforced by this package** — a policy engine with a 12-character default minimum, plus reuse history, expiry and lockout, where an environment sets the floor and an organization may only tighten it. **Character-class complexity rules are not modelled**, and breach screening ships as a contract whose default answers "not breached" |
 | Req 10 — log & monitor | tamper-evident audit log of all access to auth systems |
 | Req 11 — test security | tests vs real vectors; pen-test cadence is the operator's to schedule |
 
@@ -107,6 +123,8 @@ The package cannot supply these — they are process, not code:
 
 - **Policies & governance**: infosec policy, access-review cadence, onboarding/offboarding, vendor management.
 - **Data retention & DPIA**: define retention for audit logs (and risk data, if you add app-layer risk-scoring); run a Legitimate Interest Assessment / DPIA (GDPR).
+- **Erasure / subject-rights procedures**: the package ships no erasure primitive — see the Art. 17 note above for the tables involved and the audit-trail tension.
+- **Master-key custody *and rotation***: there is no re-encrypt/rewrap routine, so rotating the crypto master key is not a supported operation today.
 - **Incident response**: a documented plan, breach-notification workflow, and the NIS2/GDPR reporting timelines.
 - **Independent assurance**: a SOC 2 audit, ISO 27001 certification, HIPAA risk assessment, or PCI ROC/SAQ — performed by an assessor against *your* running system.
 - **Penetration testing**: schedule and act on a recurring third-party test.
@@ -114,8 +132,8 @@ The package cannot supply these — they are process, not code:
 
 ## Evidence Cbox ID hands your auditor
 
-- This mapping and the [standards conformance matrix](standards.md).
+- This mapping, the [standards conformance matrix](standards.md), and the [feature support matrix](../capabilities/feature-support.md).
 - The [security model](_index.md) and threat model.
 - A machine-readable **CycloneDX SBOM** and a passing dependency/license/vuln gate.
 - A **tamper-evident audit trail** exportable as forensic evidence.
-- Config that is **secure by default** (MFA available, deny-by-default; the app adds the breach screen and password policy).
+- Config that is **secure by default** (MFA available, deny-by-default, an enforced password policy with a 12-character floor; the app adds the breach screen).

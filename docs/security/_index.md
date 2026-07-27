@@ -1,7 +1,7 @@
 ---
 title: Security
 description: The non-negotiable invariants — tenant isolation, crypto, tamper-evident audit
-weight: 7
+weight: 9
 ---
 
 # Security

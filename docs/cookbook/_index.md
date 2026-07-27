@@ -1,7 +1,7 @@
 ---
 title: Cookbook
 description: Task-focused recipes for the common jobs
-weight: 4
+weight: 6
 ---
 
 # Cookbook
