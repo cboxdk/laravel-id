@@ -15,6 +15,20 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.65.0] - 2026-07-27
+
+### Removed
+
+- **`EntitlementSource::License`.** The framework never wrote it; it existed so
+  `cboxdk/laravel-id-licensing` could mark entitlements unlocked by a signed offline
+  key. That layer is retired — the application this framework backs is now free to
+  self-host with no key and no limits, so a source meaning "granted by a licence" has
+  nothing left to mean. The on-prem licensing entry is gone from the docs for the same
+  reason.
+
+  A `license` value stored by a real licensed deployment will no longer hydrate. See
+  [`UPGRADING.md`](UPGRADING.md).
+
 ## [0.64.0] - 2026-07-27
 
 ### Fixed
