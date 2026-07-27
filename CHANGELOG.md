@@ -15,6 +15,35 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.60.0] - 2026-07-27
+
+### Fixed
+
+- **Audit entries were silently lost whenever two writers appended to the same chain.**
+  Appends serialised on the chain HEAD, chosen by `ORDER BY sequence DESC LIMIT 1 FOR
+  UPDATE`. Under `READ COMMITTED` a blocked `FOR UPDATE` re-checks its predicate against
+  the row it waited on, not against the `ORDER BY` that selected it — so a waiter woke
+  still holding the old head, computed a sequence that had just been taken, and died on
+  the unique key with SQLSTATE 23505. `DB::transaction(…, attempts: 3)` never covered it:
+  Laravel's `ConcurrencyErrorDetector` matches 40001 and deadlock messages, not 23505.
+  Measured on PostgreSQL 16, 8 processes × 100 appends to one chain landed **101 of 800**
+  rows; it now lands 800 of 800, gapless, with `verifyChain()` valid. These writes sit on
+  pre-authentication paths, so a credential-stuffing burst was the trigger, and callers
+  that `report()` and continue lost their entry without a trace. Appenders now serialise
+  on the chain's anchor row (sequence 1), whose predicate is an equality on the unique key
+  and therefore cannot go stale. Costs one extra indexed round-trip: single-writer p50
+  12.4 ms → 13.3 ms. The docblock claiming a concurrent write "is never silently lost" was
+  false and has been replaced with the actual semantics.
+
+### Changed
+
+- **BREAKING (error paths only):** an append that cannot claim a free position within its
+  retry budget now throws `CannotAppendToAuditChain` instead of surfacing the driver's
+  `UniqueConstraintViolationException`. A hole in a tamper-evident trail is
+  indistinguishable from a deletion when someone later runs `verifyChain()`, so it must be
+  loud. Callers catching `QueryException` around `AuditLog::record()` should catch
+  `CannotAppendToAuditChain` as well.
+
 ## [0.59.1] - 2026-07-27
 
 ### Added
