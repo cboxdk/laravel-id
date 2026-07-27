@@ -18,6 +18,7 @@ use Cbox\Id\Organization\Enums\TokenScope;
 use Cbox\Id\Organization\Exceptions\TokenScopeExceedsIssuerRole;
 use Cbox\Id\Organization\Models\UserApiToken;
 use Cbox\Id\Organization\ValueObjects\IssuedUserApiToken;
+use Cbox\Id\Organization\ValueObjects\ResourceFamilies;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +58,7 @@ class UserApiTokenService implements UserApiTokens
         string $userId,
         string $name,
         TokenScope $scope,
-        ?array $resourceFamilies = null,
+        ?ResourceFamilies $resourceFamilies = null,
         ?DateTimeInterface $expiresAt = null,
     ): IssuedUserApiToken {
         // The cap: resolve the issuer's effective role at org level. No active
@@ -68,13 +69,19 @@ class UserApiTokenService implements UserApiTokens
             throw TokenScopeExceedsIssuerRole::make($organizationId, $scope, $role);
         }
 
+        // An omitted allow-list is "no restriction expressed"; an EMPTY one is a
+        // restriction naming nothing. The value object keeps those apart all the
+        // way to the column — collapsing them here is what turned the most
+        // restrictive request into an every-family token.
+        $families = $resourceFamilies ?? ResourceFamilies::unrestricted();
+
         $plaintext = self::PREFIX.Str::random(48);
 
         $configured = config('cbox-id.user_api_tokens.default_ttl_days');
         $ttlDays = is_numeric($configured) ? (int) $configured : self::DEFAULT_TTL_DAYS;
         $expiry = $expiresAt ?? CarbonImmutable::now()->addDays($ttlDays);
 
-        $token = $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): UserApiToken => DB::transaction(function () use ($organizationId, $userId, $name, $scope, $resourceFamilies, $expiry, $plaintext): UserApiToken {
+        $token = $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): UserApiToken => DB::transaction(function () use ($organizationId, $userId, $name, $scope, $families, $expiry, $plaintext): UserApiToken {
             $token = new UserApiToken;
             $token->fill([
                 'user_id' => $userId,
@@ -82,7 +89,7 @@ class UserApiTokenService implements UserApiTokens
                 'prefix' => substr($plaintext, 0, 12),
                 'token_hash' => $this->hash($plaintext),
                 'scope' => $scope,
-                'resource_families' => $resourceFamilies === [] ? null : $resourceFamilies,
+                'resource_families' => $families,
                 'expires_at' => $expiry,
             ]);
             $token->save();

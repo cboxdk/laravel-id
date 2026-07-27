@@ -9,7 +9,9 @@ use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToTenant;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantOwned;
+use Cbox\Id\Organization\Casts\ResourceFamiliesCast;
 use Cbox\Id\Organization\Enums\TokenScope;
+use Cbox\Id\Organization\ValueObjects\ResourceFamilies;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -29,7 +31,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $prefix
  * @property string $token_hash
  * @property TokenScope $scope
- * @property array<int, string>|null $resource_families
+ * @property ResourceFamilies $resource_families
  * @property Carbon|null $expires_at
  * @property Carbon|null $revoked_at
  * @property Carbon|null $last_used_at
@@ -55,7 +57,7 @@ class UserApiToken extends Model implements EnvironmentOwned, TenantOwned
     {
         return [
             'scope' => TokenScope::class,
-            'resource_families' => 'array',
+            'resource_families' => ResourceFamiliesCast::class,
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',
             'last_used_at' => 'datetime',
@@ -69,12 +71,12 @@ class UserApiToken extends Model implements EnvironmentOwned, TenantOwned
     }
 
     /**
-     * Whether the token may touch a resource family. A null list is an
-     * unrestricted token (every family) — the "null ⇒ all" contract.
+     * Whether the token may touch a resource family. Delegated to
+     * {@see ResourceFamilies}, which is the only place that decides what an
+     * absent and an empty allow-list each mean.
      */
     public function allowsFamily(string $family): bool
     {
-        return $this->resource_families === null
-            || in_array($family, $this->resource_families, true);
+        return $this->resource_families->allows($family);
     }
 }

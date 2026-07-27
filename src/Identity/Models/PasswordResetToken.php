@@ -26,7 +26,7 @@ class PasswordResetToken extends Model implements EnvironmentOwned
     use BelongsToEnvironment;
     use HasUlids;
 
-    protected $table = 'password_reset_tokens';
+    protected $table = 'cbox_id_password_reset_tokens';
 
     protected $guarded = [];
 

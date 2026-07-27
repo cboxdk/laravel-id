@@ -14,7 +14,9 @@ use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\Models\UserApiToken;
 use Cbox\Id\Organization\ValueObjects\GrantSubject;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
+use Cbox\Id\Organization\ValueObjects\ResourceFamilies;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -80,24 +82,62 @@ it('resolves nothing for a wrong prefix, an unknown token, a revoked token, or a
         ->and($tokens->resolve($expired->plaintext))->toBeNull();
 });
 
-it('restricts a token to its resource families, with null meaning unrestricted', function (): void {
+it('restricts a token to its resource families, with an omitted list meaning unrestricted', function (): void {
     $org = memberOrg();
     $tokens = app(UserApiTokens::class);
 
-    $restricted = $tokens->issue($org->id, 'user_1', 'Deploys', TokenScope::Write, ['services', 'deployments']);
+    $restricted = $tokens->issue($org->id, 'user_1', 'Deploys', TokenScope::Write, ResourceFamilies::of('services', 'deployments'));
     $open = $tokens->issue($org->id, 'user_1', 'Everything', TokenScope::Write);
 
     expect($restricted->token->allowsFamily('services'))->toBeTrue()
         ->and($restricted->token->allowsFamily('billing'))->toBeFalse()
-        ->and($open->token->allowsFamily('billing'))->toBeTrue();
+        ->and($restricted->token->resource_families->isUnrestricted())->toBeFalse()
+        ->and($open->token->allowsFamily('billing'))->toBeTrue()
+        ->and($open->token->resource_families->isUnrestricted())->toBeTrue()
+        ->and($open->token->resource_families->toStorage())->toBeNull();
 });
 
-it('normalises an empty family list to unrestricted (the null ⇒ all contract)', function (): void {
+/**
+ * The fail-open regression. An EMPTY allow-list is the most restrictive input a
+ * caller can give — "no families" — and used to be normalised to null, i.e. a
+ * token permitted on EVERY family. The most restrictive request produced the
+ * least restrictive result.
+ */
+it('issues a token permitted on nothing for an explicitly empty family list', function (): void {
     $org = memberOrg();
 
-    $issued = app(UserApiTokens::class)->issue($org->id, 'user_1', 'CI', TokenScope::Read, []);
+    $issued = app(UserApiTokens::class)->issue($org->id, 'user_1', 'CI', TokenScope::Read, ResourceFamilies::none());
 
-    expect($issued->token->resource_families)->toBeNull();
+    expect($issued->token->allowsFamily('services'))->toBeFalse()
+        ->and($issued->token->allowsFamily('billing'))->toBeFalse()
+        ->and($issued->token->resource_families->isUnrestricted())->toBeFalse()
+        ->and($issued->token->resource_families->toStorage())->toBe([]);
+
+    // And it survives a round trip through the column: "restricted to nothing"
+    // must not decay back into "unrestricted" on the way out of the database.
+    $resolved = app(UserApiTokens::class)->resolve($issued->plaintext);
+
+    expect($resolved)->not->toBeNull()
+        ->and($resolved->resource_families->isUnrestricted())->toBeFalse()
+        ->and($resolved->allowsFamily('services'))->toBeFalse();
+});
+
+/**
+ * Existing rows were written before the value object existed, and a NULL column
+ * has always meant "unrestricted". Nothing here may re-interpret them.
+ */
+it('still reads a legacy null column as unrestricted', function (): void {
+    $org = memberOrg();
+
+    $issued = app(UserApiTokens::class)->issue($org->id, 'user_1', 'Legacy', TokenScope::Read);
+
+    DB::table('user_api_tokens')->where('id', $issued->token->id)->update(['resource_families' => null]);
+
+    $resolved = app(UserApiTokens::class)->resolve($issued->plaintext);
+
+    expect($resolved)->not->toBeNull()
+        ->and($resolved->resource_families->isUnrestricted())->toBeTrue()
+        ->and($resolved->allowsFamily('anything'))->toBeTrue();
 });
 
 it('caps the scope at the issuer role: a viewer mints read only', function (): void {

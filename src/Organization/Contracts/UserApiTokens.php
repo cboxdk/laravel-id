@@ -8,6 +8,7 @@ use Cbox\Id\Organization\Enums\TokenScope;
 use Cbox\Id\Organization\Exceptions\TokenScopeExceedsIssuerRole;
 use Cbox\Id\Organization\Models\UserApiToken;
 use Cbox\Id\Organization\ValueObjects\IssuedUserApiToken;
+use Cbox\Id\Organization\ValueObjects\ResourceFamilies;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -21,9 +22,13 @@ interface UserApiTokens
     /**
      * Issue a token for the user. Every token carries a hard expiry: when
      * `expiresAt` is null a default TTL applies, so no token is open-ended.
-     * `resourceFamilies` null means unrestricted.
      *
-     * @param  list<string>|null  $resourceFamilies
+     * `resourceFamilies` is a {@see ResourceFamilies}, not an array, precisely so
+     * that "no restriction expressed" and "restricted to nothing" cannot be the
+     * same value: omitting the argument (or passing null) is
+     * {@see ResourceFamilies::unrestricted()}, while
+     * {@see ResourceFamilies::none()} issues a token permitted on no family at
+     * all. An array used to collapse those two into an every-family token.
      *
      * @throws TokenScopeExceedsIssuerRole
      */
@@ -32,7 +37,7 @@ interface UserApiTokens
         string $userId,
         string $name,
         TokenScope $scope,
-        ?array $resourceFamilies = null,
+        ?ResourceFamilies $resourceFamilies = null,
         ?DateTimeInterface $expiresAt = null,
     ): IssuedUserApiToken;
 
