@@ -15,6 +15,65 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.64.0] - 2026-07-27
+
+### Fixed
+
+- **The audit chain's first entry deadlocked on MariaDB.** Appending serialises on the
+  chain's anchor (sequence 1); on an *empty* chain there is none, and the locking read
+  looking for it matched no row — which InnoDB answers with a **gap lock**. Eight
+  processes opening one brand-new chain each held that gap and then needed an
+  insert-intention lock inside it, so MariaDB 11.8 resolved the pile-up as SQLSTATE 40001
+  rather than the duplicate key `record()` is written to absorb, and `attempts: 3` ran
+  out. **6 of 800 appends lost.** Fixed by removing the cause rather than raising the
+  budget: the anchor is now *found* with a plain read and *locked by primary key*, and an
+  exact primary-key match takes a record lock that can never be a gap lock — so an empty
+  chain takes no lock at all. The search runs **outside** the transaction, because under
+  `REPEATABLE READ` a consistent read inside it fixes the snapshot the head read is then
+  answered from; an earlier attempt that kept it inside made things strictly worse. Now
+  **800/800 on `mariadb:11`**, and the full suite runs green there for the first time.
+- **CI's rollback step never rolled anything back.** Testbench's rollback is `--path`-
+  scoped to a single publishable migration, so 83 tables and 90 ledger rows survived it on
+  an empty PostgreSQL, and `down()` was unverified on every engine. The replacement
+  migrates every registered path into a throwaway database, resets across all of them, and
+  requires **zero** tables and **zero** ledger rows before migrating back up. The assertion
+  is the point — a rollback that does not verify emptiness is exactly how this went
+  unnoticed. It found **five** broken `down()` methods, the worst of which left a stray
+  `password_reset_tokens` behind after a full reset, under the very name whose collision
+  with Laravel's skeleton migration breaks a greenfield install.
+
+### Added
+
+- **Audit checkpointing is schedulable** — `php artisan cbox-id:audit:checkpoint` signs
+  every `(environment, scope)` chain that has advanced, idempotently and without locking.
+  Nothing had ever scheduled `checkpoint()`, so `audit_checkpoints` was empty everywhere
+  and `verifyCheckpointAnchor()` returned null on every call: the chain detects
+  modification and sequence gaps by itself, but it cannot detect **truncation**, and a
+  signed checkpoint is the only thing that catches that.
+- **The schedule defaults to `false`, deliberately.** The GDPR-erasure design still to come
+  needs exactly one *re-chain* of existing rows — hashing ciphertext instead of plaintext,
+  so destroying a per-subject key leaves every hashed byte unchanged. Any checkpoint signed
+  *before* that would afterwards report tampering that never happened, permanently, on
+  evidence you may already have handed to a third party. Nothing has ever signed one, so
+  the window is open and **the first signature closes it**. `UPGRADING.md` carries the
+  four-step order — and says plainly that a deployment with no re-chain ahead of it should
+  turn this on today rather than run an audit trail whose truncation nobody would notice.
+- `OrganizationStatus::revokesAccess()`. The enum now answers the question the security
+  layer was asking by hand, with an exhaustive `match` and no `default`, so a status added
+  later fails static analysis instead of defaulting to "allowed" — which is precisely how
+  `Deleted` slipped past three enforcement points in the consuming app.
+- `Organizations::archive(string $id, string $actorId)`, so the status write and its audit
+  entry both live behind the contract instead of a raw `save()` in a console view.
+
+### Changed
+
+- **BREAKING:** `Accounts::suspend()` and `Accounts::reactivate()` now take an `$actorId`
+  and audit internally, matching `Organizations` and `PlatformOperators`. They previously
+  took an id alone and recorded nothing, which forced every caller to remember the audit —
+  and a second caller would have silently forgotten it. `reactivate()` is included even
+  though only `suspend()` was reported: leaving it unaudited would make "who lifted this
+  suspension" unanswerable directly beside an audited suspend.
+
 ## [0.63.0] - 2026-07-27
 
 ### Security
