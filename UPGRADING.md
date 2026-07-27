@@ -13,7 +13,29 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
-## Unreleased
+## 0.65.0
+
+### `EntitlementSource::License` is removed
+
+Only affects a deployment that ran `cboxdk/laravel-id-licensing` **with a real key** —
+without one the plugin was inert and wrote nothing, and the framework itself never
+wrote this source at all.
+
+Check before upgrading:
+
+```sql
+SELECT count(*) FROM entitlements WHERE source = 'license';
+```
+
+Any rows must be moved to a source that still exists, or reading them throws when the
+enum can no longer resolve the value:
+
+```sql
+UPDATE entitlements SET source = 'manual' WHERE source = 'license';
+```
+
+`manual` is the honest replacement: the grant now stands on its own rather than on a
+licence, which is exactly what retiring the licensing layer means.
 
 ### `Accounts::suspend()` and `Accounts::reactivate()` take an actor
 
