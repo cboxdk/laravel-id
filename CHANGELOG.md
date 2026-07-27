@@ -15,6 +15,92 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.63.0] - 2026-07-27
+
+### Security
+
+- **`POST /user-tokens/introspect` checked no scope at all.** It resolved the caller's
+  environment API key and verified only that it was *valid*, while every other management
+  route gates on a scope. A key issued with, say, only `directories:read` could introspect
+  **every personal access token in the environment** and read back `sub`, `org`, `name`
+  and `scope` — a deliberately narrow credential holding a capability it was never
+  granted. Now gated on the existing `EnvironmentApiScope::UsersRead`: a successful
+  response discloses user data about any user in the environment, which is exactly what
+  `GET /users` already gates on, so minting an `introspect:*` scope would have added scope
+  surface for a capability an existing scope already describes — and would have broken
+  every key rather than only those that genuinely lacked user-read rights.
+  **BREAKING:** an environment API key calling this endpoint without `users:read` now gets
+  `403 insufficient_scope`. Audit issued keys before upgrading. The refusal is a 403 and
+  not `active: false` deliberately: it is decided *before* the token is resolved, so the
+  response is a constant function of the caller's own key and leaks nothing about any
+  token — whereas answering `active: false` would make a relying party silently treat
+  every live credential its users hold as revoked, reading a misconfiguration as a
+  fleet-wide revocation. A test pins that the 403 is byte-identical for a known and an
+  unknown token, so it cannot become an oracle by accident later.
+- **An empty resource-family allow-list granted every family.** `UserApiTokenService`
+  stored `$families === [] ? null : $families`, and `allowsFamily()` reads `null` as
+  "unrestricted" — so a caller passing an **empty** allow-list, the most restrictive input
+  possible, received a token permitted on **all** families. The most restrictive request
+  produced the least restrictive result. Fixed with a `ResourceFamilies` value object that
+  keeps *unrestricted*, *a list*, and *none* apart; the collapsing line is gone because
+  `[]` is no longer a value the parameter can hold. An array cannot express the difference
+  between absent and empty, and here that difference is a security boundary. Existing rows
+  are untouched — `NULL` still means unrestricted, and the empty array is a value the old
+  code could never write. The wire format is unchanged.
+  **BREAKING (source-level):** `UserApiTokens::issue()` now takes `?ResourceFamilies`
+  instead of `?array`.
+
+### Fixed
+
+- **A greenfield install could not migrate.** The package created `password_reset_tokens`,
+  which Laravel's own `create_users_table` skeleton migration — present in every freshly
+  scaffolded app — also creates, with a different shape. So `composer require
+  cboxdk/laravel-id && php artisan migrate` failed with "table already exists" on every
+  engine: the package's entire first-run experience for anyone who did not start from a
+  stripped skeleton. Renamed to `cbox_id_password_reset_tokens`, with a rename migration
+  guarded three ways — it returns early if the new name exists, if the old one does not, or
+  if the table it finds lacks `environment_id` **and** `token_hash`. Laravel's skeleton
+  table has neither, so this migration can never adopt, reshape or drop a table it did not
+  create. The suite could not have caught this: the harness publishes the package's own
+  users migration, so no test had ever migrated against a stock Laravel schema.
+  `GreenfieldMigrationTest` now does, on SQLite and against a throwaway schema on a real
+  PostgreSQL server.
+
+### Added
+
+- **A verified capability matrix** — a "What's supported" table in `README.md` and a new
+  `docs/capabilities/` section, so an adopter can answer "do you support X?" in seconds.
+  Five grades defined at the top of every table, and `docs/security/standards.md` becomes
+  the canonical RFC/protocol matrix. Every row was checked against `src/` rather than
+  written from the existing docs — which disproved eleven claims, corrected below.
+
+### Changed
+
+- **Documentation claims that the code does not back have been corrected.** The matrix
+  above was built by verification, and these are what it found:
+  `compliance.md` offered *signed commits* as the SOC 2 CC8.1 control (`git log
+  --format=%G?` returns `N` for every commit, releases included); the GDPR Art. 17 claim
+  survived an earlier rewording and was still false, since no erasure primitive exists and
+  the package holds contact PII in its own never-pruned tables; `fapi.md` claimed PAR was
+  *enforced* (`require_par` is read in exactly one place — building the discovery
+  document) and RFC 9207 `iss` *always on* (the package emits no authorization response);
+  step-up "sudo" re-authentication was claimed as a mitigation in four control rows and
+  does not exist; and `standards.md` described `/authorize` behaviour throughout —
+  **this package does not serve `/authorize`**, and was claiming the host app's work as
+  its own. Password policy had moved into the framework several releases ago and was still
+  attributed to the app layer; under-claiming is a documentation bug too.
+- `TotpAuthenticator`'s docblock cited **RFC 4238** for HOTP. HOTP is **RFC 4226**.
+- The SCIM `ServiceProviderConfig` advertised `documentationUri` as `<app>/docs`, a route
+  this package does not register and most hosts do not either — so a connector surfacing
+  that link during setup sent the operator to a 404. It is OPTIONAL in RFC 7643 §5 and is
+  now omitted unless `cbox-id.scim.documentation_uri` is set.
+- `Directories::resolveByToken()` promised a constant-time comparison the implementation
+  never performed.
+- `UPGRADING.md` carried the last surviving copy of the fabricated
+  `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified`. No such value exists — SAML 2.0
+  carries the 1.1 URN forward, and `tryFromPolicyUrn()` returns null for the 2.0 spelling,
+  so an SP configured from that line is answered `InvalidNameIDPolicy`.
+
 ## [0.62.0] - 2026-07-27
 
 ### Fixed
