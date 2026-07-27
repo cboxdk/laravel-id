@@ -15,7 +15,7 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
-## [Unreleased]
+## [0.61.0] - 2026-07-27
 
 ### Fixed
 
@@ -38,6 +38,13 @@ more trust than the wording it removes.
 - **Three index names were over PostgreSQL's 63-character identifier limit** and were
   being silently truncated, so the same index carried a different name depending on the
   engine. All three are now named explicitly.
+- `InteractsWithFederation::fakeDns()` tripped static analysis at level max after a
+  dependency update taught larastan to infer `app(DnsResolver::class)` from the container
+  *binding* — from which it concluded the concrete resolver is the only possible result
+  and the `FakeDnsResolver` short-circuit is unreachable. Rebinding that contract is
+  exactly what the method does, so the inference was wrong about runtime rather than the
+  code being wrong. Resolved through the PSR-11 `get()` accessor, which returns `mixed`
+  and lets the `instanceof` mean what it says — rather than silencing the check.
 
 ### Added
 
