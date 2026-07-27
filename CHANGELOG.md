@@ -15,6 +15,18 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.59.1] - 2026-07-27
+
+### Added
+
+- `HookPoint::label()` and `::description()`. A hook point is chosen by a human in a
+  console, and without copy a view renders `$case->name` — so an admin picked between
+  "PrePasswordChange" and "PostPasswordChange", PHP identifiers as product copy. Tolerable
+  while there was one point; not with six. The copy lives on the enum rather than in a
+  host's view because the enum is a public contract and every console would otherwise
+  restate it. `description()` always says whether the hook can refuse, since that is the
+  difference an admin needs before wiring a URL that can stop people signing in.
+
 ## [0.59.0] - 2026-07-27
 
 ### Added

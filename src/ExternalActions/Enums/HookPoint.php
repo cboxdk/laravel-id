@@ -121,6 +121,45 @@ enum HookPoint: string
      * What an UNREACHABLE hook means here, absent configuration. A deny is always a
      * deny; this is only about a hook that could not be consulted at all.
      */
+    /**
+     * A human label for this point, for an admin choosing one in a console.
+     *
+     * It lives here rather than in a host's view because the enum is a public
+     * contract: without it every console renders `$case->name` and an admin picks
+     * between "PrePasswordChange" and "PostPasswordChange" — PHP identifiers leaking
+     * into a product surface. Phrased as the MOMENT it fires, since that is what an
+     * admin is choosing between, and paired with {@see description()} for the
+     * consequence.
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::TokenMinting => 'Before a token is issued',
+            self::PostLogin => 'After a successful sign-in',
+            self::PreRegistration => 'Before an account is created',
+            self::PostRegistration => 'After an account is created',
+            self::PrePasswordChange => 'Before a password change',
+            self::PostPasswordChange => 'After a password change',
+        };
+    }
+
+    /**
+     * One line on what a hook at this point can DO — specifically whether it can
+     * refuse, because that is the difference an admin needs before wiring a URL that
+     * can stop people signing in.
+     */
+    public function description(): string
+    {
+        return match ($this) {
+            self::TokenMinting => 'Add claims to the token, or refuse to issue it.',
+            self::PostLogin => 'Refuse a sign-in the platform has already accepted. No session is created.',
+            self::PreRegistration => 'Refuse a sign-up before any account exists.',
+            self::PostRegistration => 'Notified after the fact. Cannot refuse.',
+            self::PrePasswordChange => 'Refuse a password change before it is written.',
+            self::PostPasswordChange => 'Notified after the fact. Cannot refuse.',
+        };
+    }
+
     public function failPolicy(): FailPolicy
     {
         return match ($this) {
