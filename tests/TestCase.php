@@ -88,12 +88,7 @@ abstract class TestCase extends Orchestra
     {
         /** @var Application $app */
         $app['config']->set('database.default', 'testing');
-        $app['config']->set('database.connections.testing', [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-            'prefix' => '',
-            'foreign_key_constraints' => true,
-        ]);
+        $app['config']->set('database.connections.testing', $this->databaseConnection());
 
         // A throwaway crypto master key for the test run.
         $app['config']->set('cbox-id.environments.default', 'env_test');
@@ -103,5 +98,46 @@ abstract class TestCase extends Orchestra
         // App key for the encryption/session stack (web middleware, e.g. the OIDC
         // redirect flow, needs it).
         $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+    }
+
+    /**
+     * The suite runs on in-memory sqlite by default — fast, and hermetic per test.
+     *
+     * Sqlite cannot express row-level locking or two writers in the same database at
+     * once, so anything that depends on real concurrency (the audit chain's append
+     * serialisation) has to be exercised against a server engine. Setting
+     * DB_CONNECTION=pgsql (or mysql) plus the usual DB_* variables points the whole
+     * suite at one, which is how the concurrency tests get a real engine to contend on.
+     *
+     * (Named away from a `test` prefix on purpose — Pint's php_unit_method_casing
+     * rule treats any such method in a test class as a test case and renames it.)
+     *
+     * @return array<string, mixed>
+     */
+    protected function databaseConnection(): array
+    {
+        $driver = getenv('DB_CONNECTION');
+
+        if ($driver === 'pgsql' || $driver === 'mysql') {
+            return [
+                'driver' => $driver,
+                'host' => getenv('DB_HOST') ?: '127.0.0.1',
+                'port' => getenv('DB_PORT') ?: ($driver === 'pgsql' ? '5432' : '3306'),
+                'database' => getenv('DB_DATABASE') ?: 'laravel_id',
+                'username' => getenv('DB_USERNAME') ?: 'laravel',
+                'password' => getenv('DB_PASSWORD') ?: '',
+                'charset' => $driver === 'pgsql' ? 'utf8' : 'utf8mb4',
+                'prefix' => '',
+                'search_path' => 'public',
+                'sslmode' => 'prefer',
+            ];
+        }
+
+        return [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+        ];
     }
 }
