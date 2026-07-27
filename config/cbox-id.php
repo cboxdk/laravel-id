@@ -195,6 +195,46 @@ return [
     ],
 
     /*
+     * The hash-chained audit trail itself (src/Kernel/Audit/).
+     *
+     * `checkpoint.schedule` registers a daily pass (`cbox-id:audit:checkpoint`) that
+     * signs a checkpoint over every chain that has advanced since its last one. A
+     * checkpoint is the ONLY thing that detects TAIL DELETION: the chain catches
+     * modification and sequence gaps by itself, but delete the newest N entries and
+     * what is left is a shorter, perfectly valid chain. Signing costs one row per
+     * chain per day and nothing at all for a chain that has not been appended to.
+     *
+     * IT DEFAULTS TO FALSE, AND THAT IS NOT AN OVERSIGHT.
+     *
+     * The first signature is a one-way door. A checkpoint is permanent, exportable
+     * evidence about the chain's hashes as they are TODAY, and the GDPR-erasure work
+     * still to come needs exactly one re-chain of the existing rows — hashing the
+     * CIPHERTEXT of `ip` and `context` rather than the plaintext, so that destroying
+     * a per-subject key leaves every hashed byte unchanged and verifyChain() keeps
+     * passing bit-for-bit. Any checkpoint signed BEFORE that re-chain would report
+     * tampering that never happened, forever. No checkpoint has ever been signed
+     * (`audit_checkpoints` is empty), so the window is still open.
+     *
+     * The order to enable it in, spelled out in UPGRADING.md and
+     * docs/operations/background-work.md:
+     *
+     *   1. sign and retain each chain's head hash and row count OUT OF BAND;
+     *   2. introduce `chain_version` + ciphertext hashing;
+     *   3. run the one-time re-chain;
+     *   4. THEN set this to true.
+     *
+     * A deployment with no such migration ahead of it can set it to true today, and
+     * should: until then nothing detects a truncated trail. `--dry-run` reports what
+     * would be signed without signing anything.
+     */
+    'audit' => [
+        'checkpoint' => [
+            'schedule' => env('CBOX_ID_AUDIT_CHECKPOINT_SCHEDULE', false),
+            'time' => env('CBOX_ID_AUDIT_CHECKPOINT_TIME', '02:40'),
+        ],
+    ],
+
+    /*
      * Outbound SCIM 2.0 provisioning (src/Provisioning/). The mirror of the
      * inbound Directory (SCIM server): when a user or membership changes, the
      * platform pushes the change OUT to each org's downstream SaaS apps via THEIR

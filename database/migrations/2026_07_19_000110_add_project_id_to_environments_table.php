@@ -61,8 +61,20 @@ return new class extends Migration
 
     public function down(): void
     {
+        // `dropConstrainedForeignId()` drops the foreign key and the column, but NOT
+        // the standalone index `up()` added alongside them. SQLite rebuilds the table
+        // to drop a column and re-validates every index against the new definition,
+        // so the orphaned index fails the drop outright.
         Schema::table('environments', function (Blueprint $table): void {
-            $table->dropConstrainedForeignId('project_id');
+            $table->dropForeign(['project_id']);
+        });
+
+        Schema::table('environments', function (Blueprint $table): void {
+            $table->dropIndex(['project_id']);
+        });
+
+        Schema::table('environments', function (Blueprint $table): void {
+            $table->dropColumn('project_id');
         });
     }
 };

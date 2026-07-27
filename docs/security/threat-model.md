@@ -76,8 +76,11 @@ It is an engineering artifact, not a certification or audit result.
 ## Residual risk (honest scope)
 
 - **Audit is tamper-evident, not tamper-proof** — anchor checkpoints externally. Note
-  that **nothing creates checkpoints on a schedule**: until your app or scheduler calls
-  for one, deletion of a chain's *tail* is not detectable at all.
+  that checkpointing is **available but not scheduled by default**:
+  `cbox-id:audit:checkpoint` signs every chain and can be scheduled with
+  `audit.checkpoint.schedule`, but that flag ships `false` (the first signature
+  forecloses a planned one-time re-chain — see UPGRADING.md). Until you enable it or
+  call for a checkpoint yourself, deletion of a chain's *tail* is not detectable at all.
 - **Risk-scoring is an app-layer add-on, not shipped by this package.** The host app
   can add bot/abuse scoring on top (e.g. `cboxdk/laravel-risk`) to feed CAPTCHA /
   step-up / reject decisions; this framework provides the rate limits, throttles and

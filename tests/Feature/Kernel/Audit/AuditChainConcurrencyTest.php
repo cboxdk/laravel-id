@@ -6,6 +6,8 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Exceptions\CannotAppendToAuditChain;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -191,4 +193,100 @@ it('gives up loudly rather than dropping an entry it cannot place', function ():
 
     expect(fn () => $log->record(AuditEvent::forSystem('second')))
         ->toThrow(CannotAppendToAuditChain::class);
+});
+
+/**
+ * The MariaDB genesis race, in the two properties that fix it. Both run on the
+ * default sqlite suite; the engine that actually exhibited the bug is exercised by
+ * the forking test above, which is green on MariaDB 11.8.8 only with these in place.
+ */
+it('retries a serialisation failure instead of handing it to the caller', function (): void {
+    $log = app(AuditLog::class);
+
+    // Commit RefreshDatabase's wrapping transaction so the append runs the way it
+    // runs in a request — owning its own outermost transaction. A concurrency error
+    // raised INSIDE a caller's transaction is deliberately not retried: the engine
+    // has already rolled that transaction back, Laravel converts it to a
+    // DeadlockException and unwinds, and retrying inside a dead transaction would
+    // only produce a second failure. (Its teardown rollback then becomes a no-op, so
+    // this test clears up after itself below.)
+    DB::commit();
+
+    $log->record(AuditEvent::forSystem('first'));
+
+    // Eight writers contending on one empty chain do not produce ONE deadlock, they
+    // produce a pile-up: MariaDB picked a victim, the victim retried straight into the
+    // next round, and Laravel's private budget of three attempts ran out while the
+    // chain was still being opened. Three consecutive victims here is that shape.
+    $deadlocks = 0;
+
+    AuditEntry::creating(function () use (&$deadlocks): void {
+        if ($deadlocks >= 3) {
+            return;
+        }
+
+        $deadlocks++;
+
+        throw new QueryException(
+            'testing',
+            'insert into "audit_logs" ("sequence") values (?)',
+            [2],
+            new PDOException('SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction'),
+        );
+    });
+
+    // Before the fix this reached the caller: `DB::transaction(…, attempts: 3)` gave
+    // up after the third victim and record() only caught duplicate keys, so a loud
+    // QueryException came out of a call site that reports-and-continues.
+    $entry = $log->record(AuditEvent::forSystem('second'));
+
+    $verified = $log->verifyChain(null)->valid;
+
+    DB::table('audit_logs')->delete();
+
+    expect($deadlocks)->toBe(3)
+        ->and($entry->sequence)->toBe(2)
+        ->and($verified)->toBeTrue();
+});
+
+it('locks the chain anchor by primary key, and locks nothing at all on an empty chain', function (): void {
+    $log = app(AuditLog::class);
+
+    /** @var list<string> $sql */
+    $sql = [];
+
+    DB::listen(function (QueryExecuted $query) use (&$sql): void {
+        $sql[] = $query->sql;
+    });
+
+    // Identifier quoting is per grammar (`"` on sqlite/Postgres, backticks on
+    // MySQL/MariaDB) and this assertion is about the predicate, not the dialect.
+    $bare = static fn (string $statement): string => str_replace(['"', '`'], '', $statement);
+
+    // A read addressed by primary key is the ONLY lock shape that cannot take a gap
+    // lock, which is what made eight MariaDB writers deadlock on an empty chain. Sqlite
+    // compiles no `for update` clause at all, so the assertion is on the statement the
+    // lock rides on — its predicate is the whole point, and it is engine-independent.
+    $anchorLock = static fn (string $statement): bool => str_contains($bare($statement), 'select id from audit_logs where audit_logs.id = ?');
+
+    $log->record(AuditEvent::forSystem('genesis'));
+
+    // Nothing exists to serialise on yet, so nothing is locked: the unique key
+    // decides the race and record() absorbs the loser's duplicate key.
+    expect(array_filter($sql, $anchorLock))->toBe([]);
+
+    $sql = [];
+
+    $log->record(AuditEvent::forSystem('second'));
+
+    expect(array_filter($sql, $anchorLock))->toHaveCount(1);
+
+    // ...and it is taken BEFORE the insert, not alongside it.
+    $order = array_values(array_filter(
+        $sql,
+        static fn (string $statement): bool => $anchorLock($statement) || str_starts_with($bare($statement), 'insert into audit_logs'),
+    ));
+
+    expect($order)->toHaveCount(2)
+        ->and($anchorLock($order[0]))->toBeTrue();
 });

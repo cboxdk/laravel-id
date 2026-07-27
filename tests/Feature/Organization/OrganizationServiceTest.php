@@ -72,3 +72,42 @@ it('suspends and reactivates an organization, auditing the change to the operato
     expect($reactivated->status)->toBe(OrganizationStatus::Active);
     $audit->assertRecorded('organization.reactivated');
 });
+
+/**
+ * Archiving is the destructive one, so it is the one that most needs a trail. Before
+ * this verb existed the only way to reach `Deleted` was to write the status onto the
+ * model and `save()` it at the call site — no event, and no audit entry for the
+ * broadest revocation an organization can undergo.
+ */
+it('archives an organization behind the contract, emitting and auditing the change', function (): void {
+    $events = $this->fakeEvents();
+    $audit = $this->fakeAudit();
+    $orgs = app(Organizations::class);
+    $org = $this->makeOrganization('Acme');
+
+    $archived = $orgs->archive($org->id, 'op_99');
+
+    expect($archived->status)->toBe(OrganizationStatus::Deleted)
+        ->and($orgs->find($org->id)?->status)->toBe(OrganizationStatus::Deleted)
+        // The whole point of the enum method: the archived org now revokes access
+        // without any consumer having to know that `Deleted` means "revoked".
+        ->and($archived->status->revokesAccess())->toBeTrue();
+
+    $events->assertEmitted('organization.archived');
+    $audit->assertRecorded('organization.archived', fn ($event): bool => $event->actorId === 'op_99'
+        && $event->targetId === $org->id);
+});
+
+it('archives idempotently, without appending a second audit entry', function (): void {
+    $orgs = app(Organizations::class);
+    $org = $this->makeOrganization('Acme');
+
+    $orgs->archive($org->id, 'op_99');
+
+    // Faked only now, so the replay is measured on its own.
+    $audit = $this->fakeAudit();
+
+    expect($orgs->archive($org->id, 'op_99')->status)->toBe(OrganizationStatus::Deleted);
+
+    $audit->assertNotRecorded('organization.archived');
+});

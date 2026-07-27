@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 use Cbox\Id\Tests\Support\ExternalDriverTestCase;
+use Cbox\Id\Tests\Support\MigrationTestCase;
 use Cbox\Id\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -12,6 +13,12 @@ uses(TestCase::class)->in('Feature');
 // top-level folder because Pest forbids two different base cases on one file, and a
 // nested folder would still be claimed by the blanket binding above.
 uses(ExternalDriverTestCase::class)->in('External');
+
+// The migration rollback check is a top-level folder rather than a Feature test so it
+// escapes the RefreshDatabase binding below: it brings its OWN empty database, and a
+// `migrate:fresh` of the suite's would be minutes of pointless DDL on a server engine.
+// Its base case also leaves the suite's connection entirely untouched — see the class.
+uses(MigrationTestCase::class)->in('Migrations');
 
 // On a SERVER engine, migrate once per process and wrap each test in a transaction.
 //
@@ -29,9 +36,11 @@ uses(ExternalDriverTestCase::class)->in('External');
 // takes the transactional path.
 //
 // The cost is that `migrate:fresh` wipes tables rather than calling down(), so the
-// rollback path stops being exercised. CBOX_ID_TEST_MIGRATE_EACH=1 opts back out for
-// a single file, which is how CI still proves migrations run BOTH ways on a server —
-// see the "Migrations up and down" step in .github/workflows/ci.yml.
+// rollback path is not exercised here at all. CBOX_ID_TEST_MIGRATE_EACH=1 opts back
+// out for a single file, which is how CI still runs the migrator itself on a server
+// engine — see the "Migrations up" step in .github/workflows/ci.yml. down() is proved
+// separately and explicitly by tests/Migrations/MigrationRollbackTest.php, which is
+// why that file is not under Feature/.
 if (in_array(getenv('DB_CONNECTION'), ['mysql', 'mariadb', 'pgsql'], true)
     && getenv('CBOX_ID_TEST_MIGRATE_EACH') !== '1') {
     uses(RefreshDatabase::class)->in('Feature');

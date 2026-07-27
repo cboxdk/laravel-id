@@ -307,6 +307,50 @@ table's default, leave the variable out of `.env` entirely; to disable a sweep o
 set the config value to `null` explicitly so the intent is readable. Check with
 `php artisan cbox-id:prune --dry-run` — anything reading `skipped` is not being swept.
 
+## Audit checkpointing — available, and off by default
+
+The hash chain catches **modification** and **sequence gaps** on its own. It cannot catch
+**truncation**: delete the newest N entries and what remains is a shorter, perfectly valid
+chain. A signed checkpoint is the only thing that catches that — `verifyChain()` requires
+the entry a checkpoint anchors to still be present with the same hash.
+
+```bash
+php artisan cbox-id:audit:checkpoint --dry-run          # what would be signed, per chain
+php artisan cbox-id:audit:checkpoint                    # sign every advanced chain
+php artisan cbox-id:audit:checkpoint --scope=org_01H…   # one chain (repeatable)
+php artisan cbox-id:audit:checkpoint --environment=env_01H…
+php artisan cbox-id:audit:checkpoint --force            # re-sign an unchanged head
+```
+
+One pass enumerates every `(environment, scope)` chain straight out of `audit_logs` —
+that is exactly the set of chains that exists, and it includes the platform plane, which
+has no environment row — then re-enters each chain's environment and signs its head. A
+chain whose head is already attested is **skipped**, so the pass is idempotent and costs
+one row per *active* chain per run and nothing for the rest. It takes no lock and writes
+no `audit_logs` row, so it is safe to run beside live appends; an append that lands
+mid-pass simply belongs to the next checkpoint.
+
+### Why the schedule ships disabled
+
+`cbox-id.audit.checkpoint.schedule` defaults to **false**. Signing the first checkpoint is
+a **one-way door**: a checkpoint attests the chain's hashes *as they are today*, and is
+meant to be exported to an append-only store you cannot retract. The planned GDPR-erasure
+design needs exactly one **re-chain** of the existing rows — hashing the *ciphertext* of
+`ip` and `context` rather than the plaintext, so destroying a per-subject key leaves every
+hashed byte unchanged and `verifyChain()` still passes bit-for-bit. Any checkpoint signed
+before that re-chain would afterwards report tampering that never happened.
+
+No checkpoint has ever been signed, so that window is still open. Enable in this order:
+
+1. sign and retain each chain's head hash and row count **out of band** (`--dry-run`
+   prints the head sequence per chain);
+2. introduce `chain_version` + ciphertext hashing;
+3. run the one-time re-chain;
+4. **then** set `CBOX_ID_AUDIT_CHECKPOINT_SCHEDULE=true`.
+
+**If no re-chain is in your future, turn it on now** — until you do, a truncated trail is
+undetectable. Full detail in [`UPGRADING.md`](../../UPGRADING.md).
+
 ## Other scheduled work
 
 Registered by their own modules on the same `withoutOverlapping()` pattern, each gated by
@@ -320,6 +364,7 @@ a config flag so a host can drive it from its own scheduler instead:
 | `cbox-id:audit-streams:pump` | every minute | `cbox-id.audit_streaming.schedule` |
 | `cbox-id:governance:close-overdue` | every minute | `cbox-id.governance.schedule` |
 | `cbox-id:prune` | daily at `prune.time` | `cbox-id.prune.schedule` |
+| `cbox-id:audit:checkpoint` | daily at `audit.checkpoint.time` | `cbox-id.audit.checkpoint.schedule` — **off by default**, see above |
 
 `cbox-id:webhooks:retry` is a scheduled closure rather than an Artisan command — to drive
 it yourself, disable `webhooks.schedule_retries` and call
@@ -356,6 +401,8 @@ it yourself, disable `webhooks.schedule_retries` and call
 | `cbox-id.prune.retention_days.usage_metered_events` | `CBOX_ID_PRUNE_USAGE_MARKERS` | `30` | Days a metering dedup marker is kept. |
 | `cbox-id.prune.retention_days.webhook_deliveries` | `CBOX_ID_PRUNE_WEBHOOK_DELIVERIES` | `30` | Days a terminal delivery row is kept. |
 | `cbox-id.prune.retention_days.provisioning_operations` | `CBOX_ID_PRUNE_PROVISIONING_OPERATIONS` | `30` | Days a terminal provisioning operation is kept. |
+| `cbox-id.audit.checkpoint.schedule` | `CBOX_ID_AUDIT_CHECKPOINT_SCHEDULE` | **`false`** | Register the daily audit-checkpoint pass. Off by default because the first signature is a one-way door — see [above](#why-the-schedule-ships-disabled). |
+| `cbox-id.audit.checkpoint.time` | `CBOX_ID_AUDIT_CHECKPOINT_TIME` | `02:40` | Time of day for the checkpoint pass (`HH:MM`; a malformed value falls back to `02:40`). |
 | `cbox-id.provisioning.schedule` | `CBOX_ID_PROVISIONING_SCHEDULE` | `true` | Register the per-minute outbound-SCIM drain. |
 | `cbox-id.audit_streaming.schedule` | `CBOX_ID_AUDIT_STREAMING_SCHEDULE` | `true` | Register the per-minute SIEM pump. |
 | `cbox-id.governance.schedule` | `CBOX_ID_GOVERNANCE_SCHEDULE` | `true` | Register the per-minute overdue-campaign close. |
@@ -377,3 +424,8 @@ Any retention key set to an empty value disables that table's sweep — see
   half.
 - `audit_logs` is unbounded by design. Streaming it out is available today; a re-anchoring
   archive step is not.
+- Tail-deletion detection is **available but not on**. Until you enable
+  `audit.checkpoint.schedule` (or run the command yourself), `audit_checkpoints` stays
+  empty, `verifyChain()` has no checkpoint to cross-check, and a trail truncated at the
+  tail verifies clean. That is the honest state of the control, and the reason for the
+  default is above.

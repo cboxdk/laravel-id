@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Contracts;
 
+use Cbox\Id\Organization\Enums\OrganizationStatus;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
 
@@ -44,4 +45,22 @@ interface Organizations
      * Lift a suspension, returning the organization to Active.
      */
     public function reactivate(string $id, string $actorId): Organization;
+
+    /**
+     * Archive an organization: set its status to {@see OrganizationStatus::Deleted}
+     * and record the change on the tenant's audit trail. This is a soft, terminal
+     * state — rows are retained for the audit trail and for any regulatory hold, but
+     * the organization revokes access exactly as a suspended one does (see
+     * {@see OrganizationStatus::revokesAccess()}).
+     *
+     * It exists so that hosts stop writing the status onto the model by hand: an
+     * `$organization->status = Deleted; $organization->save()` at a call site skips
+     * the domain event and, more importantly, leaves no audit entry for the single
+     * most destructive state an organization can enter. `$actorId` attributes the
+     * action to the operator who performed it.
+     *
+     * Idempotent: archiving an already-archived organization is a no-op that records
+     * nothing further.
+     */
+    public function archive(string $id, string $actorId): Organization;
 }

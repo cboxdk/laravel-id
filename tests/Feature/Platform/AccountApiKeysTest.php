@@ -53,11 +53,11 @@ it('rejects a valid key once its account is suspended', function (): void {
     expect($keys->resolve($issued->plaintext))->not->toBeNull();
 
     // The platform's off-switch: suspending the account kills its keys immediately.
-    app(Accounts::class)->suspend($accountId);
+    app(Accounts::class)->suspend($accountId, 'op_test');
     expect($keys->resolve($issued->plaintext))->toBeNull();
 
     // Reactivation restores it.
-    app(Accounts::class)->reactivate($accountId);
+    app(Accounts::class)->reactivate($accountId, 'op_test');
     expect($keys->resolve($issued->plaintext))->not->toBeNull();
 });
 

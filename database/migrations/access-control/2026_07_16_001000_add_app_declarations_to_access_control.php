@@ -70,17 +70,37 @@ return new class extends Migration
     {
         Schema::dropIfExists('app_manifests');
 
+        // Order matters, and it is the reverse of up(): EVERY index naming a column
+        // being dropped has to go first — including the plain `client_id` index the
+        // `->index()` chain created, which the original down() forgot. SQLite rebuilds
+        // the table to drop a column and then re-validates each surviving index
+        // against the new definition, so an orphan fails the drop outright. The
+        // superseded unique is restored last, once the columns are gone.
         Schema::table('permissions', function (Blueprint $table): void {
             $table->dropUnique(['client_id', 'name']);
-            $table->unique('name');
+            $table->dropIndex(['client_id']);
+        });
+
+        Schema::table('permissions', function (Blueprint $table): void {
             $table->dropColumn(['client_id', 'orphaned_at']);
+        });
+
+        Schema::table('permissions', function (Blueprint $table): void {
+            $table->unique('name');
+        });
+
+        Schema::table('roles', function (Blueprint $table): void {
+            $table->dropUnique(['organization_id', 'client_id', 'name']);
+            $table->dropUnique(['client_id', 'key']);
+            $table->dropIndex(['client_id']);
+        });
+
+        Schema::table('roles', function (Blueprint $table): void {
+            $table->dropColumn(['client_id', 'key', 'source', 'orphaned_at']);
         });
 
         Schema::table('roles', function (Blueprint $table): void {
             $table->unique(['organization_id', 'name']);
-            $table->dropUnique(['organization_id', 'client_id', 'name']);
-            $table->dropUnique(['client_id', 'key']);
-            $table->dropColumn(['client_id', 'key', 'source', 'orphaned_at']);
         });
     }
 };

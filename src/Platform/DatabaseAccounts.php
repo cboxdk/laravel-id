@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Organization\EnvironmentResolutionCache;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\Accounts;
@@ -16,6 +19,8 @@ use Cbox\Id\Platform\Models\Account;
  */
 class DatabaseAccounts implements Accounts
 {
+    public function __construct(private readonly AuditLog $audit) {}
+
     public function find(string $id): ?Account
     {
         return Account::query()->whereKey($id)->first();
@@ -26,18 +31,14 @@ class DatabaseAccounts implements Accounts
         Account::query()->whereKey($id)->update(['name' => $name]);
     }
 
-    public function suspend(string $id): void
+    public function suspend(string $id, string $actorId): void
     {
-        Account::query()->whereKey($id)->update(['status' => AccountStatus::Suspended]);
-
-        $this->forgetResolutionCache($id);
+        $this->transitionStatus($id, AccountStatus::Suspended, 'account.suspended', $actorId);
     }
 
-    public function reactivate(string $id): void
+    public function reactivate(string $id, string $actorId): void
     {
-        Account::query()->whereKey($id)->update(['status' => AccountStatus::Active]);
-
-        $this->forgetResolutionCache($id);
+        $this->transitionStatus($id, AccountStatus::Active, 'account.reactivated', $actorId);
     }
 
     public function create(string $name, int $environmentLimit = 2): Account
@@ -54,6 +55,40 @@ class DatabaseAccounts implements Accounts
         $used = Environment::query()->where('account_id', $account->id)->count();
 
         return max(0, $account->environment_limit - $used);
+    }
+
+    /**
+     * Write the status, invalidate the tenant's resolution cache, and append the
+     * audit entry — in that order, as one operation the caller cannot half-perform.
+     *
+     * The audit entry is recorded only when the status ACTUALLY changed. Both verbs
+     * are documented idempotent, and a re-suspension that appends a second
+     * `account.suspended` would leave the trail unable to answer when the account was
+     * suspended and by whom.
+     *
+     * The account lives above the tenancy boundary, so the entry goes on the SYSTEM
+     * chain (`organizationId: null`), like every other platform-plane action.
+     */
+    private function transitionStatus(string $id, AccountStatus $status, string $action, string $actorId): void
+    {
+        $account = Account::query()->whereKey($id)->first();
+
+        if ($account === null || $account->status === $status) {
+            return;
+        }
+
+        $account->forceFill(['status' => $status])->save();
+
+        $this->forgetResolutionCache($id);
+
+        $this->audit->record(new AuditEvent(
+            action: $action,
+            actorType: ActorType::Operator,
+            actorId: $actorId,
+            targetType: 'account',
+            targetId: $account->id,
+            context: ['status' => $status->value],
+        ));
     }
 
     /**

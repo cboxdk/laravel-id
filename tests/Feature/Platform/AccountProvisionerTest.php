@@ -229,7 +229,7 @@ it('resets an active member\'s password but never an invited one', function (): 
 
 it('refuses to add an environment for a suspended account', function (): void {
     $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
-    app(Accounts::class)->suspend($result->account->id);
+    app(Accounts::class)->suspend($result->account->id, 'op_test');
 
     expect(fn () => app(AccountProvisioner::class)->addEnvironment($result->project, 'Blocked'))
         ->toThrow(AccountSuspended::class);

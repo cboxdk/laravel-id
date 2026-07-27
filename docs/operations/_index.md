@@ -14,4 +14,4 @@ deployment that looks completely healthy can be delivering nothing at all.
   run, the domain-event relay, asynchronous webhook delivery (uniqueness lock, stranded
   rescue, backoff, per-endpoint circuit breaker), backlog monitoring with
   `cbox-id:events:backlog`, and retention via `cbox-id:prune` — including why `audit_logs`
-  is never pruned.
+  is never pruned, and why `cbox-id:audit:checkpoint` ships available but unscheduled.

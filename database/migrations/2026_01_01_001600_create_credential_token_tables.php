@@ -48,5 +48,21 @@ return new class extends Migration
     {
         Schema::dropIfExists('email_verification_tokens');
         Schema::dropIfExists('cbox_id_password_reset_tokens');
+
+        // BOTH names, because a rollback reaches this migration by two routes. On a
+        // database that came up through v0.62.0, `2026_07_27_000100`'s down() runs
+        // first and renames the table BACK to `password_reset_tokens` — so dropping
+        // only the new name left the table standing, and a full reset finished with
+        // one surviving table and a name that then collides with Laravel's skeleton
+        // migration on the way back up.
+        //
+        // Guarded by shape, never by name alone: Laravel's own skeleton table shares
+        // the name and has neither column. This migration must not drop a table it
+        // did not create.
+        if (Schema::hasTable('password_reset_tokens')
+            && Schema::hasColumn('password_reset_tokens', 'environment_id')
+            && Schema::hasColumn('password_reset_tokens', 'token_hash')) {
+            Schema::drop('password_reset_tokens');
+        }
     }
 };

@@ -92,6 +92,20 @@ class OrganizationService implements Organizations
         return $this->transitionStatus($id, OrganizationStatus::Active, 'organization.reactivated', $actorId);
     }
 
+    public function archive(string $id, string $actorId): Organization
+    {
+        $organization = Organization::query()->whereKey($id)->firstOrFail();
+
+        // Idempotent, and deliberately BEFORE the write: replaying an archive must
+        // not append a second audit entry, or the trail stops answering "when was
+        // this organization archived, and by whom".
+        if ($organization->status === OrganizationStatus::Deleted) {
+            return $organization;
+        }
+
+        return $this->transitionStatus($id, OrganizationStatus::Deleted, 'organization.archived', $actorId);
+    }
+
     public function find(string $id): ?Organization
     {
         return Organization::query()->whereKey($id)->first();

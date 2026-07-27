@@ -113,6 +113,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `rollback_user` is the SEPARATE credential the "Migrations down" step
+          # below connects as, and only that step. It needs to create a throwaway
+          # database of its own, and MySQL/MariaDB have no schema layer below the
+          # database — the official images grant the ordinary user rights on
+          # `laravel_id` and nothing else, so that costs root. PostgreSQL does not:
+          # `laravel` owns `laravel_id` and can CREATE SCHEMA inside it, so that cell
+          # keeps the unprivileged user. The suite itself always runs as `laravel`;
+          # nothing else in this job sees root.
           - driver: mysql
             image: mysql:8
             # Host ports differ per engine so two cells can share one self-hosted
@@ -120,6 +128,8 @@ jobs:
             port: 33306
             service_port: 3306
             health: mysqladmin ping -h 127.0.0.1 -u root -proot
+            rollback_user: root
+            rollback_password: root
           # MariaDB is named separately in the docs and is NOT just MySQL: its
           # `json` is an alias for longtext + a json_valid() CHECK, and unlike
           # MySQL it does accept a literal DEFAULT there. It takes the expression
@@ -129,11 +139,15 @@ jobs:
             port: 33307
             service_port: 3306
             health: healthcheck.sh --connect --innodb_initialized
+            rollback_user: root
+            rollback_password: root
           - driver: pgsql
             image: postgres:16
             port: 55432
             service_port: 5432
             health: pg_isready -U laravel -d laravel_id
+            rollback_user: laravel
+            rollback_password: secret
     name: ${{ matrix.image }}
     services:
       db:
@@ -181,26 +195,43 @@ jobs:
       # Migrations under Testbench's default strategy rather than the suite's
       # RefreshDatabase, so the migrator itself is exercised on the real engine.
       #
-      # THIS STEP DOES NOT CURRENTLY PROVE down(), despite what it used to claim.
-      # Measured on postgres:16 against an empty database: 83 tables and 90 rows in
-      # `migrations` are still there when the run finishes, on this commit and on
-      # v0.61.0 alike. Testbench's rollback is scoped by `--path` to the one
-      # publishable migration this TestCase loads directly; everything the service
-      # provider registers is migrated up and never comes back down. So a broken
-      # down() — a drop ordered wrongly against the account/project foreign keys,
-      # say — would still not surface here. Left as-is rather than quietly widened,
-      # because making it real is its own change with its own failure modes; the
-      # comment is now accurate about what the step covers.
+      # THIS STEP PROVES up() ONLY. Testbench's rollback is scoped by `--path` to the
+      # one publishable migration this TestCase loads directly, so everything the
+      # service provider registers goes up and never comes back down: measured on
+      # postgres:16 against an empty database, 83 tables and 90 rows in `migrations`
+      # survived the run. down() is proved by the next step instead — do not read this
+      # one as covering it.
       - name: Migrations up
         run: vendor/bin/pest tests/Feature/Kernel/Audit/AuditLogTest.php
         env:
           CBOX_ID_TEST_MIGRATE_EACH: "1"
-      # MARIADB IS DELIBERATELY MIGRATIONS-ONLY, AND THAT IS NOT A TYPO.
+      # ...AND ALL THE WAY BACK DOWN, WITH THE DATABASE ASSERTED EMPTY AFTERWARDS.
       #
-      # Every cell runs the migrations, because the schema is what this job was added
-      # to protect and the schema is correct on all three. The SUITE now runs on
-      # PostgreSQL too — it did not when this job was added, and the reason it could
-      # not is worth keeping:
+      # For sixty releases nothing verified down() on any engine. A step captioned
+      # "migrations up and down" existed, but `migrate:rollback` exits 0 whether it
+      # reversed the whole schema or one file, and nothing looked at the database
+      # afterwards — which is exactly how 83 surviving tables went unnoticed.
+      #
+      # So the check is the ASSERTION, not the rollback: tests/Migrations/
+      # MigrationRollbackTest.php migrates every registered path into a throwaway
+      # database, resets across all of them, and requires zero tables and zero
+      # `migrations` rows before migrating back up again. Five broken down() methods
+      # surfaced the first time it ran. If it fails, fix the migration — do not narrow
+      # what the test looks at.
+      #
+      # MariaDB runs it too. This cell is otherwise migrations-only (see below), and
+      # the schema is precisely the part of it that is known-good, so there is no
+      # reason to leave the one engine out of the check that covers the schema.
+      - name: Migrations down (database asserted empty afterwards)
+        run: vendor/bin/pest --group=migrations-rollback
+        env:
+          # Its own credential: it creates a throwaway database, which costs root on
+          # MySQL/MariaDB. See `rollback_user` in the matrix above.
+          DB_USERNAME: ${{ matrix.rollback_user }}
+          DB_PASSWORD: ${{ matrix.rollback_password }}
+      # ALL THREE ENGINES NOW RUN THE FULL SUITE. Both exclusions this job shipped
+      # with have been fixed, and the reasons are kept because each one is a defect
+      # that took a whole engine out of CI:
       #
       # PostgreSQL (postgres:16) — WAS 338 of 1358. `$table->ulid()` compiled to
       #   `char(26)`, and PostgreSQL blank-pads CHAR where MySQL and SQLite strip the
@@ -214,19 +245,26 @@ jobs:
       #   as of v0.62.0 and this cell is green, so it is promoted here: a defect
       #   that took a whole engine out of CI does not get to come back unnoticed.
       #
-      # MariaDB (mariadb:11) — 6 of 1358 when last measured at v0.61.0, and NOT
-      #   re-measured since; the char-to-varchar change does not touch the cause and
-      #   the cell stays migrations-only either way. One cause plus its fallout. Eight
-      #   processes appending to an EMPTY audit chain deadlock each other: with no
-      #   anchor row to serialise on yet, the `FOR UPDATE` takes a gap lock on the
-      #   unique key, and MariaDB resolves the pile-up as SQLSTATE 40001 (1213) rather
-      #   than the duplicate key DatabaseAuditLog::record() is written to absorb.
-      #   `DB::transaction(…, attempts: 3)` does retry deadlocks, but three is not
-      #   enough for eight contenders on one gap, so 6 of 800 appends failed —
-      #   LOUDLY, not silently. The same test passes 800/800 on MySQL 8.4.
+      # MariaDB (mariadb:11) — WAS 6 of 1358. Eight processes appending to an EMPTY
+      #   audit chain deadlocked each other: with no anchor row to serialise on yet,
+      #   the `FOR UPDATE` looking for it matched nothing, which InnoDB answers with a
+      #   GAP lock. MariaDB resolved the resulting pile-up as SQLSTATE 40001 (1213)
+      #   rather than the duplicate key DatabaseAuditLog::record() is written to
+      #   absorb, and three attempts is not enough for eight contenders on one gap.
+      #   Failures were LOUD, not silent. Fixed by finding the anchor with a plain
+      #   read and locking it by PRIMARY KEY — an exact PK match takes a record lock
+      #   and can never take a gap lock — with the search deliberately OUTSIDE the
+      #   transaction, because under REPEATABLE READ a consistent read inside it fixes
+      #   the snapshot the head read is then answered from. Now 1386/1386 on
+      #   mariadb:11 and 800/800 on the forking test.
       #
-      # Turn MariaDB on when that is fixed. Do not "fix" it by skipping the test:
-      # a red cell is information, a skipped one is not.
+      # The old comment here said "turn MariaDB on when that is fixed. Do not fix it
+      # by skipping the test: a red cell is information, a skipped one is not." That
+      # instruction is now discharged — and it is why the exclusion was a dated note
+      # rather than a permanent `if`.
+      #
+      # The rollback group is excluded here because it already ran as its own step
+      # above, under the credential it needs; running it a second time as `laravel`
+      # would fail the MySQL cell on a privilege it deliberately does not have.
       - name: Pest
-        if: matrix.driver == 'mysql' || matrix.driver == 'pgsql'
-        run: vendor/bin/pest
+        run: vendor/bin/pest --exclude-group=migrations-rollback

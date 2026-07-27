@@ -15,6 +15,63 @@ fires on clients you do not control.
 
 ## Unreleased
 
+### `Accounts::suspend()` and `Accounts::reactivate()` take an actor
+
+**This is a signature change and it will not compile until you fix your call sites.**
+
+```php
+- $accounts->suspend($accountId);
+- $accounts->reactivate($accountId);
++ $accounts->suspend($accountId, $operatorId);
++ $accounts->reactivate($accountId, $operatorId);
+```
+
+**Why.** Suspending an account is the widest access revocation the platform has — every
+member, every API key, every environment the account owns, at once. It was the only
+such verb in the package that took no actor and wrote no audit entry, while
+`Organizations::suspend()` and `PlatformOperators::suspend()` both audit internally.
+That asymmetry pushed the audit write out to the call site, where the second caller
+silently forgets it. Both verbs now record `account.suspended` / `account.reactivated`
+on the system chain themselves.
+
+**Also**: both are now genuinely idempotent. Suspending an already-suspended account,
+or an id that does not exist, writes nothing and audits nothing — previously the blind
+`update()` was a no-op but there was no entry either way. If you were relying on
+re-suspension to produce a fresh audit entry, you were not: there was none.
+
+### `Organizations::archive()` — new, and the way `Deleted` should be reached
+
+`OrganizationStatus::Deleted` had no verb behind it, so hosts wrote the status onto the
+model and called `save()`. That skips the domain event and, worse, leaves no audit
+entry for the most destructive state an organization can enter.
+
+```php
+- $organization->status = OrganizationStatus::Deleted;
+- $organization->save();
++ app(Organizations::class)->archive($organization->id, $operatorId);
+```
+
+Emits `organization.archived`, audits it against the actor, and is idempotent. Not
+breaking unless you implement the `Organizations` contract yourself — in which case
+you need the new method.
+
+### `OrganizationStatus::revokesAccess()` — use it instead of comparing cases
+
+**If your gate tests `status !== OrganizationStatus::Suspended`, or matches on
+`Suspended` alone, you have a live authentication bypass.** A `Deleted` organization
+went on authenticating its members, consenting on their behalf and minting tokens,
+because nothing in the package answered whether a status revokes access and every
+consumer re-derived it.
+
+```php
+- if ($organization->status === OrganizationStatus::Suspended) { deny(); }
++ if ($organization->status->revokesAccess()) { deny(); }
+```
+
+The method is an exhaustive `match` with **no `default`**, deliberately: a status added
+in a later release fails static analysis at your call site instead of silently
+inheriting "access allowed", which is exactly how `Deleted` slipped through.
+
 ### Do this BEFORE you deploy
 
 **Run `php artisan migrate`.** One new migration,
@@ -33,6 +90,85 @@ package's version — your copies still say `$table->ulid()`, and a database bui
 from them would come back padded. The new `ALTER` is not in your published set, so it
 loads from the package and fixes your existing database either way; re-publishing is
 what stops the next fresh install regressing.
+
+**Decide, deliberately, whether to enable audit checkpointing.** It ships **off**, and
+turning it on is a **one-way door**. Read the next section before you touch the flag.
+
+---
+
+### Audit checkpointing exists now — and the order you enable it in is permanent
+
+**What was broken.** `AuditLog::checkpoint()` had three callers: two pass-through
+decorators and a test. **Nothing scheduled it**, so `audit_checkpoints` was empty on
+every deployment, `verifyCheckpointAnchor()` returned `null` on every call, and the
+tail-deletion detection the whole design rests on never ran. The chain detects
+modification and sequence gaps by itself; it cannot detect **truncation** — delete the
+newest N entries and what is left is a shorter, perfectly valid chain. A signed
+checkpoint is the only thing that catches that, and there were none.
+
+**What is new.** `php artisan cbox-id:audit:checkpoint` signs a checkpoint over every
+`(environment, scope)` chain that has advanced since its last one — idempotent, safe to
+run beside live appends, `--dry-run` to see what it would do. It can be scheduled daily
+with `cbox-id.audit.checkpoint.schedule`.
+
+**That flag defaults to `false`, and that is not an oversight.**
+
+A checkpoint is a signature over the chain's hashes **as they are today**, meant to be
+exported and anchored somewhere append-only. The GDPR-erasure design still to come needs
+exactly one **re-chain** of the existing rows: encrypt `ip` and `context` and hash the
+**ciphertext** instead of the plaintext, so that destroying a per-subject key leaves
+every hashed byte unchanged and `verifyChain()` still passes bit-for-bit. Every
+checkpoint signed *before* that re-chain would afterwards report tampering that never
+happened — permanently, and on evidence you may already have handed to a third party.
+
+Because nothing has ever signed one, that window is still open. **The first checkpoint
+closes it.**
+
+So enable it in this order, and only this order, if a re-chain is in your future:
+
+1. **Sign and retain, out of band**, each chain's current head hash and row count —
+   `cbox-id:audit:checkpoint --dry-run` prints the head sequence per chain, and
+   `select environment_id, scope, count(*), max(sequence) from audit_logs group by 1, 2`
+   gives the counts. Keep that attestation somewhere this package cannot rewrite. It is
+   what covers the gap while no checkpoint exists.
+2. **Introduce `chain_version` and ciphertext hashing** (not in this release).
+3. **Run the one-time re-chain** (not in this release).
+4. **Then** set `CBOX_ID_AUDIT_CHECKPOINT_SCHEDULE=true`.
+
+**If no such migration is in your future — turn it on now.** A deployment that will
+never re-chain gains nothing by waiting and is, until it does, running an audit trail
+whose truncation nobody would notice. That is the trade this default makes: it protects
+a migration that has not happened yet, at the cost of a control that is not yet on.
+
+```dotenv
+CBOX_ID_AUDIT_CHECKPOINT_SCHEDULE=true
+CBOX_ID_AUDIT_CHECKPOINT_TIME=02:40
+```
+
+---
+
+### The audit chain's first entry no longer deadlocks on MariaDB
+
+No action, and no migration — but if you run **MariaDB** and have seen
+`SQLSTATE[40001] … 1213 Deadlock` come out of an audit append, this is it.
+
+Appending serialises on the chain's **anchor** (sequence 1). On an *empty* chain there
+is no anchor yet, and the locking read that looked for it matched no row — which InnoDB
+answers with a **gap lock**. Eight processes opening one brand-new chain each held that
+gap lock and each then needed an insert-intention lock inside it; MariaDB 11.8 resolved
+the pile-up as a deadlock rather than the duplicate key the append is written to absorb,
+and `DB::transaction(…, attempts: 3)` ran out of attempts. Measured at **6 of 800**
+appends lost on MariaDB 11.8.8, 800/800 on MySQL 8.4 and PostgreSQL 16.
+
+The anchor is now *found* with a plain read and *locked* by **primary key** — an exact
+primary-key match takes a record lock and can never take a gap lock — and the search
+runs **outside** the transaction, because under `REPEATABLE READ` a search inside it
+would fix the snapshot the head read is then answered from. Serialisation failures also
+retry on the append's own ladder now, with a jittered backoff. Same test, same engine:
+**800/800**, six runs.
+
+Failures were loud, not silent, so nothing was lost quietly and there is nothing to
+repair.
 
 ---
 

@@ -30,6 +30,14 @@ return new class extends Migration
 
     public function down(): void
     {
+        // The index on `circuit_opened_at` has to go FIRST. SQLite rebuilds the table
+        // to drop a column and then re-validates every index against the new
+        // definition, so dropping the column out from under its own index fails with
+        // "error in index … after drop column".
+        Schema::table('webhook_endpoints', function (Blueprint $table): void {
+            $table->dropIndex(['circuit_opened_at']);
+        });
+
         Schema::table('webhook_endpoints', function (Blueprint $table): void {
             $table->dropColumn(['consecutive_failures', 'circuit_opened_at', 'last_success_at', 'last_error']);
         });

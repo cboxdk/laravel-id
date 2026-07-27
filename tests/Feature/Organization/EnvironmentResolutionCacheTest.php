@@ -87,10 +87,10 @@ it('stops and resumes with its account, which the environment row never sees cha
 
     // Suspension is a mass update on `accounts`; no environment model event fires, so
     // this only works because DatabaseAccounts invalidates explicitly.
-    app(Accounts::class)->suspend($env->account_id);
+    app(Accounts::class)->suspend($env->account_id, 'op_test');
     expect($resolver->resolveForHost('acme.cboxid.com'))->toBeNull();
 
-    app(Accounts::class)->reactivate($env->account_id);
+    app(Accounts::class)->reactivate($env->account_id, 'op_test');
     expect($resolver->resolveForHost('acme.cboxid.com'))->not->toBeNull();
 });
 

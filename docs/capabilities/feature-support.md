@@ -89,7 +89,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Capability | Grade | Notes |
 |---|---|---|
 | Append-only hash-chained audit trail | **Full** | `SHA-256(canonical payload ‖ previous hash)`, one chain per environment and scope, with the environment id inside the hash so a row cannot be moved between environments undetected. Appends serialize on an anchor row and retry on unique-constraint collision. |
-| Signed checkpoints | **Partial** | A JWS over `{scope, up_to_sequence, root_hash}` closes the tail-truncation hole that a bare chain leaves open — but **nothing creates checkpoints automatically**. Until your app or scheduler calls for one, deletion of the chain's tail is not detectable. |
+| Signed checkpoints | **Partial** | A JWS over `{scope, up_to_sequence, root_hash}` closes the tail-truncation hole that a bare chain leaves open. `cbox-id:audit:checkpoint` signs every advanced chain and can run daily on the scheduler — but the schedule ships **off** (`audit.checkpoint.schedule`, default `false`), because the first signature forecloses a planned one-time re-chain. Until you enable it or call for a checkpoint yourself, deletion of the chain's tail is not detectable. |
 | Tamper-*proof* storage | **No** | This is tamper-**evident**, not tamper-proof: no WORM storage, no external notarization or transparency log, and no per-entry signature. Someone with database write access can still delete rows — the chain and checkpoints are what make it *visible*. |
 | Audit query and SIEM pull stream | **Full** | Filtered, paginated reads plus a sequence cursor. |
 | Outbound SIEM streaming | **Partial** | Transactional outbox committed with the audit entry, at-least-once, pumped every minute. **One transport: HTTP(S).** Splunk HEC, Elastic ECS, GELF 1.1, ArcSight CEF and generic JSON are five *formats* over it. **No** file, S3, syslog-transport or OCSF sink. |
@@ -122,7 +122,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 
 | Capability | Grade | Notes |
 |---|---|---|
-| Artisan commands | **Full** | Fourteen, including `cbox-id:install`, `cbox-id:doctor`, `cbox-id:users:import`, `cbox-id:directory:sync`, `cbox-id:provisioning:sync`, `cbox-id:keys:rotate`, `cbox-id:events:relay`, `cbox-id:events:backlog`, `cbox-id:prune`, `cbox-id:audit-streams:pump`, `cbox-id:governance:close-overdue`. |
+| Artisan commands | **Full** | Fifteen, including `cbox-id:install`, `cbox-id:doctor`, `cbox-id:users:import`, `cbox-id:directory:sync`, `cbox-id:provisioning:sync`, `cbox-id:keys:rotate`, `cbox-id:events:relay`, `cbox-id:events:backlog`, `cbox-id:prune`, `cbox-id:audit:checkpoint`, `cbox-id:audit-streams:pump`, `cbox-id:governance:close-overdue`. |
 | Scheduled work | **Full** | Manifest sync, audit-stream pump, governance auto-close and the event relay all register themselves, config-gated and `withoutOverlapping`. See [Operations](../operations/_index.md) — **the platform delivers nothing without a queue worker and scheduler running.** |
 | Usage metering | **Full** | Per-day, per-environment, per-organization counters fed off the outbox, with a reconciler for drift. **Metering never enforces** — enforcement belongs to entitlements. |
 | Testing helpers | **Full** | Every module ships `InteractsWith*` traits and fakes, and the package's own suite uses them. |

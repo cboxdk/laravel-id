@@ -55,6 +55,54 @@ app(Roles::class)->assign($reseller->id, 'support_1', $role->id);
 app(AccessChecker::class)->can('support_1', 'tickets.manage', $customer->id); // true (rolls down)
 ```
 
+## Suspend or archive an organization — and gate on it
+
+Both state changes go through the contract, never onto the model. Each writes the
+status, emits its domain event and records an audit entry attributed to the operator
+who performed it; both are idempotent.
+
+```php
+use Cbox\Id\Organization\Contracts\Organizations;
+
+$orgs = app(Organizations::class);
+
+$orgs->suspend($org->id, $operatorId);      // reversible: organization.suspended
+$orgs->reactivate($org->id, $operatorId);   //             organization.reactivated
+$orgs->archive($org->id, $operatorId);      // terminal:   organization.archived
+```
+
+`archive()` sets `OrganizationStatus::Deleted`. It is a **soft, terminal** state — the
+rows stay for the audit trail and any regulatory hold — but it revokes access exactly
+as a suspension does.
+
+Ask the status, do not compare it:
+
+```php
+if ($org->status->revokesAccess()) {
+    abort(403);
+}
+```
+
+> **Do not write `$status === OrganizationStatus::Suspended`.** That test is how a
+> "deleted" organization kept authenticating its members, consenting on their behalf
+> and minting tokens. `revokesAccess()` is an exhaustive `match` with no `default`, so
+> a status added in a later release fails static analysis at your call site rather than
+> silently inheriting "allowed".
+
+The same shape applies one layer up, on the platform plane — `Accounts::suspend()`
+and `PlatformOperators::suspend()` both take the acting operator and audit internally:
+
+```php
+use Cbox\Id\Platform\Contracts\Accounts;
+
+app(Accounts::class)->suspend($accountId, $operatorId);   // account.suspended
+app(Accounts::class)->reactivate($accountId, $operatorId); // account.reactivated
+```
+
+Suspending an account is the widest revocation available: its members stop signing in,
+its API keys stop resolving, and every environment it owns stops serving auth on the
+next request.
+
 ## Push capability gates from Stripe / Cashier
 
 Wire your billing webhook to the entitlement writer. Billing translates the plan
