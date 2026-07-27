@@ -21,14 +21,26 @@ return new class extends Migration
             // (environment_id, scope, sequence) key silently inert for every entry
             // recorded outside an environment — the account plane restarted its chain on
             // every write. A sentinel makes the constraint real.
-            $table->string('environment_id')->default('__platform__')->index();
+            //
+            // EXPLICIT LENGTH: `environment_id` leads five indexes, one of which
+            // (`audit_logs_env_org_target_seq_index`, added later) also covers
+            // `target_type` and `target_id`. At the framework's varchar(255) default
+            // that key is 4*255 + 26*4 + 4*255 + 4*255 + 8 = 3172 bytes, over InnoDB's
+            // 3072-byte cap, and MySQL refused it (error 1071). The value is an
+            // environment ULID (26) or the '__platform__' sentinel (12).
+            $table->string('environment_id', 64)->default('__platform__')->index();
             $table->string('scope');                 // organization key, or '__system__'
             $table->ulid('organization_id')->nullable();
             $table->unsignedBigInteger('sequence');
             $table->string('actor_type');
             $table->string('actor_id')->nullable();
             $table->string('action')->index();
-            $table->string('target_type')->nullable();
+            // Also in that composite key; a target type is a short vocabulary word
+            // ('user', 'session', 'organization'). `target_id` deliberately keeps the
+            // full 255 — it holds an email address on invite/verification entries, and
+            // RFC 5321 allows 254 characters. Key budget: 256 + 104 + 256 + 1020 + 8
+            // = 1644 bytes.
+            $table->string('target_type', 64)->nullable();
             $table->string('target_id')->nullable();
             $table->json('context');
             $table->string('ip')->nullable();
@@ -51,7 +63,9 @@ return new class extends Migration
             // A checkpoint anchors ONE chain, and a chain is per (environment, scope) —
             // so the checkpoint carries the environment too, or one tenant's checkpoint
             // would appear to anchor another's chain.
-            $table->string('environment_id')->default('__platform__')->index();
+            // Same column, same width as `audit_logs.environment_id` above — a
+            // checkpoint that could not store an id its chain can is a silent trap.
+            $table->string('environment_id', 64)->default('__platform__')->index();
             $table->string('scope')->index();
             $table->ulid('organization_id')->nullable();
             $table->unsignedBigInteger('up_to_sequence');

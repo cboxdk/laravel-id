@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -18,7 +19,7 @@ return new class extends Migration
             $table->ulid('user_id');
             $table->ulid('organization_id')->nullable();
             $table->string('redirect_uri');
-            $table->json('scopes')->default('[]');
+            $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->string('pkce_challenge');
             $table->string('pkce_method')->default('S256');
             // OIDC nonce from the authorize request, echoed into the id_token.

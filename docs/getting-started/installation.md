@@ -24,10 +24,14 @@ weight: 1
 - PHP `^8.4` (developed on 8.5)
 - Laravel 12 or 13
 - `ext-openssl`, `ext-sodium`
-- Any database Laravel supports — MySQL/MariaDB, PostgreSQL, SQLite, SQL Server.
-  Nothing is pinned (the test suite runs on SQLite in-memory); PostgreSQL is a fine
-  production default but only a recommendation, not a requirement. See
-  [Requirements](../requirements.md).
+- A database CI actually tests: **PostgreSQL 14+**, **MySQL 8.0.13+**, **MariaDB
+  10.2+** or **SQLite**. Every CI run migrates — forwards *and* back — against all
+  four, and runs the full test suite on MySQL and SQLite. The suite is not green on
+  PostgreSQL or MariaDB yet, for two pre-existing defects that have nothing to do with
+  the schema; both are named and measured in [Requirements](../requirements.md), and
+  neither affects a normal deployment. PostgreSQL remains the recommended production
+  default. **SQL Server is not tested and not supported**: nobody has ever run it, so
+  it is not promised.
 
 ## Install
 

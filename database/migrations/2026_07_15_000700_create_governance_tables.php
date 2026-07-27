@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -56,7 +57,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('description')->nullable();
             $table->boolean('active')->default(true);
-            $table->json('role_ids')->default('[]');
+            $table->json('role_ids')->default(JsonDefault::emptyArray());
             $table->timestamps();
         });
     }

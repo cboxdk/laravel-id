@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -27,7 +28,7 @@ return new class extends Migration
             // The plan's environment allowance. Default 2 mirrors the industry
             // norm of one production + one staging out of the box.
             $table->unsignedSmallInteger('environment_limit')->default(2);
-            $table->json('settings')->default('{}');
+            $table->json('settings')->default(JsonDefault::emptyObject());
             $table->timestamps();
         });
     }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -20,7 +21,7 @@ return new class extends Migration
             $table->string('client_id')->index();
             $table->string('user_id');
             $table->string('organization_id')->nullable();
-            $table->json('scopes')->default('[]');
+            $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->string('binding_message')->nullable();
             $table->string('nonce')->nullable();
             $table->string('status')->default('pending'); // pending | approved | denied | redeemed

@@ -16,12 +16,18 @@ return new class extends Migration
         Schema::create('vault_secrets', function (Blueprint $table): void {
             $table->ulid('id')->primary();
             $table->ulid('environment_id')->index();
-            $table->string('name');
+            // EXPLICIT LENGTHS: `name`, `owner_type` and `owner_id` are all covered by
+            // the unique index below, and at the framework's varchar(255) default that
+            // key is 26*4 + 3*255*4 = 3164 bytes — 92 over InnoDB's 3072-byte cap, so
+            // MySQL refused it (error 1071). 104 + 512 + 512 + 512 = 1640 bytes now.
+            // A secret name is an operator-chosen key ('smtp', 'github-token') and the
+            // owner is a morph type plus a ULID, so 128 is far above the real ceiling.
+            $table->string('name', 128);
             $table->string('provider');
             $table->text('secret_encrypted');
             $table->unsignedInteger('key_version')->default(1);
-            $table->string('owner_type')->nullable();
-            $table->string('owner_id')->nullable();
+            $table->string('owner_type', 128)->nullable();
+            $table->string('owner_id', 128)->nullable();
             $table->timestamp('expires_at')->nullable();
             $table->timestamp('revoked_at')->nullable();
             $table->timestamp('rotated_at')->nullable();

@@ -23,8 +23,14 @@ return new class extends Migration
             $table->string('status')->default('active'); // active | paused
             $table->timestamps();
 
-            // The pipeline looks up active endpoints per hook point (env-scoped).
-            $table->index(['environment_id', 'hook_point', 'status']);
+            // The pipeline looks up active endpoints per hook point (env-scoped). Named
+            // explicitly: the generated name is exactly 64 characters — inside MySQL's
+            // limit by one byte, but one over Postgres's 63, so Postgres truncated it
+            // and the same index carried a different name on each engine.
+            $table->index(
+                ['environment_id', 'hook_point', 'status'],
+                'external_action_endpoints_env_hook_status_index',
+            );
         });
     }
 

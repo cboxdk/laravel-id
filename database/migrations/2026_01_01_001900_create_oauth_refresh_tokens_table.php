@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -21,7 +22,7 @@ return new class extends Migration
             $table->string('client_id')->index();
             $table->ulid('user_id')->nullable();
             $table->ulid('organization_id')->nullable();
-            $table->json('scopes')->default('[]');
+            $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->string('audience')->nullable();
             // RFC 9449 §5: when the token was issued under DPoP, the client's key
             // thumbprint is bound here so rotation must present the same key — a

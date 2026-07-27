@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -23,7 +24,7 @@ return new class extends Migration
             $table->string('credential_id')->unique();
             $table->text('public_key');
             $table->unsignedBigInteger('sign_count')->default(0);
-            $table->json('transports')->default('[]');
+            $table->json('transports')->default(JsonDefault::emptyArray());
             $table->string('name')->nullable();
             $table->timestamps();
 

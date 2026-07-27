@@ -39,7 +39,13 @@ trait InteractsWithFederation
      */
     protected function fakeDns(): FakeDnsResolver
     {
-        $current = app(DnsResolver::class);
+        // Resolved through the PSR-11 accessor, not `app(DnsResolver::class)`: the
+        // helper's return type is inferred from the container BINDING, so static
+        // analysis concludes the concrete SystemDnsResolver is the only possible
+        // result and that the check below is dead. Rebinding the contract is exactly
+        // what this method does, so that inference is wrong about runtime — `get()`
+        // returns mixed and lets the instanceof mean what it says.
+        $current = app()->get(DnsResolver::class);
 
         if ($current instanceof FakeDnsResolver) {
             return $current;

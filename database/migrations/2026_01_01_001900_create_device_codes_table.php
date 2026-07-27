@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -19,7 +20,7 @@ return new class extends Migration
             $table->string('device_code_hash')->unique();
             $table->string('user_code')->unique();
             $table->string('client_id')->index();
-            $table->json('scopes')->default('[]');
+            $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->string('status')->default('pending'); // pending | approved | denied
             $table->string('user_id')->nullable();
             $table->string('organization_id')->nullable();

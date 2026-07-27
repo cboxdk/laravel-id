@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -24,7 +25,7 @@ return new class extends Migration
             // k8s with no writable .env — resolves the same default across every
             // replica. At most one row is true; enforced by Environment::makeDefault().
             $table->boolean('is_default')->default(false)->index();
-            $table->json('settings')->default('{}');
+            $table->json('settings')->default(JsonDefault::emptyObject());
             $table->timestamps();
         });
     }

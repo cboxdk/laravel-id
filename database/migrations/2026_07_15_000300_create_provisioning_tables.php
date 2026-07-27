@@ -44,8 +44,14 @@ return new class extends Migration
             $table->timestamp('last_synced_at')->nullable();
             $table->timestamps();
 
-            // At most one mirror per (environment, connection, user).
-            $table->unique(['environment_id', 'connection_id', 'user_id']);
+            // At most one mirror per (environment, connection, user). Named explicitly:
+            // the generated name would be 65 characters, one over MySQL's 64-byte
+            // identifier limit (error 1059) and two over Postgres's 63, where it is
+            // silently truncated instead.
+            $table->unique(
+                ['environment_id', 'connection_id', 'user_id'],
+                'provisioned_resources_env_connection_user_unique',
+            );
         });
 
         // The durable outbox of pending SCIM operations.

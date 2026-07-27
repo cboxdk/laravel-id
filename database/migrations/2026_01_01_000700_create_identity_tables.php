@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -24,7 +25,7 @@ return new class extends Migration
             $table->string('provider');
             $table->string('subject');
             $table->ulid('connection_id')->nullable();
-            $table->json('raw')->default('{}');
+            $table->json('raw')->default(JsonDefault::emptyObject());
             $table->timestamps();
 
             // Scoped by connection: the same subject asserted through two different
@@ -39,7 +40,7 @@ return new class extends Migration
             $table->ulid('organization_id')->nullable();
             $table->string('ip')->nullable();
             $table->text('user_agent')->nullable();
-            $table->json('amr')->default('[]');
+            $table->json('amr')->default(JsonDefault::emptyArray());
             $table->timestamp('last_active_at')->nullable();
             $table->timestamp('expires_at');
             $table->timestamp('revoked_at')->nullable();

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -18,9 +19,9 @@ return new class extends Migration
             $table->string('secret_hash')->nullable();
             $table->string('name');
             $table->string('type')->default('confidential');
-            $table->json('redirect_uris')->default('[]');
-            $table->json('grant_types')->default('[]');
-            $table->json('scopes')->default('[]');
+            $table->json('redirect_uris')->default(JsonDefault::emptyArray());
+            $table->json('grant_types')->default(JsonDefault::emptyArray());
+            $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->boolean('first_party')->default(false);
             // RFC 7592: SHA-256 of the registration access token for dynamically
             // registered clients (null for clients created through the console).
@@ -45,7 +46,7 @@ return new class extends Migration
             $table->string('client_id')->index();
             $table->ulid('user_id')->nullable();
             $table->ulid('organization_id')->nullable();
-            $table->json('scopes')->default('[]');
+            $table->json('scopes')->default(JsonDefault::emptyArray());
             // RFC 8707 resource indicator this token is bound to (aud), if any.
             $table->string('audience')->nullable();
             $table->timestamp('expires_at');

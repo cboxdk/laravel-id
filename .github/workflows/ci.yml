@@ -93,3 +93,127 @@ jobs:
         with:
           name: sbom-cyclonedx
           path: sbom.json
+
+  # ---------------------------------------------------------------------------
+  # SERVER ENGINES
+  #
+  # The matrix above runs on sqlite :memory: — and running ONLY on sqlite is what
+  # let this package ship for sixty releases documenting MySQL support while its
+  # migrations could not create a single table there. Sqlite accepts a literal
+  # DEFAULT on a json column (MySQL: error 1101), has no index-key size limit
+  # (InnoDB: 3072 bytes, and utf8mb4 charges 4 bytes a character), and no
+  # identifier length limit (MySQL: 64, PostgreSQL: 63). All three bit.
+  #
+  # So the claim is now tested rather than asserted. Requires Docker on the
+  # self-hosted runner for service containers.
+  # ---------------------------------------------------------------------------
+  engines:
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - driver: mysql
+            image: mysql:8
+            # Host ports differ per engine so two cells can share one self-hosted
+            # runner without fighting over 3306.
+            port: 33306
+            service_port: 3306
+            health: mysqladmin ping -h 127.0.0.1 -u root -proot
+          # MariaDB is named separately in the docs and is NOT just MySQL: its
+          # `json` is an alias for longtext + a json_valid() CHECK, and unlike
+          # MySQL it does accept a literal DEFAULT there. It takes the expression
+          # form too, which is why one spelling serves both.
+          - driver: mariadb
+            image: mariadb:11
+            port: 33307
+            service_port: 3306
+            health: healthcheck.sh --connect --innodb_initialized
+          - driver: pgsql
+            image: postgres:16
+            port: 55432
+            service_port: 5432
+            health: pg_isready -U laravel -d laravel_id
+    name: ${{ matrix.image }}
+    services:
+      db:
+        image: ${{ matrix.image }}
+        # Both families' variables are set; each image ignores the other's.
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: laravel_id
+          MYSQL_USER: laravel
+          MYSQL_PASSWORD: secret
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: laravel_id
+          MARIADB_USER: laravel
+          MARIADB_PASSWORD: secret
+          POSTGRES_DB: laravel_id
+          POSTGRES_USER: laravel
+          POSTGRES_PASSWORD: secret
+        ports:
+          - ${{ matrix.port }}:${{ matrix.service_port }}
+        options: >-
+          --health-cmd "${{ matrix.health }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DB_CONNECTION: ${{ matrix.driver }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ matrix.port }}
+      DB_DATABASE: laravel_id
+      DB_USERNAME: laravel
+      DB_PASSWORD: secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+          tools: composer:v2
+          # pcntl is load-bearing, not incidental: the audit-chain concurrency
+          # test forks eight appenders and SKIPS ITSELF without it. Leaving it out
+          # would make this job green while proving nothing about row locking —
+          # the one thing only a server engine can prove.
+          extensions: pdo_mysql, pdo_pgsql, sodium, openssl, pcntl
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      # Forwards AND back, on the real engine. The suite below runs under
+      # RefreshDatabase, which calls `migrate:fresh` — that WIPES tables rather
+      # than calling down(), so a broken rollback (drop order against the
+      # account/project foreign keys, say) would never surface. This one file runs
+      # under Testbench's default strategy instead: migrate, run, roll all the way
+      # back. See tests/Pest.php.
+      - name: Migrations up and down
+        run: vendor/bin/pest tests/Feature/Kernel/Audit/AuditLogTest.php
+        env:
+          CBOX_ID_TEST_MIGRATE_EACH: "1"
+      # POSTGRESQL AND MARIADB ARE DELIBERATELY MIGRATIONS-ONLY, AND THAT IS NOT A TYPO.
+      #
+      # Every cell above runs the migrations, because the schema is what this job was
+      # added to protect and the schema is now correct on all three. The SUITE is
+      # another matter: two pre-existing product defects, neither introduced here, stop
+      # it passing on those two engines. Both were found by adding this job — which is
+      # the point of it — and both are measured, not guessed:
+      #
+      # PostgreSQL (postgres:16) — 338 of 1358 fail. `$table->ulid()` compiles to
+      #   `char(26)`, and PostgreSQL blank-pads CHAR on read where MySQL and SQLite
+      #   strip the trailing spaces, so any environment key shorter than 26 characters
+      #   comes back padded and the tenancy guard rejects its own row:
+      #     row belongs to [env_test                  ], acting as [env_test]
+      #   Invisible in production, where an environment id IS a 26-character ULID.
+      #
+      # MariaDB (mariadb:11) — 6 of 1358 fail, one cause plus its fallout. Eight
+      #   processes appending to an EMPTY audit chain deadlock each other: with no
+      #   anchor row to serialise on yet, the `FOR UPDATE` takes a gap lock on the
+      #   unique key, and MariaDB resolves the pile-up as SQLSTATE 40001 (1213) rather
+      #   than the duplicate key DatabaseAuditLog::record() is written to absorb.
+      #   `DB::transaction(…, attempts: 3)` does retry deadlocks, but three is not
+      #   enough for eight contenders on one gap, so 6 of 800 appends failed —
+      #   LOUDLY, not silently. The same test passes 800/800 on MySQL 8.4.
+      #
+      # Turn these on per engine as each defect is fixed. Do not "fix" them by
+      # skipping the tests: a red cell is information, a skipped one is not.
+      - name: Pest
+        if: matrix.driver == 'mysql'
+        run: vendor/bin/pest

@@ -13,6 +13,59 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## Unreleased
+
+### Do this BEFORE you deploy
+
+**Nothing, if you run PostgreSQL or SQLite.** No migration is added and none of the
+existing ones is edited in a way that touches a database that has already run them.
+Read the note below anyway if you care about schema drift, or if you are about to
+stand up a MySQL/MariaDB deployment.
+
+---
+
+### The migrations now run on MySQL and MariaDB (they never did)
+
+**What was broken.** `docs/requirements.md` promised "any database Laravel supports —
+MySQL/MariaDB, PostgreSQL, SQLite, SQL Server". On MySQL, `php artisan migrate` died on
+the fifth table: twenty `json` columns carried a literal `DEFAULT '{}'` / `DEFAULT '[]'`,
+which MySQL has never permitted on a BLOB/TEXT/JSON column (error 1101). Behind that were
+three more walls — two composite indexes over the InnoDB 3072-byte key limit, and two
+generated index names over the 64-character identifier limit. The suite ran only on
+sqlite, which has none of those limits, so nothing ever said so.
+
+**What changed.** `json` defaults now go through
+`Cbox\Id\Kernel\Database\JsonDefault`, which emits `DEFAULT (json_object())` /
+`DEFAULT (json_array())` on MySQL and MariaDB and the **unchanged literal** everywhere
+else. Some columns that sit inside composite indexes were given explicit lengths, and
+three over-long index names were shortened.
+
+**Effect on an existing PostgreSQL database: none.** The emitted DDL for `pgsql` is
+byte-identical for every `json` default — verified by diffing the full pretend-migration
+output before and after. Nothing re-runs on a database that has already migrated.
+
+**One divergence worth knowing about.** A database created *before* this release and one
+created *after* it are not structurally identical, because the length and name changes
+live in the original `create` migrations rather than in a new `ALTER`:
+
+| | Before | Now |
+|---|---|---|
+| `relationship_tuples.object_type`, `relation`, `subject_type`, `subject_relation` | `varchar(255)` | `varchar(64)` |
+| `relationship_tuples.object_id`, `subject_id` | `varchar(255)` | `varchar(128)` |
+| `vault_secrets.name`, `owner_type`, `owner_id` | `varchar(255)` | `varchar(128)` |
+| `audit_logs.environment_id`, `audit_checkpoints.environment_id` | `varchar(255)` | `varchar(64)` |
+| `audit_logs.target_type` | `varchar(255)` | `varchar(64)` |
+| index `relationship_tuples_organization_id_object_type_object_id_relation_index` | (truncated to 63 chars by PostgreSQL) | `relationship_tuples_org_object_relation_index` |
+| constraint `provisioned_resources_environment_id_connection_id_user_id_unique` | (truncated) | `provisioned_resources_env_connection_user_unique` |
+| index `external_action_endpoints_environment_id_hook_point_status_index` | (truncated) | `external_action_endpoints_env_hook_status_index` |
+
+This is deliberate. Converging the two would mean an `ALTER TABLE` that rewrites
+`audit_logs` — the highest-row-count table in the system — on every existing PostgreSQL
+deployment, to fix a limit PostgreSQL does not have. The new widths are strictly
+narrower, so any value a new install accepts an old one already accepts; the risk runs
+one way only. If you want the schemas identical, write the `ALTER` yourself against a
+maintenance window, after checking `max(length(...))` on each column.
+
 ## 0.58.0
 
 ### Do this BEFORE you deploy

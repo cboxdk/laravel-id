@@ -15,6 +15,65 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Fixed
+
+- **The migrations could not run on MySQL or MariaDB at all**, while
+  `docs/requirements.md` and the installation guide promised "any database Laravel
+  supports — MySQL/MariaDB, PostgreSQL, SQLite, SQL Server". `php artisan migrate` died
+  on the fifth table: twenty `json` columns across sixteen migrations carried a literal
+  `DEFAULT '{}'` / `DEFAULT '[]'`, which MySQL has never allowed on a BLOB/TEXT/JSON
+  column (error 1101 — since 8.0.13 it takes only the parenthesised *expression* form).
+  Behind that were three more walls, each of which also stops the migration dead:
+  `relationship_tuples` and `vault_secrets` had composite indexes over InnoDB's
+  3072-byte key limit (utf8mb4 charges 4 bytes per character, so seven `varchar(255)`
+  columns is 6224), and two generated index names exceeded MySQL's 64-character
+  identifier limit (error 1059). `json` defaults now go through
+  `Cbox\Id\Kernel\Database\JsonDefault`, which emits `DEFAULT (json_object())` /
+  `DEFAULT (json_array())` on MySQL and MariaDB and the **unchanged literal** on every
+  other engine — the PostgreSQL and SQLite DDL is byte-identical to before. Columns
+  inside the over-long indexes were given explicit lengths and three index names were
+  shortened; see `UPGRADING.md` for the exact list and why no `ALTER` is shipped.
+- **Three index names were over PostgreSQL's 63-character identifier limit** and were
+  being silently truncated, so the same index carried a different name depending on the
+  engine. All three are now named explicitly.
+
+### Added
+
+- **CI runs against real database servers.** A new `engines` job migrates forwards and
+  back against `mysql:8`, `mariadb:11` and `postgres:16` service containers, and runs
+  the full suite on MySQL (1358 passed, against MySQL 8.4). Running only on sqlite —
+  which accepts literal json defaults and caps neither index keys nor identifiers — is
+  precisely why the MySQL claim went sixty releases without anyone noticing it was
+  false.
+- The MariaDB and PostgreSQL cells run **migrations only**, and the job says why in
+  full. Adding it surfaced two pre-existing product defects that stop the suite passing
+  there, neither of them a schema problem:
+  - PostgreSQL: `$table->ulid()` is `char(26)`, PostgreSQL blank-pads `CHAR` on read
+    where MySQL and SQLite strip it, so every environment key shorter than 26
+    characters fails the tenancy guard (`row belongs to [env_test⎵⎵⎵…], acting as
+    [env_test]`) — 338 of 1358 tests. Invisible in production because a real
+    environment id *is* a 26-character ULID.
+  - MariaDB: eight processes appending to an **empty** audit chain deadlock on the gap
+    lock the `FOR UPDATE` takes where the anchor row does not exist yet. MariaDB raises
+    SQLSTATE 40001 rather than the duplicate key `DatabaseAuditLog::record()` absorbs,
+    and `attempts: 3` is not enough for eight contenders: 6 of 800 appends failed —
+    loudly, with an exception, not silently. The identical test lands 800/800 on
+    MySQL 8.4.
+
+### Changed
+
+- **`docs/requirements.md` and the installation guide now state which engines are
+  tested, not which are hoped for.** SQL Server was never run by anybody and is no
+  longer claimed. MySQL's floor is documented as 8.0.13 and MariaDB's as 10.2, the
+  releases that introduced expression column defaults.
+- On a server driver (`DB_CONNECTION=mysql|mariadb|pgsql`) the suite now runs under
+  `RefreshDatabase` — migrate once, then a transaction per test — instead of Testbench's
+  migrate-and-roll-back-around-every-test. The sqlite default is unchanged. Rebuilding
+  ~390 DDL statements per test costs over a minute a test on a real server, which would
+  have made the job above unrunnable.
+
 ## [0.60.0] - 2026-07-27
 
 ### Fixed

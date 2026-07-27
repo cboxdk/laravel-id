@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Database\JsonDefault;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -18,7 +19,7 @@ return new class extends Migration
             $table->ulid('parent_id')->nullable()->index();
             $table->string('type')->default('customer');
             $table->string('status')->default('active');
-            $table->json('settings')->default('{}');
+            $table->json('settings')->default(JsonDefault::emptyObject());
             $table->timestamps();
 
             // Slugs are unique per environment, mirroring the users table's
