@@ -42,7 +42,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('dpop_proofs', function (Blueprint $table): void {
-            $table->ulid('environment_id')->nullable()->after('id')->index();
+            $table->string('environment_id', 26)->nullable()->after('id')->index();
             // 64, not the 255 default. An RFC 7638 thumbprint is a fixed 43-character
             // base64url string, and this column is half of a unique index on the
             // fastest-growing table in the system — a 255-char member would push the

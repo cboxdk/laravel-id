@@ -15,8 +15,8 @@ return new class extends Migration
         // raw value is the client's polling secret); the user_code is what a human
         // types at the verification URI.
         Schema::create('device_codes', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('device_code_hash')->unique();
             $table->string('user_code')->unique();
             $table->string('client_id')->index();

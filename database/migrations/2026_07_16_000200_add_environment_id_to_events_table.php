@@ -17,7 +17,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('events', function (Blueprint $table): void {
-            $table->ulid('environment_id')->nullable()->after('organization_id')->index();
+            $table->string('environment_id', 26)->nullable()->after('organization_id')->index();
         });
     }
 

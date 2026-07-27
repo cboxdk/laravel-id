@@ -23,7 +23,7 @@ uses(InteractsWithTenancy::class);
 beforeEach(function (): void {
     Schema::dropIfExists('env_things');
     Schema::create('env_things', function (Blueprint $table): void {
-        $table->ulid('id')->primary();
+        $table->string('id', 26)->primary();
         $table->string('environment_id')->index();
         $table->string('organization_id')->index();
         $table->string('name');

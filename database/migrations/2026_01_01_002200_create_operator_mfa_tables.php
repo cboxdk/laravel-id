@@ -15,8 +15,8 @@ return new class extends Migration
         // and are keyed by operator_id. Keeping the two identity planes' factors
         // apart is the point — an operator's second factor is never a tenant user's.
         Schema::create('operator_mfa_factors', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('operator_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('operator_id', 26)->index();
             $table->string('type');
             $table->text('secret_encrypted');
             $table->timestamp('confirmed_at')->nullable();
@@ -29,8 +29,8 @@ return new class extends Migration
         });
 
         Schema::create('operator_mfa_recovery_codes', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('operator_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('operator_id', 26)->index();
             // Only the hash is stored; the plaintext is shown once at generation.
             $table->string('code_hash');
             $table->timestamp('used_at')->nullable();

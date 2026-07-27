@@ -15,6 +15,59 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.62.0] - 2026-07-27
+
+### Fixed
+
+- **PostgreSQL handed every short identifier back to PHP blank-padded, and the whole
+  platform mis-compared it.** `$table->ulid($column)` is `$table->char($column, 26)`,
+  and PostgreSQL implements `CHAR` as `bpchar` — blank-padded — so a value shorter than
+  the declared width is stored padded and PDO passes the padding straight through.
+  `$row->environment_id === 'env_test'` was therefore **false** for a row whose
+  `environment_id` is `env_test`. It hid perfectly: Postgres' own `=` and `length()`
+  strip trailing blanks, so every check from a SQL client passed, and real ULIDs are
+  exactly 26 characters so nothing pads in a normal deployment. It cost **338 of 1358
+  tests on postgres:16** — `BelongsToEnvironment` throwing `CrossEnvironmentAccess` on
+  a row's own environment, and `DatabaseAuditLog::verifyChain()` reporting `content
+  hash mismatch (tampered)` on an untouched chain because `canonicalPayload()` hashes
+  `organization_id` unpadded at write and padded at read. All 225 identifier columns
+  are `varchar` now: the create migrations say `string($column, 26)`, and
+  `2026_07_26_000100_convert_char_columns_to_varchar` converts an existing database
+  (casting `bpchar` to `varchar` strips the padding already on disk, so no backfill is
+  needed). Verified by diffing `pg_dump --schema-only` of an upgraded v0.61.0 database
+  against a fresh install: zero difference, indexes and foreign keys intact under their
+  original names. See `UPGRADING.md` for locking, sizing and rollout order.
+- **Membership rosters were not totally ordered, so a page could start in the middle.**
+  `MembershipService::paginateForOrganization()` sorted on `created_at` alone — a
+  second-granularity timestamp that ties across every row of a roster built in one
+  request. `ORDER BY` a tied key promises nothing, and under `LIMIT`/`OFFSET` it lets a
+  row appear on two pages or on none; PostgreSQL's top-N heapsort made it visible by
+  returning the second member first. Now ordered by `created_at` then `id` (a ULID, so
+  the tie-break runs the same direction). A pre-existing defect that the padding bug
+  above was masking — both fail the same test, and only the second one is left once the
+  padding is fixed.
+
+### Changed
+
+- **CI runs the full test suite on PostgreSQL**, not just the migrations. The `engines`
+  job promoted `postgres:16` from migrations-only now that the padding defect above is
+  fixed and the cell is green — 1359 passed, measured twice, against a real
+  PostgreSQL 16. MySQL 8 also lands 1359, and SQLite 1358 passed with 1 skipped.
+  MariaDB stays migrations-only for the first-append deadlock documented in
+  `docs/requirements.md`; its failure count is carried forward from v0.61.0 rather
+  than re-measured.
+- **`tests/Feature/SchemaPortabilityTest.php` fails the build if a `CHAR` column
+  helper reappears** in a migration — `char()`, `ulid()`, `uuid()`, `foreignUlid()`,
+  `ulidMorphs()` and friends. It is a token scan rather than a schema assertion so it
+  runs on SQLite, catching the mistake on a contributor's first local run instead of in
+  the server-engine job.
+- **`docs/requirements.md` no longer claims the migrations are tested in both
+  directions.** The `Migrations up` CI step does not roll back: measured on
+  `postgres:16` against an empty database, 83 tables and 90 rows in `migrations` remain
+  when it finishes, on this commit and on v0.61.0 alike. Testbench's rollback is scoped
+  by `--path` to the one publishable migration the TestCase loads directly. The step is
+  renamed and the docs corrected; making it real is separate work.
+
 ## [0.61.0] - 2026-07-27
 
 ### Fixed

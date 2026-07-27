@@ -11,8 +11,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('otp_challenges', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('purpose');
             $table->string('channel');
             $table->string('recipient');

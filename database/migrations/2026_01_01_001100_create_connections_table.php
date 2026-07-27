@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('connections', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
             $table->string('type');
             $table->string('name');
             $table->string('status')->default('draft');

@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('webauthn_credentials', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('user_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('user_id', 26)->index();
             $table->string('credential_id')->unique();
             $table->text('public_key');
             $table->unsignedBigInteger('sign_count')->default(0);

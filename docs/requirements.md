@@ -48,12 +48,12 @@ sixty releases this page claimed four engines while the migrations could not cre
 a single table on MySQL (a `json` column cannot take a literal `DEFAULT`, error
 1101). So this table now says only what CI proves:
 
-| Engine | Migrations (up **and** down) | Full test suite |
+| Engine | Migrations (up only — see note) | Full test suite |
 |---|---|---|
-| SQLite (in-memory) | ✅ every CI run | ✅ every CI run — 1357 passed, 1 skipped |
-| MySQL 8.0.13+ | ✅ every CI run (`engines` job, `mysql:8`) | ✅ every CI run — 1358 passed |
-| MariaDB 10.2+ | ✅ every CI run (`engines` job, `mariadb:11`) | ⚠️ **not yet** — 6 of 1358 fail, see below |
-| PostgreSQL 14+ | ✅ every CI run (`engines` job, `postgres:16`) | ⚠️ **not yet** — 338 of 1358 fail, see below |
+| SQLite (in-memory) | ✅ every CI run | ✅ every CI run — 1358 passed, 1 skipped |
+| MySQL 8.0.13+ | ✅ every CI run (`engines` job, `mysql:8`) | ✅ every CI run — 1359 passed |
+| PostgreSQL 14+ | ✅ every CI run (`engines` job, `postgres:16`) | ✅ every CI run — 1359 passed |
+| MariaDB 10.2+ | ✅ every CI run (`engines` job, `mariadb:11`) | ⚠️ **not yet** — 6 failed when last measured (v0.61.0, of 1358), see below |
 | SQL Server | ❌ never run | ❌ never run |
 | Others (Oracle, …) | Not supported. | |
 
@@ -61,18 +61,24 @@ The MySQL and MariaDB floors are the releases that introduced *expression* colum
 defaults (`DEFAULT (json_object())`); nothing older can express a default on a `json`
 column at all, so the schema simply will not build there.
 
-### The two engines whose suite is not green yet
+The migrations column says **up only** on purpose. The `Migrations up` CI step runs
+under Testbench's default strategy rather than the suite's `RefreshDatabase`, and it
+used to claim it exercised `down()` too. Measured on `postgres:16` against an empty
+database, it does not: 83 tables and 90 rows in `migrations` are still there when the
+step finishes. Testbench's rollback is scoped by `--path` to the one publishable
+migration the TestCase loads directly, so everything the service provider registers
+goes up and never comes back down. The rollback path is therefore **not** covered by
+CI on any engine.
 
-Both are pre-existing product defects that this CI job **found**; neither is a
-migration problem, and the schema itself is correct on all four engines.
+### The engine whose suite is not green yet
 
-**PostgreSQL — `char(26)` blank padding.** `$table->ulid()` compiles to `char(26)`.
-PostgreSQL blank-pads `CHAR` on read; MySQL and SQLite strip the trailing spaces. Any
-environment key shorter than 26 characters therefore comes back padded and the tenancy
-guard rejects its own row — `row belongs to [env_test⎵⎵⎵…], acting as [env_test]`.
-338 of 1358 tests fail that way on `postgres:16`. It does not bite a real deployment,
-because a real environment id *is* a 26-character ULID — which is exactly why it went
-unnoticed. Tracked as its own defect.
+A pre-existing product defect that this CI job **found**; not a migration problem, and
+the schema itself is correct on all four engines.
+
+The MariaDB figure is the one number on this page that is **carried forward rather than
+re-measured** for this release. Nothing in the char-to-varchar change touches the cause
+below, and the cell stays migrations-only either way, so it was not worth the hours
+MariaDB takes to run the suite. Treat it as "still broken, count approximate".
 
 **MariaDB — first-append deadlock on an empty audit chain.** Eight processes appending
 to a chain that has no rows yet have no anchor row to serialise on, so each takes a gap
@@ -84,6 +90,12 @@ caller gets an exception, nothing is silently dropped — and once the chain has
 first row the anchor works normally. The same test lands 800/800 on MySQL 8.4. If you
 run MariaDB and have many concurrent writers hitting a brand-new environment, expect
 those first appends to need application-level retry.
+
+**PostgreSQL is green as of v0.62.0**, and was not before: `$table->ulid()` compiled to
+`char(26)`, which PostgreSQL blank-pads, so every id shorter than 26 characters came
+back to PHP padded and failed strict comparison — 338 of 1358 tests. Every identifier
+column is `varchar` now. See [Upgrading](../UPGRADING.md) for the migration, and the
+note below before you add a column.
 
 **SQL Server is not supported.** It has never been run, by CI or by hand. The schema
 uses nothing knowingly incompatible with it, but "nothing knowingly incompatible" is
@@ -110,3 +122,13 @@ Worth knowing before you add a migration to this package:
   tighter than MySQL's 64. Postgres truncates silently rather than failing, so an
   over-long generated name means the same index is called different things on
   different engines. Name long composite indexes explicitly.
+- **Never declare a `CHAR` column** — not `char()`, and not the `ulid()` / `uuid()` /
+  `foreignUlid()` / `ulidMorphs()` helpers that compile to one. PostgreSQL implements
+  `CHAR` as `bpchar`, which blank-pads every value out to the declared width and hands
+  the padding to PHP through PDO. `$row->environment_id === 'env_test'` is then false
+  for a row whose `environment_id` *is* `env_test` — while Postgres' own `=` and
+  `length()` strip the blanks, so the padding is invisible from a SQL client. Use
+  `string($column, 26)`: `varchar` does not pad on any supported engine.
+  `tests/Feature/SchemaPortabilityTest.php` fails the build if a `CHAR` helper
+  reappears, and it runs on sqlite so it catches it on the first local run rather than
+  in the server-engine job.

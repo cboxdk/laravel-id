@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('directory_groups', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('directory_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('directory_id', 26)->index();
             $table->string('external_id')->nullable();
             $table->string('display_name');
             $table->timestamps();
@@ -25,8 +25,8 @@ return new class extends Migration
             // Auto-increment pivot key so belongsToMany sync() doesn't need to
             // supply an id.
             $table->id();
-            $table->ulid('group_id')->index();
-            $table->ulid('directory_user_id')->index();
+            $table->string('group_id', 26)->index();
+            $table->string('directory_user_id', 26)->index();
             $table->timestamps();
 
             $table->unique(['group_id', 'directory_user_id']);

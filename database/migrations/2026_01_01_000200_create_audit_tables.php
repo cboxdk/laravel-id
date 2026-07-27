@@ -11,7 +11,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('audit_logs', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             // The hash chain is per (environment, scope). Without the environment the
             // '__system__' scope was ONE global chain shared by every tenant — operator
             // and environment-level entries from unrelated customers interleaved in it,
@@ -30,7 +30,7 @@ return new class extends Migration
             // environment ULID (26) or the '__platform__' sentinel (12).
             $table->string('environment_id', 64)->default('__platform__')->index();
             $table->string('scope');                 // organization key, or '__system__'
-            $table->ulid('organization_id')->nullable();
+            $table->string('organization_id', 26)->nullable();
             $table->unsignedBigInteger('sequence');
             $table->string('actor_type');
             $table->string('actor_id')->nullable();
@@ -44,8 +44,8 @@ return new class extends Migration
             $table->string('target_id')->nullable();
             $table->json('context');
             $table->string('ip')->nullable();
-            $table->char('prev_hash', 64);
-            $table->char('hash', 64);
+            $table->string('prev_hash', 64);
+            $table->string('hash', 64);
             $table->timestamp('recorded_at');
 
             // One entry per position per chain, and the chain is environment-scoped.
@@ -59,7 +59,7 @@ return new class extends Migration
         });
 
         Schema::create('audit_checkpoints', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             // A checkpoint anchors ONE chain, and a chain is per (environment, scope) —
             // so the checkpoint carries the environment too, or one tenant's checkpoint
             // would appear to anchor another's chain.
@@ -67,9 +67,9 @@ return new class extends Migration
             // checkpoint that could not store an id its chain can is a silent trap.
             $table->string('environment_id', 64)->default('__platform__')->index();
             $table->string('scope')->index();
-            $table->ulid('organization_id')->nullable();
+            $table->string('organization_id', 26)->nullable();
             $table->unsignedBigInteger('up_to_sequence');
-            $table->char('root_hash', 64);
+            $table->string('root_hash', 64);
             $table->text('signature');
             $table->timestamps();
         });

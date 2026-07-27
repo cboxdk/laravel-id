@@ -12,16 +12,16 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('oauth_refresh_tokens', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('token_hash')->unique();
             // A rotation lineage: every refresh derived from the same original
             // login shares a family_id, so detecting reuse of a rotated token lets
             // us revoke the whole family at once.
             $table->string('family_id')->index();
             $table->string('client_id')->index();
-            $table->ulid('user_id')->nullable();
-            $table->ulid('organization_id')->nullable();
+            $table->string('user_id', 26)->nullable();
+            $table->string('organization_id', 26)->nullable();
             $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->string('audience')->nullable();
             // RFC 9449 §5: when the token was issued under DPoP, the client's key

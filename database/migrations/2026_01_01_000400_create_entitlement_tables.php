@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('entitlements', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26);
             $table->string('key');
             $table->json('value');
             $table->string('mode');
@@ -28,9 +28,9 @@ return new class extends Migration
         });
 
         Schema::create('entitlement_history', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26);
             $table->string('key');
             $table->json('value')->nullable();
             $table->string('source');

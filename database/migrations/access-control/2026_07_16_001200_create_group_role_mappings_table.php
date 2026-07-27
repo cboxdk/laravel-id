@@ -18,11 +18,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('group_role_mappings', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
-            $table->ulid('group_id');   // directory_groups.id
-            $table->ulid('role_id');    // roles.id
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
+            $table->string('group_id', 26);   // directory_groups.id
+            $table->string('role_id', 26);    // roles.id
             $table->integer('priority')->default(0);
             $table->timestamps();
 

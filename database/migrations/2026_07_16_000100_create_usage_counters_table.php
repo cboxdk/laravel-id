@@ -14,8 +14,8 @@ return new class extends Migration
         // count, so the unique index serialises upserts on every DB (NULLs are treated
         // as distinct by SQLite/Postgres and would let duplicate rows accumulate).
         Schema::create('usage_counters', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('organization_id')->default('')->index();
             $table->string('metric');
             $table->string('period', 10); // Y-m-d

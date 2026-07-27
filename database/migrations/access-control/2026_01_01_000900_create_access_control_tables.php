@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('roles', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->nullable();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->nullable();
             $table->string('name');
             $table->string('description')->nullable();
             $table->timestamps();
@@ -22,26 +22,26 @@ return new class extends Migration
         });
 
         Schema::create('permissions', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('name')->unique();
             $table->string('description')->nullable();
             $table->timestamps();
         });
 
         Schema::create('role_permission', function (Blueprint $table): void {
-            $table->ulid('role_id');
-            $table->ulid('permission_id');
+            $table->string('role_id', 26);
+            $table->string('permission_id', 26);
 
             $table->primary(['role_id', 'permission_id']);
             $table->index('permission_id');
         });
 
         Schema::create('role_assignments', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
-            $table->ulid('user_id');
-            $table->ulid('role_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
+            $table->string('user_id', 26);
+            $table->string('role_id', 26);
             $table->string('source')->default('manual');
             $table->string('source_ref')->nullable();
             $table->timestamps();

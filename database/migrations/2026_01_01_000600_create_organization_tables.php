@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('organizations', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('name');
             $table->string('slug');
-            $table->ulid('parent_id')->nullable()->index();
+            $table->string('parent_id', 26)->nullable()->index();
             $table->string('type')->default('customer');
             $table->string('status')->default('active');
             $table->json('settings')->default(JsonDefault::emptyObject());
@@ -28,10 +28,10 @@ return new class extends Migration
         });
 
         Schema::create('organization_closure', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('ancestor_id');
-            $table->ulid('descendant_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('ancestor_id', 26);
+            $table->string('descendant_id', 26);
             $table->unsignedInteger('depth');
 
             $table->unique(['ancestor_id', 'descendant_id']);
@@ -39,13 +39,13 @@ return new class extends Migration
         });
 
         Schema::create('memberships', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
-            $table->ulid('user_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
+            $table->string('user_id', 26);
             $table->string('role');
             $table->string('status')->default('active');
-            $table->ulid('invited_by')->nullable();
+            $table->string('invited_by', 26)->nullable();
             $table->timestamps();
 
             $table->unique(['organization_id', 'user_id']);

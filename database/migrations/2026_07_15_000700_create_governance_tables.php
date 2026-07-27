@@ -13,9 +13,9 @@ return new class extends Migration
     {
         // Access-certification campaigns: a point-in-time review of an org's access.
         Schema::create('governance_campaigns', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
             $table->string('name');
             $table->string('status')->default('open'); // open | closed
             $table->string('pending_policy')->default('revoke'); // revoke | certify
@@ -31,13 +31,13 @@ return new class extends Migration
         // One reviewable access grant within a campaign (a role assignment or a
         // membership), awaiting a certify/revoke decision.
         Schema::create('governance_certification_items', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('campaign_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('campaign_id', 26)->index();
             $table->string('access_type'); // role | membership
             $table->string('subject_id');
             $table->string('access_ref');  // role_id, or the membership role
-            $table->ulid('organization_id');
+            $table->string('organization_id', 26);
             $table->string('source')->nullable();
             $table->string('reviewer_id')->nullable();
             $table->string('decision')->default('pending'); // pending | certified | revoked
@@ -51,9 +51,9 @@ return new class extends Migration
 
         // Segregation-of-Duties policies: a mutually-exclusive set of roles.
         Schema::create('governance_sod_policies', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->nullable()->index(); // null = env-wide
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->nullable()->index(); // null = env-wide
             $table->string('name');
             $table->string('description')->nullable();
             $table->boolean('active')->default(true);

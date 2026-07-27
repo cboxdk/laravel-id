@@ -23,8 +23,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('environment_api_keys', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('name');
             $table->string('prefix', 16);
             $table->string('token_hash', 64)->unique();

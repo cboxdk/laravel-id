@@ -12,12 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('oauth_authorization_codes', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('code_hash')->unique();
             $table->string('client_id')->index();
-            $table->ulid('user_id');
-            $table->ulid('organization_id')->nullable();
+            $table->string('user_id', 26);
+            $table->string('organization_id', 26)->nullable();
             $table->string('redirect_uri');
             $table->json('scopes')->default(JsonDefault::emptyArray());
             $table->string('pkce_challenge');

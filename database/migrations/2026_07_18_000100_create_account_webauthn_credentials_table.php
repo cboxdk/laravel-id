@@ -19,8 +19,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('account_webauthn_credentials', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->foreignUlid('account_member_id')->constrained('account_members')->cascadeOnDelete();
+            $table->string('id', 26)->primary();
+            $table->string('account_member_id', 26);
+            $table->foreign('account_member_id')->references('id')->on('account_members')->cascadeOnDelete();
             $table->string('credential_id')->unique();
             $table->text('public_key');
             $table->unsignedBigInteger('sign_count')->default(0);

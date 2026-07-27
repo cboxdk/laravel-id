@@ -30,8 +30,8 @@ return new class extends Migration
         }
 
         Schema::create($table, function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('email');
             $table->unique(['environment_id', 'email']);
             $table->string('name')->nullable();

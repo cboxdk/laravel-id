@@ -15,7 +15,7 @@ return new class extends Migration
         // signing keys, issuer and organization tree. The `slug` resolves the
         // environment from the request host/subdomain.
         Schema::create('environments', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('name');
             $table->string('slug')->unique();
             $table->string('domain')->nullable()->unique();

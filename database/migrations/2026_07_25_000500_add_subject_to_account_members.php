@@ -27,7 +27,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('account_members', function (Blueprint $table): void {
-            $table->ulid('subject_id')->nullable()->after('account_id')->unique();
+            $table->string('subject_id', 26)->nullable()->after('account_id')->unique();
         });
     }
 

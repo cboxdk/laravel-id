@@ -21,8 +21,8 @@ return new class extends Migration
         // read back from this row afterwards, while the endpoint URLs stay free
         // to follow the host.
         Schema::create('saml_idp_entity_ids', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26);
             $table->text('entity_id');
             $table->timestamps();
 

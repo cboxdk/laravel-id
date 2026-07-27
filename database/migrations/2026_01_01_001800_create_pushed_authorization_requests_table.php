@@ -13,8 +13,8 @@ return new class extends Migration
         // RFC 9126: authorization request parameters pushed by a client, referenced
         // later by an opaque, single-use, short-lived request_uri.
         Schema::create('pushed_authorization_requests', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('request_uri')->unique();
             $table->string('client_id')->index();
             $table->json('params');

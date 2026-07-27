@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('verified_domains', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
             $table->string('domain');
             // The org publishes this token in a DNS TXT record to prove control.
             $table->string('verification_token');

@@ -23,7 +23,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('permissions', function (Blueprint $table): void {
-            $table->ulid('environment_id')->nullable()->after('client_id')->index();
+            $table->string('environment_id', 26)->nullable()->after('client_id')->index();
         });
 
         // Backfill declared permissions from their declaring client's environment.

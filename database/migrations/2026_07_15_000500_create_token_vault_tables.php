@@ -14,8 +14,8 @@ return new class extends Migration
         // `secret_encrypted` column holds the base64url AEAD ciphertext, never a
         // plaintext or a hash — the vault must be able to replay the value.
         Schema::create('vault_secrets', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             // EXPLICIT LENGTHS: `name`, `owner_type` and `owner_id` are all covered by
             // the unique index below, and at the framework's varchar(255) default that
             // key is 26*4 + 3*255*4 = 3164 bytes — 92 over InnoDB's 3072-byte cap, so
@@ -50,9 +50,9 @@ return new class extends Migration
         // The deny-by-default authorization edge: which agent client may lease
         // which secret. No live row for a (secret, client) pair means refused.
         Schema::create('vault_grants', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('secret_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('secret_id', 26)->index();
             $table->string('client_id');
             $table->unsignedInteger('max_ttl_seconds')->nullable();
             $table->timestamp('revoked_at')->nullable();

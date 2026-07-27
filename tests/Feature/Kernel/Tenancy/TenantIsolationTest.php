@@ -27,7 +27,7 @@ if (! function_exists('tenantCtx')) {
 beforeEach(function (): void {
     Schema::dropIfExists('tenant_things');
     Schema::create('tenant_things', function (Blueprint $table): void {
-        $table->ulid('id')->primary();
+        $table->string('id', 26)->primary();
         $table->string('organization_id')->index();
         $table->string('name');
         $table->timestamps();

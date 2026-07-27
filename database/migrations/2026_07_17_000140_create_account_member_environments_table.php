@@ -20,8 +20,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('account_member_environments', function (Blueprint $table): void {
-            $table->foreignUlid('account_member_id')->constrained('account_members')->cascadeOnDelete();
-            $table->foreignUlid('environment_id')->constrained('environments')->cascadeOnDelete();
+            $table->string('account_member_id', 26);
+            $table->foreign('account_member_id')->references('id')->on('account_members')->cascadeOnDelete();
+            $table->string('environment_id', 26);
+            $table->foreign('environment_id')->references('id')->on('environments')->cascadeOnDelete();
             $table->timestamps();
 
             // A pure pivot: the (member, environment) pair is the key — no surrogate

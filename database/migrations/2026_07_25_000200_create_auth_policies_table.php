@@ -18,11 +18,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('auth_policies', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
 
             // Null = the environment baseline every organization inherits.
-            $table->ulid('organization_id')->nullable();
+            $table->string('organization_id', 26)->nullable();
 
             $table->unsignedSmallInteger('min_length')->default(12);
             $table->boolean('require_breach_check')->default(true);

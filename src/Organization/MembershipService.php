@@ -199,11 +199,26 @@ class MembershipService implements Memberships
         );
     }
 
+    /**
+     * Oldest-first, and TOTALLY ordered.
+     *
+     * `created_at` is a second-granularity timestamp, so a roster built in one request
+     * — an import, a seeder, the tests — ties on every row. `ORDER BY` a tied key is
+     * not a sort SQL promises anything about: PostgreSQL returns whatever the plan
+     * happens to produce, and for the paginated call below that is a top-N heapsort,
+     * which is not stable. The visible symptom was page 1 of a five-member roster
+     * starting at the second member.
+     *
+     * Under LIMIT/OFFSET this is worse than cosmetic: a non-unique sort key lets a row
+     * appear on two pages, or on none. `id` is a ULID — monotonic by creation — so it
+     * breaks the tie in the same direction `created_at` intends, and makes the order
+     * total.
+     */
     public function forOrganization(string $organizationId): Collection
     {
         return $this->tenant()->runAs(
             GenericTenant::of($organizationId),
-            fn (): Collection => Membership::query()->orderBy('created_at')->get(),
+            fn (): Collection => Membership::query()->orderBy('created_at')->orderBy('id')->get(),
         );
     }
 
@@ -211,7 +226,10 @@ class MembershipService implements Memberships
     {
         return $this->tenant()->runAs(
             GenericTenant::of($organizationId),
-            fn (): LengthAwarePaginator => Membership::query()->orderBy('created_at')->paginate($perPage),
+            fn (): LengthAwarePaginator => Membership::query()
+                ->orderBy('created_at')
+                ->orderBy('id')
+                ->paginate($perPage),
         );
     }
 
@@ -227,7 +245,12 @@ class MembershipService implements Memberships
     {
         // Cross-tenant by nature — a subject's own list of organizations.
         return $this->tenant()->withoutScope(
-            fn (): Collection => Membership::query()->where('user_id', $userId)->orderBy('created_at')->get(),
+            // Same total order as forOrganization() — see the note there.
+            fn (): Collection => Membership::query()
+                ->where('user_id', $userId)
+                ->orderBy('created_at')
+                ->orderBy('id')
+                ->get(),
         );
     }
 

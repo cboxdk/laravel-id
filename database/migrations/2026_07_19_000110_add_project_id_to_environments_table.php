@@ -25,8 +25,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('environments', function (Blueprint $table): void {
-            $table->foreignUlid('project_id')->nullable()->after('account_id')
-                ->constrained('projects')->restrictOnDelete();
+            $table->string('project_id', 26)->nullable()->after('account_id');
+            $table->foreign('project_id')->references('id')->on('projects')->restrictOnDelete();
             $table->index('project_id');
         });
 

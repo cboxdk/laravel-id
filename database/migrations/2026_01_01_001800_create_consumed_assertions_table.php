@@ -13,7 +13,7 @@ return new class extends Migration
         // One row per accepted SAML/OIDC assertion id — the unique constraint is
         // what makes replay of a captured, still-valid assertion impossible.
         Schema::create('consumed_assertions', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('assertion_id')->unique();
             $table->timestamp('expires_at')->index();
             $table->timestamps();

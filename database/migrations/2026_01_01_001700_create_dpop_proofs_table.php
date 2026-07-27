@@ -13,7 +13,7 @@ return new class extends Migration
         // Seen DPoP proof ids (RFC 9449 §11.1). The unique jti is the replay guard;
         // rows expire with the proof's freshness window and can be pruned.
         Schema::create('dpop_proofs', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('jti')->unique();
             $table->timestamp('expires_at');
             $table->timestamps();

@@ -178,32 +178,45 @@ jobs:
           # the one thing only a server engine can prove.
           extensions: pdo_mysql, pdo_pgsql, sodium, openssl, pcntl
       - run: composer update --no-interaction --no-progress --prefer-dist
-      # Forwards AND back, on the real engine. The suite below runs under
-      # RefreshDatabase, which calls `migrate:fresh` — that WIPES tables rather
-      # than calling down(), so a broken rollback (drop order against the
-      # account/project foreign keys, say) would never surface. This one file runs
-      # under Testbench's default strategy instead: migrate, run, roll all the way
-      # back. See tests/Pest.php.
-      - name: Migrations up and down
+      # Migrations under Testbench's default strategy rather than the suite's
+      # RefreshDatabase, so the migrator itself is exercised on the real engine.
+      #
+      # THIS STEP DOES NOT CURRENTLY PROVE down(), despite what it used to claim.
+      # Measured on postgres:16 against an empty database: 83 tables and 90 rows in
+      # `migrations` are still there when the run finishes, on this commit and on
+      # v0.61.0 alike. Testbench's rollback is scoped by `--path` to the one
+      # publishable migration this TestCase loads directly; everything the service
+      # provider registers is migrated up and never comes back down. So a broken
+      # down() — a drop ordered wrongly against the account/project foreign keys,
+      # say — would still not surface here. Left as-is rather than quietly widened,
+      # because making it real is its own change with its own failure modes; the
+      # comment is now accurate about what the step covers.
+      - name: Migrations up
         run: vendor/bin/pest tests/Feature/Kernel/Audit/AuditLogTest.php
         env:
           CBOX_ID_TEST_MIGRATE_EACH: "1"
-      # POSTGRESQL AND MARIADB ARE DELIBERATELY MIGRATIONS-ONLY, AND THAT IS NOT A TYPO.
+      # MARIADB IS DELIBERATELY MIGRATIONS-ONLY, AND THAT IS NOT A TYPO.
       #
-      # Every cell above runs the migrations, because the schema is what this job was
-      # added to protect and the schema is now correct on all three. The SUITE is
-      # another matter: two pre-existing product defects, neither introduced here, stop
-      # it passing on those two engines. Both were found by adding this job — which is
-      # the point of it — and both are measured, not guessed:
+      # Every cell runs the migrations, because the schema is what this job was added
+      # to protect and the schema is correct on all three. The SUITE now runs on
+      # PostgreSQL too — it did not when this job was added, and the reason it could
+      # not is worth keeping:
       #
-      # PostgreSQL (postgres:16) — 338 of 1358 fail. `$table->ulid()` compiles to
-      #   `char(26)`, and PostgreSQL blank-pads CHAR on read where MySQL and SQLite
-      #   strip the trailing spaces, so any environment key shorter than 26 characters
-      #   comes back padded and the tenancy guard rejects its own row:
+      # PostgreSQL (postgres:16) — WAS 338 of 1358. `$table->ulid()` compiled to
+      #   `char(26)`, and PostgreSQL blank-pads CHAR where MySQL and SQLite strip the
+      #   trailing spaces on retrieval, so any environment key shorter than 26
+      #   characters came back to PHP padded and the tenancy guard rejected its own
+      #   row:
       #     row belongs to [env_test                  ], acting as [env_test]
-      #   Invisible in production, where an environment id IS a 26-character ULID.
+      #   Invisible in production, where an environment id IS a 26-character ULID —
+      #   and invisible from a SQL client, because Postgres' own `=` and `length()`
+      #   strip the blanks. Only PHP saw them. Every identifier column is `varchar`
+      #   as of v0.62.0 and this cell is green, so it is promoted here: a defect
+      #   that took a whole engine out of CI does not get to come back unnoticed.
       #
-      # MariaDB (mariadb:11) — 6 of 1358 fail, one cause plus its fallout. Eight
+      # MariaDB (mariadb:11) — 6 of 1358 when last measured at v0.61.0, and NOT
+      #   re-measured since; the char-to-varchar change does not touch the cause and
+      #   the cell stays migrations-only either way. One cause plus its fallout. Eight
       #   processes appending to an EMPTY audit chain deadlock each other: with no
       #   anchor row to serialise on yet, the `FOR UPDATE` takes a gap lock on the
       #   unique key, and MariaDB resolves the pile-up as SQLSTATE 40001 (1213) rather
@@ -212,8 +225,8 @@ jobs:
       #   enough for eight contenders on one gap, so 6 of 800 appends failed —
       #   LOUDLY, not silently. The same test passes 800/800 on MySQL 8.4.
       #
-      # Turn these on per engine as each defect is fixed. Do not "fix" them by
-      # skipping the tests: a red cell is information, a skipped one is not.
+      # Turn MariaDB on when that is fixed. Do not "fix" it by skipping the test:
+      # a red cell is information, a skipped one is not.
       - name: Pest
-        if: matrix.driver == 'mysql'
+        if: matrix.driver == 'mysql' || matrix.driver == 'pgsql'
         run: vendor/bin/pest

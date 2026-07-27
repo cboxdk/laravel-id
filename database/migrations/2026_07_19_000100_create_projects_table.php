@@ -24,8 +24,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('projects', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->foreignUlid('account_id')->constrained('accounts')->cascadeOnDelete();
+            $table->string('id', 26)->primary();
+            $table->string('account_id', 26);
+            $table->foreign('account_id')->references('id')->on('accounts')->cascadeOnDelete();
             $table->string('name');
             // Human-friendly handle, unique within the owning account.
             $table->string('slug');

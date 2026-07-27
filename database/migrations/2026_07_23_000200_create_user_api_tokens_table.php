@@ -13,10 +13,10 @@ return new class extends Migration
         // Deliberately NOT `personal_access_tokens` — that name belongs to
         // Sanctum's default table and a host app may run both.
         Schema::create('user_api_tokens', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
-            $table->ulid('user_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
+            $table->string('user_id', 26);
             $table->string('name');
             $table->string('prefix', 16);
             $table->string('token_hash', 64)->unique();

@@ -16,8 +16,8 @@ return new class extends Migration
         // defense). `certificate` is the SP's signing cert used to verify signed
         // AuthnRequests.
         Schema::create('saml_service_providers', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('entity_id');
             $table->text('acs_url');
             $table->string('name_id_format')->default('urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress');
@@ -37,8 +37,8 @@ return new class extends Migration
         // kid, so metadata publishes a stable cert per signing key and rotation is
         // reflected automatically. Public material; the private key stays sealed.
         Schema::create('saml_idp_certificates', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('kid');
             $table->text('certificate');
             $table->timestamps();

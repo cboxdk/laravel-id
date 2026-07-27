@@ -14,9 +14,9 @@ return new class extends Migration
         // synchronously at a hook point. The per-endpoint HMAC signing secret is
         // stored sealed (SecretBox); the raw value is shown once at registration.
         Schema::create('external_action_endpoints', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->nullable()->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->nullable()->index();
             $table->string('hook_point');
             $table->string('url');
             $table->text('secret_encrypted');

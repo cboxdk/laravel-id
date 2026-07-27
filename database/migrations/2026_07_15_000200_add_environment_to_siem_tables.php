@@ -22,11 +22,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('log_streams', function (Blueprint $table): void {
-            $table->ulid('environment_id')->after('id')->index();
+            $table->string('environment_id', 26)->after('id')->index();
         });
 
         Schema::table('stream_deliveries', function (Blueprint $table): void {
-            $table->ulid('environment_id')->after('id')->index();
+            $table->string('environment_id', 26)->after('id')->index();
         });
     }
 

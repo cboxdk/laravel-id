@@ -15,8 +15,8 @@ return new class extends Migration
         // (the raw value is the client's polling secret). The user is resolved from
         // the request's login_hint up front and bound as user_id.
         Schema::create('ciba_requests', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('auth_req_id_hash')->unique();
             $table->string('client_id')->index();
             $table->string('user_id');

@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('oauth_clients', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->nullable()->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->nullable()->index();
             $table->string('client_id')->unique();
             $table->string('secret_hash')->nullable();
             $table->string('name');
@@ -30,9 +30,9 @@ return new class extends Migration
         });
 
         Schema::create('oauth_service_accounts', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
             $table->string('name');
             $table->string('client_id')->index();
             $table->string('status')->default('active');
@@ -40,12 +40,12 @@ return new class extends Migration
         });
 
         Schema::create('oauth_access_tokens', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('jti')->unique();
             $table->string('client_id')->index();
-            $table->ulid('user_id')->nullable();
-            $table->ulid('organization_id')->nullable();
+            $table->string('user_id', 26)->nullable();
+            $table->string('organization_id', 26)->nullable();
             $table->json('scopes')->default(JsonDefault::emptyArray());
             // RFC 8707 resource indicator this token is bound to (aud), if any.
             $table->string('audience')->nullable();

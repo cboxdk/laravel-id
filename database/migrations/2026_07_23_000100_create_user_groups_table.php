@@ -15,9 +15,9 @@ return new class extends Migration
         // so group-inherited access resolves through the same userset expansion
         // as every other grant and there is exactly one membership store.
         Schema::create('user_groups', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
             $table->string('name');
             $table->timestamps();
 

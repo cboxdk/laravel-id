@@ -19,9 +19,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('password_change_requirements', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('user_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('user_id', 26);
 
             // When the temporary password stops working entirely. Null = the password
             // is permanent but a change is still required at next sign-in.

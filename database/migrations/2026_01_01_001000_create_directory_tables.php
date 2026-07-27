@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('directories', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->index();
             $table->string('name');
             $table->string('bearer_token_hash')->unique();
             $table->string('status')->default('active');
@@ -23,12 +23,12 @@ return new class extends Migration
         });
 
         Schema::create('directory_users', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('directory_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('directory_id', 26)->index();
             $table->string('external_id');
             $table->json('resource');
-            $table->ulid('user_id')->nullable();
+            $table->string('user_id', 26)->nullable();
             $table->boolean('active')->default(true);
             $table->timestamps();
 

@@ -12,9 +12,9 @@ return new class extends Migration
     {
         // Downstream provisioning targets (the outbound mirror of `directories`).
         Schema::create('provisioning_connections', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->nullable()->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->nullable()->index();
             $table->string('name');
             $table->string('base_url');
             $table->string('auth_scheme')->default('bearer');
@@ -34,9 +34,9 @@ return new class extends Migration
 
         // The platform user ↔ remote SCIM resource mapping (SCIM statefulness).
         Schema::create('provisioned_resources', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('connection_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('connection_id', 26)->index();
             $table->string('user_id')->index();
             $table->string('external_id');
             $table->string('remote_id')->nullable();
@@ -56,9 +56,9 @@ return new class extends Migration
 
         // The durable outbox of pending SCIM operations.
         Schema::create('provisioning_operations', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('connection_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('connection_id', 26)->index();
             $table->string('user_id')->index();
             $table->string('type');
             $table->json('payload');

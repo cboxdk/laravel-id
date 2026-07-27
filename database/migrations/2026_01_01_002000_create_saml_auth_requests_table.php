@@ -14,8 +14,8 @@ return new class extends Migration
         // InResponseTo (RFC/SAML) without depending on the browser session — the
         // ACS is a cross-site POST where the session cookie (SameSite=Lax) is absent.
         Schema::create('saml_auth_requests', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('request_id')->unique();
             $table->string('connection_id')->index();
             $table->timestamp('expires_at');

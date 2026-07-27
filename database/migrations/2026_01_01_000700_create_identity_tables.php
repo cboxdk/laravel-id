@@ -19,12 +19,12 @@ return new class extends Migration
         // These tables only reference `user_id` by value (indexed, no FK), so they
         // integrate with whatever user store the host provides.
         Schema::create('identities', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('user_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('user_id', 26)->index();
             $table->string('provider');
             $table->string('subject');
-            $table->ulid('connection_id')->nullable();
+            $table->string('connection_id', 26)->nullable();
             $table->json('raw')->default(JsonDefault::emptyObject());
             $table->timestamps();
 
@@ -34,10 +34,10 @@ return new class extends Migration
         });
 
         Schema::create('auth_sessions', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('user_id')->index();
-            $table->ulid('organization_id')->nullable();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('user_id', 26)->index();
+            $table->string('organization_id', 26)->nullable();
             $table->string('ip')->nullable();
             $table->text('user_agent')->nullable();
             $table->json('amr')->default(JsonDefault::emptyArray());

@@ -11,13 +11,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('invitations', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('organization_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('organization_id', 26)->index();
             $table->string('email')->index();
             $table->string('role');
             $table->string('token_hash')->unique();
             $table->string('status')->default('pending');
-            $table->ulid('invited_by')->nullable();
+            $table->string('invited_by', 26)->nullable();
             $table->timestamp('expires_at');
             $table->timestamp('accepted_at')->nullable();
             $table->timestamps();

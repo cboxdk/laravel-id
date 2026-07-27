@@ -22,7 +22,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('accounts', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('name');
             $table->string('status')->default('active');
             // The plan's environment allowance. Default 2 mirrors the industry

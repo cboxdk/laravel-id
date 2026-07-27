@@ -26,8 +26,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('account_api_keys', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->foreignUlid('account_id')->constrained('accounts')->cascadeOnDelete();
+            $table->string('id', 26)->primary();
+            $table->string('account_id', 26);
+            $table->foreign('account_id')->references('id')->on('accounts')->cascadeOnDelete();
             $table->string('name');
             $table->string('prefix', 16);
             $table->string('token_hash', 64)->unique();

@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('webhook_endpoints', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id')->nullable()->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26)->nullable()->index();
             $table->string('url');
             $table->text('secret_encrypted');
             $table->json('event_types');
@@ -22,9 +22,9 @@ return new class extends Migration
         });
 
         Schema::create('webhook_deliveries', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('endpoint_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('endpoint_id', 26)->index();
             $table->string('event_type')->index();
             $table->json('payload');
             $table->unsignedInteger('attempt')->default(0);

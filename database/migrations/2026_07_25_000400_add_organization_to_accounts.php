@@ -23,7 +23,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('accounts', function (Blueprint $table): void {
-            $table->ulid('organization_id')->nullable()->after('id')->unique();
+            $table->string('organization_id', 26)->nullable()->after('id')->unique();
         });
     }
 

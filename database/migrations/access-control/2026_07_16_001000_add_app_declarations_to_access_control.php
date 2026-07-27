@@ -54,8 +54,8 @@ return new class extends Migration
         // The last-synced manifest per app — its version + content checksum, so a
         // re-sync with an unchanged manifest is a cheap no-op.
         Schema::create('app_manifests', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
             $table->string('client_id');
             $table->string('version')->nullable();
             $table->string('checksum');

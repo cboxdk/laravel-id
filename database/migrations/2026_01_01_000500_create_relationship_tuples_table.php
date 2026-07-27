@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('relationship_tuples', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->ulid('environment_id')->index();
-            $table->ulid('organization_id');
+            $table->string('id', 26)->primary();
+            $table->string('environment_id', 26)->index();
+            $table->string('organization_id', 26);
             // EXPLICIT LENGTHS, NOT THE varchar(255) DEFAULT.
             //
             // All seven columns below are covered by one unique index, and InnoDB caps

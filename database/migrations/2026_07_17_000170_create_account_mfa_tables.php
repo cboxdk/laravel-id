@@ -20,8 +20,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('account_mfa_factors', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->foreignUlid('account_member_id')->constrained('account_members')->cascadeOnDelete();
+            $table->string('id', 26)->primary();
+            $table->string('account_member_id', 26);
+            $table->foreign('account_member_id')->references('id')->on('account_members')->cascadeOnDelete();
             $table->string('type');
             $table->text('secret_encrypted');
             $table->timestamp('confirmed_at')->nullable();
@@ -33,8 +34,9 @@ return new class extends Migration
         });
 
         Schema::create('account_mfa_recovery_codes', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
-            $table->foreignUlid('account_member_id')->constrained('account_members')->cascadeOnDelete();
+            $table->string('id', 26)->primary();
+            $table->string('account_member_id', 26);
+            $table->foreign('account_member_id')->references('id')->on('account_members')->cascadeOnDelete();
             $table->string('code_hash');
             $table->timestamp('used_at')->nullable();
             $table->timestamps();

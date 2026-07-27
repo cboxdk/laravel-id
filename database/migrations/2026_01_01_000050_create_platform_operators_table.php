@@ -19,7 +19,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('platform_operators', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('email')->unique();
             $table->string('name')->nullable();
             $table->string('password');

@@ -32,7 +32,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('invitations', function (Blueprint $table): void {
-            $table->ulid('environment_id')->nullable()->after('id')->index();
+            $table->string('environment_id', 26)->nullable()->after('id')->index();
         });
 
         DB::statement(<<<'SQL'

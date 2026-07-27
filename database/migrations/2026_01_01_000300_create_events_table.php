@@ -11,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('events', function (Blueprint $table): void {
-            $table->ulid('id')->primary();
+            $table->string('id', 26)->primary();
             $table->string('type')->index();
-            $table->ulid('organization_id')->nullable()->index();
+            $table->string('organization_id', 26)->nullable()->index();
             $table->json('payload');
             $table->timestamp('occurred_at');
             $table->timestamp('dispatched_at')->nullable()->index();
