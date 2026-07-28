@@ -51,11 +51,28 @@ a single table on MySQL (a `json` column cannot take a literal `DEFAULT`, error
 | Engine | Migrations up | Migrations down | Full test suite |
 |---|---|---|---|
 | SQLite (in-memory) | ✅ every CI run | ✅ every CI run | ✅ every CI run — 1358 passed, 1 skipped |
-| MySQL 8.0.13+ | ✅ every CI run (`engines` job, `mysql:8`) | ✅ every CI run | ✅ every CI run — 1359 passed |
-| PostgreSQL 14+ | ✅ every CI run (`engines` job, `postgres:16`) | ✅ every CI run | ✅ every CI run — 1359 passed |
-| MariaDB 10.2+ | ✅ every CI run (`engines` job, `mariadb:11`) | ✅ every CI run | ✅ every CI run — 1386/1386 on `mariadb:11` |
+| MySQL 8.0.13+ | ⚠️ not currently proven | ⚠️ not currently proven | ⚠️ not currently proven |
+| PostgreSQL 14+ | ⚠️ not currently proven | ⚠️ not currently proven | ⚠️ not currently proven |
+| MariaDB 10.2+ | ⚠️ not currently proven | ⚠️ not currently proven | ⚠️ not currently proven |
 | SQL Server | ❌ never run | ❌ never run | ❌ never run |
 | Others (Oracle, …) | Not supported. | | |
+
+> **The `engines` job is not currently proving anything, and this table said it was.**
+> The matrix exists and its service containers start and report healthy, but the job
+> has never reached one: it addresses the database at `127.0.0.1` on the published
+> port, which only works when the job runs on the runner host. This runner mounts the
+> host's Docker socket, so the port is published on the host while the job runs in a
+> container that is on neither that loopback nor the service network. Every run has
+> failed with `SQLSTATE[HY000] [2002] Connection refused`.
+>
+> That is the same failure this page's own preamble describes — a claim of four
+> engines that CI was not actually checking — arrived at a second time by a different
+> route. The rows above will say ✅ again when the job connects, and not before.
+>
+> What *is* known: the schema rules below were derived from real failures on real
+> servers, and the sibling application `cboxdk/cbox-id` has had its suite run against
+> MySQL 8.4 and PostgreSQL 17 by hand. Neither is a substitute for this package's own
+> matrix passing.
 
 The MySQL and MariaDB floors are the releases that introduced *expression* column
 defaults (`DEFAULT (json_object())`); nothing older can express a default on a `json`
