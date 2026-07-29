@@ -126,7 +126,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Scheduled work | **Full** | Manifest sync, audit-stream pump, governance auto-close and the event relay all register themselves, config-gated and `withoutOverlapping`. See [Operations](../operations/_index.md) — **the platform delivers nothing without a queue worker and scheduler running.** |
 | Usage metering | **Full** | Per-day, per-environment, per-organization counters fed off the outbox, with a reconciler for drift. **Metering never enforces** — enforcement belongs to entitlements. |
 | Testing helpers | **Full** | Every module ships `InteractsWith*` traits and fakes, and the package's own suite uses them. |
-| Database engines | **Partial** | Only SQLite is green in CI. The server-engine matrix exists but has never connected — its containers start healthy and the job cannot reach them — so MySQL, PostgreSQL and MariaDB are currently unproven rather than passing. SQL Server has never been run. See [Requirements](../requirements.md) — that page is the authority, not this row. |
+| Database engines | **Partial** | SQLite, MySQL 8.0.13+, PostgreSQL 14+ and MariaDB 10.2+ are green in CI — genuinely, since the `engines` job moved to a runner where it can reach its service containers. SQL Server has never been run. See [Requirements](../requirements.md) — that page is the authority, not this row. |
 | Telemetry / metrics runtime | **No** | Deliberate: a library must not force an observability stack on its host. |
 | Admin console, hosted login, consent screen | **Host-supplied** | This package is UI-free. |
 
