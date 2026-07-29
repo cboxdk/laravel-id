@@ -104,11 +104,20 @@ jobs:
   # (InnoDB: 3072 bytes, and utf8mb4 charges 4 bytes a character), and no
   # identifier length limit (MySQL: 64, PostgreSQL: 63). All three bit.
   #
-  # So the claim is now tested rather than asserted. Requires Docker on the
-  # self-hosted runner for service containers.
+  # So the claim is now tested rather than asserted — except it was not. This job
+  # ran on the self-hosted runner, where service containers are UNREACHABLE: they
+  # start and report healthy, but the runner mounts the host's Docker socket, so the
+  # published port lands on the host while the job runs in a container that is on
+  # neither that loopback nor the service network. Every run since this job was
+  # written failed with `SQLSTATE[HY000] [2002] Connection refused`, while
+  # docs/requirements.md reported "✅ every CI run" for three engines on the strength
+  # of it. A matrix that has never connected is worse than no matrix.
+  #
+  # GITHUB-HOSTED, therefore, unlike every other job here — service containers work
+  # there. Only this job moves.
   # ---------------------------------------------------------------------------
   engines:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
