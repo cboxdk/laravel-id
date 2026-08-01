@@ -13,6 +13,61 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## 0.66.0
+
+### `Mfa` gained a `disable()` method
+
+Only affects a host that implements `Cbox\Id\Identity\Contracts\Mfa` itself. Adding a
+method to an interface is a fatal error for any class implementing it, so this one breaks
+at boot rather than silently — which is the failure mode you want.
+
+Implement it as "remove every factor and every recovery code for this user, and record
+it". The shipped `MfaService` is the reference. If your implementation delegates to the
+package's, forward the call.
+
+Hosts using the shipped binding need to do nothing.
+
+**Worth doing anyway:** if your console resets a user's MFA by deleting `MfaFactor` and
+`MfaRecoveryCode` rows directly — which was the only way to do it before this release —
+switch it to `Mfa::disable()`. The direct-delete path writes no audit entry, so the most
+privileged MFA action in your deployment is currently the only one leaving no trace.
+
+### `setCapture()` now refuses an unverified domain
+
+`DomainVerification::setCapture($id, true)` throws
+`Cbox\Id\Federation\Exceptions\DomainNotVerified` when the domain's DNS challenge has
+not been answered. Previously it succeeded, and whether that was allowed depended on
+which caller you went through.
+
+Catch it wherever you expose domain settings and show the challenge record rather than a
+generic failure. Disabling capture is unchanged and still always permitted.
+
+Check for rows already in that state before deploying — capture on an unverified domain
+means someone else's email domain may currently be routing to one of your organizations:
+
+```sql
+SELECT id, organization_id, domain FROM verified_domains
+WHERE capture = 1 AND verified_at IS NULL;
+```
+
+Existing rows keep working; this release stops NEW ones being created, and does not
+retroactively switch capture off — that call is yours, since it changes where those users
+land at sign-in.
+
+### The SAML replay ledger is re-keyed (migration)
+
+`consumed_assertions` drops `unique(assertion_id)` and gains `environment_id` +
+`connection_id`, keyed together. Run migrations as usual.
+
+No backfill and no downtime concern: every row in this table expires inside the
+assertion's own validity window, ten minutes at the outside, so by the time a deploy
+finishes they are all dead. Existing rows keep an empty `connection_id`, which pairs
+with their already-unique assertion id.
+
+If you query this table directly — an unusual thing to do — note that `assertion_id`
+alone is no longer unique, and deliberately so: it is chosen by the issuing identity
+provider and only unique within it.
+
 ## 0.65.0
 
 ### `EntitlementSource::License` is removed

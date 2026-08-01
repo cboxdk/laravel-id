@@ -173,6 +173,28 @@ class MfaService implements Mfa
         return true;
     }
 
+    /**
+     * Remove every factor and recovery code for a user.
+     *
+     * Audited as `user.mfa_disabled`, deliberately with the SAME shape as the account
+     * and operator planes' `*.mfa_disabled`, so an access review, a SIEM stream and a
+     * customer's compliance export can read all three the same way. Without this verb
+     * the console deleted the rows directly, and the trail showed nothing at all.
+     */
+    public function disable(string $userId): void
+    {
+        MfaFactor::query()->where('user_id', $userId)->delete();
+        MfaRecoveryCode::query()->where('user_id', $userId)->delete();
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.mfa_disabled',
+            actorType: ActorType::User,
+            actorId: $userId,
+            targetType: 'user',
+            targetId: $userId,
+        ));
+    }
+
     public function remainingRecoveryCodes(string $userId): int
     {
         return MfaRecoveryCode::query()->where('user_id', $userId)->whereNull('used_at')->count();
