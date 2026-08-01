@@ -6,6 +6,7 @@ use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Exceptions\InvalidManifest;
+use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Manifest\ManifestSyncResult;
 use Cbox\Id\AccessControl\Models\Permission;
@@ -156,4 +157,55 @@ it('honours tenant_assignable opt-in, defaulting to internal (deny-by-default)',
     expect(Permission::query()->where('name', 'invoices:read')->sole()->tenant_assignable)->toBeTrue()
         ->and(Permission::query()->where('name', 'ledger:close')->sole()->tenant_assignable)->toBeFalse()
         ->and(Permission::query()->where('name', 'ledger:void')->sole()->tenant_assignable)->toBeFalse();
+});
+
+/**
+ * A role the declaring app has retired must not be grantable, however the grant arrives.
+ *
+ * Orphaning keeps the row and its existing assignments — deleting them would revoke
+ * access on a deploy blip — and the console stops OFFERING the role. But `assign()` did
+ * not refuse it, so an administrator who knew a retired role's id could map a directory
+ * group to it by calling the Livewire action directly, and every reconcile then granted a
+ * role the owning application no longer believes in. Tokens carry it; nothing the app
+ * ships understands it.
+ *
+ * A role that has vanished from the UI is exactly the one someone would name by hand.
+ */
+it('refuses to grant a role its declaring app has dropped', function (): void {
+    $org = $this->makeOrganization();
+
+    syncManifest('app_billing', billingManifest());
+    $viewer = Role::query()->where('client_id', 'app_billing')->where('key', 'viewer')->firstOrFail();
+
+    $dropped = billingManifest();
+    $dropped['roles'] = [$dropped['roles'][0]];
+    syncManifest('app_billing', $dropped);
+
+    expect($viewer->refresh()->orphaned_at)->not->toBeNull();
+
+    expect(fn () => app(Roles::class)->assign($org->id, 'user_new', $viewer->id))
+        ->toThrow(UnknownRole::class);
+
+    // Existing holders keep it — orphaning flags, it does not revoke.
+    expect(Role::query()->whereKey($viewer->id)->exists())->toBeTrue();
+});
+
+/**
+ * And re-declaring it makes it grantable again, so the refusal tracks the manifest rather
+ * than being a one-way door.
+ */
+it('grants a re-declared role again', function (): void {
+    $org = $this->makeOrganization();
+
+    syncManifest('app_billing', billingManifest());
+    $dropped = billingManifest();
+    $dropped['roles'] = [$dropped['roles'][0]];
+    syncManifest('app_billing', $dropped);
+    syncManifest('app_billing', billingManifest());
+
+    $viewer = Role::query()->where('client_id', 'app_billing')->where('key', 'viewer')->firstOrFail();
+
+    app(Roles::class)->assign($org->id, 'user_rejoin', $viewer->id);
+
+    expect(RoleAssignment::query()->where('role_id', $viewer->id)->where('user_id', 'user_rejoin')->exists())->toBeTrue();
 });

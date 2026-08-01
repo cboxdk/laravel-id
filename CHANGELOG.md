@@ -15,6 +15,22 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.75.0] - 2026-08-01
+
+### Security
+
+- **A role its declaring app had retired was still grantable.** Orphaning keeps the row
+  and its existing assignments — deleting them would revoke access on a deploy blip — and
+  the console stops offering the role. But `assign()` did not refuse it, so an
+  administrator who knew a retired role's id could map a directory group to it by calling
+  the action directly, and every reconcile then granted a role the owning application no
+  longer believes in: carried in tokens, understood by nothing the app ships. A role that
+  has vanished from the UI is exactly the one someone would name by hand.
+
+  `assertAssignableIn()` now refuses an orphaned role, so the console's narrower rule and
+  the framework's chokepoint agree. Re-declaring the role in a manifest makes it grantable
+  again, so this tracks the manifest rather than being a one-way door.
+
 ## [0.74.0] - 2026-08-01
 
 ### Security

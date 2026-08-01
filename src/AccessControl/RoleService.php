@@ -266,6 +266,13 @@ class RoleService implements Roles
             ->where(fn ($query) => $query
                 ->whereNull('organization_id')
                 ->orWhere('organization_id', $organizationId))
+            // An ORPHANED role is one whose declaring app dropped it from its manifest.
+            // The console stopped offering those, but this check did not refuse them — so
+            // an admin who knew a retired role's id could still map a directory group to
+            // it by calling the action directly, and every reconcile then granted a role
+            // the owning application no longer believes in. A role nobody can see in the
+            // UI is precisely the one worth naming by hand.
+            ->whereNull('orphaned_at')
             ->exists();
 
         if (! $assignable) {
