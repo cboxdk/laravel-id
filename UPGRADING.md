@@ -13,6 +13,22 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## 0.73.0
+
+### `Subjects` gained `update()`
+
+Only affects a host that implements `Cbox\Id\Identity\Contracts\Subjects` itself —
+a fatal error at boot, which is the failure mode you want.
+
+Implement it as "apply the given name and/or email, leave a null alone, audit the change
+and emit `user.updated`". A changed email MUST clear `email_verified_at`: an administrator
+asserting an address is not its owner proving one.
+
+**Worth doing anyway:** if your console changes a profile by writing to the model
+directly, switch it to this. That path writes no audit entry for the account's primary
+identifier and its recovery channel, and emits nothing — so outbound SCIM never learns
+about it.
+
 ## 0.68.0
 
 ### `AuthPolicies` gained `overridesFor()`

@@ -8,6 +8,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
+use RuntimeException;
 
 /**
  * A host-style {@see Subjects} resolver backed by an in-memory store — stands in
@@ -47,6 +48,25 @@ final class ArraySubjects implements Subjects
         $id = $this->emailIndex[$email] ?? null;
 
         return $id === null ? null : ($this->byId[$id] ?? null);
+    }
+
+    public function update(string $subjectId, ?string $name = null, ?string $email = null): Subject
+    {
+        $existing = $this->byId[$subjectId] ?? null;
+
+        if ($existing === null) {
+            throw new RuntimeException("No such subject: {$subjectId}");
+        }
+
+        $updated = new Subject(
+            $existing->id,
+            $email ?? $existing->email,
+            $name ?? $existing->name,
+        );
+
+        $this->byId[$subjectId] = $updated;
+
+        return $updated;
     }
 
     public function create(string $email, ?string $name = null, ?string $password = null): Subject

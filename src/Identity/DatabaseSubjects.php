@@ -483,6 +483,53 @@ class DatabaseSubjects implements Subjects
         ));
     }
 
+    public function update(string $subjectId, ?string $name = null, ?string $email = null): Subject
+    {
+        $model = $this->query()->whereKey($subjectId)->firstOrFail();
+
+        $changed = [];
+
+        if ($name !== null && $this->stringAttribute($model, 'name') !== $name) {
+            $model->setAttribute('name', $name === '' ? null : $name);
+            $changed[] = 'name';
+        }
+
+        if ($email !== null && mb_strtolower($this->stringAttribute($model, 'email') ?? '') !== mb_strtolower($email)) {
+            $model->setAttribute('email', $email);
+
+            // An administrator asserting an address is not its owner proving one. Clearing
+            // the verification is what stops this being an account-takeover primitive:
+            // set an address you control, keep the verified flag, and every recovery path
+            // now points at you.
+            $model->setAttribute('email_verified_at', null);
+            $changed[] = 'email';
+        }
+
+        if ($changed === []) {
+            return $this->toSubject($model);
+        }
+
+        $model->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'user.updated',
+            actorType: ActorType::User,
+            targetType: 'user',
+            targetId: $subjectId,
+            context: ['changed' => $changed],
+        ));
+
+        // Emitting this is what makes `user.updated` real: the webhook picker has offered
+        // it all along with nothing emitting it, and the outbound SCIM path maps it to an
+        // Upsert, so a profile change reached no downstream application until now.
+        $this->events->emit(new DomainEvent('user.updated', [
+            'user_id' => $subjectId,
+            'changed' => $changed,
+        ]));
+
+        return $this->toSubject($model);
+    }
+
     public function markEmailVerified(string $subjectId, string $email): void
     {
         $model = $this->query()->whereKey($subjectId)->first();

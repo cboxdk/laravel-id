@@ -15,6 +15,28 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.73.0] - 2026-08-01
+
+### Added
+
+- **`Subjects::update()`** — change a subject's name and/or email, audited as
+  `user.updated` and emitted as a domain event. There was no verb for this, so the host
+  console reached past the contract and called `$user->save()` on the model: the only
+  direct model write left in it, while every neighbouring action went through a contract.
+
+  Three things followed. No audit record for the most security-relevant mutable attribute
+  on an account — email is both the primary identifier and the recovery channel.
+  `user.updated` offered in the console's webhook picker with nothing anywhere emitting
+  it, so subscribers got silence. And the outbound SCIM path's `'user.updated' => Upsert`
+  branch permanently dead, so a legal name change propagated to no downstream application,
+  ever.
+
+  A changed email lands **unverified**: an administrator asserting an address is not its
+  owner proving one, and keeping the flag would make this an account-takeover primitive —
+  set an address you control, and every recovery path points at you. A no-op update
+  records nothing, because an access review reading "the email changed" when it did not is
+  worse than silence.
+
 ## [0.72.0] - 2026-08-01
 
 ### Security

@@ -140,5 +140,25 @@ interface Subjects
      * Mark the subject's email address as verified (no-op if the current address
      * no longer matches $email — the confirmation is stale).
      */
+    /**
+     * Change a subject's display name and/or email, audited and announced.
+     *
+     * There was no verb for this, so the console reached past the contract and called
+     * `$user->save()` on the model — the only direct model write left in it, while every
+     * neighbouring action went through a contract. Three consequences followed: no audit
+     * record for the most security-relevant mutable attribute on an account (email is the
+     * primary identifier AND the recovery channel); `user.updated` offered in the webhook
+     * picker with nothing on earth emitting it; and the outbound SCIM path's
+     * `'user.updated' => Upsert` branch permanently dead, so a legal name change reached
+     * no downstream application, ever.
+     *
+     * A changed email lands UNVERIFIED. An administrator asserting an address is not the
+     * same as its owner proving it, and treating it as proof would make this an account
+     * takeover primitive.
+     *
+     * Null leaves a field alone; passing the current value is a no-op that audits nothing.
+     */
+    public function update(string $subjectId, ?string $name = null, ?string $email = null): Subject;
+
     public function markEmailVerified(string $subjectId, string $email): void;
 }
