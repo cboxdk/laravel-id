@@ -102,3 +102,44 @@ it('echoes the granted scope when a refresh carries scopes the client has since 
         ->assertOk()
         ->assertJsonPath('scope', 'api.read');
 });
+
+/**
+ * Granting NOTHING is not a partial grant.
+ *
+ * Down-scoping with an honest echo is correct and deliberate — the two tests above pin
+ * it. But when nothing survives the filter, §5.1's ABNF has no empty production for
+ * `scope`, so the echo cannot be sent and the response becomes indistinguishable from
+ * "you were granted everything you asked for". The client proceeds on authority it does
+ * not hold and discovers it at the resource server, with nothing to diagnose against.
+ *
+ * §5.2 has the error for a request that exceeds what may be granted.
+ */
+it('refuses a request for scopes the client holds none of', function (): void {
+    $registered = $this->makeClient(['api.read'], grantTypes: ['client_credentials']);
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'billing.write admin.everything',
+    ])
+        ->assertStatus(400)
+        ->assertJsonPath('error', 'invalid_scope');
+});
+
+/**
+ * And a request that overlaps still succeeds, narrowed and echoed — the behaviour above
+ * must not have been widened into a blanket refusal.
+ */
+it('still narrows a partially-registered request rather than refusing it', function (): void {
+    $registered = $this->makeClient(['api.read'], grantTypes: ['client_credentials']);
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'api.read billing.write',
+    ])
+        ->assertOk()
+        ->assertJsonPath('scope', 'api.read');
+});

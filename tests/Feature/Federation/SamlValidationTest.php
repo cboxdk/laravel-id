@@ -15,6 +15,16 @@ use RobRichards\XMLSecLibs\XMLSecurityKey;
 
 uses(RefreshDatabase::class);
 
+/*
+ * Pest ignores a file-level `@group` docblock — membership comes only from a `uses()` or
+ * a per-test `->group()`. So the 17 files that declared the group this way contributed
+ * ZERO tests to `--group=isolation`, including the environment-isolation proof itself,
+ * while docs/core-concepts/environments.md tells operators to run exactly that command
+ * as the evidence. A selector that silently omits its own load-bearing file is worse than
+ * no selector.
+ */
+uses()->group('isolation');
+
 const FED_SP_ENTITY = 'https://sp.example.test/metadata';
 const FED_SP_ACS = 'https://sp.example.test/saml/acs';
 const FED_IDP_ENTITY = 'https://idp.example.test/metadata';
@@ -51,6 +61,9 @@ final class SamlIdp
         // so with a single flag either check could be deleted and every test still
         // passed. One of them was, and shipped.
         bool $digestSha1 = false,
+        // Drop the AudienceRestriction entirely — the shape php-saml waves through,
+        // because it only checks the audience when one is present.
+        bool $noAudience = false,
         ?string $wrapAs = null,
         ?string $destination = null,
         // Pinned by the cross-tenant replay test: two unrelated IdPs legitimately
@@ -61,6 +74,9 @@ final class SamlIdp
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
         $after = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
         $assertionId ??= '_'.bin2hex(random_bytes(16));
+        $audienceRestriction = $noAudience
+            ? ''
+            : '<saml:AudienceRestriction><saml:Audience>'.$audience.'</saml:Audience></saml:AudienceRestriction>';
         $responseId = '_'.bin2hex(random_bytes(16));
         $issuer = FED_IDP_ENTITY;
         $recipient = FED_SP_ACS;
@@ -80,7 +96,7 @@ final class SamlIdp
       </saml:SubjectConfirmation>
     </saml:Subject>
     <saml:Conditions NotBefore="{$before}" NotOnOrAfter="{$after}">
-      <saml:AudienceRestriction><saml:Audience>{$audience}</saml:Audience></saml:AudienceRestriction>
+      {$audienceRestriction}
     </saml:Conditions>
     <saml:AuthnStatement AuthnInstant="{$now}" SessionIndex="{$assertionId}">
       <saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext>
@@ -304,6 +320,39 @@ it('rejects a SAML response whose digest is SHA-1 even when the signature is RSA
 
     expect(fn () => app(AssertionValidator::class)->validate($connection, $idp->response(digestSha1: true)))
         ->toThrow(InvalidAssertion::class, 'digest');
+});
+
+/**
+ * SAML 2.0 Profiles §4.1.4.2 makes it a MUST that the SP verify the assertion contains an
+ * `<AudienceRestriction>` naming it. php-saml checks the audience only when one is
+ * PRESENT — `if (!empty($validAudiences))` — so an assertion carrying none skipped the
+ * check entirely, and nothing here re-checked it.
+ *
+ * The consequence where an IdP can be made to emit audience-less assertions (Shibboleth
+ * and Keycloak custom mappers, a blanked Okta audience): an assertion that IdP
+ * legitimately minted for a DIFFERENT relying party is accepted here as a login.
+ * InResponseTo blocks the solicited path, so the exposure is a connection with
+ * IdP-initiated sign-in enabled — the configuration that has no other binding between
+ * the request and the response.
+ */
+it('refuses an assertion that names no audience', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    expect(fn () => app(AssertionValidator::class)->validate($connection, $idp->response(noAudience: true)))
+        ->toThrow(InvalidAssertion::class, 'no AudienceRestriction');
+});
+
+/**
+ * And one that names somebody else. "It did not say" and "it said someone else" are the
+ * same answer to the only question being asked, so both are refused.
+ */
+it('refuses an assertion addressed to another service provider', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    expect(fn () => app(AssertionValidator::class)->validate($connection, $idp->response(audience: 'https://someone-else.example/sp')))
+        ->toThrow(InvalidAssertion::class);
 });
 
 it('rejects an unsigned SAML response (wantAssertionsSigned)', function (): void {

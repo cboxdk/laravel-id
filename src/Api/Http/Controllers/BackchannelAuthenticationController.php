@@ -27,8 +27,16 @@ class BackchannelAuthenticationController
 
     public function __invoke(Request $request): JsonResponse
     {
-        // The backchannel endpoint is client-authenticated, like the token endpoint.
-        $client = $this->clientAuth->authenticate($request);
+        // Client-authenticated like the token endpoint, and CONFIDENTIALLY so.
+        //
+        // authenticate() lets a public client through on client_id alone, which is safe
+        // where a front channel and PKCE bind the flow to the browser that started it.
+        // CIBA has neither: there is no redirect, no code_verifier, and the only human
+        // check is the approval prompt this endpoint puts on someone's phone. So a public
+        // client_id — which is not a secret and travels in every app binary — was enough
+        // to spray prompts at arbitrary users via login_hint, and a person who has
+        // dismissed thirty of them approves the thirty-first.
+        $client = $this->clientAuth->authenticateConfidential($request);
 
         if ($client === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401);

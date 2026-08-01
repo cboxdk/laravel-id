@@ -126,6 +126,24 @@ class TokenController
 
         $requested = $this->scopes($request);
 
+        // Down-scoping a request to what the client registered for is deliberate and
+        // correct — RFC 6749 §5.1 permits a granted set that differs from the request,
+        // provided the response says so, and tokenResponse() echoes it.
+        //
+        // Granting NOTHING is a different thing wearing the same clothes. §5.1's ABNF has
+        // no empty production for `scope`, so the echo cannot be sent and the response
+        // becomes indistinguishable from "you got everything you asked for" — the client
+        // proceeds on authority it does not hold and finds out at the resource server.
+        // A request where nothing survives the filter is a refusal, and §5.2 has the
+        // error for it.
+        if ($requested !== [] && array_filter($requested, fn (string $scope): bool => $client->allows($scope)) === []) {
+            return $this->error(
+                'invalid_scope',
+                400,
+                'the client is registered for none of the requested scopes',
+            );
+        }
+
         return $this->tokenResponse(
             $this->issuer->issueClientCredentials($client, $requested, $this->resource($request), $dpopJkt),
             null,

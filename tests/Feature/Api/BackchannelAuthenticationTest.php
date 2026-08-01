@@ -6,11 +6,22 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Models\BackchannelAuthRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+/*
+ * Pest ignores a file-level `@group` docblock — membership comes only from a `uses()` or
+ * a per-test `->group()`. So the 17 files that declared the group this way contributed
+ * ZERO tests to `--group=isolation`, including the environment-isolation proof itself,
+ * while docs/core-concepts/environments.md tells operators to run exactly that command
+ * as the evidence. A selector that silently omits its own load-bearing file is worse than
+ * no selector.
+ */
+uses()->group('isolation');
 
 const CIBA_GRANT = 'urn:openid:params:grant-type:ciba';
 
@@ -245,4 +256,31 @@ it('refuses to approve or deny another subject\'s request', function (): void {
 
     // The rightful subject still can.
     expect($ciba->approve($pending->requestId, $victim->id))->toBeTrue();
+});
+
+/**
+ * CIBA must not accept a public client.
+ *
+ * `authenticate()` lets a public client through on `client_id` alone, which is safe where
+ * a front channel and PKCE bind the flow to the browser that started it. CIBA has
+ * neither: no redirect, no `code_verifier`, and the only human check is the approval
+ * prompt this endpoint puts on someone's phone.
+ *
+ * So a public `client_id` — not a secret, and present in every copy of an app binary —
+ * was enough to spray approval prompts at arbitrary users via `login_hint`. That attacks
+ * exactly the human-in-the-loop that CIBA exists for: someone who has dismissed thirty
+ * prompts approves the thirty-first.
+ */
+it('refuses a public client, which has no secret to prove anything with', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT], type: ClientType::Public);
+    $user = $this->makeUser('target@example.test');
+
+    $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id,
+        'scope' => 'openid',
+        'login_hint' => $user->id,
+        'binding_message' => 'Approve deployment',
+    ])->assertStatus(401)->assertJsonPath('error', 'invalid_client');
+
+    expect(BackchannelAuthRequest::query()->count())->toBe(0, 'a prompt was created for an unauthenticated client');
 });

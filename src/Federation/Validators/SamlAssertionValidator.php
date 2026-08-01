@@ -136,6 +136,36 @@ class SamlAssertionValidator implements AssertionValidator
     }
 
     /**
+     * The assertion must say it was minted for US.
+     *
+     * php-saml checks the audience only `if (!empty($validAudiences))`, so an assertion
+     * carrying NO `<AudienceRestriction>` skipped the check entirely — and SAML 2.0
+     * Profiles §4.1.4.2 makes it a MUST that the SP verify one is present and names it.
+     *
+     * The gap is not academic where an IdP can be made to emit audience-less assertions
+     * (Shibboleth and Keycloak custom mappers, an Okta audience left blank): an assertion
+     * that IdP legitimately minted for a DIFFERENT relying party is then accepted here as
+     * a login. `InResponseTo` blocks the solicited path, so the exposure is a connection
+     * with IdP-initiated sign-in enabled — which is exactly the configuration that has no
+     * other binding between the request and the response.
+     *
+     * Empty is refused as firmly as wrong. "It did not say" and "it said someone else"
+     * are the same answer to the only question being asked.
+     */
+    private function assertAudience(SamlResponse $response, string $spEntityId): void
+    {
+        $audiences = $response->getAudiences();
+
+        if ($audiences === []) {
+            throw InvalidAssertion::make('SAML assertion carries no AudienceRestriction');
+        }
+
+        if (! in_array($spEntityId, $audiences, true)) {
+            throw InvalidAssertion::make('SAML assertion is addressed to another service provider');
+        }
+    }
+
+    /**
      * Read the root element's InResponseTo attribute via onelogin's XXE-safe XML
      * loader. This is a pre-signature peek used only to locate our stored request;
      * the value is re-checked against onelogin's canonical parse inside isValid().
@@ -203,6 +233,8 @@ class SamlAssertionValidator implements AssertionValidator
         // deprecated RSA-SHA1 / SHA-1 pair; refuse anything but RSA-SHA256 / SHA-256
         // so the RP consume side is no weaker than this codebase's own IdP signing.
         $this->assertPinnedSignatureAlgorithms($response);
+
+        $this->assertAudience($response, $config->spEntityId);
 
         // Single-use: a captured, still-valid assertion cannot be replayed.
         $this->guardReplay($connection, $response->getAssertionId(), $response->getAssertionNotOnOrAfter());

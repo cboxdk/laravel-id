@@ -15,6 +15,56 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.74.0] - 2026-08-01
+
+### Security
+
+- **A SAML assertion naming no audience was accepted.** php-saml checks the audience only
+  when one is PRESENT — `if (!empty($validAudiences))` — and nothing here re-checked it,
+  while SAML 2.0 Profiles §4.1.4.2 makes it a MUST that the SP verify an
+  `<AudienceRestriction>` exists and names it. Where an IdP can be made to emit
+  audience-less assertions (Shibboleth and Keycloak custom mappers, a blanked Okta
+  audience), an assertion that IdP legitimately minted for a DIFFERENT relying party was
+  accepted here as a login. `InResponseTo` covers the solicited path, so the exposure was
+  a connection with IdP-initiated sign-in enabled — the configuration with no other
+  binding between request and response. Absent and wrong are now refused alike.
+
+- **CIBA accepted public clients.** `authenticate()` admits a public client on `client_id`
+  alone, which is safe where a front channel and PKCE bind the flow to the browser that
+  started it. CIBA has neither, and its only human check is the approval prompt it puts on
+  someone's phone — so a public `client_id`, which is not a secret and ships in every copy
+  of an app binary, was enough to spray prompts at arbitrary users via `login_hint`. That
+  attacks precisely the human-in-the-loop CIBA exists for: a person who has dismissed
+  thirty prompts approves the thirty-first.
+
+### Fixed
+
+- **`client_credentials` answered 200 when it granted nothing.** Down-scoping a request to
+  what a client registered for is deliberate and correct — §5.1 permits a granted set that
+  differs from the request provided the response says so, and it does. But §5.1's ABNF has
+  no empty production for `scope`, so when NOTHING survived the filter the echo could not
+  be sent and the response was indistinguishable from "you got everything you asked for".
+  A request where nothing survives is a refusal, and §5.2 has the error for it. The
+  partial-grant behaviour is unchanged and now pinned by its own test.
+
+### Testing
+
+- **Three outbound federation SSRF sites had no test at all** — OIDC discovery, JWKS fetch
+  and SAML metadata import. `pinnedOptions()` is the only protection on those paths. That
+  absence is not theoretical: the equivalent pin on the outbound SCIM client was replaced
+  with an empty array during this review's own falsification work, swept into a commit and
+  released, and every suite stayed green. Each is now armed with `Http::fake` on the
+  blocked address, so a bypass SUCCEEDS visibly rather than erroring on an unreachable
+  network.
+
+- **`--group=isolation` contained 34 tests when 149 belonged in it.** Pest ignores a
+  file-level `@group` docblock — membership comes from `uses()` or a per-test `->group()`
+  — so seventeen files that declared it contributed nothing, including
+  `EnvironmentIsolationTest` itself. `docs/core-concepts/environments.md` tells operators
+  to run exactly that command as the evidence that tenants are separated, so someone ran
+  it, saw green, and drew a conclusion about the wrong 34. A meta-test now fails if a file
+  claims the group without joining it.
+
 ## [0.73.0] - 2026-08-01
 
 ### Added

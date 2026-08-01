@@ -15,6 +15,16 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class, InteractsWithTenancy::class);
 
+/*
+ * Pest ignores a file-level `@group` docblock — membership comes only from a `uses()` or
+ * a per-test `->group()`. So the 17 files that declared the group this way contributed
+ * ZERO tests to `--group=isolation`, including the environment-isolation proof itself,
+ * while docs/core-concepts/environments.md tells operators to run exactly that command
+ * as the evidence. A selector that silently omits its own load-bearing file is worse than
+ * no selector.
+ */
+uses()->group('isolation');
+
 /**
  * @group isolation
  *
