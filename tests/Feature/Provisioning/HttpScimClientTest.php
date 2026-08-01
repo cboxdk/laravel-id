@@ -154,3 +154,35 @@ it('refreshes an expired OAuth access token instead of reusing a stale one', fun
     $lastCreate = Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/Users'))->last();
     expect($lastCreate[0]->header('Authorization')[0])->toBe('Bearer token-2');
 });
+
+/**
+ * The outbound SCIM client's SSRF pinning, which had no test at all.
+ *
+ * That absence is not theoretical: the call to `SafeScimUrl::pinnedOptions()` was
+ * replaced with `[]` during this review's falsification work, swept into a commit, and
+ * RELEASED — and the whole 30-test provisioning suite stayed green, because nothing
+ * exercised it. A guard nothing asserts on is a guard that can leave without a sound.
+ *
+ * Pinning matters at DELIVERY time and not just at registration: registration resolves
+ * the host once, and a DNS record that answers publicly then and privately later is the
+ * rebind window this closes.
+ */
+it('refuses to deliver to a connection whose host fails the SSRF guard', function (): void {
+    Http::fake();
+
+    // Registered with the guard off (file-wide beforeEach), then enabled for delivery —
+    // so this proves the DELIVERY-time check specifically, not the registration one.
+    $connection = $this->registerProvisioningConnection(baseUrl: 'https://blocked.test/scim/v2')->connection;
+    config(['cbox-id.provisioning.verify_url' => true]);
+
+    $result = app(ScimClient::class)->createUser(
+        $connection,
+        ScimSchema::userResource('user-1', ['userName' => 'u@example.com', 'active' => true]),
+    );
+
+    // Nothing left the process, and the caller is told so in the terms it acts on: a
+    // transport failure, which the outbox retries, rather than a success it would record.
+    Http::assertNothingSent();
+    expect($result->successful())->toBeFalse()
+        ->and($result->transport)->toBeTrue();
+});

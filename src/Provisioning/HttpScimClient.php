@@ -100,7 +100,7 @@ class HttpScimClient implements ScimClient
     private function send(ProvisioningConnection $connection, string $url, callable $perform): ScimResult
     {
         try {
-            $pinned = [];
+            $pinned = SafeScimUrl::pinnedOptions($url);
             $authorization = $this->authorization($connection);
         } catch (Throwable) {
             // A connection pointed at a private/metadata address (UnsafeScimUrl),

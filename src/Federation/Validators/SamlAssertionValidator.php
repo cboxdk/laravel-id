@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
 use OneLogin\Saml2\Response as SamlResponse;
 use OneLogin\Saml2\Settings;
 use OneLogin\Saml2\Utils as SamlUtils;
+use RobRichards\XMLSecLibs\XMLSecurityDSig;
 use RobRichards\XMLSecLibs\XMLSecurityKey;
 use Throwable;
 
@@ -318,6 +319,9 @@ class SamlAssertionValidator implements AssertionValidator
             }
 
             foreach ($digests as $digest) {
+                if (! $digest instanceof DOMElement || $digest->getAttribute('Algorithm') !== XMLSecurityDSig::SHA256) {
+                    throw InvalidAssertion::make('unsupported SAML digest algorithm (SHA-256 required)');
+                }
             }
         }
     }

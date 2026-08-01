@@ -15,6 +15,41 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.70.0] - 2026-08-01
+
+### Security
+
+**Restores two controls that 0.68.0 and 0.69.0 shipped without.** Both were deleted by
+accident, not by decision, and both were released. Anyone on 0.68.0 or 0.69.0 should move
+to this version; earlier versions are unaffected.
+
+- **The SAML digest-algorithm pin was removed**, leaving an empty loop where the check
+  had been. A response signed RSA-SHA256 but digested with SHA-1 was accepted — the
+  signature pin still held, so only the weaker half of the pair was open.
+
+- **The outbound SCIM client's SSRF pinning was replaced with an empty option set**, so
+  delivery-time DNS pinning was off. Registration-time validation still applied, which
+  means the exposure was specifically the rebind window: a host that resolves publicly
+  when a connection is registered and privately when an operation is delivered.
+
+How it happened, because the mechanism matters more than the diff: both edits were
+falsification probes from this review's own testing pass — deliberate deletions made to
+check whether a guard was actually guarded. They were still in the working tree when a
+`git add -A` swept them into an unrelated commit. Neither test suite went red, because
+neither control had a test that failed when it was deleted, which was the very finding
+the probes were confirming.
+
+### Testing
+
+- **A mixed-algorithm SAML response** — RSA-SHA256 signature, SHA-1 digest. Every existing
+  SAML test used an all-SHA-1 document, which trips the signature pin first, so the digest
+  pin was never the reason any test passed and could be deleted in silence. The fixture's
+  single `sha1` flag now splits in two so the two pins can be exercised apart.
+
+- **Delivery-time SSRF refusal on the outbound SCIM client**, which had no test at all.
+  The connection is registered with the guard off and the guard enabled for the delivery,
+  so it proves the delivery-time check specifically rather than the registration one.
+
 ## [0.69.0] - 2026-08-01
 
 No behaviour change. Two guards that did not guard, found by deleting the code they

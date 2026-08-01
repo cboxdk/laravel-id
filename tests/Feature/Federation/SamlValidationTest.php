@@ -46,6 +46,11 @@ final class SamlIdp
         bool $tamper = false,
         ?string $inResponseTo = null,
         bool $sha1 = false,
+        // Split from $sha1 deliberately. The signature method and the digest method are
+        // pinned by two SEPARATE checks, but one RSA-SHA1 document trips both at once —
+        // so with a single flag either check could be deleted and every test still
+        // passed. One of them was, and shipped.
+        bool $digestSha1 = false,
         ?string $wrapAs = null,
         ?string $destination = null,
         // Pinned by the cross-tenant replay test: two unrelated IdPs legitimately
@@ -92,7 +97,7 @@ XML;
         $doc->loadXML($xml);
 
         if ($sign) {
-            $this->signAssertion($doc, $sha1);
+            $this->signAssertion($doc, $sha1, $digestSha1);
         }
 
         if ($wrapAs !== null) {
@@ -180,7 +185,7 @@ XML;
         $response->insertBefore($forged, $genuine);
     }
 
-    private function signAssertion(DOMDocument $doc, bool $sha1 = false): void
+    private function signAssertion(DOMDocument $doc, bool $sha1 = false, bool $digestSha1 = false): void
     {
         $assertion = $doc->getElementsByTagName('Assertion')->item(0);
 
@@ -188,7 +193,7 @@ XML;
         $dsig->setCanonicalMethod(XMLSecurityDSig::EXC_C14N);
         $dsig->addReference(
             $assertion,
-            $sha1 ? XMLSecurityDSig::SHA1 : XMLSecurityDSig::SHA256,
+            ($sha1 || $digestSha1) ? XMLSecurityDSig::SHA1 : XMLSecurityDSig::SHA256,
             ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', XMLSecurityDSig::EXC_C14N],
             ['id_name' => 'ID', 'overwrite' => false],
         );
@@ -283,6 +288,23 @@ it('rejects a SAML response signed with RSA-SHA1 (algorithm downgrade)', functio
     // onelogin still accepts. The RP must pin RSA-SHA256 and refuse it.
     app(AssertionValidator::class)->validate($connection, $idp->response(sha1: true));
 })->throws(InvalidAssertion::class);
+
+/**
+ * RSA-SHA256 signature, SHA-1 digest. A conformant-looking document that is weak where it
+ * matters, and the case that isolates the digest pin from the signature pin.
+ *
+ * This test exists because the digest pin was DELETED — an empty `foreach` left where the
+ * check had been — and shipped in a release. Nothing went red: every other SAML test uses
+ * an all-SHA-1 document, which trips the signature pin first, so the digest check was
+ * never the reason any test passed.
+ */
+it('rejects a SAML response whose digest is SHA-1 even when the signature is RSA-SHA256', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    expect(fn () => app(AssertionValidator::class)->validate($connection, $idp->response(digestSha1: true)))
+        ->toThrow(InvalidAssertion::class, 'digest');
+});
 
 it('rejects an unsigned SAML response (wantAssertionsSigned)', function (): void {
     $idp = new SamlIdp;
