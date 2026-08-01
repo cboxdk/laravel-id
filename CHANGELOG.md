@@ -15,6 +15,39 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.72.0] - 2026-08-01
+
+### Security
+
+- **`POST /oauth/decisions` now pins the audience.** It accepted any active access token
+  and checked neither the audience nor a scope, while answering with strictly more than
+  UserInfo does — the subject's entire permission and entitlement set in the organization.
+  UserInfo has refused a wrong-audience token for some time, with a docblock explaining
+  that a token minted for a specific RFC 8707 resource must not be replayable to harvest
+  identity claims; the same reasoning applies here with more at stake.
+
+  Concretely: an organization registers an app with `resource=https://app-a.example`.
+  Anyone holding a token audienced to that app — the app, or whoever compromises it —
+  could replay it here and enumerate that user's whole authorization surface. UserInfo
+  says no to the identical token.
+
+### Added
+
+- **`cbox-id.oauth.decisions.require_scope`** (`CBOX_ID_OAUTH_DECISIONS_REQUIRE_SCOPE`),
+  requiring `decisions:read` on the presented token. **Off by default**, because the
+  endpoint has always accepted any active token and turning this on unannounced refuses
+  every integration that has not been updated to ask for the scope. The audience check
+  above is not optional and is always enforced.
+
+### Fixed
+
+- **The endpoint's three distinct 401s are distinguishable.** No token, an inactive token
+  and a failed DPoP proof all emitted the same bare `{"error":"invalid_token"}`, two of
+  them with no `WWW-Authenticate` at all — which RFC 6750 §3 makes a MUST, and which
+  `TokenController` had already solved one file over, noting that several real client
+  libraries treat a bare 401 as fatal. Each now carries its own `error_description` and a
+  challenge header.
+
 ## [0.71.0] - 2026-08-01
 
 ### Security

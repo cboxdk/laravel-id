@@ -482,6 +482,22 @@ return [
          */
         'decisions' => [
             'max_batch' => env('CBOX_ID_DECISIONS_MAX_BATCH', 50),
+
+            /*
+             * Require the `decisions:read` scope on the presented token.
+             *
+             * Off by default, and deliberately: this endpoint has always accepted any
+             * active access token, so switching it on unannounced refuses every
+             * integration that has not been updated to ask for the scope. Turn it on
+             * once your resource servers request it.
+             *
+             * The AUDIENCE check is not optional and is always enforced. A token minted
+             * for a different RFC 8707 resource was never meant to work here, and
+             * accepting one hands a resource server the subject's entire permission and
+             * entitlement set in the organization — strictly more than UserInfo would
+             * give it, which has refused the same token all along.
+             */
+            'require_scope' => (bool) env('CBOX_ID_OAUTH_DECISIONS_REQUIRE_SCOPE', false),
         ],
     ],
 

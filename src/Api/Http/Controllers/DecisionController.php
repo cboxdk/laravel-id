@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Authorization\Contracts\PolicyDecisionPoint;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Kernel\Authorization\ValueObjects\ResourceRef;
 use Cbox\Id\Kernel\Authorization\ValueObjects\Subject;
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
@@ -36,27 +37,57 @@ class DecisionController
         private readonly TokenIntrospector $introspector,
         private readonly PolicyDecisionPoint $pdp,
         private readonly DpopResourceGuard $dpop,
+        private readonly IssuerResolver $issuers,
     ) {}
+
+    /**
+     * The scope a caller must hold, once the deployment requires one.
+     *
+     * Off by default and not because it should be: this endpoint has been served without
+     * a scope requirement, so turning it on unannounced would break every existing
+     * integration at once. Operators opt in with `cbox-id.oauth.decisions.require_scope`,
+     * and the endpoint tells a refused caller exactly which scope to request rather than
+     * answering a bare 403.
+     */
+    private const SCOPE = 'decisions:read';
 
     public function __invoke(Request $request): JsonResponse
     {
         $token = $this->dpop->bearer($request);
 
         if (! is_string($token) || $token === '') {
-            return new JsonResponse(['error' => 'invalid_token'], 401);
+            return $this->refuse('invalid_token', 'no access token was presented');
         }
 
         $introspection = $this->introspector->introspect($token);
 
         if (! $introspection->active) {
-            return new JsonResponse(['error' => 'invalid_token'], 401);
+            return $this->refuse('invalid_token', 'the access token is expired or revoked');
         }
 
         // Sender-constrained tokens must arrive with a matching DPoP proof.
         try {
             $this->dpop->enforce($request, $token, $introspection);
         } catch (InvalidDpopProof) {
-            return new JsonResponse(['error' => 'invalid_token'], 401, ['WWW-Authenticate' => 'DPoP error="invalid_token"']);
+            return $this->refuse('invalid_token', 'the DPoP proof is missing or does not match this token', scheme: 'DPoP');
+        }
+
+        // Least-privilege, matching UserInfo. A token minted for a specific RFC 8707
+        // resource must not be replayable here — and this endpoint answers with strictly
+        // MORE than UserInfo does: the subject's whole permission and entitlement set in
+        // the organization. UserInfo has refused a wrong-audience token for some time,
+        // with a docblock explaining why; this one had neither that check nor a scope.
+        if (! $introspection->isAudience($this->issuers->issuer())) {
+            return $this->refuse('invalid_token', 'the access token was not issued for this endpoint');
+        }
+
+        if (config('cbox-id.oauth.decisions.require_scope') === true
+            && ! $introspection->hasScope(self::SCOPE)) {
+            return $this->refuse(
+                'insufficient_scope',
+                'the access token must carry the "'.self::SCOPE.'" scope',
+                403,
+            );
         }
 
         $sub = (string) $introspection->subject;
@@ -187,5 +218,23 @@ class DecisionController
     private function list(mixed $value): array
     {
         return is_array($value) ? array_values($value) : [];
+    }
+
+    /**
+     * A refusal a client can act on.
+     *
+     * Three distinct causes — no token, an inactive one, a bad DPoP proof — used to emit
+     * the same bare `{"error":"invalid_token"}` with no description and, on two of the
+     * three, no `WWW-Authenticate` at all. RFC 6750 §3 makes that header a MUST, and
+     * TokenController already solved this one file over, with a docblock noting that
+     * several real client libraries treat a bare 401 as fatal.
+     */
+    private function refuse(string $error, string $description, int $status = 401, string $scheme = 'Bearer'): JsonResponse
+    {
+        $headers = $status === 401
+            ? ['WWW-Authenticate' => $scheme.' error="'.$error.'", error_description="'.$description.'"']
+            : [];
+
+        return new JsonResponse(['error' => $error, 'error_description' => $description], $status, $headers);
     }
 }
