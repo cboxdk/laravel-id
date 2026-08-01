@@ -241,3 +241,84 @@ it('refuses a pathless PATCH remove and keeps every member', function (): void {
         ->assertOk()
         ->assertJsonCount(2, 'members');
 });
+
+/**
+ * `members[value eq "x"].display` addresses a sub-attribute of ONE member, not the
+ * membership list. It passed the `members` prefix check and then arrived at
+ * `sync(valueIds("Some Name"))` — and `valueIds()` of a plain string is the empty array,
+ * so the branch that reads like "rename a member" detached every one of them.
+ *
+ * Refused rather than guessed at: this server stores no per-membership display value, so
+ * there is nothing it could correctly do with the operation.
+ */
+it('refuses a member sub-attribute path instead of emptying the group', function (): void {
+    $headers = $this->scimHeaders;
+    $alice = provisionUser($this, $headers, 'alice', 'okta|1');
+    $bob = provisionUser($this, $headers, 'bob', 'okta|2');
+
+    $groupId = $this->postJson('/scim/v2/Groups', [
+        'displayName' => 'Engineering',
+        'members' => [['value' => $alice], ['value' => $bob]],
+    ], $headers)->json('id');
+
+    $this->patchJson('/scim/v2/Groups/'.$groupId, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'path' => 'members[value eq "'.$alice.'"].display', 'value' => 'Alice A.']],
+    ], $headers)->assertStatus(400);
+
+    $this->getJson('/scim/v2/Groups/'.$groupId, $headers)->assertOk()->assertJsonCount(2, 'members');
+});
+
+/**
+ * A pathless replace carries the WHOLE resource, so one naming both a displayName and
+ * members means both. The rename branch fired first and returned, silently discarding the
+ * membership — with a 200, so the connector recorded a success and never re-sent it.
+ *
+ * Half an operation applied and reported as all of it is worse than a refusal: the
+ * directory and the IdP now disagree, and nothing will reconcile them.
+ */
+it('applies both halves of a pathless replace that renames and sets members', function (): void {
+    $headers = $this->scimHeaders;
+    $alice = provisionUser($this, $headers, 'alice', 'okta|1');
+    $bob = provisionUser($this, $headers, 'bob', 'okta|2');
+
+    $groupId = $this->postJson('/scim/v2/Groups', [
+        'displayName' => 'Engineering',
+        'members' => [['value' => $alice]],
+    ], $headers)->json('id');
+
+    $this->patchJson('/scim/v2/Groups/'.$groupId, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'value' => ['displayName' => 'Platform', 'members' => [['value' => $bob]]]]],
+    ], $headers)->assertOk();
+
+    $this->getJson('/scim/v2/Groups/'.$groupId, $headers)
+        ->assertOk()
+        ->assertJsonPath('displayName', 'Platform')
+        ->assertJsonCount(1, 'members')
+        ->assertJsonPath('members.0.value', $bob);
+});
+
+/**
+ * And a rename-only pathless replace must still leave membership alone — the fall-through
+ * above must not have turned every rename into a membership wipe.
+ */
+it('leaves members alone on a rename-only pathless replace', function (): void {
+    $headers = $this->scimHeaders;
+    $alice = provisionUser($this, $headers, 'alice', 'okta|1');
+
+    $groupId = $this->postJson('/scim/v2/Groups', [
+        'displayName' => 'Engineering',
+        'members' => [['value' => $alice]],
+    ], $headers)->json('id');
+
+    $this->patchJson('/scim/v2/Groups/'.$groupId, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'value' => ['displayName' => 'Platform']]],
+    ], $headers)->assertOk();
+
+    $this->getJson('/scim/v2/Groups/'.$groupId, $headers)
+        ->assertOk()
+        ->assertJsonPath('displayName', 'Platform')
+        ->assertJsonCount(1, 'members');
+});

@@ -15,6 +15,40 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.76.0] - 2026-08-01
+
+Four SCIM defects, all of them silent — the connector sees a 200 and never retries, so
+the directory and the downstream app diverge with nothing to reconcile them.
+
+### Fixed
+
+- **`members[value eq "x"].display` emptied the group.** The path addresses a
+  sub-attribute of one member, passed the `members` prefix check, and arrived at
+  `sync(valueIds("Some Name"))` — and `valueIds()` of a plain string is the empty array,
+  so the branch that reads like "rename a member" detached every one of them. Refused
+  rather than guessed at: this server stores no per-membership display value.
+
+- **A pathless `replace` naming both a displayName and members applied only the rename.**
+  A pathless operation carries the whole resource, so it means both; the rename branch
+  fired first and returned, discarding the membership with a 200. Half an operation
+  reported as all of it is worse than a refusal.
+
+- **An outbound profile push wiped `givenName` and `familyName`.** RFC 7644 §3.5.2.3
+  makes a pathed `replace` of a complex attribute a whole-attribute replacement, and the
+  push emitted `{"op":"replace","path":"name","value":{"formatted":"…"}}`. Leaf paths
+  (`name.formatted`) now replace one sub-attribute and leave its siblings alone. This is
+  the same bug the INBOUND side found and fixed, never mirrored outbound — and its comment
+  there explains that Entra's read-modify-write reconciliation pushes the omission back
+  over the stored values on the next cycle. A multi-valued attribute like `emails` is
+  still replaced whole, or a push could never remove an address.
+
+- **A rotated downstream bearer token dead-lettered every queued operation.** 401 and 403
+  were terminal, so a connection fixable in thirty seconds by pasting a new token had
+  nothing left to retry by the time anyone did. Unlike the OAuth path, which refreshes
+  with an expiry margin, a static bearer gives no warning it has been replaced. Retrying
+  a genuinely revoked credential costs a bounded number of identical failures; dead-
+  lettering a rotated one costs a silent, unrecoverable divergence.
+
 ## [0.75.0] - 2026-08-01
 
 ### Security

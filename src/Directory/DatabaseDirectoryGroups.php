@@ -185,7 +185,14 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         if ($op === ScimPatchOp::Replace && is_string($displayName)) {
             $group->forceFill(['display_name' => $displayName])->save();
 
-            return;
+            // A pathless replace carries the WHOLE resource, so one that names both a
+            // displayName and members means both. Returning here renamed the group and
+            // silently discarded the membership — with a 200, so the connector recorded
+            // a success and never re-sent it. Fall through only when members are actually
+            // present; a rename-only payload must still not touch membership.
+            if (self::attribute($value, 'members') === null) {
+                return;
+            }
         }
 
         if ($op === ScimPatchOp::Replace && $canonical === 'displayname' && is_string($value)) {
@@ -198,6 +205,16 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         // only the `members` attribute is addressable. A bogus path is refused rather
         // than silently ignored.
         if (! str_starts_with($canonical, 'members') && $canonical !== '') {
+            throw UnsupportedGroupPatch::path($path);
+        }
+
+        // `members[value eq "x"].display` addresses a SUB-ATTRIBUTE of one member, not
+        // the membership list. It passed the prefix check above and then arrived at
+        // sync(valueIds("Some Name")) — and valueIds() of a plain string is the empty
+        // array, so the branch that looked like "rename a member" detached every one of
+        // them. Refuse the shape rather than guess at it: this server does not store a
+        // per-membership display value, so there is nothing it could correctly do.
+        if (str_contains($canonical, '].') || str_starts_with($canonical, 'members.')) {
             throw UnsupportedGroupPatch::path($path);
         }
 

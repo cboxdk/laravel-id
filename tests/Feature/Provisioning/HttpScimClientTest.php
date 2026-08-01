@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Cbox\Id\Provisioning\Contracts\ScimClient;
 use Cbox\Id\Provisioning\Enums\AuthScheme;
+use Cbox\Id\Provisioning\Support\AttributeMapping;
+use Cbox\Id\Provisioning\ValueObjects\ScimResult;
 use Cbox\Id\Scim\ScimSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -186,3 +188,68 @@ it('refuses to deliver to a connection whose host fails the SSRF guard', functio
     expect($result->successful())->toBeFalse()
         ->and($result->transport)->toBeTrue();
 });
+
+/**
+ * A pushed profile update must not blank the name parts it did not mention.
+ *
+ * RFC 7644 §3.5.2.3: a pathed `replace` of a COMPLEX attribute replaces the whole
+ * attribute. So `{"op":"replace","path":"name","value":{"formatted":"…"}}` told the
+ * downstream app that `name` is now exactly that object — and `givenName` and
+ * `familyName` were wiped on every push, silently, with a 200.
+ *
+ * The inbound side found and fixed this same bug, with a comment explaining that Entra's
+ * read-modify-write reconciliation then pushes the omission back over the stored values.
+ * It was never mirrored outbound. Leaf paths (`name.formatted`) replace one sub-attribute
+ * and leave its siblings alone.
+ */
+it('patches a name sub-attribute rather than replacing the whole complex attribute', function (): void {
+    $operations = AttributeMapping::patchOperations([], ['name' => 'Alice Example', 'email' => 'alice@corp.test'], true);
+
+    $paths = array_map(fn (array $op): string => (string) ($op['path'] ?? ''), $operations);
+
+    expect($paths)->toContain('name.formatted')
+        ->and($paths)->not->toContain('name', 'a pathed replace on `name` wipes givenName and familyName downstream');
+});
+
+/**
+ * A multi-valued attribute is the opposite case: `emails` is a LIST, and replacing it
+ * whole is the only way a push can remove an address. Flattening must not descend into
+ * one and start addressing `emails.0`.
+ */
+it('replaces a multi-valued attribute whole', function (): void {
+    $operations = AttributeMapping::patchOperations(
+        ['emails' => 'emails'],
+        ['emails' => [['value' => 'a@corp.test', 'primary' => true]]],
+        true,
+    );
+
+    $paths = array_map(fn (array $op): string => (string) ($op['path'] ?? ''), $operations);
+
+    expect($paths)->toContain('emails')
+        ->and(implode(' ', $paths))->not->toContain('emails.0');
+});
+
+/**
+ * A rejected credential is worth retrying; a rejected REQUEST is not.
+ *
+ * 401 and 403 used to be terminal, so a rotated downstream bearer token drained every
+ * queued operation into dead letters — a connection fixable in thirty seconds by pasting
+ * a new token, with nothing left to retry by the time anyone did. Unlike the OAuth path,
+ * which refreshes with an expiry margin, a static bearer gives no warning it has been
+ * replaced.
+ *
+ * The asymmetry is the argument: retrying a genuinely revoked credential costs a bounded
+ * number of identical failures and then exhausts, while dead-lettering a rotated one
+ * costs a silent, unrecoverable divergence between the directory and the downstream app.
+ */
+it('treats a rejected credential as retryable and a bad request as final', function (int $status, bool $retryable): void {
+    expect((new ScimResult($status, []))->transient())->toBe($retryable);
+})->with([
+    'unauthorized — the token may simply have rotated' => [401, true],
+    'forbidden — same' => [403, true],
+    'rate limited' => [429, true],
+    'server error' => [500, true],
+    'bad request — retrying sends the same broken body' => [400, false],
+    'conflict — the caller must reconcile, not repeat' => [409, false],
+    'not found — the caller recreates instead' => [404, false],
+]);

@@ -97,11 +97,51 @@ class AttributeMapping
     {
         $operations = [];
 
-        foreach (self::toAttributes($mapping, $source, $active) as $path => $value) {
+        foreach (self::leafPaths(self::toAttributes($mapping, $source, $active)) as $path => $value) {
             $operations[] = ScimSchema::replace($path, $value);
         }
 
         return $operations;
+    }
+
+    /**
+     * Flatten to LEAF paths — `name.formatted`, not `name`.
+     *
+     * RFC 7644 §3.5.2.3: a pathed `replace` of a complex attribute replaces the whole
+     * attribute. So `{"op":"replace","path":"name","value":{"formatted":"…"}}` told the
+     * downstream app that `name` is now exactly that object, and `givenName` and
+     * `familyName` were wiped on every push — silently, with a 200, on every profile
+     * sync.
+     *
+     * This is the same bug that was found and fixed on the INBOUND side, where the
+     * comment explains that Entra's read-modify-write reconciliation then pushes the
+     * omission back over the stored values. It was never mirrored outbound.
+     *
+     * @param  array<mixed, mixed>  $attributes  whatever nesting assign() produced; the
+     *                                           keys are SCIM attribute names, and the
+     *                                           recursion re-enters with a sub-object
+     * @return array<string, mixed> keyed by dotted leaf path
+     */
+    private static function leafPaths(array $attributes, string $prefix = ''): array
+    {
+        $flat = [];
+
+        foreach ($attributes as $key => $value) {
+            $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
+
+            // A LIST is a value, not a nesting level: `emails` is a multi-valued
+            // attribute and must be replaced whole, or a second address would survive a
+            // push that meant to remove it.
+            if (is_array($value) && $value !== [] && ! array_is_list($value)) {
+                $flat += self::leafPaths($value, $path);
+
+                continue;
+            }
+
+            $flat[$path] = $value;
+        }
+
+        return $flat;
     }
 
     /**

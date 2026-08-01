@@ -52,10 +52,28 @@ readonly class ScimResult
         return $this->status === 404;
     }
 
-    /** A failure worth retrying: no response at all, rate-limited, or a server error. */
+    /**
+     * A failure worth retrying: no response, rate-limited, a server error — or a
+     * rejected credential.
+     *
+     * 401 and 403 used to be terminal, so a rotated downstream bearer token drained every
+     * queued operation into dead letters: the connection is fixable in thirty seconds by
+     * pasting a new token, and by then there was nothing left to retry. Unlike the OAuth
+     * path, which refreshes with an expiry margin, a static bearer gives no warning that
+     * it has been replaced.
+     *
+     * The cost of being wrong here is asymmetric. Retrying a genuinely revoked credential
+     * costs a bounded number of requests that all fail the same way and then exhaust;
+     * dead-lettering a rotated one costs a silent, unrecoverable divergence between the
+     * directory and the downstream app.
+     */
     public function transient(): bool
     {
-        return $this->transport || $this->status === 429 || $this->status >= 500;
+        return $this->transport
+            || $this->status === 429
+            || $this->status === 401
+            || $this->status === 403
+            || $this->status >= 500;
     }
 
     /** The remote resource id (SCIM `id`) the downstream app assigned, if present. */
