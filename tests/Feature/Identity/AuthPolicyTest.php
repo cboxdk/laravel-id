@@ -308,3 +308,38 @@ it('does not answer one environment\'s override in another', function (): void {
         expect($policies->overrideFor('org_shared'))->toBeNull('a memo leaked across environments');
     });
 });
+
+/**
+ * The batch read is the actual fix for the loop. Memoising `overrideFor()` removed the
+ * DUPLICATE reads — two per organization down to one — but not the shape: a subject in
+ * nine organizations still cost nine queries on every authenticated request.
+ */
+it('reads every organization override in one query', function (): void {
+    $policies = app(AuthPolicies::class);
+    $ids = [];
+
+    foreach (range(1, 12) as $i) {
+        $ids[] = $id = "org_batch_{$i}";
+
+        // Only half have an override, so the absence path is exercised too.
+        if ($i % 2 === 0) {
+            $policies->setForOrganization($id, new AuthPolicy(minLength: 10 + $i));
+        }
+    }
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $found = $policies->overridesFor($ids);
+    $first = count(DB::getQueryLog());
+
+    // Again, now that every one of them is memoised — including the absences, or a
+    // subject with no overrides re-reads all twelve on the next request.
+    DB::flushQueryLog();
+    $policies->overridesFor($ids);
+    $second = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    expect($found)->toHaveCount(6)
+        ->and($first)->toBe(1, "twelve organizations cost {$first} queries")
+        ->and($second)->toBe(0, "a second read cost {$second} queries");
+});

@@ -33,6 +33,12 @@ ceiling rather than a security bug, and it is the more urgent of the two.
   up. Indexed as `(user_id, created_at, id)`, which answers the sort as well as the
   filter.
 
+- **`AuthPolicies::overridesFor()`** reads every organization's override in one query.
+  Memoising the single-organization form removed the DUPLICATE reads but not the shape:
+  a subject in nine organizations still cost nine queries on every authenticated request.
+  Absences are memoised too, or a subject with no overrides re-reads all of them next
+  time. `DatabasePasswordExpiry` and `DatabaseMfaMandate` both use it.
+
 - **`DatabaseAuthPolicies::overrideFor()` was the one policy read not memoised**, and the
   one called in a loop: `PasswordExpiry` and `MfaMandate` both walk the signed-in
   subject's memberships asking for each organization's override, from that same
@@ -41,8 +47,16 @@ ceiling rather than a security bug, and it is the more urgent of the two.
   per request, keyed by environment AND organization for the same reason
   `forEnvironment()` is, and cleared on every write.
 
+### Changed
+
+- **`AuthPolicies` gained `overridesFor()`.** Breaking for a host that implements the
+  contract itself — see [`UPGRADING.md`](UPGRADING.md). Hosts using the shipped binding
+  need to do nothing.
+
 ### Testing
 
+- The batch read is proven at twelve organizations — half with an override, half without
+  — costing one query cold and none warm.
 - The membership index is proven two ways: the sqlite query plan names it, and an
   engine-independent assertion checks it exists — the second is what runs on the Postgres
   and MySQL legs, where the plan syntax differs.

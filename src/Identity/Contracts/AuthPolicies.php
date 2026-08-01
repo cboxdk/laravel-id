@@ -28,6 +28,24 @@ interface AuthPolicies
     /** The organization's stored override, or null when it inherits wholesale. */
     public function overrideFor(string $organizationId): ?AuthPolicy;
 
+    /**
+     * Every override for a set of organizations, in one read.
+     *
+     * The single-organization form is called in a LOOP on the hot path — password
+     * expiry and the MFA mandate both walk the signed-in subject's memberships, from the
+     * host's authentication middleware, on every request. Memoising it removed the
+     * duplicate reads but not the shape: a subject in nine organizations still cost nine
+     * queries per request, and the console's Sign-in rules page pays it once per
+     * organization in the whole environment, unpaginated.
+     *
+     * Returns only the organizations that HAVE an override, so a caller distinguishes
+     * "no override" by absence and never mistakes it for "not looked up".
+     *
+     * @param  list<string>  $organizationIds
+     * @return array<string, AuthPolicy> keyed by organization id
+     */
+    public function overridesFor(array $organizationIds): array;
+
     /** Store (or replace) the environment baseline. */
     public function setForEnvironment(AuthPolicy $policy): void;
 

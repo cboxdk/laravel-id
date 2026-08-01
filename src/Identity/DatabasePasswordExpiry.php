@@ -59,12 +59,17 @@ class DatabasePasswordExpiry implements PasswordExpiry
 
         $policy = $this->policies->forEnvironment();
 
-        foreach ($this->memberships->forUser($subjectId) as $membership) {
-            $override = $this->policies->overrideFor($membership->organization_id);
+        // One read for every organization the subject belongs to. Asking per membership
+        // meant a query per organization on EVERY authenticated request — this method is
+        // reached from the host's authentication middleware, which is also persistent
+        // Livewire middleware, so it ran again on every round trip too.
+        $organizationIds = array_values(array_map(
+            fn ($membership): string => (string) $membership->organization_id,
+            iterator_to_array($this->memberships->forUser($subjectId)),
+        ));
 
-            if ($override !== null) {
-                $policy = $policy->tightenedWith($override);
-            }
+        foreach ($this->policies->overridesFor($organizationIds) as $override) {
+            $policy = $policy->tightenedWith($override);
         }
 
         return $policy->maxAgeDays;

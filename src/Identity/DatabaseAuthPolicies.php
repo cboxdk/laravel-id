@@ -92,6 +92,47 @@ class DatabaseAuthPolicies implements AuthPolicies
             ->first()?->toPolicy();
     }
 
+    public function overridesFor(array $organizationIds): array
+    {
+        $wanted = array_values(array_unique($organizationIds));
+        $found = [];
+        $missing = [];
+
+        foreach ($wanted as $organizationId) {
+            $key = $this->memoKey($organizationId);
+
+            if (array_key_exists($key, $this->organizationPolicies)) {
+                $policy = $this->organizationPolicies[$key];
+
+                if ($policy !== null) {
+                    $found[$organizationId] = $policy;
+                }
+
+                continue;
+            }
+
+            $missing[] = $organizationId;
+        }
+
+        if ($missing !== []) {
+            $rows = AuthPolicyRecord::query()->whereIn('organization_id', $missing)->get();
+
+            foreach ($rows as $row) {
+                $organizationId = (string) $row->organization_id;
+                $found[$organizationId] = $row->toPolicy();
+                $this->organizationPolicies[$this->memoKey($organizationId)] = $found[$organizationId];
+            }
+
+            // Memoise the ABSENCES too, or a subject with no overrides re-reads every
+            // organization on the next call — the exact cost this method exists to remove.
+            foreach ($missing as $organizationId) {
+                $this->organizationPolicies[$this->memoKey($organizationId)] ??= null;
+            }
+        }
+
+        return $found;
+    }
+
     private function memoKey(string $organizationId): string
     {
         return ($this->environments()->current()?->environmentKey() ?? '').'|'.$organizationId;

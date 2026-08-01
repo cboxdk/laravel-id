@@ -13,6 +13,40 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## 0.67.0
+
+### `AuthPolicies` gained `overridesFor()`
+
+Only affects a host that implements `Cbox\Id\Identity\Contracts\AuthPolicies` itself.
+Adding a method to an interface is a fatal error at boot for any class implementing it,
+which is the failure mode you want.
+
+Implement it as "return the overrides for these organization ids, keyed by id, omitting
+the ones with no override". The shipped `DatabaseAuthPolicies` is the reference. A
+correct-but-slow implementation is three lines:
+
+```php
+public function overridesFor(array $organizationIds): array
+{
+    return array_filter(array_combine(
+        $organizationIds,
+        array_map(fn (string $id): ?AuthPolicy => $this->overrideFor($id), $organizationIds),
+    ));
+}
+```
+
+That works, but it is the shape the method exists to replace — it is called once per
+authenticated request, so a single `whereIn` is worth writing.
+
+Hosts using the shipped binding need to do nothing.
+
+### `memberships` gains an index (migration)
+
+Additive: `(user_id, created_at, id)`. No behaviour change, no backfill. On a large
+`memberships` table the index build takes a lock proportional to its size — on Postgres,
+consider `CREATE INDEX CONCURRENTLY` by hand and marking the migration as run, if that
+table is big enough for the lock to matter.
+
 ## 0.66.0
 
 ### `Mfa` gained a `disable()` method
