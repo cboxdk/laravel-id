@@ -6,6 +6,7 @@ use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Contracts\ServiceProviders;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
+use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\Support\IdpDescriptor;
 use Cbox\Id\SamlIdp\Support\RedirectBindingResponseSigner;
 use Cbox\Id\SamlIdp\ValueObjects\NewServiceProvider;
@@ -231,6 +232,18 @@ it('does a plain local logout when no SAMLRequest is present', function (): void
     $this->get(IDP_SLO_ENDPOINT)->assertOk()->assertSee('Signed out', false);
 });
 
+/**
+ * A service provider may end a session it was given, and only that.
+ *
+ * This test used to name Alice in a LogoutRequest from an SP that had never seen her, and
+ * expect her session revoked — it encoded the vulnerability. The controller resolved the
+ * NameID as a subject id OR an email and revoked everything, so any registered SP could
+ * sign a request naming any user (an email is not a secret) and end their day, over and
+ * over, for people it had no relationship with.
+ *
+ * The realistic flow is the one below: we issued an assertion for Alice to this SP, so
+ * the SP knows her under that name and may log her out of it.
+ */
 it('revokes the named subject sessions on a valid SP-initiated SLO', function (): void {
     [$spPrivate, $spCert] = spKeypair();
     $entityId = 'https://sp.example/metadata';
@@ -243,8 +256,68 @@ it('revokes the named subject sessions on a valid SP-initiated SLO', function ()
     $sessions = app(SessionManager::class);
     $session = $sessions->start($alice->id, null, ['pwd']);
 
+    // The state issuing an assertion leaves behind: this SP was told about Alice.
+    SamlIdpSession::query()->create([
+        'sp_entity_id' => $entityId,
+        'subject_id' => $alice->id,
+        'name_id' => 'alice@example.test',
+        'session_index' => '_'.bin2hex(random_bytes(16)),
+        'expires_at' => now()->addDay(),
+    ]);
+
     $query = signedRedirectQuery(logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16))), $spPrivate, 'SAMLRequest');
     $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
 
     expect($sessions->active($session->id))->toBeNull();
+});
+
+/**
+ * And a service provider that was never told about her cannot touch her.
+ *
+ * The signature is valid and the SP is registered — an admin added it — so nothing else
+ * in the pipeline refuses this. Only the issued-session record does.
+ */
+it('refuses to log out a subject the requesting SP was never given', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $alice = $this->makeUser('alice@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($alice->id, null, ['pwd']);
+
+    // No SamlIdpSession record: this SP has never received an assertion for Alice.
+    $query = signedRedirectQuery(logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16))), $spPrivate, 'SAMLRequest');
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
+
+    expect($sessions->active($session->id))
+        ->not->toBeNull('a service provider logged out a user it had never seen');
+});
+
+/**
+ * Nor can one SP log out a subject that a DIFFERENT SP was given. Same NameID, same
+ * subject, wrong relying party.
+ */
+it('refuses a logout for a name another service provider was given', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $alice = $this->makeUser('alice@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($alice->id, null, ['pwd']);
+
+    SamlIdpSession::query()->create([
+        'sp_entity_id' => 'https://someone-else.example/metadata',
+        'subject_id' => $alice->id,
+        'name_id' => 'alice@example.test',
+        'session_index' => '_'.bin2hex(random_bytes(16)),
+        'expires_at' => now()->addDay(),
+    ]);
+
+    $query = signedRedirectQuery(logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16))), $spPrivate, 'SAMLRequest');
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
+
+    expect($sessions->active($session->id))
+        ->not->toBeNull('one service provider logged out a session belonging to another');
 });

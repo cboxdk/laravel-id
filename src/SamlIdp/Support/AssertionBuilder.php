@@ -57,12 +57,17 @@ class AssertionBuilder
         array $attributes,
         AuthnContext $authnContext,
         ?string $inResponseTo,
+        // Passed in rather than minted here, so the caller can RECORD it. The value goes
+        // into the assertion's AuthnStatement (SAML Core §2.7.2) and is what a conformant
+        // SP puts in a LogoutRequest to end one session rather than all of them — which
+        // it could not do while we generated it and threw it away.
+        ?string $sessionIndex = null,
     ): string {
         $now = time();
         $issueInstant = $this->instant($now);
         $notBefore = $this->instant($now - self::CLOCK_SKEW_SECONDS);
         $notOnOrAfter = $this->instant($now + self::LIFETIME_SECONDS);
-        $sessionIndex = $this->id();
+        $sessionIndex ??= $this->id();
 
         $document = new DOMDocument('1.0', 'UTF-8');
 

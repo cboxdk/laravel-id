@@ -13,6 +13,7 @@ use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Enums\SamlStatusCode;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
+use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\Models\ServiceProvider;
 use Cbox\Id\SamlIdp\Support\AssertionBuilder;
 use Cbox\Id\SamlIdp\Support\AuthnRequestParser;
@@ -43,6 +44,15 @@ class SamlIdentityProviderService implements SamlIdentityProvider
      * back once the user has signed in, so the window has to cover a real login
      * (password + MFA), not just network latency.
      */
+    /**
+     * How long an issued-session record is kept.
+     *
+     * Long enough to outlive any realistic SP session — SLO arriving after this has
+     * nothing to resolve and is refused, which is the safe direction: a logout that does
+     * not happen is a nuisance, one that happens to the wrong person is an outage.
+     */
+    private const SESSION_RECORD_TTL_SECONDS = 60 * 60 * 24 * 30;
+
     private const REQUEST_FRESHNESS_SECONDS = 900;
 
     public function __construct(
@@ -476,6 +486,21 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         $nameId = $this->resolveNameId($serviceProvider, $subjectId, $attributes);
         $mappedAttributes = $this->mapAttributes($serviceProvider, $attributes);
 
+        // Record what we are about to tell this SP, so Single Logout can resolve a
+        // NameID THROUGH the SP that presents it. Without this, SLO took the NameID from
+        // a signed LogoutRequest and revoked every session of whoever it resolved to —
+        // and a NameID is not a secret, so any registered SP could name any user it had
+        // never seen and end their day.
+        $sessionIndex = '_'.bin2hex(random_bytes(16));
+
+        SamlIdpSession::query()->create([
+            'sp_entity_id' => $serviceProvider->entity_id,
+            'subject_id' => $subjectId,
+            'name_id' => $nameId,
+            'session_index' => $sessionIndex,
+            'expires_at' => now()->addSeconds(self::SESSION_RECORD_TTL_SECONDS),
+        ]);
+
         // Re-pin the ACS and audience from the CURRENT registration, never from the
         // request — the assertion always goes to the trusted, registered location.
         $xml = $this->assertions->build(
@@ -488,6 +513,7 @@ class SamlIdentityProviderService implements SamlIdentityProvider
             attributes: $mappedAttributes,
             authnContext: AuthnContext::Password,
             inResponseTo: $request->id,
+            sessionIndex: $sessionIndex,
         );
 
         return new SamlResponseVo(

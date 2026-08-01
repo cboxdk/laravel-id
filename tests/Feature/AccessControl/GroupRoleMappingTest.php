@@ -142,3 +142,38 @@ it('skips a mapped role that no longer resolves instead of throwing', function (
 
     expect(hasAssignment($userId, $role->id))->toBeFalse();
 });
+
+/**
+ * A role orphaned AFTER its mapping exists must not abort the reconcile.
+ *
+ * This is the ordinary manifest lifecycle, not an attack: an app drops a role, the sync
+ * stamps `orphaned_at`, and the mapping row survives by design. When `assign()` started
+ * refusing orphaned roles, the pre-filter in `assignableOnly()` was not updated — so the
+ * two predicates diverged, and `assertAssignableIn()` throws `UnknownRole`, which the
+ * `GrantRefused` catch does not cover.
+ *
+ * The damage was not the exception. It aborted the loop on the FIRST member of the group,
+ * so the revocation pass never ran: a user removed from the group upstream kept the role
+ * indefinitely. And because listeners run in registration order with access control ahead
+ * of webhooks and provisioning, every downstream listener was skipped on every attempt
+ * until the event dead-lettered.
+ */
+it('reconciles past a role the declaring app has retired', function (): void {
+    [$org, $group, $keep, $userId] = engineeringGroup();
+    $retired = app(Roles::class)->define($org->id, 'Retired');
+
+    $mappings = app(GroupRoleMappings::class);
+    $mappings->map($org->id, $group->id, $keep->id);
+    $mappings->map($org->id, $group->id, $retired->id);
+
+    // The app drops it from its manifest: FLAGGED, not deleted, and the mapping row
+    // survives by design — which is the whole reason the two predicates must agree.
+    Role::query()->whereKey($retired->id)->update(['orphaned_at' => now()]);
+
+    // Must not throw, and must still do the work it can.
+    $mappings->reconcileUser($org->id, $userId);
+
+    expect(hasAssignment($userId, $retired->id))->toBeFalse('a retired role was granted')
+        ->and(hasAssignment($userId, $keep->id))
+        ->toBeTrue('the reconcile aborted before granting the roles that are still valid');
+});

@@ -13,6 +13,24 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## 0.77.0
+
+### `saml_idp_sessions` (migration), and SLO stops working for pre-existing sessions
+
+Additive table recording each issued assertion. Run migrations as usual.
+
+**Behaviour change worth planning for:** Single Logout now resolves a NameID through the
+service provider that presented it, and the record only exists for assertions issued from
+0.77.0 onward. So an SP logging out a user who signed in BEFORE the upgrade finds no
+record and the logout is a silent no-op — the user stays signed in at the IdP until their
+session expires normally.
+
+That window closes on its own as people sign in again. It is the safe direction of the
+trade: before this, the same endpoint let any registered SP end any user's session by
+naming their email address.
+
+Records are kept 30 days.
+
 ## 0.73.0
 
 ### `Subjects` gained `update()`

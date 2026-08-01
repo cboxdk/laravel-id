@@ -192,6 +192,18 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
             ->where(fn ($query) => $query
                 ->whereNull('organization_id')
                 ->orWhere('organization_id', $organizationId))
+            // Must match assertAssignableIn() EXACTLY. This pre-filter exists so a mapped
+            // id that no longer resolves is dropped and logged rather than thrown on —
+            // and when assign() started refusing orphaned roles, this query did not, so
+            // the two predicates diverged and the pre-filter stopped pre-filtering.
+            //
+            // The consequence was not a caught refusal: assertAssignableIn() throws
+            // UnknownRole, which the GrantRefused catch below does not cover. An app
+            // dropping a role from its manifest therefore aborted the whole reconcile on
+            // the first member of that group — so the REVOCATION pass never ran and a
+            // user removed upstream kept the role, while every listener registered after
+            // this one was skipped on every attempt until the event dead-lettered.
+            ->whereNull('orphaned_at')
             ->pluck('id')
             ->all());
 

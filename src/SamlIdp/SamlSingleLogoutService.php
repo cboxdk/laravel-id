@@ -123,10 +123,10 @@ class SamlSingleLogoutService implements SamlSingleLogout
         // Answer on the binding the request arrived on — an SP that advertises only
         // HTTP-POST for SLO has nowhere to receive a redirect-bound response.
         if ($message->binding === SamlBinding::Post) {
-            return SamlLogoutOutcome::post($nameId, $this->postForm($responseXml, $destination, $message->relayState, $material));
+            return SamlLogoutOutcome::post($spEntityId, $nameId, $this->postForm($responseXml, $destination, $message->relayState, $material));
         }
 
-        return SamlLogoutOutcome::redirect($nameId, $this->responseSigner->sign(
+        return SamlLogoutOutcome::redirect($spEntityId, $nameId, $this->responseSigner->sign(
             destination: $destination,
             xml: $responseXml,
             relayState: $message->relayState,

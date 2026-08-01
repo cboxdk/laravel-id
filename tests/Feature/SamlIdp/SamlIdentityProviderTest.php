@@ -6,6 +6,7 @@ use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Enums\ServiceProviderStatus;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
+use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\Support\IdpDescriptor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -368,4 +369,39 @@ it('renders an auto-submitting POST form that escapes RelayState', function () {
         ->toContain('name="SAMLResponse"')
         ->toContain('document.forms[0].submit()')
         ->not->toContain('<script>alert(1)</script>');
+});
+
+/**
+ * Issuing an assertion records who we told, and under what name.
+ *
+ * Single Logout has no other way to know. Without this record it took the NameID from a
+ * signed LogoutRequest and revoked every session of whoever it resolved to — and a NameID
+ * is not a secret, so any registered service provider could name any user and end their
+ * day. The record is what turns "someone signed this" into "this SP may log out this
+ * person".
+ *
+ * The SessionIndex is the value already minted into the AuthnStatement and previously
+ * thrown away; recording it is what will let a conformant SP end ONE session rather than
+ * all of them.
+ */
+it('records the issued assertion so logout can be scoped to the service provider', function () {
+    $sp = $this->registerSamlServiceProvider(acsUrl: 'https://sp.example.test/acs');
+
+    $request = $this->samlIdp()->parseAuthnRequest(
+        $this->makeRedirectAuthnRequest($sp->entity_id, $sp->acs_url),
+    );
+
+    $response = $this->samlIdp()->issueResponse($request, 'user-recorded', ['email' => 'recorded@example.test']);
+
+    expect($response->encoded)->not->toBe('');
+
+    $record = SamlIdpSession::query()->where('subject_id', 'user-recorded')->first();
+
+    expect($record)->not->toBeNull('nothing recorded what we told the service provider')
+        ->and($record->sp_entity_id)->toBe($sp->entity_id)
+        ->and($record->name_id)->toBe('recorded@example.test')
+        ->and($record->session_index)->not->toBe('')
+        // The same index that went into the assertion, or an SP's per-session logout
+        // would name something we never sent.
+        ->and(base64_decode($response->encoded, true))->toContain($record->session_index);
 });

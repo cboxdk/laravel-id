@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
 use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Exceptions\InvalidLogoutRequest;
+use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
 use Cbox\Id\SamlIdp\ValueObjects\SamlLogoutOutcome;
 use Illuminate\Http\RedirectResponse;
@@ -36,7 +36,6 @@ class SamlIdpLogoutController
     public function __construct(
         private readonly SessionManager $sessions,
         private readonly SamlSingleLogout $singleLogout,
-        private readonly Subjects $subjects,
     ) {}
 
     public function __invoke(Request $request): RedirectResponse|Response
@@ -94,12 +93,33 @@ class SamlIdpLogoutController
      */
     private function terminateSubject(SamlLogoutOutcome $outcome): void
     {
-        $subject = $this->subjects->find($outcome->nameId)
-            ?? $this->subjects->findByEmail($outcome->nameId);
+        // Resolve the NameID THROUGH the service provider that presented it.
+        //
+        // This used to be `find($nameId) ?? findByEmail($nameId)` and then revoke
+        // everything. A NameID is not a secret — for the default emailAddress format it
+        // IS the person's email — so any service provider registered in the environment
+        // could sign a LogoutRequest naming any user, including one that had never
+        // federated to it, and end that person's identity-provider session along with
+        // every downstream session. Repeatedly. A relying party held a logout primitive
+        // over the whole environment.
+        //
+        // Only a subject we actually issued an assertion to, for THIS service provider,
+        // under THIS name, can be logged out by it.
+        $issued = SamlIdpSession::query()
+            ->where('sp_entity_id', $outcome->spEntityId)
+            ->where('name_id', $outcome->nameId)
+            ->latest('created_at')
+            ->first();
 
-        if ($subject !== null) {
-            $this->sessions->revokeAllForUser($subject->id);
+        if ($issued === null) {
+            // Nothing to resolve: an SP naming someone it was never told about, or a
+            // record that has aged out. Silence is the safe direction — a logout that
+            // does not happen is a nuisance; one that happens to the wrong person is an
+            // outage.
+            return;
         }
+
+        $this->sessions->revokeAllForUser($issued->subject_id);
     }
 
     private function param(Request $request, string $key): ?string

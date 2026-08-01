@@ -15,6 +15,44 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.77.0] - 2026-08-02
+
+### Security
+
+- **Any registered service provider could log out any subject in the environment.** Single
+  Logout took the NameID from a signed `LogoutRequest`, resolved it as a subject id OR an
+  email, and revoked every session that person had — anywhere. A NameID is not a secret;
+  for the default `emailAddress` format it IS the person's email address. So an SP an
+  administrator had added for one purpose held a logout primitive over users it had never
+  seen, usable repeatedly.
+
+  Assertions are now recorded as they are issued (`saml_idp_sessions`: environment, SP
+  EntityID, subject, NameID, SessionIndex), and SLO resolves the NameID **through the SP
+  that presented it**. Only a subject we actually issued an assertion to, for that SP,
+  under that name, can be logged out by it. An unresolvable NameID is a silent no-op — a
+  logout that does not happen is a nuisance; one that happens to the wrong person is an
+  outage.
+
+  The `SessionIndex` was already minted into every assertion's `AuthnStatement` and thrown
+  away. Recording it is what will let a conformant SP end one session rather than all of
+  them.
+
+### Fixed
+
+- **A role orphaned after its mapping existed aborted the whole directory reconcile.**
+  0.75.0 made `assertAssignableIn()` refuse orphaned roles but left `assignableOnly()` —
+  the pre-filter whose entire job is to drop unresolvable ids *rather than let `assign()`
+  throw* — matching the old predicate. The two diverged, and `assertAssignableIn()` throws
+  `UnknownRole`, which the `GrantRefused` catch does not cover.
+
+  This is the ordinary manifest lifecycle, not an attack: an app drops a role, the sync
+  flags it, the mapping row survives by design. The next reconcile then aborted on the
+  first member of that group — so the **revocation** pass never ran and a user removed
+  upstream kept the role indefinitely — and because listeners run in registration order
+  with access control ahead of webhooks and provisioning, every downstream listener was
+  skipped on each attempt until the event dead-lettered. My regression; found by
+  re-reviewing the change.
+
 ## [0.76.0] - 2026-08-01
 
 Four SCIM defects, all of them silent — the connector sees a 200 and never retries, so

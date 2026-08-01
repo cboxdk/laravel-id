@@ -19,6 +19,13 @@ use Cbox\Id\SamlIdp\Enums\SamlBinding;
 readonly class SamlLogoutOutcome
 {
     private function __construct(
+        /**
+         * WHO asked. Carried because a NameID alone does not identify anyone safely: it
+         * is scoped to the service provider that received it, and for the default
+         * emailAddress format it is simply the person's email address. Resolving one
+         * without knowing which SP presented it let any registered SP log out any user.
+         */
+        public string $spEntityId,
         public string $nameId,
         public SamlBinding $binding,
         public string $redirectUrl,
@@ -26,14 +33,14 @@ readonly class SamlLogoutOutcome
     ) {}
 
     /** A `LogoutResponse` delivered by the HTTP-Redirect binding (detached signature). */
-    public static function redirect(string $nameId, string $redirectUrl): self
+    public static function redirect(string $spEntityId, string $nameId, string $redirectUrl): self
     {
-        return new self($nameId, SamlBinding::Redirect, $redirectUrl, '');
+        return new self($spEntityId, $nameId, SamlBinding::Redirect, $redirectUrl, '');
     }
 
     /** A `LogoutResponse` delivered by the HTTP-POST binding (enveloped XML-DSig). */
-    public static function post(string $nameId, string $postForm): self
+    public static function post(string $spEntityId, string $nameId, string $postForm): self
     {
-        return new self($nameId, SamlBinding::Post, '', $postForm);
+        return new self($spEntityId, $nameId, SamlBinding::Post, '', $postForm);
     }
 }
