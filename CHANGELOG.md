@@ -20,8 +20,9 @@ more trust than the wording it removes.
 ### Security
 
 **Restores two controls that 0.68.0 and 0.69.0 shipped without.** Both were deleted by
-accident, not by decision, and both were released. Anyone on 0.68.0 or 0.69.0 should move
-to this version; earlier versions are unaffected.
+accident, not by decision, and both were released. Those two versions have since been
+**withdrawn** — their tags are deleted, so neither can be installed. Earlier versions
+are unaffected.
 
 - **The SAML digest-algorithm pin was removed**, leaving an empty loop where the check
   had been. A response signed RSA-SHA256 but digested with SHA-1 was accepted — the
@@ -51,6 +52,14 @@ the probes were confirming.
   so it proves the delivery-time check specifically rather than the registration one.
 
 ## [0.69.0] - 2026-08-01
+
+> **Withdrawn 2026-08-01.** The tag for this version was deleted, so it can no longer be
+> installed. It shipped without the SAML digest-algorithm pin and without the outbound
+> SCIM client's delivery-time SSRF pinning — see [0.70.0](#0700---2026-08-01) for what was
+> removed, how, and what now proves it cannot happen unnoticed again. The entry below is
+> left as written, because a changelog that quietly loses a version is worse than one that
+> records a withdrawn one.
+
 
 No behaviour change. Two guards that did not guard, found by deleting the code they
 claim to protect and watching the suite stay green.
@@ -87,6 +96,14 @@ claim to protect and watching the suite stay green.
   the property that makes a row unmovable between environments.
 
 ## [0.68.0] - 2026-08-01
+
+> **Withdrawn 2026-08-01.** The tag for this version was deleted, so it can no longer be
+> installed. It shipped without the SAML digest-algorithm pin and without the outbound
+> SCIM client's delivery-time SSRF pinning — see [0.70.0](#0700---2026-08-01) for what was
+> removed, how, and what now proves it cannot happen unnoticed again. The entry below is
+> left as written, because a changelog that quietly loses a version is worse than one that
+> records a withdrawn one.
+
 
 ### Changed
 
