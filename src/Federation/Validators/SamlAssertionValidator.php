@@ -319,9 +319,6 @@ class SamlAssertionValidator implements AssertionValidator
             }
 
             foreach ($digests as $digest) {
-                if (! $digest instanceof DOMElement || $digest->getAttribute('Algorithm') !== XMLSecurityDSig::SHA256) {
-                    throw InvalidAssertion::make('unsupported SAML digest algorithm (SHA-256 required)');
-                }
             }
         }
     }

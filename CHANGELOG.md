@@ -15,6 +15,27 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.68.0] - 2026-08-01
+
+### Changed
+
+- **`AuthPolicies` gained `overridesFor()`** — every organization's override in one read,
+  keyed by id, omitting the ones with none. Breaking for a host that implements the
+  contract itself; [`UPGRADING.md`](UPGRADING.md) carries a working fallback.
+
+  Memoising `overrideFor()` in 0.67.0 removed the DUPLICATE reads — two per organization
+  down to one — but left the shape untouched: a subject in nine organizations still cost
+  nine queries on every authenticated request, and the Sign-in rules console page pays it
+  once per organization in the whole environment, unpaginated. Absences are memoised as
+  well as hits, because a subject with no overrides would otherwise re-read every one of
+  their organizations next request — the exact cost this replaces.
+  `DatabasePasswordExpiry` and `DatabaseMfaMandate` both use it.
+
+### Testing
+
+- Proven at twelve organizations, half with an override and half without: one query cold,
+  none warm.
+
 ## [0.67.0] - 2026-08-01
 
 Found in the sixth whole-platform review loop. One of these is a shared-fate performance
@@ -33,12 +54,6 @@ ceiling rather than a security bug, and it is the more urgent of the two.
   up. Indexed as `(user_id, created_at, id)`, which answers the sort as well as the
   filter.
 
-- **`AuthPolicies::overridesFor()`** reads every organization's override in one query.
-  Memoising the single-organization form removed the DUPLICATE reads but not the shape:
-  a subject in nine organizations still cost nine queries on every authenticated request.
-  Absences are memoised too, or a subject with no overrides re-reads all of them next
-  time. `DatabasePasswordExpiry` and `DatabaseMfaMandate` both use it.
-
 - **`DatabaseAuthPolicies::overrideFor()` was the one policy read not memoised**, and the
   one called in a loop: `PasswordExpiry` and `MfaMandate` both walk the signed-in
   subject's memberships asking for each organization's override, from that same
@@ -47,16 +62,8 @@ ceiling rather than a security bug, and it is the more urgent of the two.
   per request, keyed by environment AND organization for the same reason
   `forEnvironment()` is, and cleared on every write.
 
-### Changed
-
-- **`AuthPolicies` gained `overridesFor()`.** Breaking for a host that implements the
-  contract itself — see [`UPGRADING.md`](UPGRADING.md). Hosts using the shipped binding
-  need to do nothing.
-
 ### Testing
 
-- The batch read is proven at twelve organizations — half with an override, half without
-  — costing one query cold and none warm.
 - The membership index is proven two ways: the sqlite query plan names it, and an
   engine-independent assertion checks it exists — the second is what runs on the Postgres
   and MySQL legs, where the plan syntax differs.

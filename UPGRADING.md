@@ -13,7 +13,7 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
-## 0.67.0
+## 0.68.0
 
 ### `AuthPolicies` gained `overridesFor()`
 
@@ -39,6 +39,8 @@ That works, but it is the shape the method exists to replace — it is called on
 authenticated request, so a single `whereIn` is worth writing.
 
 Hosts using the shipped binding need to do nothing.
+
+## 0.67.0
 
 ### `memberships` gains an index (migration)
 
