@@ -15,6 +15,42 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.69.0] - 2026-08-01
+
+No behaviour change. Two guards that did not guard, found by deleting the code they
+claim to protect and watching the suite stay green.
+
+### Testing
+
+- **The SAML XML-Signature-Wrapping test proved nothing.** Making both binding checks in
+  `EmbeddedSignature` return unconditionally left all 19 tests passing. The wrapper the
+  test built omitted `Destination`, so the parser rejected it at an unrelated check long
+  before the binding checks ran — and since `InvalidAuthnRequest` is the single exception
+  class for every rejection reason, asserting only the class could not tell the two
+  apart.
+
+  What was unguarded: an SP whose certificate we trust lifting its own valid signature
+  onto an `AuthnRequest` root it controls, and the IdP treating it as authentic. That is
+  SP impersonation on the IdP's front door.
+
+  Now three cases, each asserting the MESSAGE: signature at the root referencing the
+  decoy, signature buried below the root, and two signatures on the root. Each binding
+  check falsified independently.
+
+- **Nine of the eleven fields in the audit-chain hash were not proven to be in it.**
+  Only `action` and `environment_id` had a tamper test. Removing `actor_type`,
+  `actor_id`, `target_type`, `target_id`, `context`, `ip` and `recorded_at` from
+  `canonicalPayload()` left the Audit, AuditQuery, AuditStreaming and Maintenance suites
+  green — so a refactor could drop WHO acted, FROM WHERE, ON WHAT and WITH WHAT DETAIL
+  out of the hash, and anyone with database write access could rewrite all four while
+  `verifyChain()` still answered "valid". In the one subsystem whose entire product claim
+  is tamper-evidence.
+
+  Now one case per column. `environment_id` and `scope` break at the FOLLOWING entry
+  rather than the tampered one, because they identify the chain — rewriting either
+  removes the row from the chain being read instead of corrupting it in place, which is
+  the property that makes a row unmovable between environments.
+
 ## [0.68.0] - 2026-08-01
 
 ### Changed

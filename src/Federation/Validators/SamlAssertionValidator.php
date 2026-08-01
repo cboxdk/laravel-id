@@ -21,7 +21,6 @@ use Illuminate\Support\Carbon;
 use OneLogin\Saml2\Response as SamlResponse;
 use OneLogin\Saml2\Settings;
 use OneLogin\Saml2\Utils as SamlUtils;
-use RobRichards\XMLSecLibs\XMLSecurityDSig;
 use RobRichards\XMLSecLibs\XMLSecurityKey;
 use Throwable;
 
