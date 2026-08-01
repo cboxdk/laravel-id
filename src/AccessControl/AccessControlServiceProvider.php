@@ -7,6 +7,7 @@ namespace Cbox\Id\AccessControl;
 use Cbox\Id\AccessControl\Console\SyncAppManifestsCommand;
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\AccessControl\Contracts\AppManifests;
+use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
 use Cbox\Id\AccessControl\Contracts\Roles;
@@ -32,6 +33,10 @@ class AccessControlServiceProvider extends ServiceProvider
             return;
         }
 
+        // Permissive by default and replaced by GovernanceServiceProvider, so a
+        // deployment that loads governance gets the conflict gate without wiring it, and
+        // one that does not is not surprised by refusals it configured no policy for.
+        $this->app->singleton(GrantGuard::class, AllowAllGrants::class);
         $this->app->singleton(Roles::class, RoleService::class);
         $this->app->singleton(AccessChecker::class, HierarchyAwareAccessChecker::class);
         $this->app->singleton(AppManifests::class, ManifestSyncService::class);

@@ -7,9 +7,13 @@ namespace Cbox\Id\AccessControl;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
+use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -20,7 +24,10 @@ use Illuminate\Support\Facades\Log;
  */
 class DatabaseGroupRoleMappings implements GroupRoleMappings
 {
-    public function __construct(private readonly Roles $roles) {}
+    public function __construct(
+        private readonly Roles $roles,
+        private readonly AuditLog $audit,
+    ) {}
 
     public function map(string $organizationId, string $groupId, string $roleId, int $priority = 0): GroupRoleMapping
     {
@@ -102,7 +109,22 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
             ->all());
 
         foreach (array_diff($mappedRoleIds, $currentPushed) as $roleId) {
-            $this->roles->assign($organizationId, $userId, $roleId, GrantSource::Pushed);
+            try {
+                $this->roles->assign($organizationId, $userId, $roleId, GrantSource::Pushed);
+            } catch (GrantRefused $refused) {
+                // A conflict rule vetoed this one. Skip it and keep going: one person's
+                // upstream group membership producing a forbidden pair must not abandon
+                // the rest of the directory's sync. The refusal is audited, so it is
+                // reviewable — a grant that silently does not happen is its own problem.
+                $this->audit->record(new AuditEvent(
+                    action: 'role.grant_withheld',
+                    actorType: ActorType::System,
+                    organizationId: $organizationId,
+                    targetType: 'user',
+                    targetId: $userId,
+                    context: ['role_id' => $roleId, 'source' => GrantSource::Pushed->value, 'reason' => $refused->getMessage()],
+                ));
+            }
         }
 
         foreach (array_diff($currentPushed, $mappedRoleIds) as $roleId) {

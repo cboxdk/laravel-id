@@ -181,15 +181,19 @@ class MfaService implements Mfa
      * customer's compliance export can read all three the same way. Without this verb
      * the console deleted the rows directly, and the trail showed nothing at all.
      */
-    public function disable(string $userId): void
+    public function disable(string $userId, ?ActorType $actorType = null, ?string $actorId = null): void
     {
         MfaFactor::query()->where('user_id', $userId)->delete();
         MfaRecoveryCode::query()->where('user_id', $userId)->delete();
 
+        // Default to self-service; an administrator passes their own identity. Hardcoding
+        // the subject as the actor — which is what this method did when it was written —
+        // records an admin stripping someone's second factor as that person having done
+        // it themselves, erasing exactly the distinction the verb exists for.
         $this->audit->record(new AuditEvent(
             action: 'user.mfa_disabled',
-            actorType: ActorType::User,
-            actorId: $userId,
+            actorType: $actorType ?? ActorType::User,
+            actorId: $actorId ?? $userId,
             targetType: 'user',
             targetId: $userId,
         ));

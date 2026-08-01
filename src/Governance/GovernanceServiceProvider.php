@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Governance;
 
+use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\Governance\Console\CloseOverdueCampaignsCommand;
 use Cbox\Id\Governance\Contracts\AccessReviews;
 use Cbox\Id\Governance\Contracts\SegregationOfDuties;
@@ -19,6 +20,10 @@ class GovernanceServiceProvider extends ServiceProvider
 
         $this->app->singleton(AccessReviews::class, DatabaseAccessReviews::class);
         $this->app->singleton(SegregationOfDuties::class, DatabaseSegregationOfDuties::class);
+
+        // Replace AccessControl's permissive default, so loading governance is what
+        // turns the conflict gate on — no host wiring, and no path around it.
+        $this->app->singleton(GrantGuard::class, SodGrantGuard::class);
     }
 
     public function boot(): void

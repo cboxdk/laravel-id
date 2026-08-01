@@ -36,4 +36,19 @@ class UnsupportedGroupPatch extends RuntimeException
     {
         return new self("Unsupported PATCH path: {$path}.", 'invalidPath');
     }
+
+    /**
+     * RFC 7644 §3.5.2.2: "If 'path' is unspecified, the operation fails with HTTP status
+     * code 400 and a 'scimType' error code of 'noTarget'."
+     *
+     * The User side has always answered this way. The Group side admitted the empty path
+     * and let a pathless `remove` reach `detach()` — so a connector that dropped `path`
+     * on a membership operation emptied the group and got a 200 back, which it recorded
+     * as success and never retried. Membership changes drive the group→role bridge, so
+     * that was a silent mass revocation.
+     */
+    public static function noTarget(): self
+    {
+        return new self('A PATCH operation must name a target path.', 'noTarget');
+    }
 }

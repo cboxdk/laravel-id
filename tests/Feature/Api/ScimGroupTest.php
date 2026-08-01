@@ -205,3 +205,39 @@ it('advertises the Group resource type in discovery', function (): void {
         ->assertOk()
         ->assertJsonPath('Resources.1.endpoint', '/Groups');
 });
+
+/**
+ * RFC 7644 §3.5.2.2: a PATCH operation with no `path` must be refused with 400 and
+ * `scimType: noTarget`. The User side has always answered that way, with the clause
+ * quoted in its comment.
+ *
+ * The Group side admitted the empty path and let a pathless `remove` fall through to
+ * detaching everything, then answered 200 — so a connector or middlebox that dropped
+ * `path` on a membership reconcile emptied the group, recorded a success, and never
+ * retried or alarmed. Because membership changes drive the group→role bridge, that was a
+ * silent mass revocation of every role the group mapped.
+ *
+ * Asserting the members survive, not just the status: a 400 that emptied the group first
+ * would be no better.
+ */
+it('refuses a pathless PATCH remove and keeps every member', function (): void {
+    $headers = $this->scimHeaders;
+    $alice = provisionUser($this, $headers, 'alice', 'okta|1');
+    $bob = provisionUser($this, $headers, 'bob', 'okta|2');
+
+    $groupId = $this->postJson('/scim/v2/Groups', [
+        'displayName' => 'Engineering',
+        'members' => [['value' => $alice], ['value' => $bob]],
+    ], $headers)->json('id');
+
+    $this->patchJson('/scim/v2/Groups/'.$groupId, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'remove']],
+    ], $headers)
+        ->assertStatus(400)
+        ->assertJsonPath('scimType', 'noTarget');
+
+    $this->getJson('/scim/v2/Groups/'.$groupId, $headers)
+        ->assertOk()
+        ->assertJsonCount(2, 'members');
+});

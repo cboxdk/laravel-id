@@ -15,6 +15,50 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.71.0] - 2026-08-01
+
+### Security
+
+- **Segregation of duties now runs at the grant chokepoint, not in front of it.** The rule
+  was correct and was only ever asked on the paths a host can intercept — the console's
+  four manual grant paths. Directory group→role mappings are reconciled INSIDE the
+  framework, so a user added to two upstream groups received the forbidden pair silently
+  on the next reconcile: the automation a customer buys was the way around the control
+  they bought. `RoleService::assign()` already called itself "the chokepoint every caller
+  funnels through", and it was — for ownership only.
+
+  Enforced through a new `AccessControl\Contracts\GrantGuard` rather than a direct
+  dependency, because `Governance` already depends on `AccessControl` and pointing it back
+  would close a module cycle. The default binding permits everything; `Governance` replaces
+  it, so loading governance is what turns the gate on. A vetoed directory grant is skipped
+  and audited as `role.grant_withheld` rather than aborting the reconcile — one person's
+  conflicting membership must not abandon everyone else's sync.
+
+  Note the consequence for the detective control: `scan()` still matters, because a
+  violation can now only arise from a policy defined AFTER the roles were held, which is
+  the ordinary way rules get written.
+
+- **One TOTP code or recovery code admitted two sign-ins under a race on the operator and
+  account-member planes.** Both did a read-then-write; the subject plane has used a
+  conditional UPDATE from the start, with a comment explaining that two requests
+  presenting the same intercepted code both pass the replay check. `DatabaseOperatorMfa`'s
+  own docblock claimed the planes could not drift on the security-relevant parts. Both now
+  consume with a conditional update and return whether they won it.
+
+- **SCIM Group `PATCH` with no `path` emptied the group and answered 200.** RFC 7644
+  §3.5.2.2 requires 400 with `scimType: noTarget`, which `/Users` has always answered and
+  `docs/security/standards.md` already claimed for both. A connector that dropped `path`
+  on a membership reconcile therefore detached every member, recorded a success, and never
+  retried — and because membership drives the group→role bridge, every mapped role went
+  with it.
+
+### Changed
+
+- **`Mfa::disable()` takes an optional actor.** It hardcoded the subject, so an
+  administrator removing someone's second factor was recorded as that person doing it
+  themselves — erasing the one distinction the verb was added to capture. Defaults to
+  self-service, so existing callers are unaffected.
+
 ## [0.70.0] - 2026-08-01
 
 ### Security

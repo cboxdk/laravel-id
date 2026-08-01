@@ -82,9 +82,18 @@ class DatabaseAccountMemberMfa implements AccountMemberMfa
             return false;
         }
 
-        $factor->forceFill(['last_used_step' => $step])->save();
+        // Advance the step with a conditional UPDATE, not a read-then-write. Two requests
+        // presenting the SAME intercepted code at once both pass the replay check above,
+        // and a plain save would let both through — so one code would admit two sign-ins,
+        // on the plane where that matters most. Only the update that still sees the
+        // earlier step wins. The subject plane has done it this way from the start; these
+        // two had drifted, while this class's own docblock claimed they could not.
+        $advanced = AccountMfaFactor::query()
+            ->whereKey($factor->id)
+            ->where(fn ($query) => $query->whereNull('last_used_step')->orWhere('last_used_step', '<', $step))
+            ->update(['last_used_step' => $step]);
 
-        return true;
+        return $advanced === 1;
     }
 
     public function hasConfirmedTotp(string $memberId): bool
@@ -139,7 +148,16 @@ class DatabaseAccountMemberMfa implements AccountMemberMfa
             return false;
         }
 
-        $match->forceFill(['used_at' => now()])->save();
+        // Claim it with a conditional UPDATE for the same reason: whichever request wins
+        // the race is the only one that sees a row still unused.
+        $claimed = AccountMfaRecoveryCode::query()
+            ->whereKey($match->id)
+            ->whereNull('used_at')
+            ->update(['used_at' => now()]);
+
+        if ($claimed !== 1) {
+            return false;
+        }
         $this->record('account.mfa_recovery_used', $memberId, ['remaining' => $this->remainingRecoveryCodes($memberId)]);
 
         return true;

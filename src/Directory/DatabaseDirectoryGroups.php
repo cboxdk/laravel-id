@@ -207,6 +207,16 @@ class DatabaseDirectoryGroups implements DirectoryGroups
         // extracted ZERO ids from `{members:[…]}` and then sync([]) WIPED every member.
         $memberValue = $canonical === '' && is_array($value) ? self::attribute($value, 'members') : $value;
 
+        // A pathless REMOVE names nothing at all. RFC 7644 §3.5.2.2 requires 400/noTarget,
+        // which is what the User path answers — this one let it through to removeMembers()
+        // with an empty id list, i.e. detach everything, and returned 200. A connector
+        // that drops `path` on a membership op therefore emptied the group and recorded a
+        // success, and because membership drives the group→role bridge, every mapped role
+        // went with it.
+        if ($op === ScimPatchOp::Remove && $canonical === '') {
+            throw UnsupportedGroupPatch::noTarget();
+        }
+
         // A pathless replace that doesn't carry `members` at all is a resource replace
         // that must not touch membership — never let it fall through to sync([]).
         if ($op === ScimPatchOp::Replace && $canonical === '' && $memberValue === null) {

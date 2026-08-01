@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\AccessControl;
 
+use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
+use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
 use Cbox\Id\AccessControl\Models\Permission;
@@ -23,6 +25,7 @@ class RoleService implements Roles
     public function __construct(
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly GrantGuard $grants,
     ) {}
 
     public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null): Role
@@ -211,6 +214,19 @@ class RoleService implements Roles
         // org, and the read path would then surface that role's permissions in this org's
         // tokens. Mirrors the ownership check grantPermission() has always had.
         $this->assertAssignableIn($organizationId, $roleId);
+
+        // Conflict rules, at the same chokepoint as ownership. These used to be enforced
+        // only by the host, in front of the console's manual grant paths — and the one
+        // path a host cannot get in front of is this one, so a directory group→role
+        // mapping created toxic pairs the console would have refused, silently, on every
+        // reconcile. The automation a customer buys is not a way around the control they
+        // bought. Via a contract because Governance already depends on AccessControl and
+        // a direct dependency back would close a cycle.
+        $refusal = $this->grants->refuse($organizationId, $userId, $roleId, $source);
+
+        if ($refusal !== null) {
+            throw new GrantRefused($organizationId, $userId, $roleId, $refusal);
+        }
 
         $assignment = RoleAssignment::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'user_id' => $userId, 'role_id' => $roleId],

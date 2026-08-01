@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Contracts;
 
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Crypto\ValueObjects\TotpEnrollment;
 
 interface Mfa
@@ -56,6 +57,11 @@ interface Mfa
      * privileged MFA mutation in the platform was the only one that left no audit
      * entry, no domain event and no usage record. The account and operator planes have
      * had this verb from the start.
+     *
+     * The actor defaults to the subject themselves — a self-service disable. Pass the
+     * administrator when someone ELSE is removing the factor: an access review cannot
+     * otherwise tell a person turning off their own second factor from an administrator
+     * stripping it, which is the single distinction this verb was added to capture.
      */
-    public function disable(string $userId): void;
+    public function disable(string $userId, ?ActorType $actorType = null, ?string $actorId = null): void;
 }
