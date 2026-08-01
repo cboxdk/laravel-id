@@ -38,6 +38,25 @@ class DatabaseAuthPolicies implements AuthPolicies
      */
     private array $environmentPolicies = [];
 
+    /**
+     * The same memo for per-ORGANIZATION overrides, keyed by environment AND organization
+     * for the same reason.
+     *
+     * `forEnvironment()` above has been memoised from the start; `overrideFor()` four
+     * lines down was not, and it is the one called in a LOOP. `PasswordExpiry` and
+     * `MfaMandate` both walk the signed-in subject's memberships asking for each
+     * organization's override, from the host's authentication middleware — which is also
+     * persistent Livewire middleware, so it runs again on every round trip. Measured on
+     * a console page: 17 queries at one organization, 22 at four, 32 at nine. Exactly
+     * two per organization, on every request.
+     *
+     * A null override is memoised as null and must stay distinguishable from "not looked
+     * up yet", hence array_key_exists rather than ??=.
+     *
+     * @var array<string, AuthPolicy|null>
+     */
+    private array $organizationPolicies = [];
+
     public function resolve(?string $organizationId = null): AuthPolicy
     {
         $base = $this->forEnvironment();
@@ -62,9 +81,20 @@ class DatabaseAuthPolicies implements AuthPolicies
 
     public function overrideFor(string $organizationId): ?AuthPolicy
     {
-        return AuthPolicyRecord::query()
+        $key = $this->memoKey($organizationId);
+
+        if (array_key_exists($key, $this->organizationPolicies)) {
+            return $this->organizationPolicies[$key];
+        }
+
+        return $this->organizationPolicies[$key] = AuthPolicyRecord::query()
             ->where('organization_id', $organizationId)
             ->first()?->toPolicy();
+    }
+
+    private function memoKey(string $organizationId): string
+    {
+        return ($this->environments()->current()?->environmentKey() ?? '').'|'.$organizationId;
     }
 
     public function setForEnvironment(AuthPolicy $policy): void
@@ -85,10 +115,16 @@ class DatabaseAuthPolicies implements AuthPolicies
             ['organization_id' => $organizationId],
             AuthPolicyRecord::columnsFor($policy),
         );
+
+        // Whole memo, not one key. A write is rare; a policy read from a stale entry
+        // under a scope this call was not made in is the failure worth avoiding.
+        $this->organizationPolicies = [];
     }
 
     public function clearForOrganization(string $organizationId): void
     {
         AuthPolicyRecord::query()->where('organization_id', $organizationId)->delete();
+
+        $this->organizationPolicies = [];
     }
 }

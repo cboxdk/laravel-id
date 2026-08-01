@@ -10,6 +10,7 @@ use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Exceptions\LastOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -198,4 +199,43 @@ it('leaves another subject grants alone when one member is removed', function ()
 
     expect($roles->assignmentsForSubject($org->id, 'user_goes'))->toBe([])
         ->and($roles->assignmentsForSubject($org->id, 'user_stays'))->toHaveCount(1);
+});
+
+/**
+ * `forUser()` is the hottest cross-tenant query in the platform: it runs `withoutScope`
+ * by design — a subject's own list of organizations is cross-tenant by nature — so the
+ * SQL carries no environment filter, and the host's authentication middleware calls it on
+ * every request, including every Livewire round trip.
+ *
+ * `memberships` was created indexing `environment_id` and `organization_id` plus a
+ * `unique(organization_id, user_id)`. `user_id` is the SECOND column of that unique, and
+ * no composite index can serve a predicate on its second column alone — so this query had
+ * nothing at all, and scanned every membership belonging to every tenant. One customer's
+ * page load got slower as OTHER customers signed up.
+ *
+ * Asserting on the plan rather than on a timing: a duration is noise on a laptop, but
+ * "the planner chose a scan" is the actual defect.
+ */
+it('answers a subject\'s organization list from an index, not a table scan', function (): void {
+    $org = $this->makeOrganization('Acme Indexed');
+    app(Memberships::class)->add($org->id, 'user_indexed', MembershipRole::Member);
+
+    $plan = DB::select(
+        'EXPLAIN QUERY PLAN select * from memberships where user_id = ? order by created_at, id',
+        ['user_indexed'],
+    );
+
+    $detail = implode(' ', array_map(fn (object $row): string => (string) ($row->detail ?? ''), $plan));
+
+    // Pest's toContain is variadic, so a second argument is another expected needle —
+    // not a message. The plan text goes in the assertion's own failure output instead.
+    expect($detail)->toContain('memberships_user_ordered_idx');
+})->skip(fn (): bool => DB::connection()->getDriverName() !== 'sqlite', 'EXPLAIN QUERY PLAN is sqlite syntax');
+
+/**
+ * The engine-independent half: whatever the planner does, the index must EXIST. This is
+ * what runs on the Postgres and MySQL legs of the matrix, where the plan syntax differs.
+ */
+it('carries an index on the column the subject lookup filters', function (): void {
+    expect(Schema::hasIndex('memberships', 'memberships_user_ordered_idx'))->toBeTrue();
 });

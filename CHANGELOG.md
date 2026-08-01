@@ -15,6 +15,41 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.67.0] - 2026-08-01
+
+Found in the sixth whole-platform review loop. One of these is a shared-fate performance
+ceiling rather than a security bug, and it is the more urgent of the two.
+
+### Fixed
+
+- **Every authenticated request scanned every tenant's memberships.** `memberships` was
+  created with indexes on `environment_id` and `organization_id` plus
+  `unique(organization_id, user_id)`. `user_id` is the SECOND column of that unique, and
+  no composite index can serve a predicate on its second column alone — so a lookup by
+  `user_id` had nothing at all. That would be a footnote if the query were rare;
+  `MembershipService::forUser()` runs `withoutScope` by design, so the SQL carries no
+  environment filter either, and the host calls it from its authentication middleware on
+  every request. One customer's page load therefore got slower as OTHER customers signed
+  up. Indexed as `(user_id, created_at, id)`, which answers the sort as well as the
+  filter.
+
+- **`DatabaseAuthPolicies::overrideFor()` was the one policy read not memoised**, and the
+  one called in a loop: `PasswordExpiry` and `MfaMandate` both walk the signed-in
+  subject's memberships asking for each organization's override, from that same
+  middleware. Measured on a console page before the fix: 17 queries at one organization,
+  22 at four, 32 at nine — exactly two per organization, on every request. Now memoised
+  per request, keyed by environment AND organization for the same reason
+  `forEnvironment()` is, and cleared on every write.
+
+### Testing
+
+- The membership index is proven two ways: the sqlite query plan names it, and an
+  engine-independent assertion checks it exists — the second is what runs on the Postgres
+  and MySQL legs, where the plan syntax differs.
+- The memo is proven by measuring from WARM and asserting zero further reads, rather than
+  pinning a query count that would stop meaning anything the moment an unrelated read was
+  added. Its invalidation and its environment keying are separately falsified.
+
 ## [0.66.0] - 2026-08-01
 
 Found during a whole-platform review. Two of these are cross-tenant defects on the

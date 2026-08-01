@@ -14,6 +14,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -217,4 +218,93 @@ it('names the no-subject case rather than letting a caller omit one', function (
     expect($userId->getName())->toBe('userId')
         ->and($userId->isOptional())->toBeFalse()
         ->and($userId->getType()?->allowsNull() ?? true)->toBeFalse();
+});
+
+/**
+ * `overrideFor()` is the one policy read that happens in a LOOP.
+ *
+ * PasswordExpiry and MfaMandate both walk the signed-in subject's memberships asking for
+ * each organization's override, and the host calls them from its authentication
+ * middleware — which is also persistent Livewire middleware, so it runs again on every
+ * round trip. Unmemoised, that was two queries per organization on every single request,
+ * while `forEnvironment()` four lines above had been memoised from the start.
+ *
+ * Counting queries rather than asserting on an internal property: the guarantee is "the
+ * database is asked once", not "there is a private array". And comparing two loop sizes
+ * rather than pinning a number — the property that matters is that the cost does not
+ * grow with the number of reads, which is exactly what a fixed expectation would stop
+ * describing the moment an unrelated read was added.
+ */
+it('reads an organization override once per request, not once per call', function (): void {
+    $policies = app(AuthPolicies::class);
+    $policies->setForOrganization('org_hot', new AuthPolicy(minLength: 20));
+
+    $cost = function (int $rounds) use ($policies): int {
+        // Warm both memos first, then measure. The claim under test is "having read it
+        // once, never read it again" — counting the first read too would just be
+        // measuring how many memos exist.
+        $policies->overrideFor('org_hot');
+        $policies->resolve('org_hot');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        for ($i = 0; $i < $rounds; $i++) {
+            $policies->overrideFor('org_hot');
+            $policies->resolve('org_hot');
+        }
+
+        $reads = count(array_filter(
+            DB::getQueryLog(),
+            fn (array $entry): bool => str_contains((string) $entry['query'], 'select') && str_contains((string) $entry['query'], 'auth_policies'),
+        ));
+        DB::disableQueryLog();
+
+        return $reads;
+    };
+
+    $few = $cost(5);
+    $many = $cost(50);
+
+    expect([$few, $many])->toBe([0, 0], "policy reads scale with call count: {$few} at 5 rounds, {$many} at 50");
+});
+
+/**
+ * A memo that outlives its write is a policy that did not take effect. This is the half
+ * of memoisation that actually needs proving.
+ */
+it('sees a policy change made after it was first read', function (): void {
+    $policies = app(AuthPolicies::class);
+    $policies->setForEnvironment(new AuthPolicy(minLength: 8));
+
+    expect($policies->overrideFor('org_fresh'))->toBeNull();
+
+    $policies->setForOrganization('org_fresh', new AuthPolicy(minLength: 30));
+    expect($policies->overrideFor('org_fresh')?->minLength)->toBe(30);
+
+    $policies->setForOrganization('org_fresh', new AuthPolicy(minLength: 40));
+    expect($policies->overrideFor('org_fresh')?->minLength)->toBe(40);
+
+    $policies->clearForOrganization('org_fresh');
+    expect($policies->overrideFor('org_fresh'))->toBeNull();
+});
+
+/**
+ * One process legitimately visits several environments — a queue worker draining jobs for
+ * different tenants, every PlatformRoot::run() that steps in and back. An unkeyed memo
+ * would answer the first environment's override for all of them, applying one tenant's
+ * password floor to another's people.
+ */
+it('does not answer one environment\'s override in another', function (): void {
+    $policies = app(AuthPolicies::class);
+    $environments = app(EnvironmentContext::class);
+
+    $environments->runAs(GenericEnvironment::of('env_one'), function () use ($policies): void {
+        $policies->setForOrganization('org_shared', new AuthPolicy(minLength: 25));
+        expect($policies->overrideFor('org_shared')?->minLength)->toBe(25);
+    });
+
+    $environments->runAs(GenericEnvironment::of('env_two'), function () use ($policies): void {
+        expect($policies->overrideFor('org_shared'))->toBeNull('a memo leaked across environments');
+    });
 });
