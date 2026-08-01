@@ -1,13 +1,12 @@
 ---
 title: Cbox ID
-description: Documentation for the self-hostable, Laravel-native identity platform
+description: Documentation for the identity framework for Laravel — the primitives behind SSO, directory sync, RBAC and audit
 weight: 1
 ---
 
 # Cbox ID
 
-`cboxdk/laravel-id` is a self-hostable, Laravel-native identity platform — the framework
-behind central login, enterprise SSO, directory sync, RBAC, billing-driven entitlements and a
+`cboxdk/laravel-id` is an identity **framework** for Laravel — the primitives behind central login, enterprise SSO, directory sync, RBAC, billing-driven entitlements and a
 tamper-evident audit trail. It is UI-free and interface-driven: every capability sits behind a
 contract you can bind, mock, extend or replace.
 
