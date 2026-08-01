@@ -36,12 +36,39 @@ class NativePasswordVerifier implements HashVerifier
         private readonly array $options = [],
     ) {}
 
+    /**
+     * The bcrypt prefixes `password_verify()` handles but `password_get_info()` does
+     * not report.
+     *
+     * `password_get_info()` only ever recognizes what `password_hash()` EMITS, which on
+     * PHP 8 is `$2y$` alone — it answers `algo: null` for `$2a$` and `$2b$`. Underneath,
+     * `password_verify()` is crypt_blowfish and verifies all three correctly.
+     *
+     * So an `algo`-only check silently rejected every hash exported by a provider that
+     * writes `$2a$` or `$2b$` — most of them — and, because this verifier is
+     * deny-by-default, turned each one into an ordinary "wrong password". A migrated
+     * customer would have watched their entire user base fail to sign in, with nothing
+     * anywhere saying why.
+     *
+     * `$2x$` is deliberately absent: it exists only to reproduce a sign-extension bug in
+     * a long-dead implementation, so a host that must accept one opts in with its own
+     * verifier rather than having this one quietly honour it.
+     *
+     * @var list<string>
+     */
+    private const BCRYPT_PREFIXES = ['$2y$', '$2a$', '$2b$'];
+
     public function supports(string $hash): bool
     {
-        // password_get_info recognizes exactly the families password_hash emits;
-        // an algo of null (0 as a legacy value) means "not a native hash".
-        $info = password_get_info($hash);
-        $algo = $info['algo'];
+        foreach (self::BCRYPT_PREFIXES as $prefix) {
+            if (str_starts_with($hash, $prefix)) {
+                return true;
+            }
+        }
+
+        // Everything else: password_get_info recognizes the families password_hash
+        // emits; an algo of null (0 as a legacy value) means "not a native hash".
+        $algo = password_get_info($hash)['algo'];
 
         return $algo !== null && $algo !== 0 && $algo !== '';
     }

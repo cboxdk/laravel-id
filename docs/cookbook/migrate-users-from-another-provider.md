@@ -48,6 +48,12 @@ $result->errors;        // list<ImportError>: per-row failures, run not aborted
   migration can verify and then upgrade it. Its format must be verifiable by a
   registered [hash verifier](../extension-points/hash-verifiers.md) — natively
   bcrypt (`$2y$/$2a$/$2b$`) and argon2 (`$argon2i$/$argon2id$`).
+
+  > **Before 0.66.0 only `$2y$` actually worked.** `$2a$` and `$2b$` — which is what
+  > most exporters write — were rejected, and because the verifier is deny-by-default
+  > the rejection surfaced as an ordinary wrong password rather than an error. If you
+  > ran an import on an earlier release and your users could not sign in, that was this
+  > bug: their hashes are intact, and they authenticate once you upgrade.
 - **`password`** is plaintext, hashed with the platform hasher immediately.
 - Provide at most one of the two. Neither is fine too — the user then signs in via
   SSO, a magic link, or a password reset.

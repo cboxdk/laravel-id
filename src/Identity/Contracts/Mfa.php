@@ -45,4 +45,17 @@ interface Mfa
      * How many unused recovery codes remain — for a "regenerate" nudge in the UI.
      */
     public function remainingRecoveryCodes(string $userId): int;
+
+    /**
+     * Remove the user's second factor entirely — every enrolled factor and every
+     * recovery code — so their next sign-in enrolls afresh.
+     *
+     * This exists because an administrator has to be able to help someone who has lost
+     * their authenticator, and because doing it WITHOUT a verb here meant doing it with
+     * raw model deletes: the host console did exactly that, so the single most
+     * privileged MFA mutation in the platform was the only one that left no audit
+     * entry, no domain event and no usage record. The account and operator planes have
+     * had this verb from the start.
+     */
+    public function disable(string $userId): void;
 }

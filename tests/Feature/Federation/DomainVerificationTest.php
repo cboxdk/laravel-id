@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Exceptions\DomainAlreadyClaimed;
+use Cbox\Id\Federation\Exceptions\DomainNotVerified;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -58,6 +59,36 @@ it('toggles the optional capture gate', function (): void {
     app(DomainVerification::class)->setCapture($domain->id, true);
 
     expect(app(DomainVerification::class)->forEmail('jane@acme.com')?->capture)->toBeTrue();
+});
+
+/**
+ * Capture takes every sign-in on an email domain and routes it to one organization's
+ * identity provider. On an UNVERIFIED domain that is one tenant claiming another's
+ * addresses — the DNS challenge is the only thing standing between the two.
+ *
+ * The rule lived in the callers, and the callers disagreed: one console refused an
+ * unverified domain, the other did not, so the weaker one decided. Anything reaching
+ * this service — a console, an API request, a script — now gets the same answer.
+ */
+it('refuses to capture a domain nobody has proved they own', function (): void {
+    $org = $this->makeOrganization('Acme');
+    $domain = app(DomainVerification::class)->add($org->id, 'acme.com');
+
+    expect(fn () => app(DomainVerification::class)->setCapture($domain->id, true))
+        ->toThrow(DomainNotVerified::class);
+
+    expect($domain->fresh()?->capture)->toBeFalse();
+});
+
+it('always allows capture to be switched off', function (): void {
+    $org = $this->makeOrganization('Acme');
+    $domain = $this->makeVerifiedDomain($org->id, 'acme.com');
+    app(DomainVerification::class)->setCapture($domain->id, true);
+
+    // Withdrawing a claim can only ever be safe, verified or not.
+    app(DomainVerification::class)->setCapture($domain->id, false);
+
+    expect($domain->fresh()?->capture)->toBeFalse();
 });
 
 it('refuses a domain already claimed by another organization', function (): void {

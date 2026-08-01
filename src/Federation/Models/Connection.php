@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Model;
  * unambiguous.
  *
  * @property string $id
+ * @property string $environment_id
  * @property string $organization_id
  * @property ConnectionType $type
  * @property string $name

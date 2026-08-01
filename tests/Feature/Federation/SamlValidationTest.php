@@ -8,7 +8,6 @@ use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\SamlAuthRequest;
-use DOMElement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use RobRichards\XMLSecLibs\XMLSecurityDSig;
@@ -49,11 +48,14 @@ final class SamlIdp
         bool $sha1 = false,
         ?string $wrapAs = null,
         ?string $destination = null,
+        // Pinned by the cross-tenant replay test: two unrelated IdPs legitimately
+        // choosing the same assertion id is the case the ledger's key must allow.
+        ?string $assertionId = null,
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
         $after = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
-        $assertionId = '_'.bin2hex(random_bytes(16));
+        $assertionId ??= '_'.bin2hex(random_bytes(16));
         $responseId = '_'.bin2hex(random_bytes(16));
         $issuer = FED_IDP_ENTITY;
         $recipient = FED_SP_ACS;
@@ -313,6 +315,45 @@ it('rejects a replayed SAML assertion', function (): void {
 
     app(AssertionValidator::class)->validate($connection, $response); // first use — ok
     app(AssertionValidator::class)->validate($connection, $response); // replay — rejected
+})->throws(InvalidAssertion::class);
+
+/**
+ * The replay ledger keyed `assertion_id` GLOBALLY, and an assertion id is only unique
+ * within the identity provider that issued it — short and sequential ids are common in
+ * the wild. So two customers' IdPs choosing the same id meant the SECOND tenant's
+ * perfectly valid login was refused as "assertion replay detected": a cross-tenant
+ * denial of service on the sign-in path, and a targetable one, since anyone who can make
+ * tenant A consume a chosen id can lock tenant B out of it.
+ *
+ * The identical bug was fixed one table over for DPoP proofs; this ledger never got the
+ * same treatment, and had no test at all.
+ */
+it('lets two connections consume the same assertion id', function (): void {
+    $tenantA = new SamlIdp;
+    $tenantB = new SamlIdp;
+
+    $connectionA = samlConnection($tenantA);
+    $connectionB = samlConnection($tenantB);
+
+    // The same assertion ID from two unrelated identity providers.
+    $sharedId = '_shared-assertion-id';
+
+    app(AssertionValidator::class)->validate($connectionA, $tenantA->response(assertionId: $sharedId));
+
+    // Under the global unique this threw InvalidAssertion('assertion replay detected')
+    // and tenant B could not sign in at all.
+    $principal = app(AssertionValidator::class)->validate($connectionB, $tenantB->response(assertionId: $sharedId));
+
+    expect($principal)->not->toBeNull();
+});
+
+it('still rejects a replay on the SAME connection', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+    $response = $idp->response(assertionId: '_same-connection-replay');
+
+    app(AssertionValidator::class)->validate($connection, $response);
+    app(AssertionValidator::class)->validate($connection, $response);
 })->throws(InvalidAssertion::class);
 
 it('accepts an IdP-initiated response (no InResponseTo)', function (): void {

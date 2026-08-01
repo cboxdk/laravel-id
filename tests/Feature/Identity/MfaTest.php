@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\Mfa;
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -138,4 +140,34 @@ it('spends a recovery code exactly once even when presented twice', function ():
         ->and($mfa->verifyRecoveryCode($userId, $codes[0]))->toBeFalse()
         // The other codes are untouched by the refused replay.
         ->and($mfa->verifyRecoveryCode($userId, $codes[1]))->toBeTrue();
+});
+
+/**
+ * An administrator has to be able to help someone who has lost their authenticator —
+ * and that is the single most privileged MFA mutation in the platform, so it is the one
+ * that most needs a trail.
+ *
+ * There was no `disable()` on this contract, so the host console did it with raw model
+ * deletes: no audit entry, no domain event, nothing. Every OTHER MFA mutation here is
+ * audited, and the account and operator planes have had the verb from the start — so an
+ * access review, a SIEM stream and a compliance export all showed that nothing happened.
+ */
+it('removes every factor and recovery code, and says so in the audit trail', function (): void {
+    $mfa = app(Mfa::class);
+    $user = app(Subjects::class)->create('lost-phone@acme.test', 'Lost Phone', 'super-secret-1234');
+
+    $enrollment = $mfa->enrollTotp($user->id, $user->email);
+    $mfa->confirmTotp($user->id, app(TotpAuthenticator::class)->codeAt($enrollment->secret, time()));
+    $mfa->generateRecoveryCodes($user->id, 5);
+
+    expect($mfa->hasConfirmedTotp($user->id))->toBeTrue()
+        ->and($mfa->remainingRecoveryCodes($user->id))->toBe(5);
+
+    $mfa->disable($user->id);
+
+    expect($mfa->hasConfirmedTotp($user->id))->toBeFalse()
+        ->and($mfa->remainingRecoveryCodes($user->id))->toBe(0);
+
+    expect(AuditEntry::query()->where('action', 'user.mfa_disabled')->where('target_id', $user->id)->exists())
+        ->toBeTrue('disabling a second factor left no audit entry');
 });

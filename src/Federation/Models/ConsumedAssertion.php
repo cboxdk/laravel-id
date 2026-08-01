@@ -9,10 +9,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Records an accepted assertion id so it can only be consumed once. The unique
- * index on `assertion_id` turns a replayed assertion into a duplicate-key error.
+ * Records an accepted assertion id so it can only be consumed once.
+ *
+ * The replay key is (environment, connection, assertion id), not the assertion id
+ * alone: an assertion id is unique only WITHIN its issuing identity provider, so a
+ * global unique turned one tenant's valid login into another tenant's "replay". The
+ * unique index still does the real work — a replayed assertion is a duplicate-key error,
+ * never a read-then-write race.
  *
  * @property string $id
+ * @property string $environment_id
+ * @property string $connection_id
  * @property string $assertion_id
  * @property Carbon $expires_at
  */

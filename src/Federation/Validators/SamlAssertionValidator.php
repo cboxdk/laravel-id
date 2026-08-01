@@ -60,10 +60,14 @@ class SamlAssertionValidator implements AssertionValidator
     public function __construct(private readonly Connections $connections) {}
 
     /**
-     * Reject an assertion id we have already accepted (replay), and remember this
-     * one until it expires. The unique index on `assertion_id` is the real guard.
+     * Reject an assertion id we have already accepted (replay), and remember this one
+     * until it expires. The unique index is the real guard — never a read-then-write.
+     *
+     * Keyed per CONNECTION, because an assertion id is unique only within the identity
+     * provider that issued it. Keyed globally, as it was, two customers' IdPs choosing
+     * the same id meant the second tenant's valid login was refused as a replay.
      */
-    private function guardReplay(?string $assertionId, ?int $notOnOrAfter): void
+    private function guardReplay(Connection $connection, ?string $assertionId, ?int $notOnOrAfter): void
     {
         if (! is_string($assertionId) || $assertionId === '') {
             throw InvalidAssertion::make('assertion is missing an id');
@@ -75,6 +79,8 @@ class SamlAssertionValidator implements AssertionValidator
 
         try {
             ConsumedAssertion::query()->create([
+                'environment_id' => $connection->environment_id,
+                'connection_id' => $connection->id,
                 'assertion_id' => $assertionId,
                 'expires_at' => $expiresAt,
             ]);
@@ -199,7 +205,7 @@ class SamlAssertionValidator implements AssertionValidator
         $this->assertPinnedSignatureAlgorithms($response);
 
         // Single-use: a captured, still-valid assertion cannot be replayed.
-        $this->guardReplay($response->getAssertionId(), $response->getAssertionNotOnOrAfter());
+        $this->guardReplay($connection, $response->getAssertionId(), $response->getAssertionNotOnOrAfter());
 
         // The matched request is now spent — a later response can't reuse this id.
         $authRequest?->forceFill(['consumed_at' => now()])->save();

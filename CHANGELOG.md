@@ -15,6 +15,71 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.66.0] - 2026-08-01
+
+Found during a whole-platform review. Two of these are cross-tenant defects on the
+sign-in path, and one is a migration blocker that presented as "wrong password".
+
+### Fixed
+
+- **`$2a$` and `$2b$` bcrypt hashes were rejected as if the password were wrong.**
+  `NativePasswordVerifier::supports()` decided a hash was native by asking
+  `password_get_info()`, which only ever recognizes what `password_hash()` EMITS — on
+  PHP 8 that is `$2y$` alone, and it answers `algo: null` for `$2a$` and `$2b$`.
+  Because the verifier is deny-by-default, every hash exported by a provider that
+  writes those prefixes — most of them — failed authentication as an ordinary bad
+  password. A customer migrating onto the platform would have watched their entire
+  user base locked out, with nothing in any log saying why. `password_verify()` had
+  handled all three correctly the whole time; only the gate in front of it was wrong.
+  The class docblock had promised this support since it was written, so the claim was
+  never true. Now proven against the canonical crypt_blowfish vectors rather than
+  against hashes this process made itself.
+
+- **A SAML assertion ID consumed by one tenant blocked every other tenant's.**
+  `consumed_assertions.assertion_id` carried a GLOBAL unique index, but an assertion
+  ID is chosen by the issuing identity provider and is only required to be unique
+  within it — short and sequential IDs are common in the wild. Two customers' IdPs
+  minting the same ID meant the second one's perfectly valid login was refused as
+  "assertion replay detected": a cross-tenant denial of service on sign-in, and a
+  targetable one. The replay key is now `(environment, connection, assertion id)` —
+  single-use per issuing IdP, which is what the guard was ever defending. Same
+  correction as `unique(jti)` on the DPoP table in 0.61.0, for the same reason.
+
+- **Domain capture could be enabled on a domain nobody had proved they own.**
+  `DomainVerification::setCapture()` left the verification check to its callers, and
+  the callers disagreed — one console refused an unverified domain, the other did not,
+  so the weaker of the two decided the rule. Capture routes every sign-in on an email
+  domain to one organization's connection, so on an unverified domain it is one tenant
+  claiming another's addresses. The check now lives in the service, where nothing can
+  route around it. Disabling capture stays unconditional: withdrawing a claim is
+  always safe.
+
+### Added
+
+- **`Mfa::disable()`** on the subject plane, audited as `user.mfa_disabled` — the same
+  shape the account and operator planes have recorded from the start. Without this
+  verb, an administrator resetting a second factor for someone who lost their
+  authenticator had to delete the rows directly, so the single most privileged MFA
+  mutation in the platform was the only one that left no trail. Every other MFA
+  mutation was already audited.
+
+- **`DomainNotVerified`**, thrown by `setCapture()`. Hosts that surface federation
+  settings should catch it and show the DNS challenge rather than a generic failure.
+
+### Testing
+
+- **Frozen envelope vectors for `LibsodiumSecretBox`.** Every prior test sealed and
+  opened in the same process, which moves both sides together: change the nonce
+  length, add a version byte, swap base64url for base64, and a round-trip still passes
+  while every secret already at rest becomes permanently unreadable. This box seals
+  private signing keys, directory credentials and vault secrets. Two checked-in
+  ciphertexts now pin the envelope format, so breaking it is a migration rather than a
+  silent refactor.
+
+- **Foreign password hashes** — the canonical openwall `$2a$` vectors, a `$2b$` hash,
+  and argon2i/argon2id hashes generated out-of-process. These are what caught the
+  bcrypt bug above; the previous coverage could only ever produce `$2y$`.
+
 ## [0.65.0] - 2026-07-27
 
 ### Removed

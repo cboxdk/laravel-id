@@ -8,6 +8,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\DnsResolver;
 use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Exceptions\DomainAlreadyClaimed;
+use Cbox\Id\Federation\Exceptions\DomainNotVerified;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\VerifiedDomain;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -74,9 +75,24 @@ class DatabaseDomainVerification implements DomainVerification
         return true;
     }
 
+    /**
+     * Enabling capture routes everyone on an email domain to that organization's SSO
+     * connection, so it must never be possible on a domain nobody proved they own —
+     * that is one tenant claiming another's addresses.
+     *
+     * The check lives HERE rather than in the callers because the callers disagreed:
+     * the subject console refused an unverified domain and the environment-admin
+     * console did not, so the weaker of the two decided the rule. Disabling is always
+     * allowed: withdrawing a claim can only be safe.
+     */
     public function setCapture(string $id, bool $capture): void
     {
         $domain = VerifiedDomain::query()->whereKey($id)->firstOrFail();
+
+        if ($capture && ! $domain->isVerified()) {
+            throw DomainNotVerified::make($domain->domain);
+        }
+
         $domain->forceFill(['capture' => $capture])->save();
 
         $this->record($capture ? 'domain.capture_enabled' : 'domain.capture_disabled', $domain, [
