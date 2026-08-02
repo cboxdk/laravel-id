@@ -136,5 +136,6 @@ falls through to generating a key it cannot stamp, or fails on the NOT NULL cons
 If you want it from a REPL, set `cbox-id.environments.default` first, or wrap the call in
 `EnvironmentContext::runAs()`.
 
-A `kid` string means the platform booted, generated its first signing key, and sealed the
-private half. Next: the [Quickstart](../quickstart.md).
+A clean `doctor` run means the platform booted, generated its first signing key, sealed
+the private half, and can reach everything it needs. Next: the
+[Quickstart](../quickstart.md).
