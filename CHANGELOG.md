@@ -31,6 +31,11 @@ more trust than the wording it removes.
   stranded table before recreating it. That drop can only fire where the migration is
   unrecorded, which is exactly the failed state; where 0.77.0 completed (sqlite,
   PostgreSQL) it is never called again. Upgrading from 0.77.0 needs no manual step.
+- **A migration stranded by a half-applied run is now a covered case, not a discovery.**
+  `tests/Migrations/MigrationRollbackTest.php` plants a table under a migration's name,
+  leaves it unrecorded, and requires the migrator to run over it and leave the corrected
+  schema behind. It runs on every engine the suite is pointed at, MySQL and MariaDB
+  included — where DDL is not transactional and this failure shape is possible at all.
 
 ## [0.77.0] - 2026-08-02
 

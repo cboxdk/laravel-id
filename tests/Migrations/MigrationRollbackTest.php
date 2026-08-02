@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use Cbox\Id\Tests\Support\ThrowawayDatabase;
 use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * `down()` has to work, and until this test existed nothing proved it did.
@@ -111,6 +113,52 @@ it('migrates every path up, all the way back down, and up again', function (): v
         // left in after a rollback under pressure, so it is asserted too.
         expect(Artisan::call('migrate', $options))
             ->toBe(0, 'php artisan migrate failed on a rolled-back database: '.Artisan::output());
+    } finally {
+        $cleanup();
+    }
+})->group('migrations-rollback');
+
+/**
+ * A migration that failed halfway must not wedge every deploy behind it.
+ *
+ * 0.77.0's `saml_idp_sessions` created cleanly on MySQL and MariaDB and then failed on
+ * its own index — 4200 bytes against InnoDB's 3072 limit. DDL there is not
+ * transactional, so the table survived and the migrator recorded nothing: the next
+ * deploy hit "table already exists", exited non-zero, and never reached the migrations
+ * queued behind it. The recovery had to be a schema change, which is exactly what could
+ * not be applied.
+ *
+ * So the fixed migration drops the stranded table first. This is the case that proves
+ * it: a table sitting there under that name, unrecorded, is migrated over rather than
+ * collided with — and the result is the CORRECTED shape, not the decoy left in place.
+ */
+it('migrates over a table stranded by a half-applied migration', function (): void {
+    [$connection, $cleanup] = ThrowawayDatabase::open('stranded');
+
+    try {
+        // The wreckage 0.77.0 left: the create succeeded, the index did not, and the
+        // `migrations` row was never written. One column, so that finding the real
+        // schema afterwards proves the decoy was replaced rather than skipped.
+        Schema::connection($connection)->create('saml_idp_sessions', function (Blueprint $table): void {
+            $table->string('id', 26)->primary();
+        });
+
+        $options = [
+            '--database' => $connection,
+            '--path' => allMigrationPaths(),
+            '--realpath' => true,
+            '--force' => true,
+        ];
+
+        expect(Artisan::call('migrate', $options))
+            ->toBe(0, 'a stranded table wedged the migrator: '.Artisan::output());
+
+        $schema = Schema::connection($connection);
+
+        expect($schema->hasColumn('saml_idp_sessions', 'lookup_hash'))
+            ->toBeTrue('the stranded table survived instead of being replaced')
+            ->and($schema->hasColumn('saml_idp_sessions', 'session_index'))
+            ->toBeTrue('the stranded table survived instead of being replaced');
     } finally {
         $cleanup();
     }
