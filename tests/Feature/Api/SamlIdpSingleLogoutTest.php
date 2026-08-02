@@ -58,7 +58,7 @@ if (! function_exists('logoutRequestXml')) {
      * every LogoutRequest here must be signed), so pass it explicitly to drive the
      * wrong-endpoint refusal. Pass '' to omit the attribute entirely.
      */
-    function logoutRequestXml(string $entityId, string $id, ?string $issueInstant = null, ?string $destination = null): string
+    function logoutRequestXml(string $entityId, string $id, ?string $issueInstant = null, ?string $destination = null, string $nameId = 'alice@example.test'): string
     {
         $destination ??= IdpDescriptor::sloUrl();
 
@@ -67,7 +67,7 @@ if (! function_exists('logoutRequestXml')) {
             .'IssueInstant="'.($issueInstant ?? gmdate('Y-m-d\TH:i:s\Z')).'"'
             .($destination !== '' ? ' Destination="'.htmlspecialchars($destination, ENT_QUOTES).'"' : '').'>'
             .'<saml:Issuer>'.$entityId.'</saml:Issuer>'
-            .'<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">alice@example.test</saml:NameID>'
+            .'<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">'.htmlspecialchars($nameId, ENT_QUOTES).'</saml:NameID>'
             .'</samlp:LogoutRequest>';
     }
 }
@@ -320,4 +320,42 @@ it('refuses a logout for a name another service provider was given', function ()
 
     expect($sessions->active($session->id))
         ->not->toBeNull('one service provider logged out a session belonging to another');
+});
+
+/**
+ * And it cannot be reached by sliding the boundary between the two values.
+ *
+ * The lookup is a digest rather than the raw pair, because the raw pair is 4096 bytes of
+ * utf8mb4 and InnoDB indexes stop at 3072. A digest of a plain concatenation would hand
+ * the whole guard back: an SP picks its own EntityID, so registering
+ * `https://sp.example/ab` and naming `ob@example.test` produces the same bytes as
+ * `https://sp.example/a` holding `bob@example.test` — a session belonging to another
+ * relying party, matched exactly. The NUL separator is what makes the split unambiguous,
+ * because neither an EntityID nor a NameID can contain one.
+ */
+it('refuses a logout whose entity id and name id concatenate to another SP session', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/ab';
+    registerSp($entityId, $spCert);
+
+    $bob = $this->makeUser('bob@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($bob->id, null, ['pwd']);
+
+    // Issued to a DIFFERENT service provider, one character shorter, under the name the
+    // attacker's request completes.
+    SamlIdpSession::query()->create([
+        'sp_entity_id' => 'https://sp.example/a',
+        'subject_id' => $bob->id,
+        'name_id' => 'bob@example.test',
+        'session_index' => '_'.bin2hex(random_bytes(16)),
+        'expires_at' => now()->addDay(),
+    ]);
+
+    $xml = logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16)), nameId: 'ob@example.test');
+    $query = signedRedirectQuery($xml, $spPrivate, 'SAMLRequest');
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
+
+    expect($sessions->active($session->id))
+        ->not->toBeNull('a shifted entity-id boundary matched another SP session');
 });

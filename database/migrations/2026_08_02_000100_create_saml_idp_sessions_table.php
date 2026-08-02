@@ -32,6 +32,19 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // The first cut of this table indexed the raw (environment_id, sp_entity_id,
+        // name_id) triple. On MySQL and MariaDB the `create table` succeeded and the
+        // `add index` behind it did not — 4200 bytes against InnoDB's 3072 — which leaves
+        // the table present and the migration UNRECORDED. Every deploy after that failed
+        // on "table already exists" and never reached the migrations queued behind it.
+        //
+        // Dropping is safe precisely because the failure is what stranded it: a run that
+        // reached the index never completed, so the application was never given a schema
+        // to write into and no row can exist. Where the migration DID complete — sqlite
+        // and PostgreSQL, neither of which has the key limit — it is recorded, this
+        // method is never called again, and the drop cannot fire.
+        Schema::dropIfExists('saml_idp_sessions');
+
         Schema::create('saml_idp_sessions', function (Blueprint $table): void {
             $table->string('id', 26)->primary();
             $table->string('environment_id', 26)->index();
@@ -47,11 +60,22 @@ return new class extends Migration
             $table->string('name_id', 512);
             $table->string('session_index', 64);
 
+            // sha256 of sp_entity_id + NUL + name_id, maintained by the model.
+            //
+            // The lookup wants the raw pair, and the raw pair cannot be indexed: two
+            // 512-character URI columns are 4096 bytes in utf8mb4 before the environment
+            // is added, and InnoDB refuses a key over 3072 — which is why the first cut
+            // of this table created on MySQL and then failed on its own index, leaving
+            // the table behind and the migration unrecorded. Varchar rather than char:
+            // CHAR right-pads on PostgreSQL and an exact-match comparison then depends on
+            // which side the value came from.
+            $table->string('lookup_hash', 64);
+
             $table->timestamp('expires_at')->nullable()->index();
             $table->timestamps();
 
             // The SLO lookup, in one index: "for this SP, who is this NameID?"
-            $table->index(['environment_id', 'sp_entity_id', 'name_id'], 'saml_idp_sessions_lookup');
+            $table->index(['environment_id', 'lookup_hash'], 'saml_idp_sessions_lookup');
             $table->index(['environment_id', 'subject_id'], 'saml_idp_sessions_subject');
             $table->unique(['environment_id', 'session_index'], 'saml_idp_sessions_index');
         });

@@ -105,9 +105,12 @@ class SamlIdpLogoutController
         //
         // Only a subject we actually issued an assertion to, for THIS service provider,
         // under THIS name, can be logged out by it.
+        //
+        // Matched on the digest of the pair rather than the pair itself — the two raw
+        // columns are too wide for an InnoDB index together, and an unindexed logout
+        // lookup is a table scan an unauthenticated endpoint can ask for at will.
         $issued = SamlIdpSession::query()
-            ->where('sp_entity_id', $outcome->spEntityId)
-            ->where('name_id', $outcome->nameId)
+            ->where('lookup_hash', SamlIdpSession::lookupHash($outcome->spEntityId, $outcome->nameId))
             ->latest('created_at')
             ->first();
 

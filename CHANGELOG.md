@@ -15,6 +15,23 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.77.1] - 2026-08-02
+
+### Fixed
+
+- **0.77.0's `saml_idp_sessions` table could not be created on MySQL or MariaDB, and left
+  the schema stuck.** The Single Logout lookup was indexed over the raw
+  `(environment_id, sp_entity_id, name_id)` triple. Two 512-character URI columns are
+  4096 bytes in `utf8mb4` before the environment id is added, and InnoDB refuses a key
+  over 3072 — so `create table` succeeded, the `add index` behind it failed, and the
+  migration was never recorded. Every subsequent deploy then failed on *table already
+  exists* without reaching the migrations queued behind it. The lookup is now a
+  `lookup_hash` column — sha256 of the EntityID and NameID, NUL-separated so the boundary
+  between them cannot be shifted — maintained by the model, and the migration drops the
+  stranded table before recreating it. That drop can only fire where the migration is
+  unrecorded, which is exactly the failed state; where 0.77.0 completed (sqlite,
+  PostgreSQL) it is never called again. Upgrading from 0.77.0 needs no manual step.
+
 ## [0.77.0] - 2026-08-02
 
 ### Security
