@@ -34,9 +34,17 @@ return new class extends Migration
         // constraint swaps were reordered: MySQL DDL is not transactional, so each step
         // has to leave the schema in a state the next run can still act on.
         foreach (['log_streams', 'stream_deliveries'] as $table) {
-            Schema::table($table, function (Blueprint $blueprint): void {
-                $blueprint->string('environment_id', 26)->nullable()->after('id')->index();
-            });
+            // Each step asks whether it still needs doing. Without that, a failure at the
+            // tighten leaves the column present and the migration unrecorded, and the
+            // NEXT deploy dies on duplicate-column at step one — the same wedge (schema
+            // ahead of the migrations table, repair is itself a migration) that this
+            // batch exists to prevent. The comment below used to claim re-runnability
+            // that the code did not have.
+            if (! Schema::hasColumn($table, 'environment_id')) {
+                Schema::table($table, function (Blueprint $blueprint): void {
+                    $blueprint->string('environment_id', 26)->nullable()->after('id')->index();
+                });
+            }
 
             // Existing rows predate multi-environment support. Empty string rather than
             // a lookup: this migration must not depend on application state that may not

@@ -13,6 +13,56 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## 0.79.0
+
+**Persistent and transient SAML NameIDs change value.** Until now the format was never
+consulted: a service provider registered with `nameid-format:persistent` received
+whatever `name_id_attribute` pointed at, which defaults to `email`. It now receives a
+128-bit opaque identifier, per service provider, and a transient one gets a fresh value
+per assertion.
+
+At the service provider, that is **a different subject**. An SP that auto-provisions will
+create a second account for the same person; one that does not will refuse the sign-in.
+
+- **Who is affected:** only service providers deliberately registered as `persistent` or
+  `transient`. The column default is `emailAddress`, so a registration that was never
+  changed is unaffected.
+- **What to do:** decide per SP. Either tell the SP to re-link its accounts (the usual
+  answer — the new identifier is what the spec always meant by "persistent"), or set that
+  SP's `name_id_format` back to `emailAddress`, which restores the old value exactly.
+- **Reverting after the fact:** the identifiers are rows in `saml_idp_name_ids`, keyed
+  `(environment_id, sp_entity_id, subject_id)`. Deleting a row reissues that one person's
+  pseudonym at that one SP; nothing else is touched.
+
+Adds one migration.
+
+## 0.78.0
+
+**The SAML HTTP-POST binding now carries its own Content-Security-Policy, and your host
+has to let it.** A self-submitting cross-origin form is exactly what `form-action` and
+the inline-script ban exist to refuse, so a host with a hardened policy was breaking its
+own federation — the assertion was built, signed, and never delivered, with no
+PHP-level symptom.
+
+`SamlResponse::toPostBinding()` returns the payload together with a policy naming only
+the registered ACS. **If your application sets a Content-Security-Policy in middleware,
+it must not overwrite one the response already set** — otherwise this release changes
+nothing for you and the blank-page failure continues.
+
+The one-line shape, in whatever middleware stamps your headers:
+
+```php
+if ($name === 'Content-Security-Policy' && $response->headers->has($name)) {
+    continue;
+}
+```
+
+Defer only the CSP. Leaving the rest unconditional means a response cannot quietly drop
+`frame-ancestors` or `nosniff` by setting one header.
+
+`toPostForm()` is unchanged and still returns the same HTML, so a host with no policy at
+all needs to do nothing.
+
 ## 0.77.0
 
 ### `saml_idp_sessions` (migration), and SLO stops working for pre-existing sessions

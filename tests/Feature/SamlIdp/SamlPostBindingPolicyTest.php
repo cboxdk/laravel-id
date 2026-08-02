@@ -81,3 +81,26 @@ it('carries the policy on the response a controller returns', function (): void 
         // The page holds a signed assertion for the fraction of a second it exists.
         ->and($http->headers->get('Cache-Control'))->toContain('no-store');
 });
+
+/**
+ * A malformed ACS must not be able to write its own directives.
+ *
+ * The origin goes into a response header, so an unparseable value echoed verbatim is
+ * header injection with extra steps: a semicolon in the URL introduces directives of the
+ * attacker's choosing, and because the first occurrence of a directive wins, they land
+ * BEFORE the `base-uri` and `frame-ancestors` this page relies on. It takes an
+ * admin-registered service provider to reach, which is why it is a fail-closed question
+ * rather than an open door — but "only an admin can do it" is not a security property.
+ */
+it('refuses to name an unparseable ACS as a policy source', function (): void {
+    $binding = (new SamlResponse(
+        xml: '<Response/>',
+        encoded: base64_encode('<Response/>'),
+        acsUrl: 'not a url; frame-ancestors *; base-uri *',
+    ))->toPostBinding();
+
+    expect($binding->contentSecurityPolicy)
+        ->toContain("form-action 'none'")
+        ->not->toContain('frame-ancestors *')
+        ->not->toContain('base-uri *');
+});

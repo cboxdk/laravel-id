@@ -106,11 +106,16 @@ readonly class SamlResponse
         $host = is_string($parts['host'] ?? null) ? $parts['host'] : null;
 
         if ($scheme === null || $host === null) {
-            // Unparseable — name the whole string rather than widening to a wildcard.
-            // A policy that refuses is a broken login; a policy that allows anything is
-            // a broken policy, and only one of those is discovered by the person it
-            // happened to.
-            return $url;
+            // Unparseable — refuse rather than echo. Returning the raw string put an
+            // unvalidated value straight into a response header: an ACS containing a
+            // semicolon would inject its own directives BEFORE `base-uri` and
+            // `frame-ancestors`, and first occurrence wins, so a malformed registration
+            // could weaken the two directives that keep this page out of a frame.
+            //
+            // `'none'` breaks that one delivery, loudly, for one service provider whose
+            // registration is already wrong. The alternative is a policy that quietly
+            // means less than it says, which is discovered by whoever it happens to.
+            return "'none'";
         }
 
         $port = $parts['port'] ?? null;
