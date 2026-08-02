@@ -102,3 +102,61 @@ it('refuses verification beyond the global per-IP throttle', function (): void {
     expect($throttled->verified)->toBeFalse()
         ->and($throttled->reason)->toBe(OtpFailureReason::RateLimited);
 });
+
+/**
+ * A rate limit one tenant can spend on another tenant's behalf is not a rate limit.
+ *
+ * Every key in this class was built from purpose, recipient and IP against the shared
+ * application cache — no environment. So an attacker on their own free-trial environment
+ * could call `verifyLatest('login', 'victim@corp.example', '000000')` until the budget
+ * was gone, and the victim, on an entirely unrelated tenant, could not use a one-time
+ * code to sign in for the rest of the window. Re-sprayed every fifteen minutes, that is
+ * indefinite.
+ *
+ * The issuance budget is the same defect facing the other way: burn it and the victim's
+ * OWN tenant is stopped from sending them a code for an hour.
+ *
+ * Sharing a key is only the more restrictive choice when the thing being bounded is
+ * guessing. These budgets also bound delivery, and there the sharing is the attack.
+ */
+it('does not let one environment spend another environment issue budget', function (): void {
+    config()->set('cbox-id.otp.issue.max_per_window', 1);
+    config()->set('cbox-id.otp.issue.per_recipient_max', 1);
+    app()->forgetInstance(OtpService::class);
+
+    $this->fakeOtpChannel();
+
+    $this->runAsEnvironment('env_a', fn () => $this->issueOtp('login', 'shared@example.test', 'fake', '203.0.113.9'));
+
+    // The same recipient, on a different tenant, still has their own budget.
+    $inB = $this->runAsEnvironment(
+        'env_b',
+        fn () => $this->issueOtp('login', 'shared@example.test', 'fake', '203.0.113.9'),
+    );
+
+    expect($inB->id)->not->toBeEmpty('one environment exhausted another environment issue budget');
+});
+
+it('does not let one environment spend another environment verify budget', function (): void {
+    config()->set('cbox-id.otp.verify.per_recipient_max', 1);
+    app()->forgetInstance(OtpService::class);
+
+    $this->fakeOtpChannel();
+
+    $this->runAsEnvironment('env_a', function (): void {
+        $this->issueOtp('login', 'grind@example.test', 'fake', '203.0.113.9');
+        // Spend env A's per-recipient verify budget on a wrong code.
+        app(OtpService::class)->verifyLatest('login', 'grind@example.test', '000000', '203.0.113.9');
+    });
+
+    $outcome = $this->runAsEnvironment('env_b', function () {
+        $this->issueOtp('login', 'grind@example.test', 'fake', '203.0.113.9');
+
+        // A wrong code here too: the assertion is about WHY it is refused, not whether.
+        // A rate-limited answer means env A spent env B's budget.
+        return app(OtpService::class)->verifyLatest('login', 'grind@example.test', '111111', '203.0.113.9');
+    });
+
+    expect($outcome->reason)
+        ->not->toBe(OtpFailureReason::RateLimited, 'one environment locked another out of OTP sign-in');
+});

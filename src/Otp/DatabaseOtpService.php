@@ -257,13 +257,36 @@ class DatabaseOtpService implements OtpService
     }
 
     /**
+     * Every rate-limit key in this class is namespaced by environment.
+     *
+     * Without it, four budgets are shared across every tenant of the deployment — and
+     * they are budgets an attacker can spend on someone else's behalf. An attacker on
+     * their own free-trial environment calls `verifyLatest('login', 'victim@corp.example',
+     * '000000')` fifteen times and the victim, on an unrelated tenant, cannot use an OTP
+     * to sign in for the rest of the window. Re-sprayed, that is indefinite. The issuance
+     * budget behaves the same in the other direction: the victim's own tenant is stopped
+     * from SENDING them a code for an hour.
+     *
+     * Sharing a key is only ever the more restrictive choice for guessing, and these
+     * limits are not only about guessing.
+     *
+     * Resolved per call, never captured: this class is a singleton and the environment
+     * context is scoped, so a queue worker holding a captured value keys job B under job
+     * A's tenant. See {@see ResolvesEnvironment}.
+     */
+    private function keyPrefix(): string
+    {
+        return ($this->environments()->current()?->environmentKey() ?? 'no-env').':';
+    }
+
+    /**
      * Global per-IP verify throttle: the last line against brute-forcing the small
      * numeric code space across many challenges. Returns true when this attempt is
      * over the limit; otherwise counts it.
      */
     private function verifyThrottled(?string $ip): bool
     {
-        $key = 'otp:verify:'.($ip ?? 'unknown');
+        $key = $this->keyPrefix().'otp:verify:'.($ip ?? 'unknown');
 
         if ($this->limiter->tooManyAttempts($key, $this->verifyMaxPerWindow)) {
             return true;
@@ -288,7 +311,7 @@ class DatabaseOtpService implements OtpService
     private function issueKey(string $purpose, string $recipient, ?string $ip): string
     {
         // Hash the recipient so no address (PII) lands in a cache key.
-        return 'otp:issue:'.hash('sha256', $purpose.'|'.$recipient).':'.($ip ?? 'unknown');
+        return $this->keyPrefix().'otp:issue:'.hash('sha256', $purpose.'|'.$recipient).':'.($ip ?? 'unknown');
     }
 
     /**
@@ -298,7 +321,7 @@ class DatabaseOtpService implements OtpService
      */
     private function issueRecipientKey(string $recipient): string
     {
-        return 'otp:issue:recipient:'.hash('sha256', $recipient);
+        return $this->keyPrefix().'otp:issue:recipient:'.hash('sha256', $recipient);
     }
 
     /**
@@ -308,7 +331,7 @@ class DatabaseOtpService implements OtpService
      */
     private function verifyRecipientThrottled(string $purpose, string $recipient): bool
     {
-        $key = 'otp:verify:recipient:'.hash('sha256', $purpose.'|'.$recipient);
+        $key = $this->keyPrefix().'otp:verify:recipient:'.hash('sha256', $purpose.'|'.$recipient);
 
         if ($this->limiter->tooManyAttempts($key, $this->verifyPerRecipientMax)) {
             return true;
