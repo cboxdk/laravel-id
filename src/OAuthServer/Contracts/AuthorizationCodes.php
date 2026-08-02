@@ -27,6 +27,7 @@ interface AuthorizationCodes
         ?string $nonce = null,
         ?int $authTime = null,
         array $amr = [],
+        ?string $resource = null,
     ): string;
 
     /**

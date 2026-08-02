@@ -15,6 +15,27 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.80.0] - 2026-08-02
+
+### Security
+
+- **A client could choose its own token audience after the user had authorized.** The RFC
+  8707 `resource` parameter was read at the token endpoint, validated as an absolute URI,
+  and stamped verbatim into the access token's `aud` — while nothing recorded what the
+  authorization had been FOR. So any client holding a valid code could name any resource
+  server at redemption and receive a token, signed by this issuer, asserting it was minted
+  for that server. That is a confused deputy against every resource server that trusts the
+  issuer and checks `aud`, which is exactly the check RFC 9068 tells it to make and the
+  property the MCP authorization model rests on. §2.2 requires the token request's
+  resource to be the one the authorization was granted for; `authorization_codes` now
+  carries it, and a mismatch is refused with `invalid_target`. A redemption naming no
+  resource gets the authorized one. Codes carrying none behave exactly as before — nothing
+  is retroactively bound.
+
+  Hosts must pass the authorized `resource` to `AuthorizationCodes::issue()` for the
+  binding to exist; the parameter is optional and defaults to null, so an un-updated host
+  is no worse off than it was.
+
 ## [0.79.0] - 2026-08-02
 
 ### Security

@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $scopes
  * @property string $pkce_challenge
  * @property string $pkce_method
+ * @property string|null $resource
  * @property string|null $nonce
  * @property int|null $auth_time
  * @property array<int, string>|null $amr

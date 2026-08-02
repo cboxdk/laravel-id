@@ -181,7 +181,26 @@ class TokenController
             return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
-        $resource = $this->resource($request);
+        // RFC 8707 §2.2: the token request's resource must be the one the authorization
+        // was granted for.
+        //
+        // Until this check existed the `resource` parameter was read here, validated as an
+        // absolute URI, and stamped verbatim into the access token's `aud` — while nothing
+        // recorded what the user had actually authorized. So any client holding a valid
+        // code could name any audience at redemption and receive a token asserting it,
+        // signed by us. That is a confused deputy against every resource server that
+        // trusts this issuer and checks `aud`, which is precisely the check RFC 9068 tells
+        // it to make.
+        //
+        // A code carrying no resource is unchanged: there is nothing to contradict, and
+        // codes issued before the column existed must not be retroactively bound.
+        $requested = $this->resource($request);
+
+        if ($grant->resource !== null && $requested !== null && $requested !== $grant->resource) {
+            return $this->error('invalid_target', 400, 'the requested resource is not the one this authorization was granted for');
+        }
+
+        $resource = $grant->resource ?? $requested;
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt);
 
         // A refresh token is issued only when the client asked for offline access.

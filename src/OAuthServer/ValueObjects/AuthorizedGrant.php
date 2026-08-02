@@ -20,5 +20,13 @@ readonly class AuthorizedGrant
         public ?string $nonce = null,
         public ?int $authTime = null,
         public array $amr = [],
+
+        /**
+         * The resource indicator this authorization was granted for, if any.
+         *
+         * Carried out of the exchange so the token endpoint can refuse a redemption that
+         * asks for a different audience than the one the user agreed to.
+         */
+        public ?string $resource = null,
     ) {}
 }

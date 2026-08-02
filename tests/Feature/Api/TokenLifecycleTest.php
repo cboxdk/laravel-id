@@ -487,3 +487,75 @@ it('does not let one client revoke another client\'s refresh-token family', func
         'refresh_token' => $refresh,
     ])->assertOk()->assertJsonStructure(['access_token', 'refresh_token']);
 });
+
+/**
+ * A client must not be able to choose the audience after the fact.
+ *
+ * `resource` was read at the token endpoint, checked for being an absolute URI, and
+ * stamped verbatim into `aud` — while nothing recorded what the user had authorized. So
+ * any client holding a valid code could name any audience at redemption and receive a
+ * token asserting it, signed by us. That is a confused deputy against every resource
+ * server that trusts this issuer and checks `aud`, which is exactly the check RFC 9068
+ * tells it to make and the property the MCP authorization model rests on.
+ *
+ * RFC 8707 §2.2: the token request's resource must be the one the authorization was
+ * granted for.
+ */
+it('refuses a redemption that asks for a different resource than was authorized', function (): void {
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code']);
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id,
+        'user_42',
+        'org_a',
+        'https://app.test/cb',
+        ['api.read'],
+        Base64Url::encode(hash('sha256', VERIFIER, true)),
+        'S256',
+        null,
+        1_700_000_000,
+        ['pwd'],
+        'https://mcp.acme.example',
+    );
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+        'resource' => 'https://api.someone-else.example',
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_target');
+});
+
+it('mints the authorized audience even when the redemption names none', function (): void {
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code']);
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id,
+        'user_42',
+        'org_a',
+        'https://app.test/cb',
+        ['api.read'],
+        Base64Url::encode(hash('sha256', VERIFIER, true)),
+        'S256',
+        null,
+        1_700_000_000,
+        ['pwd'],
+        'https://mcp.acme.example',
+    );
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify($response->json('access_token'), [SigningAlg::RS256]);
+
+    expect($claims->get('aud'))->toBe('https://mcp.acme.example');
+});

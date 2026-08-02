@@ -26,6 +26,7 @@ class AuthorizationCodeService implements AuthorizationCodes
         ?string $nonce = null,
         ?int $authTime = null,
         array $amr = [],
+        ?string $resource = null,
     ): string {
         $code = 'ac_'.bin2hex(random_bytes(32));
 
@@ -41,6 +42,9 @@ class AuthorizationCodeService implements AuthorizationCodes
             'nonce' => $nonce,
             'auth_time' => $authTime,
             'amr' => $amr === [] ? null : $amr,
+            // What the user authorized this code FOR (RFC 8707 §2). The token endpoint
+            // compares any requested resource against this rather than trusting it.
+            'resource' => $resource,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
@@ -80,6 +84,7 @@ class AuthorizationCodeService implements AuthorizationCodes
                 $record->nonce,
                 $record->auth_time,
                 is_array($record->amr) ? array_values($record->amr) : [],
+                $record->resource,
             );
         });
     }

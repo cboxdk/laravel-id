@@ -13,6 +13,22 @@ running. Read the whole section for the version you are crossing before you depl
 of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
 fires on clients you do not control.
 
+## 0.80.0
+
+**The RFC 8707 `resource` a client asks for at `/authorize` is now binding.**
+`AuthorizationCodes::issue()` takes an optional eleventh argument — the resource indicator
+the authorization was granted for — and the token endpoint refuses a redemption that names
+a different one with `invalid_target`.
+
+- **If your host serves its own `/authorize`**, pass the captured `resource` through to
+  `issue()`. Until you do, codes carry no resource and behave exactly as before: the
+  client's request at redemption is honoured, which is the old (unbound) behaviour.
+- **If a client legitimately needs several audiences**, it must obtain a code per resource.
+  RFC 8707 §2 is explicit that the authorization and the token request describe the same
+  target.
+
+Adds one migration (`oauth_authorization_codes.resource`, nullable).
+
 ## 0.79.0
 
 **Persistent and transient SAML NameIDs change value.** Until now the format was never
