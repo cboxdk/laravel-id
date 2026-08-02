@@ -36,7 +36,13 @@ return new class extends Migration
     {
         Schema::table('events', function (Blueprint $table): void {
             $table->dropIndex('events_relay_idx');
-            $table->dropColumn('claimed_at');
+
+            // Both columns, and the token's own index before the column it indexes.
+            // `claim_token` was left behind, so a rollback followed by a re-migrate
+            // failed on MySQL 1060 "duplicate column name" — invisible to the rollback
+            // test, which does a full reset where the whole table goes.
+            $table->dropIndex(['claim_token']);
+            $table->dropColumn(['claimed_at', 'claim_token']);
         });
     }
 };
