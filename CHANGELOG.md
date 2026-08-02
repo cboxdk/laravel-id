@@ -39,6 +39,13 @@ more trust than the wording it removes.
 
 ## [0.77.0] - 2026-08-02
 
+> **Withdrawn 2026-08-02.** This release cannot be installed on MySQL or MariaDB: the
+> `saml_idp_sessions` migration below builds an index InnoDB refuses, which leaves the
+> table created, the migration unrecorded, and every later deploy stopping on *table
+> already exists*. Use 0.77.1. Appended per the immutability note above — nothing in the
+> entry itself has been altered.
+
+
 ### Security
 
 - **Any registered service provider could log out any subject in the environment.** Single
