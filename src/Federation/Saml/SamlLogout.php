@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Contracts\SamlSpSingleLogout;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Models\IdentityLink;
+use Cbox\Id\SamlIdp\Support\MessageGuard;
 use OneLogin\Saml2\Auth;
 use OneLogin\Saml2\LogoutRequest;
 use OneLogin\Saml2\Utils;
@@ -29,9 +30,18 @@ use Throwable;
  */
 class SamlLogout implements SamlSpSingleLogout
 {
+    /**
+     * Both bounds a signature does not give you: freshness and single use. The
+     * identity-provider half of this package has enforced them since it was written;
+     * this half enforced neither, which made any captured LogoutRequest a permanent
+     * logout primitive against the person it named.
+     */
+    private const FRESHNESS_SECONDS = 300;
+
     public function __construct(
         private readonly Connections $connections,
         private readonly SessionManager $sessions,
+        private readonly MessageGuard $guard,
     ) {}
 
     /**
@@ -73,11 +83,66 @@ class SamlLogout implements SamlSpSingleLogout
 
             // On an inbound LogoutRequest, revoke every session for that subject.
             if (isset($query['SAMLRequest'])) {
+                // Signed is not the same as fresh, and not the same as unused.
+                //
+                // A LogoutRequest travels to us as a query string in the user's browser:
+                // it lands in history, in proxy logs, in a Referer. The identity-provider
+                // half of this package has enforced both bounds since it was written; the
+                // relying-party half enforced neither, so anyone who obtained a copy held
+                // a permanent, unauthenticated, targeted logout against one named person
+                // — replayable on every re-login, forever. onelogin checks NotOnOrAfter
+                // only when the message carries one, and most identity providers do not
+                // send one on a LogoutRequest.
+                //
+                // Scoped to the CONNECTION rather than the IdP EntityID: two tenants may
+                // federate to the same identity provider, and a replay key they share is
+                // one tenant able to burn the other's message ids.
+                if (! $this->guard->fresh($this->issueInstantOf($query['SAMLRequest']), self::FRESHNESS_SECONDS)) {
+                    return SamlLogoutResult::error('The LogoutRequest is stale or its IssueInstant is unparseable.');
+                }
+
+                $messageId = $this->messageIdOf($query['SAMLRequest']);
+
+                if ($messageId === null || ! $this->guard->consume($connection->id, $messageId, self::FRESHNESS_SECONDS)) {
+                    return SamlLogoutResult::error('The LogoutRequest has already been processed (replay).');
+                }
+
                 $revoked = $this->revokeSessionsForRequest($connection, $query['SAMLRequest']);
             }
 
             return SamlLogoutResult::ok($redirect !== '' ? $redirect : null, $revoked);
         });
+    }
+
+    /**
+     * `IssueInstant` off the root element, read from the raw payload.
+     *
+     * Attribute-scraped rather than DOM-parsed on purpose: this runs BEFORE the
+     * decision to trust anything, so it must not hand attacker-supplied XML to a
+     * parser. The value only ever feeds a freshness comparison — a wrong one fails
+     * closed.
+     */
+    private function issueInstantOf(string $samlRequest): ?string
+    {
+        return preg_match('/IssueInstant="([^"]+)"/', $this->inflate($samlRequest), $matches) === 1
+            ? $matches[1]
+            : null;
+    }
+
+    /** The message `ID`, which is what makes the replay key unique. */
+    private function messageIdOf(string $samlRequest): ?string
+    {
+        return preg_match('/\sID="([^"]+)"/', $this->inflate($samlRequest), $matches) === 1
+            ? $matches[1]
+            : null;
+    }
+
+    /** Inflate the payload to XML, tolerating an already-decoded (POST-binding) value. */
+    private function inflate(string $samlRequest): string
+    {
+        $decoded = base64_decode($samlRequest, true);
+
+        return is_string($decoded) ? (@gzinflate($decoded) ?: $decoded) : $samlRequest;
     }
 
     /**

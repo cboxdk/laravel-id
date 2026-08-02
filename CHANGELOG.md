@@ -15,6 +15,49 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.78.0] - 2026-08-02
+
+### Security
+
+- **A captured SAML `LogoutRequest` was a permanent, unauthenticated logout against the
+  person it named.** The relying-party half of Single Logout verified the signature and
+  nothing else — no freshness bound and no single-use claim, while the identity-provider
+  half has enforced both since it was written. The message arrives as a query string in
+  the user's browser, so a copy survives in history, proxy logs and any leaked `Referer`;
+  anyone holding one could end that person's sessions again after every re-login, forever.
+  onelogin checks `NotOnOrAfter` only when the message carries one, and most identity
+  providers do not send one on a logout. Both bounds are now enforced, with the replay key
+  scoped to the connection rather than the identity provider's EntityID — two tenants may
+  federate to the same IdP, and a shared key is one tenant able to burn the other's
+  message ids.
+- **`saml_idp_sessions` carried a 30-day expiry that nothing enforced.** The release notes
+  told operators records are kept 30 days and the constant's own docblock said a later
+  logout "has nothing to resolve and is refused" — but the lookup had no expiry predicate,
+  so a service provider that federated a user once could end that person's sessions
+  indefinitely. A bound nobody checks is a comment.
+
+### Fixed
+
+- **The SAML HTTP-POST binding could not work under any real content-security policy.** A
+  self-submitting form aimed at a service provider's ACS is, to a browser, exactly the
+  shape `form-action` exists to refuse, and its auto-submit is exactly what a `script-src`
+  without `'unsafe-inline'` exists to refuse. A host that hardened its headers broke its
+  own federation: the assertion was built, signed, and never delivered — the user watched
+  a blank page and the service provider was never told anything happened. There is no
+  PHP-level symptom, which is why it shipped. `SamlResponse::toPostBinding()` now returns
+  the payload together with a policy of its own: `default-src 'none'`, a per-response
+  nonce for the single submit script, and `form-action` naming only the ACS this assertion
+  is addressed to — taken from the registration, never from the request. The submit moved
+  from a `body onload` handler to a script tag because an event-handler attribute can only
+  be permitted by `'unsafe-inline'`, which is all-or-nothing for the whole document. Hosts
+  with no policy are unaffected; `toPostForm()` still returns the same HTML.
+- **Two migrations dropped a uniqueness constraint before adding its replacement.** MySQL
+  DDL is not transactional, so a failure between the two statements is a state, not a
+  rollback — and in that state DPoP proof-JTI replay and SAML assertion replay were
+  unconstrained, on the two tables that exist to prevent exactly that, with the migration
+  unrecorded so the deploy that would repair it could not run either. Both now add first
+  and drop second, so the window holds two constraints instead of none.
+
 ## [0.77.1] - 2026-08-02
 
 ### Fixed

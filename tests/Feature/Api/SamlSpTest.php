@@ -149,3 +149,44 @@ it('rejects an unsigned LogoutRequest at the SLO endpoint', function (): void {
 
     expect(Session::query()->where('user_id', $userId)->whereNull('revoked_at')->count())->toBe(1);
 });
+
+/**
+ * A captured LogoutRequest must not work twice.
+ *
+ * The message reaches us as a query string in the user's browser, so a copy of it exists
+ * in history, in proxy logs and in any Referer that leaked. A signature says who wrote
+ * it; it says nothing about when, or how many times. Without both bounds, anyone holding
+ * one copy holds an unauthenticated, targeted, permanent logout against the person it
+ * names — usable again after every re-login.
+ *
+ * The identity-provider half of this package has enforced freshness and single use since
+ * it was written. This is the relying-party half, which enforced neither.
+ */
+it('refuses a replayed LogoutRequest at the SLO endpoint', function (): void {
+    $idp = new SamlIdp;
+    $org = $this->makeOrganization();
+    $connectionId = samlConnectionFor($idp, $org->id);
+
+    $login = $this->post('http://localhost/sso/saml/'.$connectionId.'/acs', [
+        'SAMLResponse' => $idp->signedResponse('alice@corp.com', SP_ENTITY_ID, SP_ACS),
+    ])->assertOk();
+
+    $userId = (string) $login->json('user_id');
+    $slo = $idp->signedLogoutRequest('alice@corp.com', SLO_DESTINATION);
+
+    // First use is legitimate and works.
+    $this->get('http://localhost/sso/saml/'.$connectionId.'/slo?'.http_build_query($slo))
+        ->assertRedirect();
+
+    // Alice signs back in. The captured request is still perfectly signed.
+    $this->post('http://localhost/sso/saml/'.$connectionId.'/acs', [
+        'SAMLResponse' => $idp->signedResponse('alice@corp.com', SP_ENTITY_ID, SP_ACS),
+    ])->assertOk();
+
+    expect(Session::query()->where('user_id', $userId)->whereNull('revoked_at')->count())->toBe(1);
+
+    $this->get('http://localhost/sso/saml/'.$connectionId.'/slo?'.http_build_query($slo));
+
+    expect(Session::query()->where('user_id', $userId)->whereNull('revoked_at')->count())
+        ->toBe(1, 'a replayed LogoutRequest ended a session it had already been used for');
+});

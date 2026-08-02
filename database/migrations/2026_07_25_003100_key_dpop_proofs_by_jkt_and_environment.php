@@ -50,10 +50,19 @@ return new class extends Migration
             $table->string('jkt', 64)->default('')->after('environment_id');
         });
 
+        // Add the replacement BEFORE dropping what it replaces. MySQL DDL is not
+        // transactional, so a failure between two statements is a state, not a rollback
+        // — and in this order the window between them holds two constraints instead of
+        // none. The other order leaves proof-JTI replay unconstrained on a table whose
+        // whole purpose is refusing replay, with the migration unrecorded so the deploy
+        // that would fix it cannot run either.
         Schema::table('dpop_proofs', function (Blueprint $table): void {
-            $table->dropUnique(['jti']);
             $table->unique(['jkt', 'jti'], 'dpop_proofs_jkt_jti_unique');
             $table->index('expires_at');
+        });
+
+        Schema::table('dpop_proofs', function (Blueprint $table): void {
+            $table->dropUnique(['jti']);
         });
     }
 

@@ -40,13 +40,21 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('consumed_assertions', function (Blueprint $table): void {
-            $table->dropUnique(['assertion_id']);
+            $table->string('environment_id', 26)->default('')->after('id');
+            $table->string('connection_id', 26)->default('')->after('environment_id');
+        });
+
+        // The replacement first, the old constraint after. MySQL DDL is not
+        // transactional, so a failure between statements leaves the schema where it
+        // stopped — and dropping first means the window between them has SAML assertion
+        // replay entirely unconstrained, on the table that exists to prevent it, with
+        // the migration unrecorded so the next deploy cannot get past it either.
+        Schema::table('consumed_assertions', function (Blueprint $table): void {
+            $table->unique(['environment_id', 'connection_id', 'assertion_id'], 'consumed_assertions_replay_key');
         });
 
         Schema::table('consumed_assertions', function (Blueprint $table): void {
-            $table->string('environment_id', 26)->default('')->after('id');
-            $table->string('connection_id', 26)->default('')->after('environment_id');
-            $table->unique(['environment_id', 'connection_id', 'assertion_id'], 'consumed_assertions_replay_key');
+            $table->dropUnique(['assertion_id']);
         });
     }
 
