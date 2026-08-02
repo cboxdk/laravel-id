@@ -13,6 +13,7 @@ use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Enums\SamlStatusCode;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
+use Cbox\Id\SamlIdp\Models\SamlIdpNameId;
 use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\Models\ServiceProvider;
 use Cbox\Id\SamlIdp\Support\AssertionBuilder;
@@ -529,11 +530,25 @@ class SamlIdentityProviderService implements SamlIdentityProvider
      */
     private function resolveNameId(ServiceProvider $serviceProvider, string $subjectId, array $attributes): string
     {
-        $values = $this->valuesFor($attributes, $serviceProvider->name_id_attribute);
+        // The FORMAT decides what the value may be. This branch did not exist: whatever
+        // `name_id_attribute` pointed at was emitted under whichever format the SP was
+        // registered with — and that attribute defaults to `email`. So a NameID declared
+        // `persistent` was the person's email address, identical at every service
+        // provider: PII, and a perfect join key between any two SPs that compare their
+        // user lists, which is precisely the correlation §8.3.7 defines the format to
+        // prevent. `transient`, which §8.3.8 says MUST NOT be reused, was a stable email
+        // forever. The conformance tests asserted the URN strings and never the value,
+        // which is why it survived.
+        return match ($serviceProvider->name_id_format) {
+            NameIdFormat::Persistent => SamlIdpNameId::pairwiseFor($serviceProvider->entity_id, $subjectId),
 
-        // Fall back to the opaque subject id when the configured NameID attribute
-        // was not supplied — an assertion always has a Subject.
-        return $values[0] ?? $subjectId;
+            // Fresh per assertion. Recorded on the session row by the caller, which is
+            // what lets Single Logout resolve it back to a subject exactly once.
+            NameIdFormat::Transient => '_'.bin2hex(random_bytes(16)),
+
+            // EmailAddress and Unspecified mean what the SP configured them to mean.
+            default => $this->valuesFor($attributes, $serviceProvider->name_id_attribute)[0] ?? $subjectId,
+        };
     }
 
     /**

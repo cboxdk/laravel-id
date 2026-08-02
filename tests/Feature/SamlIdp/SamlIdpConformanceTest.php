@@ -7,6 +7,8 @@ use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
+use Cbox\Id\SamlIdp\Models\SamlIdpSession;
+use Cbox\Id\SamlIdp\Models\ServiceProvider;
 use Cbox\Id\SamlIdp\Support\IdpDescriptor;
 use Cbox\Id\SamlIdp\Support\RedirectBindingSignature;
 use Illuminate\Auth\GenericUser;
@@ -647,3 +649,94 @@ it('lets a configured EntityID override the frozen one', function (): void {
 
     expect(IdpDescriptor::entityId())->toBe('urn:pinned:idp');
 });
+
+/**
+ * A Persistent NameID has to be opaque, and different at every service provider.
+ *
+ * SAML Core §8.3.7 defines the format as an opaque, SP-specific pseudonym — the whole
+ * point being that two providers cannot match their users against each other. Ours was
+ * whatever `name_id_attribute` pointed at, which defaults to `email`: the same value
+ * everywhere, and PII rather than a pseudonym. The existing conformance tests asserted
+ * the URN strings and the metadata, never the content, which is exactly how this
+ * survived a conformance suite.
+ */
+it('issues an opaque, per-service-provider Persistent NameID', function (): void {
+    $subject = 'user-persistent';
+
+    $alpha = $this->registerSamlServiceProvider(
+        entityId: 'https://alpha.example/metadata',
+        acsUrl: 'https://alpha.example/acs',
+        nameIdFormat: NameIdFormat::Persistent,
+    );
+    $beta = $this->registerSamlServiceProvider(
+        entityId: 'https://beta.example/metadata',
+        acsUrl: 'https://beta.example/acs',
+        nameIdFormat: NameIdFormat::Persistent,
+    );
+
+    // A distinct request id per call: the IdP answers each AuthnRequest exactly once,
+    // so a shared fixture id is refused as a replay on the second issuance.
+    $issued = fn (ServiceProvider $sp, string $id): string => nameIdIn($this->samlIdp()->issueResponse(
+        $this->samlIdp()->parseAuthnRequest(
+            // The policy has to name the format the SP is registered with, or the
+            // request is refused before a NameID is ever resolved.
+            $this->makeRedirectAuthnRequest($sp->entity_id, $sp->acs_url, id: $id, nameIdFormat: NameIdFormat::Persistent->value),
+            'state',
+        ),
+        $subject,
+        ['email' => 'alice@corp.example'],
+    )->xml);
+
+    $toAlpha = $issued($alpha, '_req_alpha_one');
+    $toBeta = $issued($beta, '_req_beta_one');
+
+    expect($toAlpha)->not->toContain('alice@corp.example')
+        ->and($toAlpha)->not->toContain($subject)
+        ->and($toBeta)->not->toBe($toAlpha, 'two service providers received the same identifier for one person');
+
+    // Stable for the SP that owns it — that is what "persistent" means.
+    expect($issued($alpha, '_req_alpha_two'))
+        ->toBe($toAlpha, 'the pseudonym changed between assertions to the same provider');
+});
+
+/**
+ * And a Transient one must not be reused — §8.3.8 makes that a MUST NOT.
+ */
+it('mints a fresh Transient NameID for every assertion', function (): void {
+    $sp = $this->registerSamlServiceProvider(
+        entityId: 'https://transient.example/metadata',
+        acsUrl: 'https://transient.example/acs',
+        nameIdFormat: NameIdFormat::Transient,
+    );
+
+    $issued = fn (string $id): string => nameIdIn($this->samlIdp()->issueResponse(
+        $this->samlIdp()->parseAuthnRequest(
+            $this->makeRedirectAuthnRequest($sp->entity_id, $sp->acs_url, id: $id, nameIdFormat: NameIdFormat::Transient->value),
+            'state',
+        ),
+        'user-transient',
+        ['email' => 'bob@corp.example'],
+    )->xml);
+
+    $first = $issued('_req_transient_one');
+    $second = $issued('_req_transient_two');
+
+    expect($first)->not->toContain('bob@corp.example')
+        ->and($second)->not->toBe($first, 'a transient identifier was reused across assertions');
+
+    // Still resolvable for Single Logout: the value we sent is the value recorded.
+    expect(SamlIdpSession::query()->where('name_id', $second)->exists())
+        ->toBeTrue('a transient NameID was issued that logout could never resolve');
+});
+
+/**
+ * The NameID as the service provider receives it — read out of the signed document,
+ * never recomputed by the test. A conformance assertion that recalculates the value it
+ * is checking proves only that the test agrees with itself.
+ */
+function nameIdIn(string $xml): string
+{
+    preg_match('/<saml:NameID[^>]*>([^<]+)<\/saml:NameID>/', $xml, $matches);
+
+    return $matches[1] ?? '';
+}

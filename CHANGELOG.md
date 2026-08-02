@@ -15,6 +15,23 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.79.0] - 2026-08-02
+
+### Security
+
+- **A `persistent` NameID was the subject's email address, identical at every service
+  provider.** `resolveNameId()` never consulted the format — it returned whatever the
+  service provider's `name_id_attribute` pointed at, which defaults to `email`. SAML Core
+  §8.3.7 defines the format as an opaque, SP-specific pseudonym precisely so that two
+  providers cannot match their users against one another; ours handed them a shared join
+  key that was also PII. `transient` (§8.3.8, "MUST NOT be reused") was the same stable
+  email forever. Persistent identifiers are now 128 random bits per (service provider,
+  subject), stored in `saml_idp_name_ids` so one provider's identifiers can be reissued
+  without touching any other's; transient ones are minted per assertion and recorded on
+  the session row, so Single Logout still resolves them. `emailAddress` and `unspecified`
+  are unchanged. The conformance tests asserted the URN strings and the metadata but
+  never the value, which is how this passed a conformance suite.
+
 ## [0.78.0] - 2026-08-02
 
 ### Security
