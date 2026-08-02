@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
@@ -65,6 +66,7 @@ class TokenController
         private readonly BackchannelAuthentication $ciba,
         private readonly Organizations $organizations,
         private readonly TokenExchange $exchange,
+        private readonly AccessChecker $access,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -341,6 +343,29 @@ class TokenController
             $orgName = $this->organizations->find($grant->organizationId)?->name;
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
+            }
+        }
+
+        // Group membership, for relying parties that authenticate the ID TOKEN rather
+        // than the access token.
+        //
+        // Kubernetes is the case that forced this. `kubectl oidc-login` presents the
+        // id_token as its bearer, and the API server maps a claim to groups — but our
+        // roles lived only on the access token, so a cluster could authenticate a person
+        // and then have nothing to bind a RoleBinding to. The data is the same federated
+        // RBAC the access token carries: this app's declared roles plus org-wide ones,
+        // never another app's.
+        //
+        // Behind a scope, so no existing client's id_token changes shape. `groups` rather
+        // than `roles` because that is the name every consumer of an ID token already
+        // looks for — Kubernetes, Grafana, Vault — and the claim exists for them.
+        // `userId` is non-nullable on the grant; only the organization can be absent,
+        // and without one there is no RBAC to read.
+        if (in_array('groups', $grant->scopes, true) && $grant->organizationId !== null) {
+            $rbac = $this->access->forToken($grant->userId, $grant->organizationId, $clientId);
+
+            if ($rbac->roles !== []) {
+                $claims['groups'] = $rbac->roles;
             }
         }
 

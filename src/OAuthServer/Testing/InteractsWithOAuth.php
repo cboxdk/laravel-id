@@ -34,9 +34,17 @@ trait InteractsWithOAuth
         array $scopes = ['api.read'],
         ClientType $type = ClientType::Confidential,
         array $grantTypes = ['client_credentials'],
+        ?int $accessTokenTtl = null,
     ): RegisteredClient {
         return app(ClientRegistry::class)->register(
-            new NewClient('Test client', $type, grantTypes: $grantTypes, scopes: $scopes),
+            new NewClient(
+                'Test client',
+                $type,
+                redirectUris: ['https://app.test/cb'],
+                grantTypes: $grantTypes,
+                scopes: $scopes,
+                accessTokenTtl: $accessTokenTtl,
+            ),
         );
     }
 }

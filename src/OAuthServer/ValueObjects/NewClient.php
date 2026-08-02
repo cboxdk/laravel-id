@@ -25,5 +25,13 @@ readonly class NewClient
         public ?string $organizationId = null,
         public ?array $jwks = null,
         public array $postLogoutRedirectUris = [],
+
+        /**
+         * This client's access-token lifetime in seconds, or null for the deployment
+         * default. Set it when the client's revocation story differs from the platform's
+         * — a credential a resource server validates offline can only be revoked by
+         * expiry, so its TTL is its revocation window.
+         */
+        public ?int $accessTokenTtl = null,
     ) {}
 }

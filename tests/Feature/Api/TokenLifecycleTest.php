@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
@@ -559,3 +560,109 @@ it('mints the authorized audience even when the redemption names none', function
 
     expect($claims->get('aud'))->toBe('https://mcp.acme.example');
 });
+
+/**
+ * Kubernetes authenticates the ID TOKEN, and ours carried no groups.
+ *
+ * `kubectl oidc-login` presents the id_token as its bearer and the API server maps a
+ * claim to groups — while our roles lived only on the access token. A cluster could
+ * therefore authenticate a person and have nothing to bind a RoleBinding to: every
+ * request denied, with the identity plainly correct in the logs.
+ *
+ * Behind a scope, so no existing client's id_token changes shape.
+ */
+it('puts this app roles on the id_token when the groups scope is granted', function (): void {
+    $registered = $this->makeClient(['openid', 'groups'], grantTypes: ['authorization_code']);
+
+    grantRole($registered->client->client_id, 'user_42', 'org_a', 'cluster-admin');
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'code' => issueCodeWithScopes($registered->client->client_id, ['openid', 'groups']),
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+
+    expect($claims->get('groups'))->toBe(['cluster-admin']);
+});
+
+it('leaves the id_token unchanged for a client that did not ask for groups', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: ['authorization_code']);
+
+    grantRole($registered->client->client_id, 'user_42', 'org_a', 'cluster-admin');
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'code' => issueCodeWithScopes($registered->client->client_id, ['openid']),
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+
+    expect($claims->get('groups'))->toBeNull();
+});
+
+/**
+ * A credential a resource server validates OFFLINE can only be revoked by expiry, so its
+ * TTL is its revocation window. One deployment-wide value cannot serve both a kubectl
+ * credential (minutes) and a browser session (longer) — this is the per-client override.
+ */
+it('mints access tokens at the client own TTL', function (): void {
+    $short = $this->makeClient(['api.read'], grantTypes: ['client_credentials'], accessTokenTtl: 300);
+    $default = $this->makeClient(['api.read'], grantTypes: ['client_credentials']);
+
+    $shortResponse = $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $short->client->client_id,
+        'client_secret' => $short->secret,
+    ])->assertOk();
+
+    $defaultResponse = $this->postJson('/oauth/token', [
+        'grant_type' => 'client_credentials',
+        'client_id' => $default->client->client_id,
+        'client_secret' => $default->secret,
+    ])->assertOk();
+
+    expect($shortResponse->json('expires_in'))->toBe(300)
+        ->and($defaultResponse->json('expires_in'))->toBe(900, 'a client without its own TTL stopped using the deployment default');
+
+    $claims = app(TokenSigner::class)->verify($shortResponse->json('access_token'), [SigningAlg::RS256]);
+
+    expect($claims->get('exp') - $claims->get('iat'))->toBe(300, 'expires_in and the token exp disagreed');
+});
+
+/**
+ * A code carrying an explicit scope set — the id_token claims depend on what was granted,
+ * not on what the client is registered for.
+ *
+ * @param  list<string>  $scopes
+ */
+function issueCodeWithScopes(string $clientId, array $scopes): string
+{
+    return app(AuthorizationCodes::class)->issue(
+        $clientId,
+        'user_42',
+        'org_a',
+        'https://app.test/cb',
+        $scopes,
+        Base64Url::encode(hash('sha256', VERIFIER, true)),
+        'S256',
+        null,
+        1_700_000_000,
+        ['pwd'],
+    );
+}
+
+/** Give a subject a role this client can see, through the real access-control path. */
+function grantRole(string $clientId, string $userId, string $organizationId, string $role): void
+{
+    $defined = app(Roles::class)->define($organizationId, $role);
+    app(Roles::class)->assign($organizationId, $userId, $defined->id);
+}

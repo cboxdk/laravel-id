@@ -63,7 +63,11 @@ class ServerMetadata
             'code_challenge_methods_supported' => ['S256'],
             // RFC 9449: sender-constrained (DPoP) access tokens.
             'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
-            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access', 'organizations'],
+            // `groups` puts this app's roles on the ID TOKEN. Advertised because a
+            // relying party that authenticates the id_token — Kubernetes, Grafana, Vault
+            // — cannot discover it any other way, and without it authenticates a person
+            // it can then bind no policy to.
+            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'],
             'subject_types_supported' => ['public'],
             // The claims the id_token / UserInfo actually carry — honest, not aspirational.
             // Includes the non-standard federation claims (email_verified is standard;
@@ -71,7 +75,7 @@ class ServerMetadata
             'claims_supported' => [
                 'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr',
                 'at_hash', 'email', 'email_verified', 'name', 'org', 'org_name',
-                'roles', 'permissions', 'organizations',
+                'roles', 'permissions', 'organizations', 'groups',
             ],
             // The authentication context class references this IdP asserts: aal1 (a
             // single factor) and aal2 (a second factor was used at login). Read from

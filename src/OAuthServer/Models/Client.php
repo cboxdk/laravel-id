@@ -32,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
  * @property string|null $manifest_url
+ * @property int|null $access_token_ttl
  * @property bool $first_party
  * @property string|null $registration_access_token_hash
  * @property Carbon|null $created_at

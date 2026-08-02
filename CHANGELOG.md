@@ -15,6 +15,26 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.81.0] - 2026-08-03
+
+### Added
+
+- **A `groups` claim on the ID TOKEN, behind a `groups` scope.** Relying parties that
+  authenticate the id_token rather than the access token — Kubernetes, Grafana, Vault —
+  had nothing to map to groups: our federated RBAC lived only on the access token. A
+  cluster could authenticate a person correctly and then have nothing to bind a policy
+  to, so every request was denied with the identity plainly right in the logs. The claim
+  carries the same data the access token does (this app's declared roles plus org-wide
+  ones, never another app's), and is emitted only when the scope was granted, so no
+  existing client's id_token changes shape.
+- **Per-client access-token TTL.** One deployment-wide value is the wrong shape once an
+  issuer serves relying parties with different revocation stories. A credential a
+  resource server validates OFFLINE can only be revoked by expiry — Kubernetes never
+  calls back — so for that credential the TTL *is* the revocation window, and five
+  minutes is a real answer to a stolen laptop where fifteen is a worse one. A browser
+  session has no reason to pay for it. `NewClient::$accessTokenTtl`; null keeps the
+  deployment default, so nothing changes for existing clients.
+
 ## [0.80.0] - 2026-08-02
 
 ### Security

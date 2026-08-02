@@ -27,6 +27,7 @@ class ClientRegistryService implements ClientRegistry
             'post_logout_redirect_uris' => $input->postLogoutRedirectUris,
             'grant_types' => $input->grantTypes,
             'scopes' => $input->scopes,
+            'access_token_ttl' => $input->accessTokenTtl,
             'first_party' => $input->firstParty,
         ]);
 

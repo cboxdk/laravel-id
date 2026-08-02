@@ -129,6 +129,25 @@ class JwtTokenIssuer implements TokenIssuer
     }
 
     /**
+     * This client's access-token lifetime, in seconds.
+     *
+     * A single deployment-wide TTL is the wrong shape once one issuer serves relying
+     * parties with different revocation stories. Kubernetes validates a JWT offline and
+     * never calls back, so for a `kubectl` credential the TTL IS the revocation window —
+     * five minutes there is a real answer to a stolen laptop, and a browser session has
+     * no reason to pay five-minute refreshes for it.
+     *
+     * Null on the client means the deployment default, so nothing changes for anyone who
+     * has not asked for something else.
+     */
+    private function ttlFor(Client $client): int
+    {
+        $ttl = $client->access_token_ttl;
+
+        return $ttl !== null && $ttl > 0 ? $ttl : $this->accessTokenTtl;
+    }
+
+    /**
      * @param  list<string>  $scopes
      */
     private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null): IssuedToken
@@ -144,7 +163,7 @@ class JwtTokenIssuer implements TokenIssuer
             'scope' => implode(' ', $scopes),
             'org' => $organizationId,
             'iat' => $issuedAt,
-            'exp' => $issuedAt + $this->accessTokenTtl,
+            'exp' => $issuedAt + $this->ttlFor($client),
         ];
 
         // Carry the org's human-readable name alongside its id, so a relying party
@@ -224,13 +243,13 @@ class JwtTokenIssuer implements TokenIssuer
             'organization_id' => $organizationId,
             'scopes' => $scopes,
             'audience' => $resource,
-            'expires_at' => now()->addSeconds($this->accessTokenTtl),
+            'expires_at' => now()->addSeconds($this->ttlFor($client)),
         ]);
 
         // Carry the GRANTED scopes back: grantScopes() may have filtered the request
         // down to the client's registered set, and RFC 6749 §5.1 makes the token
         // endpoint echo `scope` whenever that happened. Without this the caller had no
         // way to know what it actually got.
-        return new IssuedToken($token, $jti, $this->accessTokenTtl, $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes);
+        return new IssuedToken($token, $jti, $this->ttlFor($client), $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes);
     }
 }
