@@ -70,7 +70,7 @@ only** = you bind the implementation · **Host** = your app writes the interacti
 |---|---|
 | Kernels | `Tenancy` · `Crypto` · `Audit` · `Events` · `Authorization` · `Usage` |
 | Domain | `Organization` · `Identity` · `Otp` · `AccessControl` · `Directory` (inbound SCIM + pull connectors) · `Provisioning` (outbound SCIM) · `Federation` (SSO relying party) · `SamlIdp` (SAML 2.0 IdP) · `OAuthServer` (OAuth 2.0 / OIDC) · `Governance` (access reviews, SoD) · `TokenVault` · `ExternalActions` (inline hooks) · `Webhooks` · `AuditQuery` · `AuditStreaming` |
-| HTTP & ops | `Api` (OAuth/OIDC/SCIM/SAML endpoints) · `Platform` (operators + the self-serve account/project plane) · `Maintenance` (retention) · `Console` (14 `cbox-id:*` commands) |
+| HTTP & ops | `Api` (OAuth/OIDC/SCIM/SAML endpoints) · `Platform` (operators + the self-serve account/project plane) · `Maintenance` (retention) · `Console` (15 `cbox-id:*` commands) |
 
 ## Documentation
 

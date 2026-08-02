@@ -26,9 +26,9 @@ weight: 1
 - `ext-openssl`, `ext-sodium`
 - A database CI actually tests: **PostgreSQL 14+**, **MySQL 8.0.13+**, **MariaDB
   10.2+** or **SQLite**. Every CI run migrates against all four and runs the full test
-  suite on PostgreSQL, MySQL and SQLite. The suite is not green on MariaDB yet, for one
-  pre-existing defect that has nothing to do with the schema; it is named and measured
-  in [Requirements](../requirements.md), and it does not affect a normal deployment.
+  suite on PostgreSQL, MySQL, MariaDB and SQLite — all four are green, and the per-engine
+  numbers are in [Requirements](../requirements.md). This page claimed MariaDB was still
+  failing long after it stopped, while pointing at the page that says otherwise.
   PostgreSQL remains the recommended production default — and is now covered by the
   suite, which it was not before v0.62.0. **SQL Server is not tested and not
   supported**: nobody has ever run it, so it is not promised.
@@ -124,9 +124,17 @@ depends on whether you already have one:
 ## Verify
 
 ```bash
-php artisan tinker
->>> app(\Cbox\Id\Kernel\Crypto\Contracts\KeyManager::class)->activeSigningKey()->kid;
+php artisan cbox-id:doctor
 ```
+
+`doctor` establishes an environment for itself, which is why it is the check to run.
+
+Reaching for `tinker` here does not work, and the reason is worth knowing: a signing key
+is environment-owned, and nothing on the command line resolves an environment — every
+setter in the application is HTTP middleware. So `activeSigningKey()` in a REPL either
+falls through to generating a key it cannot stamp, or fails on the NOT NULL constraint.
+If you want it from a REPL, set `cbox-id.environments.default` first, or wrap the call in
+`EnvironmentContext::runAs()`.
 
 A `kid` string means the platform booted, generated its first signing key, and sealed the
 private half. Next: the [Quickstart](../quickstart.md).
