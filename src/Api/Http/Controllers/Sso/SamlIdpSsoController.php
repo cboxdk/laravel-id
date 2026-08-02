@@ -70,11 +70,7 @@ class SamlIdpSsoController
                 return new Response('Unknown or inactive SAML service provider.', 403);
             }
 
-            return new Response(
-                $errorResponse->toPostForm(),
-                200,
-                ['Content-Type' => 'text/html; charset=UTF-8'],
-            );
+            return $errorResponse->toPostBinding()->toResponse();
         }
 
         // The host owns "who is logged in": no subject → hand off to its login and
@@ -86,7 +82,11 @@ class SamlIdpSsoController
 
         $response = $this->idp->issueResponse($authnRequest, $subjectId, $this->attributesFor($subjectId));
 
-        return new Response($response->toPostForm(), 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+        // The binding carries its own policy: a self-submitting form aimed at another
+        // origin is what `form-action` exists to refuse, so the response has to say
+        // which origin THIS assertion is for rather than the host loosening its policy
+        // for every page it serves.
+        return $response->toPostBinding()->toResponse();
     }
 
     /**

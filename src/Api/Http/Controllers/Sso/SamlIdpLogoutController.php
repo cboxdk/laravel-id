@@ -70,7 +70,8 @@ class SamlIdpLogoutController
         // redirect (HTTP-Redirect), or a self-submitting form (HTTP-POST, which is
         // what Okta and ADFS prefer for SLO).
         return $outcome->binding === SamlBinding::Post
-            ? new Response($outcome->postForm, 200, ['Content-Type' => 'text/html; charset=UTF-8'])
+            ? ($outcome->postBinding?->toResponse()
+                ?? new Response($outcome->postForm, 200, ['Content-Type' => 'text/html; charset=UTF-8']))
             : new RedirectResponse($outcome->redirectUrl);
     }
 
@@ -109,8 +110,15 @@ class SamlIdpLogoutController
         // Matched on the digest of the pair rather than the pair itself — the two raw
         // columns are too wide for an InnoDB index together, and an unindexed logout
         // lookup is a table scan an unauthenticated endpoint can ask for at will.
+        //
+        // And the TTL is enforced HERE, because this is the only place it means
+        // anything. The record was written with a 30-day expiry, UPGRADING told
+        // operators records are kept 30 days, and the constant's own docblock said an
+        // SLO arriving later "has nothing to resolve and is refused" — while the read
+        // had no expiry predicate at all. A bound nobody checks is a comment.
         $issued = SamlIdpSession::query()
             ->where('lookup_hash', SamlIdpSession::lookupHash($outcome->spEntityId, $outcome->nameId))
+            ->where('expires_at', '>', now())
             ->latest('created_at')
             ->first();
 

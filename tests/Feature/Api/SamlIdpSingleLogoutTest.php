@@ -359,3 +359,36 @@ it('refuses a logout whose entity id and name id concatenate to another SP sessi
     expect($sessions->active($session->id))
         ->not->toBeNull('a shifted entity-id boundary matched another SP session');
 });
+
+/**
+ * An expired issuance record must not still answer a logout.
+ *
+ * The record carries a 30-day expiry, the release notes tell operators records are kept
+ * 30 days, and the constant's docblock said an SLO arriving after it "has nothing to
+ * resolve and is refused". None of that was true: the lookup had no expiry predicate, so
+ * the bound on the narrowed logout primitive existed only in prose. A service provider
+ * that federated a user once held the ability to end that person's sessions forever.
+ */
+it('refuses a logout resolved through an expired issuance record', function (): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $alice = $this->makeUser('alice@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($alice->id, null, ['pwd']);
+
+    SamlIdpSession::query()->create([
+        'sp_entity_id' => $entityId,
+        'subject_id' => $alice->id,
+        'name_id' => 'alice@example.test',
+        'session_index' => '_'.bin2hex(random_bytes(16)),
+        'expires_at' => now()->subMinute(),
+    ]);
+
+    $query = signedRedirectQuery(logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16))), $spPrivate, 'SAMLRequest');
+    $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertRedirect();
+
+    expect($sessions->active($session->id))
+        ->not->toBeNull('an aged-out record still answered a logout');
+});

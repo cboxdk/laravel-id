@@ -30,6 +30,16 @@ readonly class SamlLogoutOutcome
         public SamlBinding $binding,
         public string $redirectUrl,
         public string $postForm,
+
+        /**
+         * The POST payload together with the content policy that permits it.
+         *
+         * `postForm` is the same HTML and stays for callers that only need the body.
+         * A host with any real Content-Security-Policy needs this one instead: a
+         * self-submitting cross-origin form is, to a browser, exactly the shape
+         * `form-action` and the inline-script ban exist to stop.
+         */
+        public ?SamlPostBinding $postBinding = null,
     ) {}
 
     /** A `LogoutResponse` delivered by the HTTP-Redirect binding (detached signature). */
@@ -39,8 +49,8 @@ readonly class SamlLogoutOutcome
     }
 
     /** A `LogoutResponse` delivered by the HTTP-POST binding (enveloped XML-DSig). */
-    public static function post(string $spEntityId, string $nameId, string $postForm): self
+    public static function post(string $spEntityId, string $nameId, SamlPostBinding $binding): self
     {
-        return new self($spEntityId, $nameId, SamlBinding::Post, '', $postForm);
+        return new self($spEntityId, $nameId, SamlBinding::Post, '', $binding->html, $binding);
     }
 }

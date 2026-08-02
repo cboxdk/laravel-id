@@ -19,6 +19,7 @@ use Cbox\Id\SamlIdp\Support\RedirectBindingResponseSigner;
 use Cbox\Id\SamlIdp\Support\RedirectBindingSignature;
 use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
 use Cbox\Id\SamlIdp\ValueObjects\SamlLogoutOutcome;
+use Cbox\Id\SamlIdp\ValueObjects\SamlPostBinding;
 use Cbox\Id\SamlIdp\ValueObjects\SamlResponse as SamlResponseVo;
 use Cbox\Id\SamlIdp\ValueObjects\SigningMaterial;
 use DOMDocument;
@@ -189,7 +190,7 @@ class SamlSingleLogoutService implements SamlSingleLogout
      * response is signed IN the document — enveloped RSA-SHA256 XML-DSig, via the
      * same onelogin primitive the assertion path uses.
      */
-    private function postForm(string $xml, string $destination, ?string $relayState, SigningMaterial $material): string
+    private function postForm(string $xml, string $destination, ?string $relayState, SigningMaterial $material): SamlPostBinding
     {
         $signed = SamlUtils::addSign(
             $xml,
@@ -204,7 +205,7 @@ class SamlSingleLogoutService implements SamlSingleLogout
             encoded: base64_encode($signed),
             acsUrl: $destination,
             relayState: $relayState,
-        ))->toPostForm();
+        ))->toPostBinding();
     }
 
     /**
