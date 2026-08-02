@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -63,4 +64,54 @@ it('detects a wiped scope once it has been checkpointed', function (): void {
     AuditEntry::query()->delete();
 
     expect($log->verifyChain(null)->valid)->toBeFalse();
+});
+
+/**
+ * The signature is the only thing that makes a checkpoint unforgeable, and nothing
+ * exercised it.
+ *
+ * The existing truncation tests are all caught one step later, by the anchor comparison:
+ * the checkpoint still claims a root hash no surviving entry has. An attacker with write
+ * access to the database does not stop there. They truncate the tail AND rewrite
+ * `root_hash` and `up_to_sequence` to describe the shortened chain — at which point the
+ * anchor matches, and the only remaining evidence is that the stored payload no longer
+ * agrees with what was signed.
+ *
+ * That comparison could be deleted with the whole suite green, which would reduce the
+ * tamper-evidence story to "we hash things and then trust whoever can write the row".
+ */
+it('refuses a checkpoint whose payload was rewritten to match a truncated chain', function (): void {
+    $log = app(AuditLog::class);
+    $log->record(AuditEvent::forSystem('a'));
+    $second = $log->record(AuditEvent::forSystem('b'));
+    $log->record(AuditEvent::forSystem('c'));
+
+    $log->checkpoint(null);
+
+    // Cut the tail, then make the checkpoint describe the shorter chain — signature
+    // untouched, because the attacker cannot produce a new one.
+    AuditEntry::query()->where('sequence', 3)->delete();
+
+    DB::table('audit_checkpoints')->update([
+        'root_hash' => $second->hash,
+        'up_to_sequence' => 2,
+    ]);
+
+    $verification = $log->verifyChain(null);
+
+    expect($verification->valid)->toBeFalse('a rewritten checkpoint passed as authentic')
+        ->and($verification->reason)->toContain('does not match its signature');
+});
+
+it('refuses a checkpoint whose signature was replaced with something unverifiable', function (): void {
+    $log = app(AuditLog::class);
+    $log->record(AuditEvent::forSystem('a'));
+    $log->checkpoint(null);
+
+    DB::table('audit_checkpoints')->update(['signature' => 'not.a.jwt']);
+
+    $verification = $log->verifyChain(null);
+
+    expect($verification->valid)->toBeFalse()
+        ->and($verification->reason)->toContain('signature failed to verify');
 });
