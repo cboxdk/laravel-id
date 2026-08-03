@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Enums\ConnectionStatus;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\ValueObjects\OAuth2ConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\SamlConnectionConfig;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
@@ -24,7 +25,16 @@ class ConnectionService implements Connections
         string $name,
         array $config,
         array $mappings = [],
+        ?string $provider = null,
     ): Connection {
+        if ($provider !== null && ProviderCatalog::find($provider) === null) {
+            // Refused rather than stored. A connection labelled with a key the catalogue
+            // does not have would render a sign-in button nobody can complete, and the
+            // failure would land on the person clicking it rather than on whoever typed
+            // it — hours later, with no way to tell the two apart.
+            throw InvalidAssertion::make('unknown provider: '.$provider);
+        }
+
         $connection = new Connection;
         $connection->id = (string) Str::ulid();
         $connection->fill([
@@ -33,6 +43,7 @@ class ConnectionService implements Connections
             'name' => $name,
             'status' => ConnectionStatus::Draft,
             'mappings' => $mappings,
+            'provider' => $provider,
         ]);
         $connection->config_encrypted = $this->secretBox->seal(
             json_encode($config, JSON_THROW_ON_ERROR),
@@ -53,7 +64,26 @@ class ConnectionService implements Connections
         return Connection::query()
             ->where('organization_id', $organizationId)
             ->where('status', ConnectionStatus::Active->value)
+            // Catalogue providers are offered as buttons, not as the way an organization
+            // signs in. Without this clause, enabling Google could become an
+            // organization's enterprise SSO purely by being the first active row back.
+            ->whereNull('provider')
             ->first();
+    }
+
+    public function catalogueProvidersFor(string $organizationId): array
+    {
+        return array_values(
+            Connection::query()
+                ->where('organization_id', $organizationId)
+                ->where('status', ConnectionStatus::Active->value)
+                ->whereNotNull('provider')
+                // Ordered by the column rather than by insertion, so the buttons do not
+                // rearrange themselves between page loads or between replicas.
+                ->orderBy('provider')
+                ->get()
+                ->all()
+        );
     }
 
     public function activate(string $organizationId, string $id): void
@@ -77,6 +107,16 @@ class ConnectionService implements Connections
         $this->assertType($connection, ConnectionType::Oidc);
 
         return OidcConnectionConfig::fromArray($this->config($connection));
+    }
+
+    public function oauth2Config(Connection $connection): OAuth2ConnectionConfig
+    {
+        $this->assertType($connection, ConnectionType::OAuth2);
+
+        // fromArray() refuses a config naming an OIDC provider, so a connection stored
+        // with the wrong protocol cannot be driven down this path — where no id_token
+        // would ever be verified.
+        return OAuth2ConnectionConfig::fromArray($this->config($connection));
     }
 
     /**

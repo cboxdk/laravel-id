@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $environment_id
  * @property string $organization_id
  * @property ConnectionType $type
+ * @property string|null $provider the catalogue key this came from, or null when hand-configured
  * @property string $name
  * @property ConnectionStatus $status
  * @property string $config_encrypted

@@ -15,6 +15,41 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.83.0] - 2026-08-03
+
+### Added
+
+- **`ConnectionType::OAuth2`.** Providers that speak OAuth 2.0 and nothing more —
+  GitHub, Discord, Facebook — now have a type of their own rather than borrowing OIDC's.
+  The difference is not configuration: there is no `id_token`, no discovery document and
+  no signature over the claims, so what may be trusted afterwards is genuinely narrower.
+  One shared type would have let a caller reach for OIDC's guarantees on a connection
+  that cannot provide them. `Connections::oauth2Config()` reads it, and refuses a config
+  naming an OIDC provider — driving one of those down this path would mean no `id_token`
+  was ever verified.
+
+- **A `provider` column on connections, and `catalogueProvidersFor()`.** A tenant may
+  enable several catalogue providers at once (Google *and* GitHub *and* Apple), while
+  `forOrganization()` answers "the organization's enterprise sign-on connection" and has
+  to keep answering exactly that. Without the column the two kinds were
+  indistinguishable and the first active row won whichever it happened to be — so
+  enabling Google could silently become an organization's SSO, which decides where every
+  one of its people is sent to authenticate. `create()` refuses a key the catalogue does
+  not have, rather than storing a connection that renders a sign-in button nobody can
+  complete.
+
+  The column is nullable and existing rows become NULL, which is what they are: a
+  hand-configured enterprise connection genuinely has no catalogue entry.
+
+- **`AppleClientSecret`.** Apple's client secret is not a string anyone can paste — it
+  is an ES256 JWT minted from a downloaded signing key, valid at most six months.
+  Treating it as a text field is how an Apple integration stops working half a year
+  after the last person touched it, on a day nobody changed anything. Minted on demand
+  and cached for an hour rather than for Apple's ceiling, keyed by the material so
+  rotating a key takes effect immediately instead of when a cache expires. Signed
+  through firebase/php-jwt like every other signature here; the tests verify the result
+  against a real EC public key rather than by parsing our own output.
+
 ## [0.82.1] - 2026-08-03
 
 ### Fixed
