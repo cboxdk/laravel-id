@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -65,6 +66,9 @@ class PlatformServiceProvider extends ServiceProvider
                 $app->make(Subjects::class),
                 $app->make(Memberships::class),
                 $app->make(PlatformRoot::class),
+                // A credential write ends every session opened with the credential it
+                // replaced, and a member's sessions are ordinary subject sessions.
+                $app->make(SessionManager::class),
             );
         });
 

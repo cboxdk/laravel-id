@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipRole;
@@ -42,6 +43,7 @@ class DatabaseAccountMembers implements AccountMembers
         private readonly Subjects $subjects,
         private readonly Memberships $memberships,
         private readonly PlatformRoot $platformRoot,
+        private readonly SessionManager $sessions,
     ) {}
 
     public function find(string $id): ?AccountMember
@@ -266,6 +268,14 @@ class DatabaseAccountMembers implements AccountMembers
                 }
 
                 $this->subjects->setPassword($subjectId, $password);
+
+                // Same rule as resetPassword(): a credential write ends every session
+                // opened with the old one. It matters here for the reactivation case —
+                // removing a member deactivates their subject WITHOUT revoking its
+                // sessions (the per-request active check is what holds them out), so
+                // reactivating would otherwise bring those sessions back to life
+                // alongside a password they have just replaced.
+                $this->sessions->revokeAllForUser($subjectId);
                 $this->subjects->reactivate($subjectId);
             });
         });
@@ -356,15 +366,31 @@ class DatabaseAccountMembers implements AccountMembers
         // password below the floor, and a refused reset must not still have burned the
         // link (session_version) or written the rejected password to the fallback column.
         DB::transaction(function () use ($member, $password): void {
-            // Bump the security stamp: every existing session AND any other outstanding
-            // reset link bound to the old version is invalidated (log-out-everywhere +
-            // single-use reset).
+            // Bump the stamp: any other outstanding reset link bound to the old value is
+            // void, which is what makes a reset link single-use.
             $member->forceFill([
                 'password' => $password,
                 'session_version' => $member->session_version + 1,
             ])->save();
 
-            $this->onSubject($member, fn (string $subjectId) => $this->subjects->setPassword($subjectId, $password));
+            $this->onSubject($member, function (string $subjectId) use ($password): void {
+                $this->subjects->setPassword($subjectId, $password);
+
+                // …and log the member out everywhere. A reset implies the previous
+                // credential may be compromised, so a session opened with it must not
+                // survive the change — the same rule {@see PasswordResetService} and
+                // {@see AdminPasswordService} apply, and for the same reason.
+                //
+                // It has to be said HERE. `setPassword()` writes the credential and
+                // nothing else, so reaching the subject through it inherited the write
+                // without the revocation. The stamp above used to stand in for this,
+                // back when a member session was its own thing keyed on a member id;
+                // a member is an ordinary subject now and their browser holds an
+                // ordinary subject session, which a stamp on the member row cannot
+                // touch. Inside `onSubject()` because `auth_sessions` is
+                // environment-owned and the member's subject lives in the platform root.
+                $this->sessions->revokeAllForUser($subjectId);
+            });
         });
 
         return true;

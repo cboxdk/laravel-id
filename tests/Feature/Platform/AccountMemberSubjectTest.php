@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\AuthPolicies;
+use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Exceptions\PolicyViolation;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
@@ -301,4 +302,71 @@ it('rolls the whole reset back when the policy refuses the new password', functi
     // The link is unspent and the rejected password is nowhere.
     expect($after?->session_version)->toBe($stampBefore)
         ->and($members->verifyPassword($result->member->id, 'nowhere-near-forty-characters'))->toBeFalse();
+});
+
+/**
+ * Log-out-everywhere, on the credential the member actually holds.
+ *
+ * A member's browser holds an ORDINARY SUBJECT SESSION — there is no member session any
+ * more; membership is a lookup. So the control that used to log a member out everywhere,
+ * bumping `session_version` on the member row, cannot reach the thing it is meant to end.
+ * The stamp keeps its other job (a reset link is single-use), and the revocation has to
+ * be said against the subject.
+ *
+ * It has to be said in resetPassword() specifically. `Subjects::setPassword()` writes the
+ * credential and nothing else — PasswordResetService and AdminPasswordService each revoke
+ * alongside it — so this door, which reaches the subject through exactly that method,
+ * inherited the write without the revocation.
+ */
+it('ends every session the member had when their password is reset', function (): void {
+    $root = platformRootEnvironment();
+    $result = provisionHomedAccount();
+    $members = app(AccountMembers::class);
+    $sessions = app(SessionManager::class);
+
+    $subjectId = (string) $members->find($result->member->id)?->subject_id;
+
+    // Two live sessions, the way a person with a laptop and a phone has two — started in
+    // the platform root, because that is where the member's subject and its sessions live.
+    [$laptop, $phone] = app(EnvironmentContext::class)->runAs($root, fn (): array => [
+        $sessions->start($subjectId, null, ['pwd'], '198.51.100.1', 'laptop'),
+        $sessions->start($subjectId, null, ['pwd'], '198.51.100.2', 'phone'),
+    ]);
+
+    expect($members->resetPassword($result->member->id, 'another-strong-unbreached-passphrase'))->toBeTrue();
+
+    // Both dead — not merely the one that happened to perform the reset.
+    app(EnvironmentContext::class)->runAs($root, function () use ($sessions, $laptop, $phone): void {
+        expect($sessions->active($laptop->id))->toBeNull('a session opened with the old password outlived the reset')
+            ->and($sessions->active($phone->id))->toBeNull('a session opened with the old password outlived the reset');
+    });
+});
+
+/**
+ * The reactivation half of the same rule.
+ *
+ * Removing a member deactivates their subject but does NOT revoke its sessions — the
+ * per-request active check is what holds them out. Accepting a later invitation
+ * reactivates that subject, so without a revocation alongside the credential write the
+ * old sessions come back to life next to a password that has just been replaced.
+ */
+it('ends stale sessions when an invitation is accepted onto a reactivated subject', function (): void {
+    $root = platformRootEnvironment();
+    $result = provisionHomedAccount();
+    $members = app(AccountMembers::class);
+    $sessions = app(SessionManager::class);
+
+    $invited = $members->invite($result->account->id, 'invitee@acme.test', AccountRole::Admin);
+    $subjectId = (string) $members->find($invited->id)?->subject_id;
+
+    $stale = app(EnvironmentContext::class)->runAs(
+        $root,
+        fn () => $sessions->start($subjectId, null, ['pwd'], '198.51.100.3', 'old laptop'),
+    );
+
+    expect($members->activate($invited->id, 'a-strong-unbreached-passphrase'))->toBeTrue();
+
+    app(EnvironmentContext::class)->runAs($root, function () use ($sessions, $stale): void {
+        expect($sessions->active($stale->id))->toBeNull('a session predating the accepted invitation survived it');
+    });
 });

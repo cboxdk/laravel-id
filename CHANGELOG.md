@@ -15,6 +15,36 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Fixed
+
+- **An account member's password reset did not end their sessions.** `resetPassword()`
+  reaches the subject through `Subjects::setPassword()`, which writes the credential and
+  nothing else — `PasswordResetService` and `AdminPasswordService` each revoke alongside
+  it, and this door inherited the write without the revocation. What stood in for it was
+  `account_members.session_version`, a stamp a host re-checked on every resolve of its own
+  member session.
+
+  That worked only for as long as a member session was its own thing keyed on a member id.
+  A member is an ordinary subject in the platform root, and a host that signs them in the
+  ordinary way gives their browser an ordinary subject session — which no column on
+  `account_members` can reach. So on any host that has finished the unification, a reset
+  left every other session the member held wide open, including the one a thief was
+  sitting in. `resetPassword()` now calls `SessionManager::revokeAllForUser()` inside its
+  existing transaction, in the platform root's scope.
+
+  The stamp is unchanged and still bumped: its other job is making a reset LINK single-use,
+  and that is a different question from ending a session.
+
+- **Accepting an invitation could resurrect sessions from before the account was left.**
+  Removing a member deactivates their subject but does not revoke its sessions — the
+  per-request active check is what holds them out. Accepting a later invitation reactivates
+  that same subject (a subject is never re-created for an address that already has one), so
+  those sessions came back to life next to a password that had just been replaced.
+  `activate()` now revokes alongside the credential write, for the same reason
+  `resetPassword()` does.
+
 ## [0.87.1] - 2026-08-04
 
 ### Fixed
