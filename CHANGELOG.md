@@ -15,6 +15,35 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.87.1] - 2026-08-04
+
+### Fixed
+
+- **An operator carried across from before the unification could no longer sign in.**
+  0.87.0 made `platform_operators.subject_id` nullable and left the attaching to
+  `verifyPassword()`: the local hash stayed the credential and the subject was created on
+  that operator's next successful sign-in — the only moment the plaintext is available to
+  seed one. That was correct while a sign-in existed that verified against the local hash.
+
+  It stops being correct the moment a host makes operator authority a permission on the
+  ordinary sign-in and retires the separate operator login form, because that form was the
+  only caller reaching the bootstrap window. On an upgraded deployment every existing
+  operator then has no subject, no account to sign in as, and no door that consults their
+  hash — locked out of the platform they run, by an upgrade that reports success.
+
+  A migration now attaches a subject to every operator that lacks one. The plaintext is
+  gone but the hash is not, and it does not need re-deriving: both tables hash with the
+  configured driver and both models pass an already-hashed value through untouched, so the
+  credential moves and the password keeps working. An operator who is also an account
+  member is pointed at the subject they already have rather than given a second one, and
+  their live password is not touched. The address is NOT marked verified — the operator
+  table never asked, and claiming otherwise would hand a confirmed address to step-up
+  gates that rely on it meaning something.
+
+  A migration rather than a command, deliberately: a command is a step someone has to know
+  about, and the failure mode for not knowing is that nobody can administer the platform,
+  discovered after the deploy by the person who can no longer fix it.
+
 ## [0.87.0] - 2026-08-04
 
 ### Changed

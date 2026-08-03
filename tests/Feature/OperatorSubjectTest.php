@@ -20,6 +20,20 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
  */
 uses(RefreshDatabase::class);
 
+/**
+ * Run the upgrade migration by hand.
+ *
+ * `RefreshDatabase` has already run it once — before these fixtures existed, when there
+ * was nothing to carry across — so the test has to invoke it against the state it is
+ * actually about. Required from the file rather than named: migrations are anonymous
+ * classes, which is what keeps two of them from colliding on a class name.
+ */
+function runOperatorSubjectMigration(): void
+{
+    $migration = require __DIR__.'/../../database/migrations/2026_08_05_000100_give_every_existing_operator_a_subject.php';
+    $migration->up();
+}
+
 function aPlatformRoot(): Environment
 {
     return Environment::query()->create([
@@ -160,4 +174,78 @@ it('refuses to answer for a suspended operator', function (): void {
 
     expect($operators->findBySubject($subjectId))
         ->toBeNull('a suspended operator kept their platform pages in the session they already held');
+});
+
+/**
+ * The upgrade path, which is the half that would have locked a live deployment out.
+ *
+ * `verifyPassword()` attaches a subject on the operator's next successful sign-in, and
+ * that was enough while a sign-in existed that verified against the local hash. Operator
+ * authority is a permission on the ordinary sign-in now, and the separate operator login
+ * form — the only caller that reached the bootstrap window — went with it. So every
+ * operator carried across from before the unification has no subject, no account to sign
+ * in as, and no door left that consults their hash.
+ *
+ * The plaintext is gone but the hash is not, and it does not need re-deriving: both
+ * tables hash with the configured driver and both models pass an already-hashed value
+ * through untouched. So the credential moves, and the password keeps working.
+ */
+it('carries a pre-unification operator across to a subject they can sign in as', function (): void {
+    $root = aPlatformRoot();
+
+    // An operator exactly as an upgraded deployment holds one: a local hash, no subject.
+    $operator = PlatformOperator::query()->create([
+        'email' => 'legacy@cbox.test',
+        'name' => 'Legacy',
+        'password' => 'a-strong-unbreached-passphrase',
+        'status' => 'active',
+    ]);
+
+    expect($operator->refresh()->subject_id)->toBeNull();
+
+    runOperatorSubjectMigration();
+
+    $subjectId = $operator->refresh()->subject_id;
+
+    expect($subjectId)->not->toBeNull()
+        ->and(app(PlatformOperators::class)->findBySubject((string) $subjectId)?->id)->toBe($operator->id);
+
+    // The password still works — through the SUBJECT, which is the only door left.
+    $subject = app(PlatformRoot::class)->run(
+        fn () => app(Subjects::class)->findByEmail('legacy@cbox.test'),
+    );
+
+    expect($subject?->id)->toBe($subjectId)
+        ->and(app(PlatformRoot::class)->run(
+            fn (): bool => app(Subjects::class)->verifyPassword($subject->id, 'a-strong-unbreached-passphrase'),
+        ))->toBeTrue('the operator was carried across but their password no longer opens anything');
+});
+
+/**
+ * An operator who is ALSO an account member already has a subject at that address.
+ * Giving them a second one is the id-space split this change exists to end — and it
+ * would leave two passwords for one person, of which only one is the live one.
+ */
+it('reuses the subject an operator already has rather than minting a second', function (): void {
+    aPlatformRoot();
+
+    $existing = app(PlatformRoot::class)->run(
+        fn () => app(Subjects::class)->create('both@cbox.test', 'Both', 'their-own-live-passphrase'),
+    );
+
+    $operator = PlatformOperator::query()->create([
+        'email' => 'both@cbox.test',
+        'name' => 'Both',
+        'password' => 'a-stale-operator-passphrase',
+        'status' => 'active',
+    ]);
+
+    runOperatorSubjectMigration();
+
+    expect($operator->refresh()->subject_id)->toBe($existing->id);
+
+    // And their live password is untouched — the operator hash may be the older of the two.
+    expect(app(PlatformRoot::class)->run(
+        fn (): bool => app(Subjects::class)->verifyPassword($existing->id, 'their-own-live-passphrase'),
+    ))->toBeTrue('the migration overwrote a live account password with a stale operator hash');
 });
