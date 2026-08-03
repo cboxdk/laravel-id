@@ -15,6 +15,79 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.86.0] - 2026-08-03
+
+### Added
+
+- **One provider catalogue, with capabilities.** Providers were named in two registries
+  that shared nothing: `ProviderCatalog` held eleven entries for sign-in — issuers,
+  scopes, profile maps, setup steps, documentation — and `DirectoryProvider` held three
+  for user sync. Google and Entra were in both, connected by nothing but the word.
+
+  The administrator paid for that. The directory screen could not show the guide that
+  already existed here for the same provider, so somebody who had just finished
+  connecting Google for sign-in was handed an empty credential form and left to work out
+  alone that a directory needs a service account with domain-wide delegation rather than
+  the OAuth client they had just made. Two registries meant the product knew the answer
+  and had no way to say it.
+
+  A `ProviderTemplate` now carries what it can DO — `ProviderCapability::Login`,
+  `ProviderCapability::Directory` — as a typed `ProviderCapabilities` set, and
+  `ProviderCatalog::withCapability()` is how a screen asks for the providers it is there
+  to set up. The capabilities are **derived from the entry's contents, never declared
+  beside them**: a hand-written list is a claim that can be false, and a template
+  claiming `directory` with no setup on it would put a provider in the console's list
+  that the console cannot then show one field for.
+
+- **The directory half is its own guide, because it is its own job.** `DirectorySetup`
+  carries the steps, the vendor documentation URL, and the credentials the connector
+  actually reads — separately from the login steps, which describe a different act
+  entirely. Connecting Google for sign-in is an OAuth client and two pasted strings;
+  connecting the same Google as a directory is a service account, a numeric client ID,
+  and a domain-wide delegation grant made in a different console. One flat list of steps
+  could only ever have been right for one of them, and an administrator following the
+  wrong one gets to the end before finding out.
+
+  The declared credentials are driven through the real connectors in the suite: the full
+  set must satisfy them, and dropping any single one must not. A setup form built from a
+  stale list collects fields nobody reads and misses one nobody asked for — and stores
+  the connection anyway, because a credential map is just an array until something uses
+  it.
+
+### Fixed
+
+- **The Entra directory guidance asked for half the permissions it needs.** The
+  connector's own documentation named `User.Read.All` only, and the pull fetches groups
+  and group members as well — so an administrator who granted exactly what they were
+  told got users and, silently, no groups at all. The catalogue entry and the connector
+  both now say `User.Read.All` **and** `Group.Read.All`, application permissions,
+  admin-consented. The same trap exists on the Google side, where domain-wide delegation
+  must carry both the user and the group read-only scopes, and the setup steps now spell
+  out both.
+
+### Notes
+
+- `DirectoryProvider` **stays**, deliberately. It is what sits in `directories.provider`
+  on every row ever written, what the connector registry is keyed by, and what the sync
+  command filters on — a serialization boundary, where a rename is a migration rather
+  than an edit. What it no longer does is own provider metadata; the catalogue does, and
+  `ProviderCatalog::forDirectory()` is the join. Nothing about existing rows changes.
+
+- **SCIM is not in the catalogue, and that is the design.** Everything in the catalogue
+  is a service we go to, holding a credential the customer created for us. SCIM is the
+  reverse — a protocol the customer's own identity provider speaks TO us, against an
+  endpoint and a bearer token we mint. It has no issuer, no vendor, no client credentials
+  to collect and no third-party documentation to link, because the far end is whatever
+  they happen to run. An entry for it would have meant inventing a protocol and an empty
+  endpoint set to make the shape fit, and would tell an administrator that "connect SCIM"
+  is the same kind of act as "connect Google" when every field on that form is ours
+  rather than theirs.
+
+- Additive throughout: `ProviderTemplate` gains one trailing optional constructor
+  argument, and no existing field, method or signature changed. The dependency runs one
+  way — the catalogue reaches down to `Directory`'s enum, and nothing in `Directory`
+  reaches up, so a host that renders no setup screen at all still syncs.
+
 ## [0.85.0] - 2026-08-03
 
 ### Fixed

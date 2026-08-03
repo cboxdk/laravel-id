@@ -15,8 +15,10 @@ use Illuminate\Support\Facades\Http;
 /**
  * Pulls users from Microsoft Entra ID via the Microsoft Graph API, authenticated
  * with the app registration's client credentials (no user in the loop). Credentials:
- * `tenant_id`, `client_id`, `client_secret`. The app needs the `User.Read.All`
- * application permission (admin-consented). Deactivated Entra accounts
+ * `tenant_id`, `client_id`, `client_secret`. The app needs the `User.Read.All` AND
+ * `Group.Read.All` APPLICATION permissions, both admin-consented — delegated permissions
+ * are useless here because nobody is signed in, and with only the first one the users
+ * arrive and every group request is refused. Deactivated Entra accounts
  * (`accountEnabled=false`) arrive as inactive users, so the reconciliation
  * deprovisions them downstream.
  */

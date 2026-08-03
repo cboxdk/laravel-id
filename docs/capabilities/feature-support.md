@@ -71,7 +71,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Capability | Grade | Notes |
 |---|---|---|
 | Inbound SCIM 2.0 server | **Partial** | See [Standards](../security/standards.md#scim-20-inbound-provisioning-server) for the per-section detail. |
-| Directory pull connectors | **Full** | Google Workspace (Admin SDK) and Microsoft Entra (Graph). Both normalise into the same value objects and run the same reconciliation as SCIM push. Neither is a SCIM client — they are proprietary REST APIs shaped into SCIM. |
+| Directory pull connectors | **Full** | Google Workspace (Admin SDK) and Microsoft Entra (Graph). Both normalise into the same value objects and run the same reconciliation as SCIM push. Neither is a SCIM client — they are proprietary REST APIs shaped into SCIM. Both carry a setup guide in the provider catalogue (`ProviderCatalog::forDirectory()`), so a console can render the same guidance for a directory that it renders for a sign-in connection. |
 | Immediate deprovision | **Full** | Deactivation drops membership and **revokes sessions immediately**. |
 | Outbound SCIM provisioning | **Partial** | A generic SCIM 2.0 client against any endpoint, with bearer or client-credentials auth, a durable outbox, retries, dead-lettering, per-connection circuit breaker, and a resolve-once IP-pinned SSRF guard. **Users only — no group or membership push.** No vendor-specific connectors. |
 | Deprovision policy | **Full** | Per connection: deactivate (`active: false`) or delete. |

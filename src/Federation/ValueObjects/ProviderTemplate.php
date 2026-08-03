@@ -6,6 +6,7 @@ namespace Cbox\Id\Federation\ValueObjects;
 
 use Cbox\Id\Federation\Enums\ClientSecretKind;
 use Cbox\Id\Federation\Enums\FederationProtocol;
+use Cbox\Id\Federation\Enums\ProviderCapability;
 
 /**
  * One entry in the provider catalogue: everything about a provider that is the same for
@@ -86,6 +87,15 @@ readonly class ProviderTemplate
          * single most common failure when connecting any of these.
          */
         public bool $requiresRedirectUri = true,
+
+        /**
+         * How this provider's user list is read, when it can be read at all.
+         *
+         * Null for the entries that are only ever a sign-in button. Present for the two
+         * that are also directories — and its presence IS the directory capability, so
+         * the two cannot disagree.
+         */
+        public ?DirectorySetup $directory = null,
     ) {}
 
     /**
@@ -121,5 +131,50 @@ readonly class ProviderTemplate
     public function isOidc(): bool
     {
         return $this->protocol === FederationProtocol::Oidc;
+    }
+
+    /**
+     * What this provider can be used for.
+     *
+     * DERIVED, never declared. A hand-written capability list is a claim standing beside
+     * the data instead of describing it, and the two drift the first time somebody adds
+     * an entry: a template claiming `directory` with no {@see DirectorySetup} puts a
+     * provider in the console's list that the console cannot then show a single field
+     * for. Reading the capabilities off the contents makes that state unrepresentable
+     * rather than merely tested for.
+     */
+    public function capabilities(): ProviderCapabilities
+    {
+        $capabilities = [];
+
+        if ($this->supportsLogin()) {
+            $capabilities[] = ProviderCapability::Login;
+        }
+
+        if ($this->directory !== null) {
+            $capabilities[] = ProviderCapability::Directory;
+        }
+
+        return new ProviderCapabilities(...$capabilities);
+    }
+
+    public function supports(ProviderCapability $capability): bool
+    {
+        return $this->capabilities()->has($capability);
+    }
+
+    /**
+     * Whether there is enough here to send somebody to this provider and get an identity
+     * back: a discoverable issuer for OIDC, or both fixed endpoints for OAuth 2.0.
+     *
+     * Not `true` for every entry as a matter of course. A directory-only provider is a
+     * coherent thing to add later, and it must not appear on the sign-in page just
+     * because it appears in the catalogue.
+     */
+    public function supportsLogin(): bool
+    {
+        return $this->isOidc()
+            ? $this->issuerTemplate !== null
+            : $this->authorizationEndpoint !== null && $this->tokenEndpoint !== null;
     }
 }

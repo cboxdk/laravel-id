@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation;
 
+use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Federation\Enums\ClientSecretKind;
 use Cbox\Id\Federation\Enums\FederationProtocol;
+use Cbox\Id\Federation\Enums\ProviderCapability;
+use Cbox\Id\Federation\ValueObjects\DirectorySetup;
 use Cbox\Id\Federation\ValueObjects\ProviderParameter;
 use Cbox\Id\Federation\ValueObjects\ProviderProfileMap;
 use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
@@ -31,8 +34,35 @@ use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
  * secret to paste: the administrator supplies a downloaded signing key, and the secret
  * is an ES256 JWT minted per request. It also POSTs its callback and sends the person's
  * name exactly once. All three are declared on the template rather than discovered.
+ *
+ * ## One catalogue, several capabilities
+ *
+ * Google and Entra are not only sign-in providers: we also read their user lists. That
+ * used to live in a second registry that shared nothing with this one but the words
+ * "Google" and "Microsoft", and the cost was paid by the administrator. The directory
+ * screen could not show the guide that already existed here for the same provider, so
+ * somebody who had just connected Google for sign-in was handed an empty form and left to
+ * work out on their own that a directory needs a service account instead of an OAuth
+ * client. An entry now carries what it can DO — see {@see ProviderCapability} — and the
+ * directory half carries its own steps, because the two setups have nothing in common
+ * beyond the vendor.
+ *
+ * **SCIM is deliberately absent, and that is not an omission.** Everything here is a
+ * service we go to, holding a credential the customer creates for us; SCIM is the
+ * opposite — a protocol the customer's own identity provider speaks TO us, against an
+ * endpoint and a bearer token WE mint. It has no issuer, no vendor, no client credentials
+ * to collect and no third-party documentation to link, because the far end is whatever
+ * the customer happens to run. Listing it here would mean inventing a protocol and an
+ * empty endpoint set for it just to make the shape fit, and would tell an administrator
+ * that "connect SCIM" is the same kind of act as "connect Google" when the fields are
+ * ours rather than theirs. It stays a {@see DirectoryProvider} case and nothing more.
+ *
+ * The dependency runs one way, from here to `Directory`. The catalogue knows which stored
+ * provider a directory setup belongs to; the Directory module knows nothing about the
+ * catalogue and does not need to, which keeps sync working in a host that never renders a
+ * setup screen at all.
  */
-final class ProviderCatalog
+class ProviderCatalog
 {
     /**
      * @return list<ProviderTemplate>
@@ -71,6 +101,43 @@ final class ProviderCatalog
         return array_map(static fn (ProviderTemplate $t): string => $t->key, self::all());
     }
 
+    /**
+     * The providers that can be used for one particular thing.
+     *
+     * A screen asks for the capability it is setting up rather than filtering
+     * `all()` itself, so "which providers does the directory page offer" has one answer
+     * in one place. The console asking on its own is how the directory page came to offer
+     * a different set from the one the product actually supports.
+     *
+     * @return list<ProviderTemplate>
+     */
+    public static function withCapability(ProviderCapability $capability): array
+    {
+        return array_values(array_filter(
+            self::all(),
+            static fn (ProviderTemplate $t): bool => $t->supports($capability),
+        ));
+    }
+
+    /**
+     * The catalogue entry behind a stored directory row, or null when there is none.
+     *
+     * Null is the honest answer for `scim`, which has no entry by design, and it is also
+     * the answer a caller gets for any provider whose entry has not been written yet — so
+     * callers treat the guide as an enrichment and never as a precondition for reading a
+     * directory that already exists.
+     */
+    public static function forDirectory(DirectoryProvider $provider): ?ProviderTemplate
+    {
+        foreach (self::all() as $template) {
+            if ($template->directory?->provider === $provider) {
+                return $template;
+            }
+        }
+
+        return null;
+    }
+
     private static function google(): ProviderTemplate
     {
         return new ProviderTemplate(
@@ -87,6 +154,38 @@ final class ProviderCatalog
                 'Add the redirect URI shown below to "Authorised redirect URIs" — it must match exactly, including the scheme.',
                 'Copy the client ID and client secret back here.',
             ],
+            directory: new DirectorySetup(
+                provider: DirectoryProvider::GoogleWorkspace,
+                credentials: [
+                    new ProviderParameter(
+                        key: 'client_email',
+                        label: 'Service account email',
+                        help: 'From the downloaded JSON key. Ends in .iam.gserviceaccount.com.',
+                        example: 'directory-sync@acme-1234.iam.gserviceaccount.com',
+                    ),
+                    new ProviderParameter(
+                        key: 'private_key',
+                        label: 'Service account private key',
+                        help: 'The `private_key` field of the same JSON key file, newlines and all.',
+                        example: "-----BEGIN PRIVATE KEY-----\n…",
+                    ),
+                    new ProviderParameter(
+                        key: 'admin_email',
+                        label: 'Admin to impersonate',
+                        help: 'The Admin SDK acts as a person, so this must be an account that may read the directory.',
+                        example: 'admin@acme.com',
+                    ),
+                ],
+                setupSteps: [
+                    'Google Workspace has no SCIM at all, so this is the only way to sync it — and it is not the OAuth client you may already have created for sign-in.',
+                    'In the Google Cloud console, open the project and enable the Admin SDK API.',
+                    'Create a service account, then create a JSON key for it and download the file. Google gives you the key once.',
+                    'Open the service account\'s Details page and copy its Client ID — the long number. Domain-wide delegation is granted to that, not to the email address.',
+                    'In the Google ADMIN console (not Cloud) → Security → Access and data control → API controls → Domain-wide delegation, add that client ID with BOTH read-only scopes: .../auth/admin.directory.user.readonly and .../auth/admin.directory.group.readonly. Without the group scope the users arrive and the groups silently do not.',
+                    'Paste the JSON key here along with an administrator address for it to impersonate.',
+                ],
+                documentationUrl: 'https://developers.google.com/workspace/admin/directory/v1/guides/delegation',
+            ),
         );
     }
 
@@ -119,6 +218,38 @@ final class ProviderCatalog
                 'Under Certificates & secrets, create a client secret and copy its VALUE — not its ID; the value is shown once.',
                 'Copy the Application (client) ID and the Directory (tenant) ID from Overview.',
             ],
+            directory: new DirectorySetup(
+                provider: DirectoryProvider::MicrosoftEntra,
+                credentials: [
+                    new ProviderParameter(
+                        key: 'tenant_id',
+                        label: 'Directory (tenant) ID',
+                        help: 'Entra admin centre → Overview. The same GUID the sign-in connection uses.',
+                        example: '72f988bf-86f1-41af-91ab-2d7cd011db47',
+                    ),
+                    new ProviderParameter(
+                        key: 'client_id',
+                        label: 'Application (client) ID',
+                        help: 'From the app registration you granted the Graph permissions to.',
+                        example: '9f2c1f7e-0a5b-4a1e-9b3d-6c8f2b7a4d10',
+                    ),
+                    new ProviderParameter(
+                        key: 'client_secret',
+                        label: 'Client secret',
+                        help: 'The secret VALUE, not its ID. Entra shows it once and it expires on a date you choose.',
+                        example: 'Xy8Q~…',
+                    ),
+                ],
+                setupSteps: [
+                    'Entra supports SCIM push as well; this is the pull, for organizations that would rather we fetch than configure provisioning.',
+                    'In the Entra admin centre, open an app registration — the one you registered for sign-in is fine, it is the same application object.',
+                    'Under API permissions, add Microsoft Graph → APPLICATION permissions (not delegated — nobody is signed in when we sync): User.Read.All and Group.Read.All.',
+                    'Click "Grant admin consent for <your directory>". Until somebody does, every Graph call is refused and the connection here will fail.',
+                    'Under Certificates & secrets, create a client secret and copy its VALUE. Note its expiry — the sync stops on that date.',
+                    'Copy the Directory (tenant) ID and Application (client) ID from Overview.',
+                ],
+                documentationUrl: 'https://learn.microsoft.com/graph/auth-v2-service',
+            ),
         );
     }
 
