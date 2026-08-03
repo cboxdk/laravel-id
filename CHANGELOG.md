@@ -15,6 +15,37 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.82.0] - 2026-08-03
+
+### Added
+
+- **A provider catalogue** — Google, Microsoft Entra, Okta, Auth0, Keycloak, GitLab,
+  Slack, GitHub, Discord, Apple and Facebook. Issuers, endpoints, scopes, where the
+  identity sits in the response, and how to obtain the credential. What it deliberately
+  does not hold is the client id and secret: those stay the tenant's, which is the point.
+  Adding a provider is a new entry, not a new code path.
+- **`FederationProtocol` and an OAuth 2.0 client.** GitHub, Discord and Facebook are not
+  OpenID Providers — no discovery document, no `id_token` — so the generic OIDC path
+  could not reach them at all. The new client exchanges a code and fetches a profile,
+  mapping it through the catalogue. It is explicit about what it does and does not prove:
+  that the browser controls the provider account, and nothing about the address attached
+  to it.
+- **Apple, with the three ways it differs declared rather than discovered**: its client
+  secret is an ES256 JWT minted from a downloaded key rather than a value to paste, it
+  POSTs its callback, and it sends the person's name exactly once. Each produces a failure
+  that reads as something else — most sharply, a secret stored as a string that works and
+  then stops six months later.
+- **`Subjects::resolveFederated()`**, reporting whether the call CREATED the account. A
+  first federated sign-in is a signup, with a signup's obligations: the address is
+  unverified until this platform verifies it, and the person holds exactly one way in.
+
+### Fixed
+
+- **The `ArraySubjects` test fake merged a federated identity into an existing account by
+  email** — the account-takeover the real implementation exists to refuse. A fake more
+  permissive than the thing it stands in for does not merely fail to catch a regression;
+  it teaches every test written against it that the unsafe behaviour is the contract.
+
 ## [0.81.0] - 2026-08-03
 
 ### Added
