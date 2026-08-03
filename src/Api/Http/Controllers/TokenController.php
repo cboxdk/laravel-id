@@ -212,7 +212,7 @@ class TokenController
             ? $this->refreshTokens->issue($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt)
             : null;
 
-        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access), $refresh, $grant->scopes);
+        return $this->tokenResponse($access, $this->idToken($client, $grant, $access), $refresh, $grant->scopes);
     }
 
     private function deviceCode(Request $request, ?string $dpopJkt): JsonResponse
@@ -286,7 +286,7 @@ class TokenController
         // the approving user (with auth_time and the request nonce).
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt);
 
-        return $this->tokenResponse($access, $this->idToken($client->client_id, $grant, $access), null, $grant->scopes);
+        return $this->tokenResponse($access, $this->idToken($client, $grant, $access), null, $grant->scopes);
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
@@ -321,9 +321,10 @@ class TokenController
             : $this->issuer->issueClientCredentials($client, $grant->scopes, $grant->audience, $dpopJkt);
     }
 
-    private function idToken(string $clientId, AuthorizedGrant $grant, IssuedToken $access): string
+    private function idToken(Client $client, AuthorizedGrant $grant, IssuedToken $access): string
     {
         $now = time();
+        $clientId = $client->client_id;
 
         $claims = [
             // Per-environment issuer — matches discovery + the access-token `iss`.
@@ -332,7 +333,20 @@ class TokenController
             'aud' => $clientId,
             'org' => $grant->organizationId,
             'iat' => $now,
-            'exp' => $now + 900,
+            // THE SAME LIFETIME AS THE ACCESS TOKEN, including a client's own.
+            //
+            // This was a hardcoded 900 seconds, and the gap it left is not
+            // theoretical: a relying party that authenticates the ID TOKEN never
+            // sees the access token at all, so setting a client's TTL to 300
+            // shortened a credential that client does not present and left the
+            // one it does at fifteen minutes. Kubernetes is exactly that case —
+            // `kubectl oidc-login` presents the id_token as its bearer, the API
+            // server validates `exp` offline and never calls back, so the TTL IS
+            // the revocation window.
+            //
+            // Deployments that set nothing keep the same 900 they had, because
+            // that is what the deployment default already is.
+            'exp' => $now + $this->idTokenTtl($client),
             // OIDC Core 3.1.3.6: binds the id_token to the issued access token.
             'at_hash' => $this->atHash($access->token),
         ];
@@ -399,6 +413,29 @@ class TokenController
      * cannot drift from the algorithm actually used: an EdDSA id_token carrying a
      * SHA-256 at_hash is rejected by a strict relying party.
      */
+
+    /**
+     * How long an id_token lives, in seconds.
+     *
+     * The same rule the access token uses (JwtTokenIssuer::ttlFor): a client's
+     * own lifetime when it has asked for one, the deployment default otherwise.
+     * One rule rather than two, because a client that asked for a short-lived
+     * credential asked about the credential it presents — and which of the two
+     * that is depends on the relying party, not on us.
+     */
+    private function idTokenTtl(Client $client): int
+    {
+        $ttl = $client->access_token_ttl;
+
+        if ($ttl !== null && $ttl > 0) {
+            return $ttl;
+        }
+
+        $default = config('cbox-id.oauth.access_token_ttl', 900);
+
+        return is_numeric($default) ? (int) $default : 900;
+    }
+
     private function atHash(string $accessToken): string
     {
         $digest = hash(self::ID_TOKEN_ALG->hashAlgorithm(), $accessToken, true);

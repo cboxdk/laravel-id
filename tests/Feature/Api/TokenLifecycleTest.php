@@ -666,3 +666,80 @@ function grantRole(string $clientId, string $userId, string $organizationId, str
     $defined = app(Roles::class)->define($organizationId, $role);
     app(Roles::class)->assign($organizationId, $userId, $defined->id);
 }
+
+/**
+ * A client's lifetime has to reach the token it actually presents.
+ *
+ * `kubectl oidc-login` presents the ID TOKEN as its bearer, and Kubernetes
+ * validates `exp` offline and never calls back — so for that relying party the
+ * id_token's lifetime IS the revocation window. While this was hardcoded at 900,
+ * registering the kubectl client with a 300-second TTL shortened a credential it
+ * never sends and left the one it does at fifteen minutes.
+ */
+it('gives the id_token the client lifetime, not a hardcoded one', function (): void {
+    $clientId = $this->makeClient(
+        ['openid'],
+        ClientType::Public,
+        grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
+        accessTokenTtl: 300,
+    )->client->client_id;
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => issueCode($clientId, ['openid']),
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+
+    // The SIGNED claims, not `expires_in`: the response field describes the
+    // access token, and a change that moved only one of them would look right in
+    // the response and be wrong in the credential.
+    expect($claims->get('exp') - $claims->get('iat'))->toBe(300)
+        ->and($response->json('expires_in'))->toBe(300);
+});
+
+it('leaves the id_token at the deployment default when a client asks for nothing', function (): void {
+    $clientId = $this->makeClient(
+        ['openid'],
+        ClientType::Public,
+        grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
+    )->client->client_id;
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => issueCode($clientId, ['openid']),
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+
+    // Unchanged for everybody who has not asked for something else.
+    expect($claims->get('exp') - $claims->get('iat'))->toBe(900);
+});
+
+it('follows a configured deployment default too', function (): void {
+    config()->set('cbox-id.oauth.access_token_ttl', 120);
+
+    $clientId = $this->makeClient(
+        ['openid'],
+        ClientType::Public,
+        grantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
+    )->client->client_id;
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'code' => issueCode($clientId, ['openid']),
+        'redirect_uri' => 'https://app.test/cb',
+        'code_verifier' => VERIFIER,
+    ])->assertOk();
+
+    $claims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+
+    expect($claims->get('exp') - $claims->get('iat'))->toBe(120);
+});

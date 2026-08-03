@@ -15,6 +15,24 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.82.1] - 2026-08-03
+
+### Fixed
+
+- **A client's token lifetime now reaches the `id_token`.** It was hardcoded at 900
+  seconds, so `accessTokenTtl` shortened only the access token — and a relying party
+  that authenticates the ID token never sees that one. Kubernetes is exactly that case:
+  `kubectl oidc-login` presents the `id_token` as its bearer, the API server validates
+  `exp` offline and never calls back, so for it the `id_token`'s lifetime IS the
+  revocation window. A client registered with a 300-second TTL was getting five minutes
+  on a credential it does not present and fifteen on the one it does. Found by Cortex
+  driving a real `kube-apiserver` against this issuer.
+
+  Nothing changes for a deployment that has configured nothing: the default is still
+  900. The tests assert the SIGNED `exp - iat` as well as `expires_in`, because the
+  response field describes the access token and a change that moved only one of them
+  would look right in the response and be wrong in the credential.
+
 ## [0.82.0] - 2026-08-03
 
 ### Added
