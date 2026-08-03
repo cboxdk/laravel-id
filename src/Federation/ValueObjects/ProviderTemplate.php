@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation\ValueObjects;
 
+use Cbox\Id\Federation\Enums\ClientSecretKind;
 use Cbox\Id\Federation\Enums\FederationProtocol;
 
 /**
@@ -45,6 +46,34 @@ readonly class ProviderTemplate
 
         public array $parameters = [],
         public array $setupSteps = [],
+
+        /**
+         * What this provider means by "client secret" — see {@see ClientSecretKind}.
+         *
+         * Apple has none to paste: the secret is an ES256 JWT minted from a downloaded
+         * signing key, valid at most six months. Treating that as a text field is what
+         * makes an Apple integration fail half a year later on a day nobody touched it.
+         */
+        public ClientSecretKind $secretKind = ClientSecretKind::Value,
+
+        /**
+         * The OAuth `response_mode` this provider requires, when it is not the default.
+         *
+         * Apple POSTs the callback rather than redirecting with a query string as soon as
+         * any scope beyond `openid` is requested — so a handler written for a GET simply
+         * never runs, and the failure looks like the user cancelled.
+         */
+        public ?string $responseMode = null,
+
+        /**
+         * True when the provider sends the person's name ONCE, on first authorization,
+         * and never again.
+         *
+         * Apple does this. A flow that discards the first response because it was busy
+         * creating the account has thrown away the only copy of the name that will ever
+         * exist for that user.
+         */
+        public bool $profileOnFirstAuthorizationOnly = false,
 
         /** The provider's own documentation for creating the credential. */
         public ?string $documentationUrl = null,

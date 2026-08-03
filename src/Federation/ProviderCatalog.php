@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation;
 
+use Cbox\Id\Federation\Enums\ClientSecretKind;
 use Cbox\Id\Federation\Enums\FederationProtocol;
 use Cbox\Id\Federation\ValueObjects\ProviderParameter;
 use Cbox\Id\Federation\ValueObjects\ProviderProfileMap;
@@ -25,10 +26,11 @@ use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
  * nothing validates the endpoints until a person is standing in a redirect, so those are
  * only added when the endpoints and the profile shape have actually been checked.
  *
- * Deliberately absent: **Apple**. Its "client secret" is a JWT the relying party signs
- * with a downloaded key and must re-mint every six months. That is a credential
- * lifecycle, not a text field, and putting it in a list beside Google would promise
- * something this shape cannot deliver.
+ * **Apple** is here, but it is not shaped like the others and pretending otherwise is
+ * how an Apple integration breaks six months after anyone last touched it. It has no
+ * secret to paste: the administrator supplies a downloaded signing key, and the secret
+ * is an ES256 JWT minted per request. It also POSTs its callback and sends the person's
+ * name exactly once. All three are declared on the template rather than discovered.
  */
 final class ProviderCatalog
 {
@@ -47,6 +49,8 @@ final class ProviderCatalog
             self::slack(),
             self::github(),
             self::discord(),
+            self::apple(),
+            self::facebook(),
         ];
     }
 
@@ -304,6 +308,99 @@ final class ProviderCatalog
                 'At discord.com/developers/applications, create an application.',
                 'Under OAuth2, add the redirect URI shown below.',
                 'Copy the Client ID and Client Secret.',
+            ],
+        );
+    }
+
+    /**
+     * Sign in with Apple.
+     *
+     * Three things are unlike every other entry here, and each one produces a failure
+     * that looks like something else:
+     *
+     * - **No secret to paste.** The `client_secret` is an ES256 JWT signed with a `.p8`
+     *   key, `iss` the team id, `sub` the Services ID, and a maximum lifetime of six
+     *   months. Stored as a string it works, and then stops working on a day nobody
+     *   changed anything.
+     * - **`response_mode=form_post`.** The moment a scope beyond `openid` is requested,
+     *   Apple POSTs the callback instead of redirecting with a query string. A handler
+     *   written for a GET never runs, and the user sees what looks like a cancellation.
+     * - **The name arrives once.** Apple sends `name` only on the FIRST authorization and
+     *   never again. Discard that response and the name is gone permanently.
+     *
+     * The client id is the **Services ID**, not the App ID — a distinction Apple's own
+     * console does little to signpost, and the most common reason a first attempt fails.
+     */
+    private static function apple(): ProviderTemplate
+    {
+        return new ProviderTemplate(
+            key: 'apple',
+            name: 'Apple',
+            protocol: FederationProtocol::Oidc,
+            scopes: ['openid', 'email', 'name'],
+            profile: new ProviderProfileMap(subject: 'sub', email: 'email', name: 'name', emailVerified: 'email_verified'),
+            issuerTemplate: 'https://appleid.apple.com',
+            parameters: [
+                new ProviderParameter(
+                    key: 'team_id',
+                    label: 'Team ID',
+                    help: 'Apple Developer → Membership. Ten characters.',
+                    example: 'A1B2C3D4E5',
+                ),
+                new ProviderParameter(
+                    key: 'key_id',
+                    label: 'Key ID',
+                    help: 'The identifier of the Sign in with Apple key you created.',
+                    example: 'ABC123DEFG',
+                ),
+                new ProviderParameter(
+                    key: 'private_key',
+                    label: 'Private key (.p8)',
+                    help: 'The contents of the key file you downloaded. Apple lets you download it once.',
+                    example: "-----BEGIN PRIVATE KEY-----\n…",
+                ),
+            ],
+            secretKind: ClientSecretKind::SignedJwt,
+            responseMode: 'form_post',
+            profileOnFirstAuthorizationOnly: true,
+            documentationUrl: 'https://developer.apple.com/documentation/sign_in_with_apple/sign_in_with_apple_js/configuring_your_webpage_for_sign_in_with_apple',
+            setupSteps: [
+                'In the Apple Developer portal, create an App ID with Sign in with Apple enabled.',
+                'Create a SERVICES ID — this is the client id, not the App ID. Enable Sign in with Apple on it.',
+                'Configure the Services ID with your domain and add the redirect URI shown below. Apple refuses plain http, including localhost.',
+                'Under Keys, create a key with Sign in with Apple enabled and download the .p8 file — Apple lets you download it once.',
+                'Paste the key contents, the Key ID, and your Team ID here. There is no client secret to copy: we mint it.',
+            ],
+        );
+    }
+
+    /**
+     * Facebook Login.
+     *
+     * Plain OAuth 2.0 on the web — the Graph API, not OIDC — so identity comes from a
+     * profile fetch. Two practical notes: the API version is part of every endpoint and
+     * ages out on Facebook's schedule rather than ours, and `email` is not guaranteed
+     * even with the scope. A Facebook account can exist without one, and the person can
+     * decline to share it, so a sign-in arriving with no address is normal rather than an
+     * error.
+     */
+    private static function facebook(): ProviderTemplate
+    {
+        return new ProviderTemplate(
+            key: 'facebook',
+            name: 'Facebook',
+            protocol: FederationProtocol::OAuth2,
+            scopes: ['public_profile', 'email'],
+            profile: new ProviderProfileMap(subject: 'id', email: 'email', name: 'name'),
+            authorizationEndpoint: 'https://www.facebook.com/v21.0/dialog/oauth',
+            tokenEndpoint: 'https://graph.facebook.com/v21.0/oauth/access_token',
+            profileEndpoint: 'https://graph.facebook.com/v21.0/me?fields=id,name,email',
+            documentationUrl: 'https://developers.facebook.com/docs/facebook-login/web',
+            setupSteps: [
+                'At developers.facebook.com, create an app and add the Facebook Login product.',
+                'Under Facebook Login → Settings, add the redirect URI shown below to "Valid OAuth Redirect URIs".',
+                'Request the email permission — without App Review it works only for people with a role on the app.',
+                'Copy the App ID and App Secret from Settings → Basic.',
             ],
         );
     }
