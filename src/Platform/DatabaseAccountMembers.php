@@ -425,10 +425,34 @@ class DatabaseAccountMembers implements AccountMembers
             // and the dummy verify keeps that refusal the same cost as a wrong password.
             fn (): bool => $this->subjects->isActive($subjectId)
                 ? $this->subjects->verifyPassword($subjectId, $password)
-                : ! $this->hasher->check($password, $this->dummyHash()),
+                : $this->refuseAtConstantCost($password),
         );
 
         return $verified === true;
+    }
+
+    /**
+     * Burn a hash comparison, then refuse.
+     *
+     * Spelled out as a method rather than folded into the expression above, because it
+     * used to be `! $this->hasher->check($password, $this->dummyHash())` and that single
+     * `!` inverted the gate: a dummy hash matches nothing, so `check()` returned false and
+     * the negation authenticated a DEACTIVATED subject with any password at all — an
+     * unaccepted invitation or a removed member, plus arbitrary input, minted a session.
+     *
+     * It survived because the branch is only reached with a *wrong* password by an
+     * attacker; every honest test on that path supplies the right one and gets the same
+     * answer either way. The docblock above it described the behaviour it was meant to
+     * have, which is how it read as correct for as long as it did.
+     *
+     * The discarded value now cannot become the return value, because it is discarded in
+     * a statement of its own.
+     */
+    private function refuseAtConstantCost(string $password): bool
+    {
+        $this->hasher->check($password, $this->dummyHash());
+
+        return false;
     }
 
     /**

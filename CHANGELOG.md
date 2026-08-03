@@ -45,6 +45,36 @@ more trust than the wording it removes.
   `activate()` now revokes alongside the credential write, for the same reason
   `resetPassword()` does.
 
+## [0.87.3] - 2026-08-04
+
+### Security
+
+- **A deactivated subject authenticated with ANY password.** `DatabaseAccountMembers::verifyPassword()`
+  refused a deactivated subject with `! $this->hasher->check($password, $this->dummyHash())`.
+  The dummy verify exists to burn time and have its result discarded; the negation made it
+  the answer. A dummy hash matches nothing, so `check()` returned false and `!false`
+  authenticated. "Deactivated subject holding an active membership" is not exotic — it is
+  an unaccepted invitation, and it is a removed member. The caller mints a session on that
+  answer and clears the failure counters, so the session goes live the moment the subject
+  is reactivated.
+
+  It survived because the branch is only reached with a WRONG password by an attacker;
+  every honest test supplies the right one, where broken and fixed agree. The refusal is
+  now a statement block that cannot return the discarded value, matching
+  `DatabasePlatformOperators::verifyPassword()`, which always expressed the same policy
+  correctly. Regression test supplies a garbage password and falsifies.
+
+- **SCIM: `PATCH` group with a bare `members[...]` value filter detached every member.**
+  `members[value eq "x"].display` was refused; `members[value eq "x"]` was not — it
+  contains no `].` and does not begin with `members.`, so it cleared both guards, reached
+  `sync(valueIds(…))` with a non-list value, and emptied the group. 200 returned,
+  membership-changed fired, every role mapped from that group was revoked for every
+  member, and the connector recorded a success so it never retried or re-synced. Silent on
+  both sides, which is what made it worse than an error.
+
+  `add` and `replace` now refuse any filtered `members` path. `remove` with that exact
+  path is how an IdP detaches ONE member and continues to work.
+
 ## [0.87.2] - 2026-08-04
 
 ### Fixed

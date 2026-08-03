@@ -218,6 +218,21 @@ class DatabaseDirectoryGroups implements DirectoryGroups
             throw UnsupportedGroupPatch::path($path);
         }
 
+        // …and the identical wipe one spelling further out. `members[value eq "x"]` — a
+        // value filter with NO sub-attribute — contains no `].` and does not begin with
+        // `members.`, so it cleared both tests above, reached sync(valueIds(…)) with a
+        // non-list value, and detached every member of the group. 200 returned,
+        // membership-changed fired, every role mapped from that group was revoked, and
+        // the connector recorded a success so it never retried. Silent on both sides,
+        // which is what makes it worse than an error.
+        //
+        // Refused for `add` and `replace` only. `remove` with this exact path is how an
+        // IdP detaches ONE member, and removeMembers() below implements it correctly —
+        // refusing it here would break the one defined use of the shape.
+        if (str_contains($canonical, '[') && $op !== ScimPatchOp::Remove) {
+            throw UnsupportedGroupPatch::path($path);
+        }
+
         // Where the member payload lives: a `members`-pathed op carries the id list
         // directly as $value; a PATHLESS op carries the whole resource, so the members
         // live under its `members` key. Reading $value directly for the pathless form

@@ -370,3 +370,36 @@ it('ends stale sessions when an invitation is accepted onto a reactivated subjec
         expect($sessions->active($stale->id))->toBeNull('a session predating the accepted invitation survived it');
     });
 });
+
+/**
+ * A deactivated subject never authenticates — not even with the wrong password.
+ *
+ * The refusal branch used to read `! $this->hasher->check($password, $this->dummyHash())`.
+ * The dummy verify was meant to burn time and have its result thrown away; the negation
+ * made it the answer. A dummy hash matches nothing, so `check()` was false and `!false`
+ * ACCEPTED — a deactivated subject authenticated with any input at all.
+ *
+ * "Deactivated subject" is not an exotic state: it is an unaccepted invitation, and it is
+ * a member who was removed. The caller mints a session on that answer and clears the
+ * failure counters, so the session goes live the moment the subject is reactivated.
+ *
+ * It survived because the branch is only reached with a WRONG password by an attacker.
+ * Every honest test on this path supplies the right one, where both the broken and the
+ * fixed code agree. So the assertion that matters is the garbage password.
+ */
+it('refuses a deactivated subject holding an active membership, with any password', function (): void {
+    platformRootEnvironment();
+    $result = provisionHomedAccount('victim@acme.test');
+    $member = $result->member;
+
+    expect(app(AccountMembers::class)->verifyPassword($member->id, 'a-strong-unbreached-passphrase'))->toBeTrue();
+
+    app(PlatformRoot::class)->run(
+        fn () => app(Subjects::class)->deactivate((string) $member->refresh()->subject_id),
+    );
+
+    expect(app(AccountMembers::class)->verifyPassword($member->id, 'not-the-password-at-all'))
+        ->toBeFalse('a deactivated subject authenticated with an arbitrary password')
+        ->and(app(AccountMembers::class)->verifyPassword($member->id, 'a-strong-unbreached-passphrase'))
+        ->toBeFalse('a deactivated subject authenticated with their old password');
+})->group('security');

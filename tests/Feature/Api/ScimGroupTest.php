@@ -322,3 +322,48 @@ it('leaves members alone on a rename-only pathless replace', function (): void {
         ->assertJsonPath('displayName', 'Platform')
         ->assertJsonCount(1, 'members');
 });
+
+/**
+ * The same wipe, one spelling further out: a value filter with NO sub-attribute.
+ *
+ * `members[value eq "x"].display` was refused. `members[value eq "x"]` was not — it
+ * contains no `].` and does not start with `members.`, so it passed both guards, reached
+ * `sync(valueIds(...))`, and `valueIds()` of a non-list yields nothing. Every member of
+ * the group was detached, the op returned 200, and the membership-changed event then
+ * revoked every role mapped from that group.
+ *
+ * The connector recorded a success, so it never retried and never re-synced. That is the
+ * shape that makes this worse than an error: the damage is silent on both sides.
+ *
+ * `remove` with the same path IS defined and must keep working — it is how an IdP
+ * detaches one member, and `removeMembers()` handles it correctly.
+ */
+it('refuses add and replace on a bare members value-filter, and keeps remove working', function (): void {
+    $headers = $this->scimHeaders;
+    $alice = provisionUser($this, $headers, 'alice', 'okta|1');
+    $bob = provisionUser($this, $headers, 'bob', 'okta|2');
+
+    $groupId = $this->postJson('/scim/v2/Groups', [
+        'displayName' => 'Engineering',
+        'members' => [['value' => $alice], ['value' => $bob]],
+    ], $headers)->json('id');
+
+    foreach (['replace', 'add'] as $op) {
+        $this->patchJson('/scim/v2/Groups/'.$groupId, [
+            'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+            'Operations' => [['op' => $op, 'path' => 'members[value eq "'.$alice.'"]', 'value' => ['display' => 'Alice A.']]],
+        ], $headers)->assertStatus(400);
+
+        $this->getJson('/scim/v2/Groups/'.$groupId, $headers)
+            ->assertOk()
+            ->assertJsonCount(2, 'members');
+    }
+
+    // The defined use of that path shape still works.
+    $this->patchJson('/scim/v2/Groups/'.$groupId, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'remove', 'path' => 'members[value eq "'.$alice.'"]']],
+    ], $headers)->assertOk();
+
+    $this->getJson('/scim/v2/Groups/'.$groupId, $headers)->assertOk()->assertJsonCount(1, 'members');
+})->group('security');
