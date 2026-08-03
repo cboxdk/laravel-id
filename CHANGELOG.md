@@ -15,6 +15,47 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.85.0] - 2026-08-03
+
+### Fixed
+
+- **A refresh renews the ID Token, not only the access token** (OIDC Core §12.2). The
+  refresh grant returned `access_token` + `refresh_token` and nothing else. That is
+  invisible while every relying party authenticates the ACCESS token — and a hard
+  failure for one that authenticates the ID Token, because the credential it actually
+  presents could not be renewed at all. `kubectl oidc-login` is exactly that relying
+  party, as are Grafana and Vault in that mode.
+
+  Measured against a live deployment: a client with a 300-second lifetime meant a
+  browser window every five minutes, which is the behaviour `offline_access` exists to
+  prevent — and the reason somebody then asks for a longer lifetime instead of a fix.
+
+  The refreshed token keeps `iss`, `sub` and `aud` from the original, stamps a fresh
+  `iat`, and binds `at_hash` to the access token returned beside it. A grant with no
+  user behind it (`client_credentials`) still gets none: an ID Token asserts an
+  authenticated person, and one minted for a machine grant would be an assertion about
+  nobody.
+
+  It carries **no `nonce`**. A nonce binds an ID Token to one authentication *request*
+  so a client can detect replay, and a refresh is not an authentication request —
+  echoing the original would hand back a token the client has already seen that nonce
+  on, which is the condition its replay check exists to catch.
+
+### Added
+
+- **The rotation family remembers the login it descends from.** `auth_time` and `amr`
+  are recorded on the refresh token, so a refreshed ID Token can describe the ORIGINAL
+  authentication as §12.2 requires rather than the moment it was refreshed. Without it
+  a session's asserted assurance level would fall at its first refresh, which reads to a
+  relying party gating on `acr` as the user losing their second factor.
+
+  Adds a nullable `auth_time` and `amr` to `oauth_refresh_tokens` (migration included).
+  Families issued before this keep working and simply carry no authentication context —
+  the claims are optional, and a missing one is honest where a fabricated one is not.
+
+  `RefreshTokens::issue()` takes the two as trailing optional arguments; a host that has
+  implemented the contract itself must widen its signature.
+
 ## [0.84.0] - 2026-08-03
 
 ### Added

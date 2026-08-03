@@ -34,9 +34,9 @@ class RefreshTokenService implements RefreshTokens
      */
     private const REUSE_GRACE_SECONDS = 10;
 
-    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null): string
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string
     {
-        return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt);
+        return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt, $authTime, $amr);
     }
 
     public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null): RefreshGrant
@@ -95,6 +95,10 @@ class RefreshTokenService implements RefreshTokens
                     array_values($token->scopes),
                     $token->audience,
                     $token->jkt,
+                    // Carried, never re-stamped: every token in the family
+                    // describes the one login it descends from.
+                    $token->auth_time,
+                    array_values($token->amr ?? []),
                 );
 
                 // Consume and record the successor atomically, so a racing replay in
@@ -150,13 +154,16 @@ class RefreshTokenService implements RefreshTokens
             organizationId: $token->organization_id,
             scopes: array_values($token->scopes),
             audience: $token->audience,
+            authTime: $token->auth_time,
+            amr: array_values($token->amr ?? []),
         );
     }
 
     /**
      * @param  list<string>  $scopes
+     * @param  list<string>  $amr
      */
-    private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience, ?string $dpopJkt = null): string
+    private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string
     {
         $raw = 'rt_'.bin2hex(random_bytes(32));
 
@@ -168,6 +175,8 @@ class RefreshTokenService implements RefreshTokens
             'organization_id' => $organizationId,
             'scopes' => $scopes,
             'audience' => $audience,
+            'auth_time' => $authTime,
+            'amr' => $amr === [] ? null : $amr,
             'jkt' => $dpopJkt,
             'expires_at' => now()->addDays(self::TTL_DAYS),
         ]);

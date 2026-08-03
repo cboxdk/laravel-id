@@ -23,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $organization_id
  * @property array<int, string> $scopes
  * @property string|null $audience
+ * @property int|null $auth_time
+ * @property array<int, string>|null $amr
  * @property string|null $jkt
  * @property string|null $successor_token
  * @property Carbon|null $consumed_at
@@ -45,6 +47,9 @@ class RefreshToken extends Model implements EnvironmentOwned
     {
         return [
             'scopes' => 'array',
+            // What the original authentication established, carried forward so a
+            // refreshed ID Token can describe that login rather than the refresh.
+            'amr' => 'array',
             // The raw successor token, kept only for idempotent within-grace replay.
             // Encrypted at rest — it is a bearer credential, never stored in the clear.
             'successor_token' => 'encrypted',

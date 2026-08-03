@@ -16,9 +16,14 @@ interface RefreshTokens
      * (RFC 9449 §5), the token is bound to that DPoP key thumbprint and rotation
      * will require a proof of the same key.
      *
+     * `$authTime` and `$amr` describe the login this family descends from, and
+     * are recorded so a refreshed ID Token can still describe THAT
+     * authentication (OIDC Core §12.2) rather than the moment it was refreshed.
+     *
      * @param  list<string>  $scopes
+     * @param  list<string>  $amr
      */
-    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null): string;
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string;
 
     /**
      * Rotate a presented refresh token: validate it, consume it, and mint its

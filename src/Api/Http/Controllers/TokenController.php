@@ -32,7 +32,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
-use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
+use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
 use Cbox\Id\OAuthServer\ValueObjects\TokenExchangeRequest;
@@ -209,10 +209,20 @@ class TokenController
         // If this token exchange was DPoP-bound, bind the refresh token to the same
         // key (RFC 9449 §5) so rotation demands proof of possession.
         $refresh = in_array('offline_access', $grant->scopes, true)
-            ? $this->refreshTokens->issue($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt)
+            ? $this->refreshTokens->issue(
+                $client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt,
+                // The login this family descends from, so a refreshed ID Token can
+                // describe THAT authentication rather than the refresh.
+                $grant->authTime, $grant->amr,
+            )
             : null;
 
-        return $this->tokenResponse($access, $this->idToken($client, $grant, $access), $refresh, $grant->scopes);
+        return $this->tokenResponse(
+            $access,
+            $this->idToken($client, IdTokenGrant::fromAuthorization($grant), $access),
+            $refresh,
+            $grant->scopes,
+        );
     }
 
     private function deviceCode(Request $request, ?string $dpopJkt): JsonResponse
@@ -286,7 +296,7 @@ class TokenController
         // the approving user (with auth_time and the request nonce).
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt);
 
-        return $this->tokenResponse($access, $this->idToken($client, $grant, $access), null, $grant->scopes);
+        return $this->tokenResponse($access, $this->idToken($client, IdTokenGrant::fromAuthorization($grant), $access), null, $grant->scopes);
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
@@ -311,7 +321,31 @@ class TokenController
             return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
-        return $this->tokenResponse($this->accessFromRefresh($client, $rotated, $dpopJkt), null, $rotated->refreshToken, $rotated->scopes);
+        $access = $this->accessFromRefresh($client, $rotated, $dpopJkt);
+
+        // A REFRESH RENEWS THE ID TOKEN TOO (OIDC Core §12.2).
+        //
+        // It did not, and the omission is only invisible while every relying
+        // party authenticates the ACCESS token. One that authenticates the ID
+        // Token — `kubectl oidc-login` presents it, and so do Grafana and Vault
+        // in this mode — could not renew the credential it actually holds: the
+        // refresh succeeded, returned no id_token, and the client was left with
+        // nothing to present but an expired one. Measured against a live
+        // deployment: a 300-second client meant a browser window every five
+        // minutes, which is the behaviour `offline_access` exists to prevent and
+        // the reason somebody then asks for a longer lifetime instead.
+        //
+        // Minted on the same condition as the authorization-code path — a grant
+        // with a user behind it — rather than on a second rule of its own. Two
+        // rules is how the two paths drifted apart in the first place.
+        $identity = IdTokenGrant::fromRefresh($rotated);
+
+        return $this->tokenResponse(
+            $access,
+            $identity !== null ? $this->idToken($client, $identity, $access) : null,
+            $rotated->refreshToken,
+            $rotated->scopes,
+        );
     }
 
     private function accessFromRefresh(Client $client, RefreshGrant $grant, ?string $dpopJkt): IssuedToken
@@ -321,7 +355,7 @@ class TokenController
             : $this->issuer->issueClientCredentials($client, $grant->scopes, $grant->audience, $dpopJkt);
     }
 
-    private function idToken(Client $client, AuthorizedGrant $grant, IssuedToken $access): string
+    private function idToken(Client $client, IdTokenGrant $grant, IssuedToken $access): string
     {
         $now = time();
         $clientId = $client->client_id;
