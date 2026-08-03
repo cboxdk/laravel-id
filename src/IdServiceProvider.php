@@ -10,6 +10,7 @@ use Cbox\Id\AuditQuery\AuditQueryServiceProvider;
 use Cbox\Id\AuditStreaming\AuditStreamingServiceProvider;
 use Cbox\Id\Console\DirectorySyncCommand;
 use Cbox\Id\Console\DoctorCommand;
+use Cbox\Id\Console\HealthChecks;
 use Cbox\Id\Console\ImportUsersCommand;
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Directory\DirectoryServiceProvider;
@@ -100,6 +101,11 @@ class IdServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        // The registry a host fills with checks `cbox-id:doctor` should also run. A
+        // singleton because a service provider populates it at boot and the command
+        // reads it later, in the same process.
+        $this->app->singleton(HealthChecks::class);
+
         // Merge package defaults so config('cbox-id.*') resolves in a host app
         // even before the config is published.
         //

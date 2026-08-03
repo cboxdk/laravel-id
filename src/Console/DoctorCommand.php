@@ -44,6 +44,16 @@ class DoctorCommand extends Command
         $this->checkWebAuthn();
         $this->checkProductionHardening();
 
+        // Whatever the HOST added. It knows things this package cannot: which planes its
+        // console serves, where its account door lives, whether its own two halves agree.
+        foreach (app(HealthChecks::class)->run() as $contributed) {
+            $this->results[] = [
+                'status' => $contributed->status->value,
+                'label' => $contributed->label,
+                'detail' => $contributed->detail,
+            ];
+        }
+
         foreach ($this->results as $result) {
             $this->line('  '.$this->icon($result['status']).' '.$result['label']);
 

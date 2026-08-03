@@ -15,6 +15,29 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.84.0] - 2026-08-03
+
+### Added
+
+- **`cbox-id:doctor` runs the host's checks too.** The doctor knows what the LIBRARY
+  needs — extensions, a crypto key, signing keys, an issuer that resolves. It cannot know
+  what the host application needs, and the host's misconfigurations are the ones that
+  fail quietly: a deployment claiming a shape it cannot serve still boots, still answers,
+  and degrades behaviour with no error anywhere.
+
+  A host implements `Console\Contracts\HealthCheck` and adds it to the `HealthChecks`
+  registry from a service provider. One command rather than a second health command,
+  because two things to remember to run means the one nobody runs is the one holding the
+  finding.
+
+  Results are a typed `HealthResult` (`ok` / `warn` / `fail` plus a label and the fix)
+  rather than the string-keyed array the command used internally — this crosses a package
+  boundary now, and a map at a boundary is a shape every implementer has to guess at.
+
+  A check that throws is reported as a failure and the rest still run. The contract says
+  it must not throw; the registry assumes it will anyway, because the moment you most want
+  a health report is when something is already broken enough to throw.
+
 ## [0.83.1] - 2026-08-03
 
 ### Fixed
