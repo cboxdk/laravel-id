@@ -15,6 +15,29 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.83.1] - 2026-08-03
+
+### Fixed
+
+- **`cboxdk/laravel-ssrf` raised to `^1.1.1`, which repairs DNS pinning for dual-stack
+  hosts.** Up to and including v1.1.0 the guard emitted one `CURLOPT_RESOLVE` entry per
+  validated address, but curl treats a second entry for the same `host:port` as a
+  replacement rather than an addition — so only whichever address sorted last survived.
+  For a dual-stack host whose AAAA sorts last (`accounts.google.com` is one) every
+  pinned request was pinned to IPv6 alone, with no fallback to the IPv4 address that had
+  been validated moments earlier. On a host without an IPv6 route the connection simply
+  failed, with a transport error naming neither the pin nor the protocol.
+
+  Every outbound path in this package that pins DNS was affected: OIDC discovery, the
+  OIDC and OAuth 2.0 token exchanges, JWKS fetches during assertion validation, SAML
+  metadata import, SCIM provisioning, webhook delivery, external action transport and
+  access-control manifest fetches. Whether it actually *failed* depended entirely on the
+  host's own IPv6 connectivity, so it presented as "works on my machine".
+
+  The floor is raised rather than left at `^1.0` so the fix is guaranteed rather than
+  merely permitted — `^1.0` would let an existing lock file stay on the broken v1.1.0.
+  No API change on either side.
+
 ## [0.83.0] - 2026-08-03
 
 ### Added

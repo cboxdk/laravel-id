@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:31a26437-dc46-4c3f-bf41-35a1df482d17",
+    "serialNumber": "urn:uuid:e8f8e689-2c2f-4e5a-89ba-0cb9383152fc",
     "version": 1,
     "metadata": {
         "tools": [
@@ -69,11 +69,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.1.0",
+            "bom-ref": "pkg:composer/cboxdk/laravel-ssrf@v1.1.1",
             "group": "cboxdk",
             "name": "laravel-ssrf",
-            "version": "v1.1.0",
-            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.1.0",
+            "version": "v1.1.1",
+            "purl": "pkg:composer/cboxdk/laravel-ssrf@v1.1.1",
             "description": "Cbox SSRF \u2014 a hardened, config-driven guard against server-side request forgery for outbound URLs in Laravel. Blocks private/reserved/cloud-metadata targets, pins DNS, and refuses redirects.",
             "licenses": [
                 {
