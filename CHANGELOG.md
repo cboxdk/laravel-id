@@ -40,6 +40,20 @@ more trust than the wording it removes.
   A deactivated subject now refuses the operator immediately rather than at the next
   session boundary, which for an identity with cross-environment reach is the point.
 
+### Added
+
+- **`PlatformOperators::findBySubject()`** — the operator record a signed-in subject
+  holds, or null. With the operator unified onto the subject store, "is this session
+  staff" becomes a question about the session a host already has, so a console can gate
+  the platform pages as a PERMISSION instead of standing up a second sign-in beside the
+  first. The separate operator door only ever existed because there was a separate
+  operator credential.
+
+  Suspended operators are excluded inside the lookup rather than by the caller. Authority
+  now rides an existing session and suspending an operator has never revoked their subject
+  sessions, so a status check left to each call site fails open — the suspended operator
+  keeps every platform page in the session they already hold.
+
 ## [0.86.0] - 2026-08-03
 
 ### Added
