@@ -38,6 +38,21 @@ more trust than the wording it removes.
   merely permitted — `^1.0` would let an existing lock file stay on the broken v1.1.0.
   No API change on either side.
 
+## [0.83.1] - 2026-08-03
+
+### Fixed
+
+- **Requires `cboxdk/laravel-ssrf` ^1.1.1.** Below that version the SSRF guard pinned
+  only the LAST of a host's validated addresses — curl treats a repeated
+  `CURLOPT_RESOLVE` entry for the same `host:port` as a replacement, not an addition —
+  so any dual-stack federation target whose AAAA sorted last was reached over IPv6
+  alone, and failed outright on a host with no IPv6 route. `accounts.google.com` is such
+  a target. Every outbound path in this package goes through that guard: OIDC discovery,
+  token exchange, JWKS retrieval, and the directory connectors.
+
+  The floor is the fixed version rather than `^1.1`, because a consumer that resolved
+  1.1.0 would get a package whose pinning silently discards addresses.
+
 ## [0.83.0] - 2026-08-03
 
 ### Added
