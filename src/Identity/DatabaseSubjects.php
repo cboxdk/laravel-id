@@ -20,6 +20,7 @@ use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\FederatedProvisioning;
 use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -178,7 +179,22 @@ class DatabaseSubjects implements Subjects
 
     public function provisionFederated(FederatedPrincipal $principal): Subject
     {
-        return DB::transaction(function () use ($principal): Subject {
+        return $this->resolveFederated($principal)->subject;
+    }
+
+    /**
+     * The same resolution, but saying whether this call CREATED the account.
+     *
+     * A first-sight federated account is a signup, and a signup has obligations a
+     * sign-in does not: the address is unverified until we verify it ourselves, and the
+     * person holds exactly one way in — so if the provider is unreachable, or they lose
+     * that account, they lose this one. Callers cannot act on either without being told
+     * which case they are in, and inferring it from an unverified email or an absent
+     * password eventually guesses wrong about someone who never finished setting up.
+     */
+    public function resolveFederated(FederatedPrincipal $principal): FederatedProvisioning
+    {
+        return DB::transaction(function () use ($principal): FederatedProvisioning {
             // Returning identity — the exact (provider, subject, connection) is ours.
             $link = $this->linkQuery($principal)->first();
 
@@ -186,7 +202,7 @@ class DatabaseSubjects implements Subjects
                 $existing = $this->find($link->user_id);
 
                 if ($existing !== null) {
-                    return $existing;
+                    return new FederatedProvisioning($existing, created: false);
                 }
             }
 
@@ -204,7 +220,7 @@ class DatabaseSubjects implements Subjects
 
             $this->writeLink($subject->id, $principal);
 
-            return $subject;
+            return new FederatedProvisioning($subject, created: true);
         });
     }
 

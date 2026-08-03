@@ -11,6 +11,7 @@ use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
 use Cbox\Id\Identity\Exceptions\PolicyViolation;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\FederatedProvisioning;
 use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
 
@@ -62,6 +63,15 @@ interface Subjects
      * @throws AccountExistsForEmail when the email already belongs to an account
      */
     public function provisionFederated(FederatedPrincipal $principal): Subject;
+
+    /**
+     * As {@see provisionFederated()}, but reporting whether the account was created.
+     *
+     * A first federated sign-in is a signup: the address is unverified until this
+     * platform verifies it, and the person has exactly one way in. A caller that cannot
+     * tell that case apart cannot act on either.
+     */
+    public function resolveFederated(FederatedPrincipal $principal): FederatedProvisioning;
 
     /**
      * Explicitly link a provider identity to an ALREADY-authenticated subject —

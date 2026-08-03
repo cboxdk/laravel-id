@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Id\Tests\Fixtures;
 
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\FederatedProvisioning;
 use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
 use Cbox\Id\Identity\ValueObjects\Subject;
 use RuntimeException;
@@ -83,9 +85,26 @@ final class ArraySubjects implements Subjects
 
     public function provisionFederated(FederatedPrincipal $principal): Subject
     {
+        return $this->resolveFederated($principal)->subject;
+    }
+
+    /**
+     * Refuses to merge by email, exactly as the real implementation does.
+     *
+     * This fake used to return `findByEmail() ?? create()` — that is, it performed the
+     * account takeover the real one exists to prevent. A fake more permissive than the
+     * thing it stands in for does not merely fail to catch a regression; it teaches every
+     * test written against it that the unsafe behaviour is the contract.
+     */
+    public function resolveFederated(FederatedPrincipal $principal): FederatedProvisioning
+    {
         $email = $principal->email ?? $principal->subject.'@federated';
 
-        return $this->findByEmail($email) ?? $this->create($email, $principal->name);
+        if ($principal->email !== null && $this->findByEmail($principal->email) !== null) {
+            throw AccountExistsForEmail::make($principal->email);
+        }
+
+        return new FederatedProvisioning($this->create($email, $principal->name), created: true);
     }
 
     public function link(string $subjectId, FederatedPrincipal $principal): void {}

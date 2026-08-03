@@ -183,3 +183,30 @@ it('deactivating a subject blocks password auth and marks it inactive', function
 it('reports an unknown subject as inactive', function (): void {
     expect(app(Subjects::class)->isActive('nope'))->toBeFalse();
 });
+
+/**
+ * A first federated sign-in is a signup, and the caller has to be able to tell.
+ *
+ * The obligations differ: a new account's address is unverified until this platform
+ * verifies it — never because a provider said so — and the person holds exactly one way
+ * in, so an outage at the provider costs them the account. Neither can be acted on by a
+ * caller that cannot distinguish a new account from a returning one, and inferring it
+ * from an unverified email or an absent password guesses wrong about anyone who simply
+ * never finished setting up.
+ */
+it('reports whether a federated sign-in created the account', function (): void {
+    $subjects = app(Subjects::class);
+    $principal = new FederatedPrincipal('oauth2:github', 'gh|4711', 'newcomer@corp.com', 'Newcomer');
+
+    $first = $subjects->resolveFederated($principal);
+
+    expect($first->created)->toBeTrue()
+        // And it is a signup in the sense that matters: nothing about arriving through a
+        // provider verifies the address here.
+        ->and($first->subject->emailVerified)->toBeFalse();
+
+    $second = $subjects->resolveFederated($principal);
+
+    expect($second->created)->toBeFalse()
+        ->and($second->subject->id)->toBe($first->subject->id);
+});
