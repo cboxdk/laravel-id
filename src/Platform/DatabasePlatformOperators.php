@@ -39,6 +39,27 @@ class DatabasePlatformOperators implements PlatformOperators
         return PlatformOperator::query()->where('email', $email)->first();
     }
 
+    /**
+     * The operator record a signed-in subject holds, if any.
+     *
+     * This is what turns operator authority into a PERMISSION rather than a second sign-in.
+     * Once an operator is a subject, "are you staff" is a question about the session that
+     * already exists — so a console can carry the platform pages in the same rail as every
+     * other page and show them to whoever may see them, instead of the separate layout and
+     * separate credential prompt it took when the two identities were unrelated rows.
+     *
+     * Suspended operators are excluded HERE rather than by the caller. Leaving it to the
+     * caller is an authorization check every future call site has to remember, and
+     * forgetting it fails open — a suspended operator would keep their rail.
+     */
+    public function findBySubject(string $subjectId): ?PlatformOperator
+    {
+        return PlatformOperator::query()
+            ->where('subject_id', $subjectId)
+            ->where('status', OperatorStatus::Active)
+            ->first();
+    }
+
     public function create(string $email, string $password, ?string $name = null): PlatformOperator
     {
         $operator = PlatformOperator::query()->create([

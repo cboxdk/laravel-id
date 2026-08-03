@@ -116,3 +116,48 @@ it('refuses a wrong password during the bootstrap window', function (): void {
     expect($operators->verifyPassword($operator->id, 'not-the-password'))->toBeFalse()
         ->and($operator->refresh()->subject_id)->toBeNull();
 })->group('security');
+
+/**
+ * The lookup that makes operator authority a permission.
+ *
+ * A console can now ask "is the session I already have staff?" instead of standing up a
+ * second sign-in beside the first. That is the whole reason the two identities were
+ * unified: the separate operator door existed only because there was a separate operator
+ * credential, and there no longer is one.
+ */
+it('finds an operator by the subject that signs in as them', function (): void {
+    aPlatformRoot();
+
+    $operator = app(PlatformOperators::class)->create('staff@cbox.test', 'a-strong-unbreached-passphrase', 'Staff');
+    $subjectId = $operator->refresh()->subject_id;
+
+    expect($subjectId)->not->toBeNull()
+        ->and(app(PlatformOperators::class)->findBySubject((string) $subjectId)?->id)->toBe($operator->id);
+});
+
+/**
+ * Suspension has to reach the RAIL, not only the sign-in.
+ *
+ * With authority carried by an existing session, a suspended operator is still signed in
+ * — their subject is untouched, and suspending an operator has never revoked subject
+ * sessions. If the lookup ignored status, suspension would take away the ability to sign
+ * in again while leaving every platform page reachable in the session they already hold,
+ * which is the opposite of what suspending someone means.
+ */
+it('refuses to answer for a suspended operator', function (): void {
+    aPlatformRoot();
+
+    $operators = app(PlatformOperators::class);
+    // Two, because the platform refuses to suspend its last remaining operator.
+    $operator = $operators->create('staff@cbox.test', 'a-strong-unbreached-passphrase', 'Staff');
+    $other = $operators->create('other@cbox.test', 'a-strong-unbreached-passphrase', 'Other');
+
+    $subjectId = (string) $operator->refresh()->subject_id;
+
+    expect($operators->findBySubject($subjectId))->not->toBeNull();
+
+    $operators->suspend($operator->id, $other->id);
+
+    expect($operators->findBySubject($subjectId))
+        ->toBeNull('a suspended operator kept their platform pages in the session they already held');
+});

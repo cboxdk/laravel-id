@@ -21,6 +21,16 @@ interface PlatformOperators
     public function findByEmail(string $email): ?PlatformOperator;
 
     /**
+     * The operator record a signed-in subject holds, or null.
+     *
+     * Answers "is this session staff" from the session a host already has, which is what
+     * lets a console gate the platform pages as a PERMISSION instead of standing up a
+     * second sign-in beside the first. Excludes suspended operators, so a host cannot
+     * fail open by forgetting to check status.
+     */
+    public function findBySubject(string $subjectId): ?PlatformOperator;
+
+    /**
      * Provision a new operator. The password is hashed with the configured
      * driver on the way in.
      */
