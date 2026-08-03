@@ -34,7 +34,12 @@ class PlatformServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(PlatformOperators::class, function (Application $app): PlatformOperators {
-            return new DatabasePlatformOperators($app->make(Hasher::class), $app->make(AuditLog::class));
+            return new DatabasePlatformOperators(
+                $app->make(Hasher::class),
+                $app->make(AuditLog::class),
+                $app->make(Subjects::class),
+                $app->make(PlatformRoot::class),
+            );
         });
 
         $this->app->singleton(OperatorMfa::class, function (Application $app): OperatorMfa {

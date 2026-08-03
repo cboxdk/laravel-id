@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -24,6 +25,8 @@ class DatabasePlatformOperators implements PlatformOperators
     public function __construct(
         private readonly Hasher $hasher,
         private readonly AuditLog $audit,
+        private readonly Subjects $subjects,
+        private readonly PlatformRoot $platformRoot,
     ) {}
 
     public function find(string $id): ?PlatformOperator
@@ -38,13 +41,59 @@ class DatabasePlatformOperators implements PlatformOperators
 
     public function create(string $email, string $password, ?string $name = null): PlatformOperator
     {
-        return PlatformOperator::query()->create([
+        $operator = PlatformOperator::query()->create([
             'email' => $email,
             'name' => $name,
-            // The model's `hashed` cast hashes with the configured driver.
+            // The model's `hashed` cast hashes with the configured driver. Retained for
+            // the bootstrap window below, not as the credential of record.
             'password' => $password,
             'status' => OperatorStatus::Active,
         ]);
+
+        $this->attachSubject($operator, $password);
+
+        return $operator;
+    }
+
+    /**
+     * Give an operator an ordinary subject, so authentication is the platform's own.
+     *
+     * An operator used to be a second credential store: an email and a bcrypt hash, and
+     * nothing else. Everything that protects a sign-in here — the tenant's password
+     * policy, breached-password refusal, lockout after repeated failures, TOTP, passkeys,
+     * step-up, revoking a session — lives on the subject, and an operator had none of it.
+     * The widest reach in the product sat behind the weakest door, and it was weakest
+     * because it was separate.
+     *
+     * Written inside the PLATFORM ROOT's scope. Subjects are environment-owned, so
+     * creating one under the ambient scope would file the platform's own staff inside
+     * whichever tenant happened to be current — invisible where it is read, and a row in
+     * a tenant that has no business holding it. Account members already do exactly this.
+     *
+     * With no platform root — the very first install — there is nowhere for the subject
+     * to live, so the operator stays unlinked and falls back to the local hash. That
+     * window closes as soon as a default environment is stamped.
+     */
+    private function attachSubject(PlatformOperator $operator, string $password): void
+    {
+        $subjectId = $this->platformRoot->run(function () use ($operator, $password): string {
+            $existing = $this->subjects->findByEmail($operator->email);
+
+            // An operator who is already an account member reuses that subject rather
+            // than getting a second one for the same person and the same address. Two
+            // subjects for one human is the id-space split this change exists to end.
+            if ($existing !== null) {
+                return $existing->id;
+            }
+
+            return $this->subjects->create($operator->email, $operator->name, $password)->id;
+        });
+
+        if ($subjectId === null) {
+            return;
+        }
+
+        $operator->forceFill(['subject_id' => $subjectId])->save();
     }
 
     public function verifyPassword(string $id, string $password): bool
@@ -61,7 +110,36 @@ class DatabasePlatformOperators implements PlatformOperators
             return false;
         }
 
-        return $this->hasher->check($password, $operator->password);
+        $subjectId = $operator->subject_id;
+
+        if ($subjectId === null) {
+            // BOOTSTRAP ONLY: no platform root existed when this operator was created, so
+            // there was nowhere to put their subject. The local hash is the credential
+            // until the deployment has a root, and the subject is attached on the next
+            // successful sign-in — the only moment the plaintext is available to seed it.
+            if (! $this->hasher->check($password, $operator->password)) {
+                return false;
+            }
+
+            $this->attachSubject($operator, $password);
+
+            return true;
+        }
+
+        return $this->platformRoot->run(
+            // Both gates, and in this order: a deactivated subject — a revoked operator
+            // still holding a session — never authenticates, and the dummy verify keeps
+            // that refusal the same cost as a wrong password.
+            function () use ($subjectId, $password): bool {
+                if (! $this->subjects->isActive($subjectId)) {
+                    $this->hasher->check($password, $this->dummyHash());
+
+                    return false;
+                }
+
+                return $this->subjects->verifyPassword($subjectId, $password);
+            },
+        ) === true;
     }
 
     private ?string $dummyHash = null;

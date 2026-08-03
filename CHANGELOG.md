@@ -15,6 +15,31 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [0.86.0] - 2026-08-04
+
+### Changed
+
+- **A platform operator is a person now, not a second credential store.**
+  `platform_operators` held an email and a bcrypt hash and nothing else. Everything that
+  protects a sign-in on this platform lives on the SUBJECT — password policy,
+  breached-password refusal, lockout after repeated failures, TOTP, passkeys, step-up,
+  session revocation — and an operator had none of it, because it was never given any.
+  The widest reach in the product sat behind the weakest door, and it was weakest
+  precisely because it was separate.
+
+  `platform_operators.subject_id` points at an ordinary subject in the platform root, and
+  `verifyPassword()` asks that subject. Account members already work this way; this is the
+  same change for the same reason, and it follows the same shape.
+
+  Nothing breaks on upgrade. The column is nullable, the local hash remains the credential
+  for an operator created before a platform root existed, and the subject is attached on
+  that operator's next successful sign-in — the only moment the plaintext is available to
+  seed it. The hash column stays until every row has a subject; removing it earlier is a
+  deployment that cannot authenticate.
+
+  A deactivated subject now refuses the operator immediately rather than at the next
+  session boundary, which for an identity with cross-environment reach is the point.
+
 ## [0.86.0] - 2026-08-03
 
 ### Added

@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * pinned for the request; the operator record itself lives above them all.
  *
  * @property string $id
+ * @property string|null $subject_id the ordinary subject that carries this operator's credentials
  * @property string $email
  * @property string|null $name
  * @property string $password
