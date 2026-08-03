@@ -45,6 +45,25 @@ more trust than the wording it removes.
   `activate()` now revokes alongside the credential write, for the same reason
   `resetPassword()` does.
 
+## [0.87.2] - 2026-08-04
+
+### Fixed
+
+- **A member's password reset no longer leaves their other sessions alive.** The security
+  stamp on `account_members` invalidated MEMBER sessions, and that was the whole of
+  log-out-everywhere while a member session existed. It is a host's decision to stop
+  keeping one — the credential of record is the subject, so a second session for the same
+  person is a second place to ask who they are — and the moment a host makes it, the
+  control silently stops covering anything: `Subjects::setPassword()` does not revoke.
+
+  `resetPassword()` now revokes the subject's sessions inside its existing transaction.
+  The stamp still moves; its other job, making a reset link single-use, is a different
+  question and is unchanged.
+
+- **`activate()` revokes too.** Removing a member deactivates their subject without
+  revoking its sessions, so accepting a later invitation resurrected the old ones beside a
+  freshly-replaced password.
+
 ## [0.87.1] - 2026-08-04
 
 ### Fixed
