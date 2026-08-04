@@ -22,6 +22,9 @@ How the platform is put together and the ideas you build against:
 - **[Organization access](organization-access.md)** — ordered membership roles,
   groups, resource grants with effective-role resolution, and user API tokens
   capped at the issuer's role.
+- **[Account roles vs. membership roles](account-and-membership-roles.md)** — how the
+  two role enums correspond, the one case each has alone, and the only safe mapping in
+  each direction.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
 - **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters

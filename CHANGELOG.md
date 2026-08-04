@@ -17,6 +17,51 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **An organization can own IdP products directly.** `accounts.organization_id` has
+  always said an account *is* an organization in the platform root — members and a
+  payment method bolted onto it. `projects.organization_id` now records that link
+  directly instead of re-deriving it through the account plane, and `Organization` gains
+  `projects()` (has-many) and `environments()` (has-many-through the project, so there
+  is no second denormalized column to drift). `Platform\Contracts\OrganizationProjects`
+  adds `forOrganization()` and `ownedByOrganization()` for the console case where only
+  the id is in hand; `DatabaseProjects` implements it alongside `Projects`.
+
+  Both relations cross OUT of the environment scope, which is safe because of the
+  PARENT, not the child: a project owns environments and cannot itself live inside one,
+  while `Organization` is environment-owned, so the model is unobtainable from any other
+  environment — deny-by-default refuses it even by primary key — and the child query is
+  keyed on that organization's id.
+
+  The column is stamped on the model's `creating` hook rather than at a call site, so a
+  host calling `Project::create()` directly gets it too; a project that missed it would
+  read as healthy from the account side and be invisible from the organization side, a
+  silent one-directional split of the same fact. Existing rows are backfilled per homed
+  account, idempotently. `(organization_id, slug)` is unique, mirroring the
+  `(account_id, slug)` key beside it.
+
+  **Purely additive.** `Account`, `AccountMember`, `AccountRole`, `AccountProvisioner`
+  and every existing signature are untouched, and `projects.account_id` stays NOT NULL —
+  an organization can be *read* as the owner today, but owning a project with no account
+  behind it needs that column to become nullable, which is a separate, subtractive step.
+  `Account::$environment_limit` is deliberately NOT copied to organizations: the enforced
+  limit lives on the project (`EnvironmentLimitReached` is keyed there) and the account
+  column is only a provisioning seed, so a third copy would be a number that can disagree
+  with the one enforced.
+
+- **The account-role / membership-role correspondence, written down.**
+  `docs/core-concepts/account-and-membership-roles.md` maps `AccountRole` to
+  `MembershipRole` in both directions. They are not the same set under two names: four
+  cases are shared, `Billing` exists only on the account plane and `Member` only on the
+  organization plane, and the predicate surfaces do not line up —
+  `MembershipRole::canWrite()` is broader than `AccountRole::canManageEnvironments()`, so
+  mapping `Billing` onto `Member` grants write access to a billing-only role.
+  `Viewer` is the safe floor in both directions, neither round-trips, and billing
+  capability is not representable on the organization plane at all. The enums are
+  deliberately NOT unified; a test locks every claim on the page so a new case turns it
+  red rather than stale.
+
 ### Fixed
 
 - **An account member's password reset did not end their sessions.** `resetPassword()`

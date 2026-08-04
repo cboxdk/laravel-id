@@ -60,6 +60,64 @@ multi-project account). Gate on `Projects::remainingEnvironments($project)`.
 > which gate what an individual *tenant* may do inside an environment. Different layers,
 > different owners.
 
+## An account is an organization
+
+`accounts.organization_id` has always said it: an account **is** an organization in the
+platform-root environment, with members and a payment method bolted on. So an
+organization can own IdP products directly, and `projects.organization_id` records that
+link rather than inferring it through the account plane every time:
+
+```php
+$organization->projects;      // HasMany<Project>
+$organization->environments;  // HasManyThrough<Environment, Project>
+
+app(OrganizationProjects::class)->forOrganization($organizationId);
+app(OrganizationProjects::class)->ownedByOrganization($projectId, $organizationId);
+```
+
+The column is stamped automatically on every project create (on the model, so a host
+calling `Project::create()` directly gets it too) and backfilled for existing accounts.
+`(organization_id, slug)` is unique, mirroring the `(account_id, slug)` key beside it.
+
+**Nothing on the account side changes.** `Account::projects()`, `Projects::forAccount()`
+and the provisioner answer exactly what they did; both sides report the same ownership,
+and a consumer that never looks at the new column sees no difference.
+
+### What crosses which scope
+
+`Organization` is environment-owned; `Project` and `Environment` are not — a project
+*owns* environments, and an environment *is* the boundary, so neither can live inside
+one. Both relations therefore cross **out** of the environment scope. What makes that
+safe is the **parent**, not the child: an `$organization` instance is only obtainable
+from inside its own environment (the scope is deny-by-default and refuses it even by
+primary key from anywhere else), and the child query is keyed on that organization's
+id. Reaching another customer's projects would first mean reaching their organization.
+It is the same shape, and the same argument, as `Account::projects()`.
+
+`Organization::environments()` is deliberately a *through*-relation rather than a
+denormalized `environments.organization_id`. Environments already nest under a project,
+so the fact exists once; a second column would have to be written by every creation
+path and would drift the first time one forgot.
+
+### What has *not* moved yet
+
+`projects.account_id` is still **NOT NULL**. An organization can be *read* as the owner
+today; owning a project with no account behind it at all needs that column to become
+nullable, as `environments.account_id` already is. That is the subtractive step, and it
+is deliberately separate: this one is additive only.
+
+### The environment allowance stays where it is
+
+`Account::$environment_limit` is **not** copied to organizations. The enforced limit
+lives on the **project** — `AccountProvisioner::addEnvironment()` gates on
+`Projects::remainingEnvironments($project)` and throws `EnvironmentLimitReached` keyed
+on the project. The account column is only the seed the first project inherits at
+provision time, and that seed already arrives on `AccountBlueprint::$environmentLimit`;
+the column is a remnant of the plan anchor's move to the project. A third copy on the
+organization would add a number that can disagree with the one actually enforced, which
+is the failure mode the move to the project was meant to end. Allowance is a
+plan/entitlement concern, and it belongs to the thing that is billed.
+
 ## Single-tenant / self-hosted is untouched
 
 The project layer is a **SaaS-only (Tier-2, multi-tenant) concept**. Like `account_id`,

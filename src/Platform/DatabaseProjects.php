@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform;
 
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\Enums\ProjectStatus;
 use Cbox\Id\Platform\Models\Project;
@@ -15,7 +16,7 @@ use Illuminate\Support\Str;
  * Eloquent-backed projects. No environment scope is ever applied — a project owns
  * environments, it does not live inside one — so these queries are global.
  */
-class DatabaseProjects implements Projects
+class DatabaseProjects implements OrganizationProjects, Projects
 {
     public function find(string $id): ?Project
     {
@@ -31,6 +32,31 @@ class DatabaseProjects implements Projects
             ->where('account_id', $accountId)
             ->orderBy('created_at')
             ->get();
+    }
+
+    /**
+     * @return Collection<int, Project>
+     */
+    public function forOrganization(string $organizationId): Collection
+    {
+        return Project::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('created_at')
+            ->get();
+    }
+
+    public function ownedByOrganization(string $projectId, string $organizationId): bool
+    {
+        // Asked of the DATABASE rather than by loading the row and comparing: SQL's
+        // NULL comparison already refuses a project with no organization, where a
+        // PHP-side `===` against a nullable attribute is one forgotten null-check away
+        // from answering "owned" for a project owned by nobody. The empty-string guard
+        // covers the other end — a missing organization id arriving as '' must not be
+        // allowed to match a column that somehow holds one.
+        return $organizationId !== '' && Project::query()
+            ->whereKey($projectId)
+            ->where('organization_id', $organizationId)
+            ->exists();
     }
 
     public function create(string $accountId, string $name, int $environmentLimit = 2): Project

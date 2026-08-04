@@ -20,6 +20,7 @@ use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
+use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
 use Cbox\Id\Platform\Contracts\Projects;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -57,6 +58,12 @@ class PlatformServiceProvider extends ServiceProvider
 
         // Projects — the IdP-product layer inside an account (billing anchor).
         $this->app->singleton(Projects::class, DatabaseProjects::class);
+
+        // The same products read from the organization side, since an account IS an
+        // organization. A second binding of the same stateless class rather than an
+        // alias of the one above: a host that swaps `Projects` for its own
+        // implementation must not silently lose this capability along with it.
+        $this->app->singleton(OrganizationProjects::class, DatabaseProjects::class);
 
         $this->app->singleton(AccountMembers::class, function (Application $app): AccountMembers {
             return new DatabaseAccountMembers(
