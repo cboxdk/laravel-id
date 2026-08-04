@@ -37,7 +37,9 @@ interface IssuerResolver
      * at `acme.cboxid.com` keeps resolving there after it verifies `id.acme.com` — and
      * that alias would otherwise serve a metadata document naming a host it was not
      * fetched from, which conformant clients reject. Naming the canonical host is what
-     * lets the surface redirect the alias instead
+     * lets the METADATA endpoints redirect the alias to the host their document belongs
+     * to; the credential-bearing surface is deliberately left serving on both hosts,
+     * because a cross-origin redirect strips the credential rather than moving the call
      * ({@see CanonicalIssuerHost}).
      *
      * Null is the ordinary answer for the platform-root environment and for every

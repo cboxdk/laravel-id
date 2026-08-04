@@ -53,17 +53,21 @@ class ApiServiceProvider extends ServiceProvider
         Route::middleware('throttle:300,1')->get('/up', HealthController::class);
 
         // Every request resolves its environment from the host first, pinning the
-        // hard environment scope (own users, keys, issuer) for everything below —
-        // and is then held to the ONE host that environment's issuer names, so no
-        // alias of it can serve a document naming a host it was not fetched from.
+        // hard environment scope (own users, keys, issuer) for everything below.
         //
         // The host may then add its own gate (`cbox-id.api.middleware`, empty by
         // default) so a host that is NOT an identity provider — a multi-tenant
         // platform's account/signup root, say — 404s this whole surface instead of
         // advertising an issuer it cannot honour.
-        Route::middleware(array_merge([ResolveEnvironment::class, CanonicalIssuerHost::class], $this->surfaceMiddleware()))->group(function (): void {
-            // Public metadata — cheap, cacheable, generously throttled.
-            Route::middleware('throttle:300,1')->group(function (): void {
+        Route::middleware(array_merge([ResolveEnvironment::class], $this->surfaceMiddleware()))->group(function (): void {
+            // Public metadata — cheap, cacheable, generously throttled, and the ONLY
+            // group held to the environment's canonical host. These are the documents
+            // that ASSERT an issuer, so an alias serving them contradicts itself and
+            // conformant clients refuse the result. Everything below either
+            // authenticates by credential — where a cross-origin redirect strips the
+            // credential rather than moving the call — or names no host at all, and
+            // wrapping the whole surface in this broke both ({@see CanonicalIssuerHost}).
+            Route::middleware(['throttle:300,1', CanonicalIssuerHost::class])->group(function (): void {
                 Route::get('/.well-known/jwks.json', JwksController::class);
                 Route::get('/.well-known/openid-configuration', DiscoveryController::class);
                 // RFC 8414 + RFC 9728 — the metadata MCP clients discover the server by.

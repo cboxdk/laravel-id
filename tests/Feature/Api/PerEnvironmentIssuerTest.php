@@ -98,23 +98,23 @@ it('holds the §3.3 invariant on BOTH hosts an environment resolves on', functio
     // The alias does not serve a contradicting document — it points at the one that does.
     $this->get('https://acme.cboxid.com/.well-known/openid-configuration')
         ->assertRedirect('https://id.acme.com/.well-known/openid-configuration')
-        ->assertStatus(301);
+        ->assertStatus(302);
 });
 
-it('redirects the whole IdP surface off a non-canonical alias, preserving method and query', function (): void {
+it('redirects every metadata document off a non-canonical alias, preserving the query', function (): void {
     Environment::create([
         'name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.acme.com',
         'domain_verified_at' => now(), 'is_default' => false,
     ]);
 
-    $this->get('https://acme.cboxid.com/.well-known/jwks.json')
-        ->assertRedirect('https://id.acme.com/.well-known/jwks.json');
-
-    // 308, not 301: a client that rewrote POST /oauth/token to GET would drop the grant
-    // body and be answered with a 405 instead of a token.
-    $this->post('https://acme.cboxid.com/oauth/token?trace=1')
-        ->assertRedirect('https://id.acme.com/oauth/token?trace=1')
-        ->assertStatus(308);
+    $this->get('https://acme.cboxid.com/.well-known/jwks.json?trace=1')
+        ->assertRedirect('https://id.acme.com/.well-known/jwks.json?trace=1');
+    $this->get('https://acme.cboxid.com/.well-known/oauth-authorization-server')
+        ->assertRedirect('https://id.acme.com/.well-known/oauth-authorization-server');
+    $this->get('https://acme.cboxid.com/.well-known/oauth-protected-resource')
+        ->assertRedirect('https://id.acme.com/.well-known/oauth-protected-resource');
+    $this->get('https://acme.cboxid.com/sso/saml/idp/metadata')
+        ->assertRedirect('https://id.acme.com/sso/saml/idp/metadata');
 });
 
 it('leaves the platform root and the single-tenant shape on any host they answer', function (): void {
