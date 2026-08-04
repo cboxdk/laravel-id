@@ -58,6 +58,70 @@ enum MembershipRole: string
     }
 
     /**
+     * Read the member roster, which is PII.
+     *
+     * NOT the same question as {@see canWrite()}, and deliberately excludes the two
+     * technical roles. A Developer is frequently a CI or agent credential rather than a
+     * person, and a leaked one must not be able to enumerate the team; the generic Member
+     * is a collaborator on the organization's resources, not an administrator of its
+     * people. The read-only Viewer may look precisely because it can do nothing else.
+     */
+    public function canReadMembers(): bool
+    {
+        return match ($this) {
+            self::Owner, self::Admin, self::Viewer => true,
+            default => false,
+        };
+    }
+
+    /**
+     * Read the plan, invoices and usage.
+     *
+     * The same set as {@see canReadMembers()} today, and separate from it on purpose:
+     * they are different questions, they are asked by different pages, and a host that
+     * introduces a finance role will want to move one without the other.
+     */
+    public function canReadBilling(): bool
+    {
+        return match ($this) {
+            self::Owner, self::Admin, self::Viewer => true,
+            default => false,
+        };
+    }
+
+    /**
+     * Create and administer the IdP products this organization owns — its projects,
+     * their environments, and the keys and domains those need.
+     *
+     * NOT {@see canWrite()}, and the difference is the whole reason this exists. `canWrite`
+     * admits the generic Member, which is the role every person placed in an organization
+     * carries by default; standing up an environment is an administrative act on the
+     * product the organization sells, and it grants a live environment-admin session on
+     * that tenant's own host. Collapsing the two would hand that to everybody who was
+     * merely added to the organization.
+     */
+    public function canManageEnvironments(): bool
+    {
+        return match ($this) {
+            self::Owner, self::Admin, self::Developer => true,
+            default => false,
+        };
+    }
+
+    /**
+     * Whether this role may be restricted to a subset of the organization's environments.
+     *
+     * Owners and admins administer the whole organization, so they always have every one;
+     * only the scoped roles can be pinned. Stated as "not an administrator" rather than as
+     * a list of the scopable roles, so a role added later is scopable by default — the
+     * safe direction.
+     */
+    public function supportsEnvironmentScoping(): bool
+    {
+        return ! $this->canManageOrganization();
+    }
+
+    /**
      * Ordering for effective-access resolution: when several grant sources
      * apply to the same subject, the highest-weighted role wins. Gaps of ten
      * leave room for host-defined intermediate roles without renumbering.

@@ -76,25 +76,80 @@ it('has no membership role that can manage billing', function (): void {
     expect(AccountRole::Billing->canManageBilling())->toBeTrue()
         ->and(AccountRole::Billing->canManageEnvironments())->toBeFalse()
         ->and(AccountRole::Billing->canReadMembers())->toBeFalse()
-        // The demotion target: Viewer cannot write, so nothing is gained by the map.
+        // The demotion target: Viewer cannot write, so nothing is gained by the map…
         ->and(MembershipRole::Viewer->canWrite())->toBeFalse()
+        // …and it keeps the half of Billing that anything actually asks for.
+        ->and(MembershipRole::Viewer->canReadBilling())->toBeTrue()
+        // Still absent, and deliberately so. Adding a billing case would arrive holding
+        // `canWrite()` — "not a Viewer" — on every organization of every tenant, and
+        // correcting that changes what write means for everybody. What is lost is
+        // `canManageBilling()`, which no page and no route in the product asks for.
         ->and(method_exists(MembershipRole::class, 'canManageBilling'))->toBeFalse();
 });
 
 /**
- * The roster is PII. A Developer on the account plane is a technical credential and is
- * refused it; the organization plane has no such predicate at all, which is exactly
- * why mapping a role across cannot be assumed to preserve the restriction.
+ * The roster is PII, and BOTH planes now say so.
+ *
+ * This used to assert the opposite — that `MembershipRole` had no such predicate — and
+ * that was the point: the gap was the reason a role could not simply be mapped across.
+ * The gap is closed rather than worked around, because the restriction was never
+ * account-specific. An organization's own admin console has exactly the same need: a
+ * Developer is frequently a CI or agent credential rather than a person, and a leaked one
+ * must not enumerate the team.
+ *
+ * The two lists are asserted separately, not compared, so a future change to one is a
+ * visible decision rather than a silently-following consequence.
  */
-it('keeps the account roster restricted where the organization plane has no opinion', function (): void {
-    $readers = array_map(
+it('restricts the roster on both planes, to the same shape', function (): void {
+    $accountReaders = array_map(
         fn (AccountRole $role): string => $role->value,
         array_values(array_filter(AccountRole::cases(), fn (AccountRole $role): bool => $role->canReadMembers())),
     );
+    $organizationReaders = array_map(
+        fn (MembershipRole $role): string => $role->value,
+        array_values(array_filter(MembershipRole::cases(), fn (MembershipRole $role): bool => $role->canReadMembers())),
+    );
 
-    expect($readers)->toBe(['owner', 'admin', 'viewer'])
-        ->and(method_exists(MembershipRole::class, 'canReadMembers'))->toBeFalse();
+    expect($accountReaders)->toBe(['owner', 'admin', 'viewer'])
+        ->and($organizationReaders)->toBe(['owner', 'admin', 'viewer'])
+        // The two technical roles are the ones being kept out, on both planes.
+        ->and(MembershipRole::Developer->canReadMembers())->toBeFalse()
+        ->and(MembershipRole::Member->canReadMembers())->toBeFalse();
 });
+
+/**
+ * `canWrite()` is still not environment management, now on both planes.
+ *
+ * The organization plane gained its own `canManageEnvironments()` rather than reusing
+ * `canWrite()`, because `canWrite()` admits the generic Member — the role every person
+ * placed in an organization carries by default — and standing up an environment grants a
+ * live environment-admin session on that tenant's host.
+ */
+it('keeps environment management narrower than write on the organization plane', function (): void {
+    $managers = array_map(
+        fn (MembershipRole $role): string => $role->value,
+        array_values(array_filter(MembershipRole::cases(), fn (MembershipRole $role): bool => $role->canManageEnvironments())),
+    );
+
+    expect($managers)->toBe(['owner', 'admin', 'developer'])
+        ->and(MembershipRole::Member->canWrite())->toBeTrue()
+        ->and(MembershipRole::Member->canManageEnvironments())->toBeFalse();
+});
+
+/**
+ * The mapping itself, pinned case by case — the one definition of how the two
+ * vocabularies line up, and the thing every later batch is measured against.
+ */
+it('maps every account role onto the organization plane', function (AccountRole $account, MembershipRole $expected): void {
+    expect($account->asMembershipRole())->toBe($expected);
+})->with([
+    'owner' => [AccountRole::Owner, MembershipRole::Owner],
+    'admin' => [AccountRole::Admin, MembershipRole::Admin],
+    'developer' => [AccountRole::Developer, MembershipRole::Developer],
+    'viewer' => [AccountRole::Viewer, MembershipRole::Viewer],
+    // The one that loses something. See the test below for exactly what.
+    'billing' => [AccountRole::Billing, MembershipRole::Viewer],
+]);
 
 /**
  * Ordering exists on one plane only. `AccountRole` has no `weight()`, so "highest role

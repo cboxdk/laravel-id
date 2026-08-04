@@ -17,6 +17,45 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Changed
+
+- **An account member's membership now says what they hold.** `attachSubject()` wrote a
+  neutral `MembershipRole::Member` for everybody, deliberately: `AccountRole` on the member
+  row was the single authority for account capabilities, and mirroring it would have been a
+  second truth to drift. That was right while the console asked the member row. The console
+  asks the MEMBERSHIP now, so a neutral role is not an abstention — it is the wrong answer
+  to the only question, and it made an account's own owner a plain member of the
+  organization they own. `AccountRole::asMembershipRole()` is the one definition of how the
+  two vocabularies line up; `setRole()` carries a change onto the membership so the two
+  cannot separate on the first role change; and `2026_08_06_000200` repairs the rows the
+  earlier backfill left neutral.
+
+  **`Billing` maps to `Viewer`,** which is the one case that loses something.
+  `MembershipRole` has no billing case and should not gain one: `canWrite()` is "not a
+  Viewer", so a new role would arrive holding write access to every organization on every
+  tenant, and correcting that changes what write means for everybody. Viewer keeps the
+  reachable half — reading the plan — and drops `canManageBilling()`, which no page and no
+  route in the product asks for.
+
+### Added
+
+- **`MembershipRole` gains the capability vocabulary the account plane needed.**
+  `canReadMembers()`, `canReadBilling()`, `canManageEnvironments()` and
+  `supportsEnvironmentScoping()`. None of these are account-specific: an organization's own
+  console has the same needs, and the roster restriction in particular is general — a
+  Developer is frequently a CI or agent credential rather than a person, and a leaked one
+  must not enumerate the team. `canManageEnvironments()` is deliberately NOT `canWrite()`,
+  which admits the generic `Member`: standing up an environment grants a live
+  environment-admin session on that tenant's host.
+
+### Fixed
+
+- **The last owner of an account can no longer be demoted.** `remove()` has always refused
+  to delete an owner, on the grounds that it could orphan the account; re-roling the same
+  owner to Admin orphaned it just as thoroughly and was allowed. It went unnoticed because
+  only the member row was written and nothing objected. Refused up front, before anything
+  is written, so the account and its organization cannot record different outcomes.
+
 ## [0.90.0] - 2026-08-04
 
 ### Removed

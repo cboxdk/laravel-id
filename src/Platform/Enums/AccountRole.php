@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\Enums;
 
+use Cbox\Id\Organization\Enums\MembershipRole;
+
 /**
  * A member's role on the account — the buyer plane's RBAC, modelled on Stripe's
  * team roles. Capabilities are deny-by-default: a role grants only what its methods
@@ -101,6 +103,36 @@ enum AccountRole: string
     public function supportsEnvironmentScoping(): bool
     {
         return ! ($this === self::Owner || $this === self::Admin);
+    }
+
+    /**
+     * The same authority, expressed on the organization plane.
+     *
+     * An account IS an organization in the platform root, so a member's place in it is an
+     * ordinary membership — and after the fold the membership is what the console asks.
+     * This is the one definition of how the two vocabularies line up, so the mapping
+     * cannot be re-derived differently by a caller that needs it.
+     *
+     * BILLING DOES NOT SURVIVE, and is mapped to Viewer rather than to a new organization
+     * role. `MembershipRole` has no billing case, and adding one would be worse than the
+     * loss: `canWrite()` is "not a Viewer", so a billing role would arrive holding write
+     * access to every organization's resources on every tenant, and correcting that means
+     * changing what `canWrite()` means for everyone. Viewer keeps the half of Billing that
+     * is reachable — reading the plan — and drops `canManageBilling()`, which no page and
+     * no route in the product asks for.
+     *
+     * Every other case maps to its namesake, and each namesake answers the same way to
+     * every predicate the console uses: see `docs/core-concepts/account-and-membership-roles.md`,
+     * and the mapping test that pins it.
+     */
+    public function asMembershipRole(): MembershipRole
+    {
+        return match ($this) {
+            self::Owner => MembershipRole::Owner,
+            self::Admin => MembershipRole::Admin,
+            self::Developer => MembershipRole::Developer,
+            self::Billing, self::Viewer => MembershipRole::Viewer,
+        };
     }
 
     /**

@@ -7,7 +7,6 @@ namespace Cbox\Id\Platform;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Organization\Contracts\Memberships;
-use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\AccountMembers;
 use Cbox\Id\Platform\Enums\AccountMemberStatus;
@@ -147,14 +146,20 @@ class DatabaseAccountMembers implements AccountMembers
             }
 
             if (is_string($organizationId) && $organizationId !== '') {
-                // Placement, not authorization. The membership is what puts the person
-                // inside the account's organization — which is what makes account SSO an
-                // ordinary connection on that org, and what domain verification scopes
-                // to. It carries a neutral role deliberately: AccountRole on the member
-                // is the single authority for account capabilities, and mirroring it here
-                // would create a second truth that drifts (and a last-owner deadlock the
-                // moment ownership is transferred).
-                $this->memberships->add($organizationId, $subjectId, MembershipRole::Member);
+                // Placement AND authority, which it did not used to be. This wrote a
+                // neutral `Member` for everybody, on the argument that `AccountRole` was
+                // the single authority and mirroring it here would create a second truth
+                // that drifts. That argument was right while the console asked the member
+                // row. The console asks the MEMBERSHIP now, so a neutral role written
+                // here is not a second truth — it is the wrong answer to the only
+                // question, and it made an account's owner a plain member of the
+                // organization they own.
+                //
+                // The drift the old comment feared is answered by there being one mapping
+                // ({@see AccountRole::asMembershipRole()}) rather than by refusing to map;
+                // the last-owner deadlock it feared is answered where ownership is
+                // transferred, by promoting the new owner before demoting the old.
+                $this->memberships->add($organizationId, $subjectId, $member->role->asMembershipRole());
             }
 
             return $subjectId;
@@ -175,6 +180,25 @@ class DatabaseAccountMembers implements AccountMembers
             return;
         }
 
+        // THE LAST OWNER IS NOT DEMOTABLE, checked before anything is written.
+        //
+        // `remove()` has always refused to delete an owner, on the grounds that it could
+        // orphan the account — but this let the same owner be re-roled to Admin, which
+        // orphans it just as thoroughly. It went unnoticed because the account row was the
+        // only thing being written and nothing objected.
+        //
+        // The organization's own `MembershipService::changeRole()` does object, now that
+        // the two are kept in step. Letting that exception escape from HERE would be worse
+        // than the original hole: the member row is written first, so the account would
+        // record a demotion the organization refused, and the two would disagree
+        // permanently. Refusing up front keeps them identical in every outcome.
+        //
+        // Ownership transfer is unaffected: it promotes the new owner FIRST, so by the
+        // time the old one is demoted there are two, and this is not the last.
+        if ($member->role === AccountRole::Owner && $role !== AccountRole::Owner && $this->soleOwner($member)) {
+            return;
+        }
+
         $member->role = $role;
 
         // A role that can't be scoped (owner/admin) always spans every environment —
@@ -183,11 +207,53 @@ class DatabaseAccountMembers implements AccountMembers
             $member->all_environments = true;
             $member->save();
             $member->environments()->detach();
+            $this->syncMembershipRole($member, $role);
 
             return;
         }
 
         $member->save();
+        $this->syncMembershipRole($member, $role);
+    }
+
+    /** Whether this member is the only Owner their account has left. */
+    private function soleOwner(AccountMember $member): bool
+    {
+        return AccountMember::query()
+            ->where('account_id', $member->account_id)
+            ->where('role', AccountRole::Owner)
+            ->whereKeyNot($member->id)
+            ->doesntExist();
+    }
+
+    /**
+     * Carry a role change onto the organization membership, which is what the console
+     * actually asks.
+     *
+     * Without this the two answers separate on the first role change: the member row
+     * would say Developer and the membership would still say whatever it was placed
+     * with, and every capability the console reads comes from the second one. A role
+     * change that does not change what the person can do is the worst kind of bug,
+     * because the screen confirms it worked.
+     *
+     * NOT A LAST-OWNER PROBLEM. `MembershipService::changeRole()` refuses to demote the
+     * final owner, and this can demote one — but only after the caller has already
+     * written the account role, and account ownership is transferred by promoting the new
+     * owner FIRST. The guard is therefore satisfied at the moment this runs; if it is
+     * ever not, the exception is the correct outcome rather than a silent divergence.
+     */
+    private function syncMembershipRole(AccountMember $member, AccountRole $role): void
+    {
+        $organizationId = $member->account?->organization_id;
+        $subjectId = $member->subject_id;
+
+        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
+            return;
+        }
+
+        $this->platformRoot->run(function () use ($organizationId, $subjectId, $role): void {
+            $this->memberships->changeRole($organizationId, $subjectId, $role->asMembershipRole());
+        });
     }
 
     public function setEnvironmentAccess(string $id, bool $all, array $environmentIds = []): void
