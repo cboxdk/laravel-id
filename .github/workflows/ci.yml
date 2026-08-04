@@ -48,8 +48,16 @@ jobs:
       - name: PHPStan
         if: matrix.testbench == '^11.0'
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+      # `-d memory_limit` is not optional, for the same reason it is not on PHPStan
+      # above. This suite builds the FULL schema several times in one process — the
+      # rollback test alone does it three times, and each backfill test brings its own
+      # throwaway database — and 128M (the PHP default, and what a developer machine
+      # typically has) is not enough. Without this the step passes only on a runner
+      # whose php.ini happens to be generous, and elsewhere dies with a fatal inside
+      # whichever migration happened to be running, which reads as a broken migration
+      # rather than as an exhausted process.
       - name: Pest
-        run: vendor/bin/pest
+        run: php -d memory_limit=1G vendor/bin/pest
       - name: Security audit
         run: composer audit --no-dev
       - name: License compliance
@@ -211,7 +219,7 @@ jobs:
       # survived the run. down() is proved by the next step instead — do not read this
       # one as covering it.
       - name: Migrations up
-        run: vendor/bin/pest tests/Feature/Kernel/Audit/AuditLogTest.php
+        run: php -d memory_limit=1G vendor/bin/pest tests/Feature/Kernel/Audit/AuditLogTest.php
         env:
           CBOX_ID_TEST_MIGRATE_EACH: "1"
       # ...AND ALL THE WAY BACK DOWN, WITH THE DATABASE ASSERTED EMPTY AFTERWARDS.
@@ -232,7 +240,7 @@ jobs:
       # the schema is precisely the part of it that is known-good, so there is no
       # reason to leave the one engine out of the check that covers the schema.
       - name: Migrations down (database asserted empty afterwards)
-        run: vendor/bin/pest --group=migrations-rollback
+        run: php -d memory_limit=1G vendor/bin/pest --group=migrations-rollback
         env:
           # Its own credential: it creates a throwaway database, which costs root on
           # MySQL/MariaDB. See `rollback_user` in the matrix above.
@@ -276,4 +284,4 @@ jobs:
       # above, under the credential it needs; running it a second time as `laravel`
       # would fail the MySQL cell on a privilege it deliberately does not have.
       - name: Pest
-        run: vendor/bin/pest --exclude-group=migrations-rollback
+        run: php -d memory_limit=1G vendor/bin/pest --exclude-group=migrations-rollback
