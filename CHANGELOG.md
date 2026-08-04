@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.91.1] - 2026-08-04
+
 ### Changed
 
 - **`AccountRole::Billing` can no longer be assigned.** 0.91.0 mapped it to `Viewer` and
