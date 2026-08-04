@@ -62,6 +62,42 @@ function legacyAccount(string $name): string
     return $id;
 }
 
+/**
+ * A member as `attachSubject()` left it on an unhomed account: linked to a subject, but
+ * placed in no organization, because the account had none to place them in.
+ */
+function legacyMember(string $accountId, ?string $subjectId, string $email, string $role = 'owner'): string
+{
+    $id = strtolower((string) Str::ulid());
+
+    DB::table('account_members')->insert([
+        'id' => $id,
+        'account_id' => $accountId,
+        'subject_id' => $subjectId,
+        'email' => $email,
+        'name' => 'Legacy',
+        // The local bootstrap hash the column still requires. Never verified against here
+        // — these members are linked to a subject, which is where their credential lives.
+        'password' => '$2y$12$'.str_repeat('x', 53),
+        'role' => $role,
+        'status' => 'active',
+        'all_environments' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return $id;
+}
+
+/**
+ * @return list<object{organization_id: string, user_id: string, role: string, environment_id: string}>
+ */
+function membershipsOf(string $subjectId): array
+{
+    /** @var list<object{organization_id: string, user_id: string, role: string, environment_id: string}> */
+    return DB::table('memberships')->where('user_id', $subjectId)->get()->all();
+}
+
 function homeOf(string $accountId): ?string
 {
     $value = DB::table('accounts')->where('id', $accountId)->value('organization_id');
@@ -185,6 +221,73 @@ it('leaves an already-homed account alone', function (): void {
 
     expect(homeOf($accountId))->toBe($organizationId)
         ->and(DB::table('organizations')->count())->toBe($organizations);
+});
+
+it('places the account\'s people inside the organization it just created', function (): void {
+    // THE HALF THAT IS VISIBLE. `attachSubject()` writes a membership only when the
+    // account already has an organization, and none of them did — so homing the account
+    // without this leaves every member belonging nowhere, the console resolves no acting
+    // organization, and the account's own area hides itself. Homing alone fixes nothing a
+    // person can see.
+    $accountId = legacyAccount('Acme');
+    $subjectId = strtolower((string) Str::ulid());
+    legacyMember($accountId, $subjectId, 'owner@acme.test');
+
+    expect(membershipsOf($subjectId))->toBe([]);
+
+    homeBackfill()->up();
+
+    $memberships = membershipsOf($subjectId);
+    $root = DB::table('environments')->where('is_default', true)->value('id');
+
+    expect($memberships)->toHaveCount(1)
+        ->and($memberships[0]->organization_id)->toBe(homeOf($accountId))
+        // Memberships are environment-owned, and the tenancy kernel is deny-by-default:
+        // one filed under any other environment is invisible where it is read.
+        ->and($memberships[0]->environment_id)->toBe($root);
+});
+
+it('gives the membership a neutral role, not the account role', function (): void {
+    // Copied from `attachSubject()` and for its reasons: the membership is placement, not
+    // authorization. AccountRole on the member row stays the single authority, so this
+    // says `member` even for an OWNER — mirroring it would be a second truth that drifts,
+    // and a last-owner deadlock the first time ownership is transferred.
+    $accountId = legacyAccount('Acme');
+    $subjectId = strtolower((string) Str::ulid());
+    legacyMember($accountId, $subjectId, 'owner@acme.test', role: 'owner');
+
+    homeBackfill()->up();
+
+    expect(membershipsOf($subjectId)[0]->role)->toBe('member');
+});
+
+it('skips a member that never got a subject', function (): void {
+    // The first-install bootstrap window leaves member rows unlinked. `memberships.user_id`
+    // names a subject, so there is no honest value to write for one — and minting a
+    // credential-less subject inside a migration is a worse answer than leaving the row
+    // where an operator can see it.
+    $accountId = legacyAccount('Acme');
+    legacyMember($accountId, null, 'unlinked@acme.test');
+
+    homeBackfill()->up();
+
+    expect(homeOf($accountId))->toBeString()
+        ->and(DB::table('memberships')->count())->toBe(0);
+});
+
+it('adds no second membership on a re-run', function (): void {
+    $accountId = legacyAccount('Acme');
+    $subjectId = strtolower((string) Str::ulid());
+    legacyMember($accountId, $subjectId, 'owner@acme.test');
+
+    homeBackfill()->up();
+    homeBackfill()->up();
+
+    // Named for what it proves. It does NOT reach the already-a-member guard inside
+    // `placeMembers()` — deleting that guard leaves this green — because the second run
+    // never gets that far: the account is homed by then, so the outer select skips it.
+    // The guard is for a concurrent writer and is documented as untested where it lives.
+    expect(membershipsOf($subjectId))->toHaveCount(1);
 });
 
 it('does nothing at all on a deployment with no platform root', function (): void {

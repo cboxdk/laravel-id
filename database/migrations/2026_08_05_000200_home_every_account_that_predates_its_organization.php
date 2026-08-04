@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\PlatformRoot;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -29,8 +30,9 @@ use Illuminate\Support\Str;
  * both suites builds its account through `AccountProvisioner::provision()`, and that
  * homes the account on the way past. The only way to hold an unhomed account is to have
  * created it before this column existed, which no test does and every real deployment
- * did. The accompanying test provisions one and then un-homes it, so the gap has a
- * fixture at last.
+ * did. The accompanying test INSERTS the bare legacy rows rather than provisioning a
+ * healthy account and damaging it — the damaged state is the real one, and reconstructing
+ * it would mean guessing which of the organization's rows to take back out.
  *
  * It is also not only a legacy problem: `homeAccount()` returns SILENTLY when there is
  * no platform root yet, which is exactly the window the installer and the first-run
@@ -133,7 +135,89 @@ return new class extends Migration
                     ->where('id', $account->id)
                     ->whereNull('organization_id')
                     ->update(['organization_id' => $organizationId, 'updated_at' => $now]);
+
+                $this->placeMembers($account->id, $organizationId, $root, $now);
             });
+        }
+    }
+
+    /**
+     * Put the account's people inside the organization it was just given.
+     *
+     * HOMING THE ACCOUNT IS ONLY HALF OF IT, and the other half is the half that is
+     * visible. {@see DatabaseAccountMembers::attachSubject()} writes both — the subject
+     * and its membership — but it reads `accounts.organization_id` to know where to put
+     * the membership, and skips it when that is null. Which it was, for every account,
+     * because the column was never backfilled. So one missing backfill produced two
+     * defects: an account with no organization, and every member of it with no membership
+     * anywhere.
+     *
+     * The second is what a person actually runs into. The console resolves the ACTING
+     * organization from the signed-in subject's memberships; with none, there is no acting
+     * organization, so the account's own area compares its organization against null and
+     * hides itself. Homing the account alone fixes nothing anyone can see — which is
+     * exactly what this looked like on the dev database until the outcome, rather than the
+     * migration's own assertions, was the thing checked.
+     *
+     * NEUTRAL ROLE, copied from `attachSubject()` rather than derived from `AccountRole`,
+     * and for its reasons: the membership is placement, not authorization. `AccountRole`
+     * on the member row is the single authority for account capabilities, and mirroring it
+     * here would be a second truth that drifts — and a last-owner deadlock the first time
+     * ownership is transferred.
+     *
+     * A member with no subject is SKIPPED, not invented. `memberships.user_id` names a
+     * subject; there is no honest value to write for a member row that never got one (the
+     * first-install bootstrap window leaves them like that), and minting a credential-less
+     * subject inside a migration is a worse answer than leaving the row visible.
+     */
+    private function placeMembers(mixed $accountId, string $organizationId, string $root, Carbon $now): void
+    {
+        // The `whereNotNull` is a narrowing, not the guard — `pluck` yields mixed and the
+        // `is_string` below is what actually refuses an unlinked member. Both are kept
+        // because the query should not fetch rows the loop will drop, but only one of them
+        // is load-bearing, and deleting the other does not turn a test red.
+        $members = DB::table('account_members')
+            ->where('account_id', $accountId)
+            ->whereNotNull('subject_id')
+            ->where('subject_id', '!=', '')
+            ->pluck('subject_id');
+
+        foreach ($members as $subjectId) {
+            if (! is_string($subjectId) || $subjectId === '') {
+                continue;
+            }
+
+            // UNREACHABLE IN ONE PROCESS, and kept anyway. A re-run never arrives here at
+            // all — the caller's select filters on `organization_id IS NULL`, so a homed
+            // account is skipped long before this — and no single-threaded path can place
+            // a member in an organization that did not exist a moment ago. What it catches
+            // is a concurrent writer: a signup, or a second deploy, placing a member
+            // between this account being homed and its people being moved.
+            //
+            // Without it that case raises on the `(organization_id, user_id)` unique key,
+            // and a migration that raises is a deploy that stops half way. So it has no
+            // test, for the same reason the `whereNull` above has none, and it says so
+            // rather than sitting next to the re-run test as if that proved it.
+            $held = DB::table('memberships')
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $subjectId)
+                ->exists();
+
+            if ($held) {
+                continue;
+            }
+
+            DB::table('memberships')->insert([
+                'id' => strtolower((string) Str::ulid()),
+                'environment_id' => $root,
+                'organization_id' => $organizationId,
+                'user_id' => $subjectId,
+                'role' => 'member',
+                'status' => 'active',
+                'invited_by' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
         }
     }
 
