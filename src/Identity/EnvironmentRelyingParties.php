@@ -91,6 +91,22 @@ class EnvironmentRelyingParties implements RelyingParties
             return false;
         }
 
+        // BOTH halves. The id is what an authenticator scopes a credential to; the ORIGIN
+        // is what `NativeWebAuthnVerifier` compares byte-for-byte against the browser's
+        // clientDataJSON. A pin whose id covers the host but whose origin does not is the
+        // jointly-impossible pair `RelyingParty`'s own docblock warns about, and it is what
+        // an operator produces by following "usually the registrable domain" for BOTH keys:
+        // `rp_id=acme.com`, `origin=https://acme.com`, on an environment serving
+        // `id.acme.com`. Validating the id alone let that pin win, and then every
+        // registration and every assertion failed with "origin mismatch".
+        //
+        // A pin whose origin names a different host is not a preference this deployment can
+        // honour — it is a statement about a host that is not the one answering — so it
+        // loses to the derived pair rather than guaranteeing a rejected ceremony.
+        if ($pinned->host() !== $host) {
+            return false;
+        }
+
         return $host === $pinned->id || str_ends_with($host, '.'.$pinned->id);
     }
 

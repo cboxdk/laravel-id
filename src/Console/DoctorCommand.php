@@ -8,6 +8,7 @@ use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\EnvironmentRelyingParties;
 use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
@@ -234,6 +235,7 @@ class DoctorCommand extends Command
     private function checkWebAuthn(): void
     {
         $parties = $this->laravel->make(RelyingParties::class);
+        $issuers = $this->laravel->make(IssuerResolver::class);
 
         try {
             $current = $parties->current();
@@ -260,19 +262,31 @@ class DoctorCommand extends Command
             return;
         }
 
-        // BOTH halves, not just the origin. The pair that strands users has IDENTICAL
-        // origins and differs only in the id — an operator who pinned the registrable
-        // domain, as our own docs advise, on an environment that owns its host. Comparing
-        // origins alone reported "(pinned)" while the pin was not the answer in force,
-        // which is the one state this check exists to name.
-        $pinned->origin === $current->origin && $pinned->id === $current->id
+        // Compared against the HOST, not against `$current`. Comparing the two parties was
+        // structurally unable to name the state it was written for: once a pin wins,
+        // `$current` IS `$pinned`, so both halves are identical by construction and the
+        // check reported OK for every pin that won — including one that wins and then
+        // fails every ceremony.
+        //
+        // The question an operator needs answered is whether the pin matches the host that
+        // will actually answer here, so that is what is asked. A pin whose origin names a
+        // different host is refused by `EnvironmentRelyingParties` and reported below; a
+        // pin that is in force is confirmed against the host rather than against itself.
+        $host = $issuers->canonicalHost();
+
+        $inForce = $pinned->id === $current->id && $pinned->origin === $current->origin;
+        $reaches = $host === null || ($pinned->host() === $host
+            && ($host === $pinned->id || str_ends_with($host, '.'.$pinned->id)));
+
+        $inForce && $reaches
             ? $this->addOk('Passkeys (WebAuthn)', "rp_id {$current->id} (pinned)")
             : $this->addWarn(
                 'Passkeys (WebAuthn)',
                 "The pin is rp_id {$pinned->id} at {$pinned->origin}, but ceremonies in this "
-                ."environment run as rp_id {$current->id} at {$current->origin}. A credential enrolled "
-                .'under the pinned id will not be offered here. Unset both keys unless this deployment '
-                .'really does serve passkeys from exactly one origin.',
+                ."environment run as rp_id {$current->id} at {$current->origin}, on host "
+                .($host ?? '(the configured issuer)').'. A credential enrolled under a different id is '
+                .'never offered, and an origin the browser does not report fails every ceremony. Unset '
+                .'both keys unless this deployment really does serve passkeys from exactly one origin.',
             );
     }
 

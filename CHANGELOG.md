@@ -45,6 +45,26 @@ more trust than the wording it removes.
   `activate()` now revokes alongside the credential write, for the same reason
   `resetPassword()` does.
 
+## [0.89.1] - 2026-08-04
+
+### Fixed
+
+- **A pinned relying party could win with an origin no browser reports.** 0.89.0 let a pin
+  survive where it was a valid answer for the environment's host — but it validated only
+  the `rp_id`, not the origin. The id is what an authenticator scopes a credential to; the
+  ORIGIN is what the verifier compares byte-for-byte against the browser's
+  `clientDataJSON`. An operator following our own advice to pin "usually the registrable
+  domain" for BOTH keys — `rp_id=acme.com`, `origin=https://acme.com`, on an environment
+  serving `id.acme.com` — got a pin that won and then failed every registration and every
+  assertion with "origin mismatch". `RelyingParty`'s own docblock warns that the pair can
+  be individually plausible and jointly impossible; the guard checked one member of it.
+
+- **`cbox-id:doctor` could not name that state, by construction.** It compared the pinned
+  party against the party in force — and once a pin wins, those are the same object, so
+  both halves matched and it reported OK for every pin that won, including one that fails
+  every ceremony. It now compares the pin against the HOST that will actually answer,
+  which is the question an operator needs answered.
+
 ## [0.89.0] - 2026-08-04
 
 ### Fixed

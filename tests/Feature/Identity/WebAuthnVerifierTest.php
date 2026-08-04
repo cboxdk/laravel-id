@@ -422,3 +422,40 @@ it('refuses a shared pin on a tenant host under a base domain', function (): voi
             ->toBe('acme.cboxid.com', 'one tenant\'s passkey would be offered on another tenant\'s page');
     });
 })->group('security');
+
+/**
+ * A pin must cover BOTH halves, or it must lose.
+ *
+ * The id is what an authenticator scopes a credential to; the ORIGIN is what the verifier
+ * compares byte-for-byte against the browser's clientDataJSON. Validating only the id let
+ * a pin win with an origin the browser never reports — and an operator produces exactly
+ * that by following "usually the registrable domain" for both keys: `rp_id=acme.com`,
+ * `origin=https://acme.com`, on an environment serving `id.acme.com`. Every registration
+ * and every assertion then failed with "origin mismatch".
+ *
+ * The doctor could not name it either: once the pin wins, `current()` IS the pin, so
+ * comparing the two answers compares a value with itself.
+ */
+it('refuses a pin whose origin names a host this environment does not answer on', function (): void {
+    config([
+        'cbox-id.webauthn.rp_id' => 'acme.com',
+        'cbox-id.webauthn.origin' => 'https://acme.com',
+        'cbox-id.environments.base_domains' => [],
+    ]);
+
+    $environment = Environment::query()->create([
+        'name' => 'Acme', 'slug' => 'acme', 'status' => 'active',
+        'is_default' => false, 'domain' => 'id.acme.com',
+        'domain_verified_at' => now(), 'settings' => [],
+    ]);
+
+    app(EnvironmentContext::class)->runAs(
+        GenericEnvironment::of($environment->id),
+        function (): void {
+            $party = app(RelyingParties::class)->current();
+
+            expect($party->origin)->toBe('https://id.acme.com', 'a pin won with an origin no browser reports here')
+                ->and($party->id)->toBe('id.acme.com');
+        },
+    );
+})->group('security');
