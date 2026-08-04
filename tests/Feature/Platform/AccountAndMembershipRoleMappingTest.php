@@ -161,7 +161,31 @@ it('orders membership roles and leaves account roles unordered', function (): vo
         ->and(MembershipRole::Member->outranks(MembershipRole::Viewer))->toBeTrue()
         ->and(MembershipRole::Viewer->outranks(MembershipRole::Viewer))->toBeFalse()
         ->and(method_exists(AccountRole::class, 'weight'))->toBeFalse()
-        // …and only the account plane withholds Owner from assignment.
+        // …and only the account plane withholds roles from assignment. Which roles, and
+        // why each is withheld, is asserted on its own below.
         ->and(array_map(fn (AccountRole $r): string => $r->value, AccountRole::assignable()))
-        ->toBe(['admin', 'billing', 'developer', 'viewer']);
+        ->toBe(['admin', 'developer', 'viewer']);
 });
+
+/**
+ * The role that cannot be handed out any more, and the reason — which is not the reason
+ * that was first written down.
+ *
+ * `Billing → Viewer` was described as losing only `canManageBilling()`, which nothing
+ * asks for. That was incomplete: it also GAINS the member roster, because a Viewer may
+ * read it and a Billing role may not. The console's role/page matrix in the host app is
+ * what caught it. No organization role both reads the plan and refuses the roster, so the
+ * mapping cannot be made faithful — and widening access to PII is the wrong direction to
+ * fail in.
+ */
+it('no longer offers a role it cannot honour', function (): void {
+    expect(AccountRole::assignable())->not->toContain(AccountRole::Billing)
+        // Still refused on the account plane, so an existing holder is unchanged…
+        ->and(AccountRole::Billing->canReadMembers())->toBeFalse()
+        // …and this is what a mapped one would have gained.
+        ->and(AccountRole::Billing->asMembershipRole()->canReadMembers())->toBeTrue();
+
+    // Owner stays out for its own, older reason: transfer is deliberate, not a dropdown.
+    expect(AccountRole::assignable())->not->toContain(AccountRole::Owner)
+        ->and(AccountRole::assignable())->toBe([AccountRole::Admin, AccountRole::Developer, AccountRole::Viewer]);
+})->group('security');

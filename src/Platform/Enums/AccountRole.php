@@ -136,14 +136,27 @@ enum AccountRole: string
     }
 
     /**
-     * Roles a member with a management role may assign. Owner is deliberately
-     * excluded — ownership transfer is a separate, deliberate action, never a
-     * casual role change.
+     * Roles a member with a management role may assign.
+     *
+     * OWNER is deliberately excluded — ownership transfer is a separate, deliberate
+     * action, never a casual role change.
+     *
+     * BILLING is excluded too, and that is newer. An account is an organization and a
+     * member's authority over it is their membership, so every account role has to be
+     * expressible as a {@see MembershipRole} — and Billing is not. Mapping it to Viewer
+     * (see {@see asMembershipRole()}) does not merely drop `canManageBilling()`, which
+     * nothing asks for: it also GRANTS the member roster, because a Viewer may read it and
+     * a Billing role may not. Widening access to PII is the wrong direction to fail in, and
+     * no organization role both reads the plan and refuses the roster, so the honest answer
+     * is to stop offering a role that cannot be honoured rather than to honour it loosely.
+     *
+     * The case itself remains: rows that already carry it keep working, and removing an
+     * enum case would break their cast. It simply cannot be handed out any more.
      *
      * @return list<self>
      */
     public static function assignable(): array
     {
-        return [self::Admin, self::Billing, self::Developer, self::Viewer];
+        return [self::Admin, self::Developer, self::Viewer];
     }
 }

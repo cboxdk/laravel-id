@@ -17,6 +17,17 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Changed
+
+- **`AccountRole::Billing` can no longer be assigned.** 0.91.0 mapped it to `Viewer` and
+  described that as losing only `canManageBilling()`, which nothing asks for. That was
+  incomplete, and the host console's role/page matrix is what caught it: a Viewer may read
+  the member roster and a Billing role may not, so the mapping GRANTS access to PII rather
+  than merely dropping an unreachable capability. No organization role both reads the plan
+  and refuses the roster, so the mapping cannot be made faithful — and widening access to
+  PII is the wrong direction to fail in. The case remains, so rows that already carry it
+  keep casting and keep their account-plane refusal; it is simply no longer offered.
+
 ## [0.91.0] - 2026-08-04
 
 ### Changed
