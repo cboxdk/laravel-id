@@ -127,7 +127,19 @@ it('does not let the per-request memo out-live the request', function (): void {
     // for the life of the worker.
     app()->forgetScopedInstances();
 
-    expect($reader->get('org_memo', 'plan'))->toBeNull();
+    // …and the NEXT request establishes its environment, which is the half of the
+    // boundary this test used to skip. EnvironmentContext is scoped too, so the call
+    // above also cleared it, and every key this class builds runs through envId():
+    // without re-establishing it the read below is keyed `global:` instead of
+    // `env_test:`, misses the memo whether or not the memo was dropped, and returns null
+    // for the wrong reason. The assertion passed with the drop branch deleted.
+    $this->actingAsEnvironment('env_test');
+
+    expect($reader->get('org_memo', 'plan'))->toBeNull(
+        'The memo survived the request that filled it. On Octane that worker keeps '
+        .'granting a cancelled plan for its lifetime, which is the exact failure the '
+        .'version-tagged keys exist to prevent.',
+    );
 });
 
 it('isolates the cache per organization', function (): void {

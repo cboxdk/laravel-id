@@ -12,6 +12,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Otp\ChannelRegistry;
+use Cbox\Id\Platform\PlatformRoot;
 use Cbox\Id\Provisioning\HttpScimClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -371,5 +372,48 @@ it('drops a singleton memo once the request that filled it has ended', function 
         .'goes on minting tokens with an `iss` the tenant no longer publishes, while a cold '
         .'worker serves the new one from discovery — so relying-party validation fails on '
         .'a fraction of requests and on no reproducible pattern.',
+    );
+})->group('security');
+
+/**
+ * The same again for {@see PlatformRoot}, which is not even a singleton: it is
+ * constructor-injected into three ({@see DatabaseAccountMembers},
+ * {@see DatabasePlatformOperators}, {@see AccountProvisioner}), so every holder gets its
+ * own copy and an instance memo there is per-HOLDER rather than per-request. Nothing in
+ * the suite held one across a request boundary, so the entire run passed with the
+ * lifetime comparison in `model()` deleted.
+ *
+ * Moving the platform root is a supported operation, not a thought experiment:
+ * {@see Environment::makeDefault()} re-stamps it and drops the caches it knows about —
+ * none of which can reach a memo living in another process. The platform root is where
+ * the platform's OWN people are written, so a worker warm across the move goes on filing
+ * operators and account members in the environment that used to be the root.
+ */
+it('sees the platform root move once the request that memoised it has ended', function (): void {
+    $first = Environment::create(['name' => 'Root', 'slug' => 'root-first', 'is_default' => true]);
+    $second = Environment::create(['name' => 'Next', 'slug' => 'root-next', 'is_default' => false]);
+
+    // Held the way those three singletons hold it. PlatformRoot has no binding, so the
+    // container builds a fresh one per resolve — asking app() again would hand back an
+    // empty memo and prove nothing about this one.
+    $held = app(PlatformRoot::class);
+
+    expect($held->model()?->id)->toBe($first->id);
+
+    // ANOTHER process re-homes the root. Its own model instance, so all this one is left
+    // with is the rows.
+    Environment::query()->findOrFail($second->id)->makeDefault();
+
+    // Still the same request: which environment is the root cannot change under a request
+    // that already asked, and answering from the memo here is the point of having one.
+    expect($held->model()?->id)->toBe($first->id);
+
+    app()->forgetScopedInstances();
+
+    expect($held->model()?->id)->toBe(
+        $second->id,
+        'The held PlatformRoot kept the previous request\'s root. Every operator and '
+        .'account member this worker writes from now on lands in the environment that '
+        .'used to be the platform root.',
     );
 })->group('security');

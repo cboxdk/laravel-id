@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\BreachedPasswordCheck;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
+use Cbox\Id\Identity\DatabaseAuthPolicies;
 use Cbox\Id\Identity\Enums\MfaRequirement;
 use Cbox\Id\Identity\Enums\SsoEnforcement;
 use Cbox\Id\Identity\Exceptions\PolicyViolation;
@@ -288,6 +289,49 @@ it('sees a policy change made after it was first read', function (): void {
     $policies->clearForOrganization('org_fresh');
     expect($policies->overrideFor('org_fresh'))->toBeNull();
 });
+
+/**
+ * …and the same across a REQUEST boundary, which the test above cannot show: it writes
+ * through this instance, and every setter empties the memos on its way past. So the whole
+ * file passed with the lifetime comparison in `dropMemoFromAnEarlierRequest()` deleted.
+ *
+ * The failure it guards needs a second writer. An operator raises the floor on one worker;
+ * every worker already warm keeps serving the LOOSER policy to whoever lands on it, for as
+ * long as it stays up — the wrong direction for a floor that only ever tightens, and
+ * invisible on php-fpm because the process ends with the request.
+ */
+it('drops both policy memos once the request that filled them has ended', function (): void {
+    // Whoever captured this keeps THIS object for the life of the process — four policy
+    // enforcers constructor-inject it, which is why `scoped` would not have helped.
+    $policies = app(AuthPolicies::class);
+
+    $policies->setForEnvironment(new AuthPolicy(minLength: 8));
+    $policies->setForOrganization('org_warm', new AuthPolicy(minLength: 20));
+
+    expect($policies->forEnvironment()->minLength)->toBe(8)
+        ->and($policies->overrideFor('org_warm')?->minLength)->toBe(20);
+
+    // ANOTHER worker tightens both. Its own instance, so all this one is left with is the
+    // rows — exactly what a second php-fpm process or Octane worker leaves behind.
+    $elsewhere = new DatabaseAuthPolicies;
+    $elsewhere->setForEnvironment(new AuthPolicy(minLength: 16));
+    $elsewhere->setForOrganization('org_warm', new AuthPolicy(minLength: 32));
+
+    // Still the same request: answering the warm values here is the memo working, not a bug.
+    expect($policies->forEnvironment()->minLength)->toBe(8)
+        ->and($policies->overrideFor('org_warm')?->minLength)->toBe(20);
+
+    app()->forgetScopedInstances();
+
+    // The next request establishes its environment before any policy is read. Both memos
+    // are keyed by the environment key, so skipping this leaves the reads below looking up
+    // a '' key they never wrote — a miss whether or not the memo was dropped, and an
+    // assertion that passes for the wrong reason.
+    $this->actingAsEnvironment('env_test');
+
+    expect($policies->forEnvironment()->minLength)->toBe(16, 'the baseline memo outlived its request')
+        ->and($policies->overrideFor('org_warm')?->minLength)->toBe(32, 'the override memo outlived its request');
+})->group('security');
 
 /**
  * One process legitimately visits several environments — a queue worker draining jobs for
