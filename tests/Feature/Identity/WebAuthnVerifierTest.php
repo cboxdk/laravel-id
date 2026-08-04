@@ -17,7 +17,9 @@ use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Identity\NativeWebAuthnVerifier;
 use Cbox\Id\Identity\ValueObjects\RelyingParty;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -360,3 +362,63 @@ describe('the Relying Party is per environment, not per deployment', function ()
         expect((new EnvironmentRelyingParties(app(IssuerResolver::class)))->pinned())->toBeNull();
     });
 });
+
+/**
+ * An upgrade must not strand the passkeys an on-prem deployment already has.
+ *
+ * `docs/configuration/environment-variables.md` tells operators to pin the registrable
+ * domain — `rp_id=acme.com` for a deployment serving `id.acme.com`. WebAuthn allows that:
+ * an RP id may be the origin's host or a registrable suffix of it. So the pin is correct,
+ * in force, and has credentials enrolled against it.
+ *
+ * Deriving the id from the host regardless would move it to `id.acme.com`, and an
+ * authenticator is never even OFFERED a credential scoped to a different id. Every passkey
+ * holder is locked out silently, and there is no way back: no credential stores the id it
+ * was enrolled under.
+ */
+it('keeps a registrable-suffix pin on a deployment that owns its host', function (): void {
+    config([
+        'cbox-id.webauthn.rp_id' => 'acme.com',
+        'cbox-id.webauthn.origin' => 'https://id.acme.com',
+        'cbox-id.environments.base_domains' => [],
+    ]);
+
+    $environment = Environment::query()->create([
+        'name' => 'Acme', 'slug' => 'acme', 'status' => 'active',
+        'is_default' => false, 'domain' => 'id.acme.com',
+        // VERIFIED. Unverified, the environment has no issuer of its own, `canonicalHost()`
+        // answers null and the pin wins two branches earlier — so the assertion below would
+        // pass without ever reaching the rule it claims to be about.
+        'domain_verified_at' => now(), 'settings' => [],
+    ]);
+
+    app(EnvironmentContext::class)->runAs(GenericEnvironment::of($environment->id), function (): void {
+        expect(app(RelyingParties::class)->current()->id)
+            ->toBe('acme.com', 'an upgrade silently locked out every existing passkey holder');
+    });
+})->group('security');
+
+/**
+ * The other half, and the reason a suffix cannot simply always win: under a configured
+ * base domain, a shared id would offer one tenant's passkey on another tenant's sign-in
+ * page. Nothing is stranded there — a tenant passkey could never enrol in the first place,
+ * because registration compared the browser's origin against the single pinned one.
+ */
+it('refuses a shared pin on a tenant host under a base domain', function (): void {
+    config([
+        'cbox-id.webauthn.rp_id' => 'cboxid.com',
+        'cbox-id.webauthn.origin' => 'https://cboxid.com',
+        'cbox-id.environments.base_domains' => ['cboxid.com'],
+    ]);
+
+    $environment = Environment::query()->create([
+        'name' => 'Acme', 'slug' => 'acme', 'status' => 'active',
+        'is_default' => false, 'domain' => 'acme.cboxid.com',
+        'domain_verified_at' => now(), 'settings' => [],
+    ]);
+
+    app(EnvironmentContext::class)->runAs(GenericEnvironment::of($environment->id), function (): void {
+        expect(app(RelyingParties::class)->current()->id)
+            ->toBe('acme.cboxid.com', 'one tenant\'s passkey would be offered on another tenant\'s page');
+    });
+})->group('security');

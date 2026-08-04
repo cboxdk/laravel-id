@@ -45,9 +45,71 @@ class EnvironmentRelyingParties implements RelyingParties
         // on every install, so a pin that always won would leave this fix inert on
         // precisely the deployments that already have one. `cbox-id:doctor` reports which
         // answer is in force.
-        return $pinned !== null && $this->issuers->canonicalHost() === null
-            ? $pinned
-            : $this->derived();
+        if ($pinned === null) {
+            return $this->derived();
+        }
+
+        if ($this->issuers->canonicalHost() === null) {
+            return $pinned;
+        }
+
+        // …and it ALSO holds where it is still a valid answer for the host in front of us.
+        //
+        // WebAuthn allows an RP id to be the origin's host OR a registrable suffix of it,
+        // and `docs/configuration/environment-variables.md` tells operators to pin "usually
+        // the registrable domain". So an on-prem deployment that followed our own advice —
+        // `rp_id=acme.com`, the one environment serving `id.acme.com` — has a pin that is
+        // correct, in force, and has credentials enrolled against it.
+        //
+        // Overriding it would move the id to `id.acme.com`, and an authenticator is never
+        // even OFFERED a credential scoped to a different id: every passkey holder on that
+        // deployment is locked out silently, with no error to read and no way back, because
+        // no credential stores the id it was enrolled under.
+        //
+        // A suffix cannot simply always win, though. In the subdomain SaaS shape, honouring
+        // `cboxid.com` on `acme.cboxid.com` offers one tenant's passkey on another tenant's
+        // sign-in page. So the question is not "is the pin a suffix" but "is this host a
+        // TENANT host" — a label under a configured base domain. On one, the pin loses and
+        // nothing is stranded, because a tenant passkey could never have enrolled there in
+        // the first place: registration compared the browser's origin against the single
+        // pinned one and always failed. That is the bug this whole change exists to fix.
+        return $this->pinCoversHost($pinned) ? $pinned : $this->derived();
+    }
+
+    /**
+     * Whether the pinned party is a valid — and safe — answer for the environment's host.
+     *
+     * Valid: the host is the pinned id, or a subdomain of it (WebAuthn's registrable-suffix
+     * rule). Safe: the host is not a tenant label under a configured base domain, where a
+     * shared id would span tenants.
+     */
+    private function pinCoversHost(RelyingParty $pinned): bool
+    {
+        $host = $this->issuers->canonicalHost();
+
+        if ($host === null || $this->isTenantHost($host)) {
+            return false;
+        }
+
+        return $host === $pinned->id || str_ends_with($host, '.'.$pinned->id);
+    }
+
+    /** Whether this host is a label under one of the deployment's tenant base domains. */
+    private function isTenantHost(string $host): bool
+    {
+        $bases = config('cbox-id.environments.base_domains', []);
+
+        if (! is_array($bases)) {
+            return false;
+        }
+
+        foreach ($bases as $base) {
+            if (is_string($base) && $base !== '' && str_ends_with($host, '.'.mb_strtolower(ltrim(trim($base), '.')))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

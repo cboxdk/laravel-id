@@ -45,6 +45,48 @@ more trust than the wording it removes.
   `activate()` now revokes alongside the credential write, for the same reason
   `resetPassword()` does.
 
+## [0.89.0] - 2026-08-04
+
+### Fixed
+
+- **The canonical-issuer redirect held the whole protocol surface; now it holds only the
+  metadata.** 0.88.0 redirected every endpoint on an alias host to the canonical issuer.
+  That is right for the documents whose identity IS the host, and wrong for everything
+  else: SCIM has no issuer concept at all, and a cross-origin redirect makes HTTP clients
+  drop `Authorization` — so Okta and Entra provisioning that worked on the alias began
+  answering 401 the moment a tenant verified a custom domain. `/oauth/token`,
+  `/introspect`, `/revoke` and `/userinfo` are the same shape: they authenticate by
+  credential, not by issuer identity.
+
+  Only the four discovery documents and the SAML IdP metadata redirect now, and they
+  answer **302 with `Cache-Control: no-store`** rather than a cacheable 301. A 301 is
+  heuristically cacheable forever, so clearing a custom domain used to strand every client
+  that had seen one, with no way to unwind it. A non-safe method is refused rather than
+  redirected.
+
+  The browser surface is deliberately left alone. Nothing it returns names a host — the
+  `iss` of the authorization response, the id_token and the SAML `Issuer` are canonical
+  whichever host answered — a discovery-driven client already arrives at the canonical
+  endpoint, and redirecting it is precisely what an SP's `form-action` CSP blocks.
+
+- **An upgrade could silently lock out every passkey holder on an on-prem deployment.**
+  0.88.0 derived the relying party from the environment's host whenever the environment
+  had one. WebAuthn allows an RP id to be the origin's host OR a registrable suffix of it,
+  and our own documentation tells operators to pin "usually the registrable domain" — so
+  `rp_id=acme.com` on the single environment serving `id.acme.com` is a correct pin with
+  credentials enrolled against it. Overriding it moved the id, and an authenticator is
+  never even OFFERED a credential scoped to a different id: locked out, silently, with no
+  error and no way back, because no credential stores the id it was enrolled under.
+
+  A pin now survives where it is still a valid answer for the host in front of it. It does
+  NOT survive on a tenant label under a configured base domain, where a shared id would
+  offer one tenant's passkey on another tenant's sign-in page — and nothing is stranded
+  there, because a tenant passkey could never have enrolled in the first place.
+
+- **`cbox-id:doctor` reported a pin as being in force when it was not.** It compared only
+  the origin, and the pair that strands users has identical origins and differs only in the
+  id. It now compares both halves and names what a ceremony actually runs as.
+
 ## [0.88.0] - 2026-08-04
 
 ### Fixed

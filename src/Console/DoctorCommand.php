@@ -260,13 +260,19 @@ class DoctorCommand extends Command
             return;
         }
 
-        $pinned->origin === $current->origin
+        // BOTH halves, not just the origin. The pair that strands users has IDENTICAL
+        // origins and differs only in the id — an operator who pinned the registrable
+        // domain, as our own docs advise, on an environment that owns its host. Comparing
+        // origins alone reported "(pinned)" while the pin was not the answer in force,
+        // which is the one state this check exists to name.
+        $pinned->origin === $current->origin && $pinned->id === $current->id
             ? $this->addOk('Passkeys (WebAuthn)', "rp_id {$current->id} (pinned)")
             : $this->addWarn(
                 'Passkeys (WebAuthn)',
-                "CBOX_ID_WEBAUTHN_ORIGIN pins {$pinned->origin}, but this environment has an issuer host "
-                ."of its own — ceremonies here run as rp_id {$current->id} instead. Unset both keys unless "
-                .'this deployment really does serve passkeys from exactly one origin.',
+                "The pin is rp_id {$pinned->id} at {$pinned->origin}, but ceremonies in this "
+                ."environment run as rp_id {$current->id} at {$current->origin}. A credential enrolled "
+                .'under the pinned id will not be offered here. Unset both keys unless this deployment '
+                .'really does serve passkeys from exactly one origin.',
             );
     }
 
