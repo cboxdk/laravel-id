@@ -6,16 +6,13 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
-use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Platform\Contracts\AccountApiKeys;
-use Cbox\Id\Platform\Contracts\AccountMemberMfa;
 use Cbox\Id\Platform\Contracts\AccountMembers;
-use Cbox\Id\Platform\Contracts\AccountPasskeys;
 use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
@@ -89,21 +86,6 @@ class PlatformServiceProvider extends ServiceProvider
             return new SignedEnvironmentAdminHandoff(
                 $app->make(TokenSigner::class),
                 $app->make(CacheRepository::class),
-            );
-        });
-
-        $this->app->singleton(AccountMemberMfa::class, function (Application $app): AccountMemberMfa {
-            return new DatabaseAccountMemberMfa(
-                $app->make(TotpAuthenticator::class),
-                $app->make(SecretBox::class),
-                $app->make(AuditLog::class),
-            );
-        });
-
-        $this->app->singleton(AccountPasskeys::class, function (Application $app): AccountPasskeys {
-            return new DatabaseAccountPasskeys(
-                $app->make(WebAuthnVerifier::class),
-                $app->make(AuditLog::class),
             );
         });
     }

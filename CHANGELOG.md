@@ -17,6 +17,32 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Removed
+
+- **The account plane's own second factor.** `account_mfa_factors`,
+  `account_mfa_recovery_codes` and `account_webauthn_credentials` are dropped, along with
+  `AccountMemberMfa`, `AccountPasskeys` and their implementations and models. They were
+  built on the premise that an account member is a separate principal from a subject —
+  "a SEPARATE subsystem from operator and subject MFA", as the original migration put it.
+  Unified account identity removed that premise: an account member IS an ordinary subject
+  in the platform root.
+
+  It had already stopped being enforceable. Once the deployment's one sign-in served the
+  platform root, a member holding an account TOTP signed in at `/login` against their
+  SUBJECT credential and reached the console with a password alone — nothing on that path
+  had reason to consult a table keyed by member id. What remained was the appearance of a
+  factor, and a store that can still be written but is never checked is worse than none:
+  it reads as protection in a schema diagram, it accumulates secrets that must be sealed
+  and rotated and disclosed in a breach, and whoever enrolled believes they are protected.
+
+  A member's second factor is their SUBJECT's — enrolled through `Identity\Contracts\Mfa`
+  on the account security page, enforced by the host's password door, with the same
+  recovery codes every other person on the deployment gets. **No rows are carried across**:
+  a sealed TOTP secret belongs to the principal it was enrolled against, and silently
+  re-pointing one would produce a factor its owner never agreed to. Anyone who had enrolled
+  on the account plane re-enrols. `down()` rebuilds the tables; it cannot rebuild the rows,
+  and says so.
+
 ### Fixed
 
 - **Every account that predates `accounts.organization_id` is now homed.** The column was
