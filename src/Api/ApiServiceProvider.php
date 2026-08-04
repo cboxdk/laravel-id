@@ -34,6 +34,7 @@ use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Api\Http\Controllers\UserInfoController;
 use Cbox\Id\Api\Http\Controllers\UserTokenIntrospectionController;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
+use Cbox\Id\Api\Http\Middleware\CanonicalIssuerHost;
 use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
 use Cbox\Id\Api\Http\Middleware\ScimContentType;
@@ -52,13 +53,15 @@ class ApiServiceProvider extends ServiceProvider
         Route::middleware('throttle:300,1')->get('/up', HealthController::class);
 
         // Every request resolves its environment from the host first, pinning the
-        // hard environment scope (own users, keys, issuer) for everything below.
+        // hard environment scope (own users, keys, issuer) for everything below —
+        // and is then held to the ONE host that environment's issuer names, so no
+        // alias of it can serve a document naming a host it was not fetched from.
         //
         // The host may then add its own gate (`cbox-id.api.middleware`, empty by
         // default) so a host that is NOT an identity provider — a multi-tenant
         // platform's account/signup root, say — 404s this whole surface instead of
         // advertising an issuer it cannot honour.
-        Route::middleware(array_merge([ResolveEnvironment::class], $this->surfaceMiddleware()))->group(function (): void {
+        Route::middleware(array_merge([ResolveEnvironment::class, CanonicalIssuerHost::class], $this->surfaceMiddleware()))->group(function (): void {
             // Public metadata — cheap, cacheable, generously throttled.
             Route::middleware('throttle:300,1')->group(function (): void {
                 Route::get('/.well-known/jwks.json', JwksController::class);

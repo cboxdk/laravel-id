@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Tenancy\Contracts;
 
+use Cbox\Id\Api\Http\Middleware\CanonicalIssuerHost;
+
 /**
  * Resolves the canonical issuer identifier (an `https://` origin, no trailing slash)
  * for the environment a request/token belongs to. This is the single source of truth
@@ -24,4 +26,24 @@ interface IssuerResolver
 
     /** The issuer for a specific environment key — for minting outside the active context. */
     public function forEnvironment(string $environmentKey): string;
+
+    /**
+     * The ONE host the active environment's issuer is bound to, or null when it has no
+     * issuer identity of its own and inherits the deployment-wide configured one.
+     *
+     * The distinction is what makes the §3.3 invariant above enforceable rather than
+     * merely asserted. An environment that owns a host (a verified custom domain, or its
+     * `{slug}.{base_domain}`) stays REACHABLE on the other one too — a tenant onboarded
+     * at `acme.cboxid.com` keeps resolving there after it verifies `id.acme.com` — and
+     * that alias would otherwise serve a metadata document naming a host it was not
+     * fetched from, which conformant clients reject. Naming the canonical host is what
+     * lets the surface redirect the alias instead
+     * ({@see CanonicalIssuerHost}).
+     *
+     * Null is the ordinary answer for the platform-root environment and for every
+     * single-tenant / on-prem deployment: their issuer is operator-configured and
+     * host-independent by design, so an internal load-balancer name, a health probe or a
+     * second ingress may all legitimately serve it.
+     */
+    public function canonicalHost(): ?string;
 }

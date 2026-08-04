@@ -7,6 +7,7 @@ namespace Cbox\Id\Identity;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Models\AuthPolicyRecord;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 
 /**
@@ -57,6 +58,9 @@ class DatabaseAuthPolicies implements AuthPolicies
      */
     private array $organizationPolicies = [];
 
+    /** The request both memos above were computed in — see {@see dropMemoFromAnEarlierRequest()}. */
+    private ?RequestLifetime $memoLifetime = null;
+
     public function resolve(?string $organizationId = null): AuthPolicy
     {
         $base = $this->forEnvironment();
@@ -72,6 +76,8 @@ class DatabaseAuthPolicies implements AuthPolicies
 
     public function forEnvironment(): AuthPolicy
     {
+        $this->dropMemoFromAnEarlierRequest();
+
         $key = $this->environments()->current()?->environmentKey() ?? '';
 
         return $this->environmentPolicies[$key] ??= AuthPolicyRecord::query()
@@ -81,6 +87,8 @@ class DatabaseAuthPolicies implements AuthPolicies
 
     public function overrideFor(string $organizationId): ?AuthPolicy
     {
+        $this->dropMemoFromAnEarlierRequest();
+
         $key = $this->memoKey($organizationId);
 
         if (array_key_exists($key, $this->organizationPolicies)) {
@@ -94,6 +102,8 @@ class DatabaseAuthPolicies implements AuthPolicies
 
     public function overridesFor(array $organizationIds): array
     {
+        $this->dropMemoFromAnEarlierRequest();
+
         $wanted = array_values(array_unique($organizationIds));
         $found = [];
         $missing = [];
@@ -136,6 +146,42 @@ class DatabaseAuthPolicies implements AuthPolicies
     private function memoKey(string $organizationId): string
     {
         return ($this->environments()->current()?->environmentKey() ?? '').'|'.$organizationId;
+    }
+
+    /**
+     * Empty both memos when the request they were computed in has ended.
+     *
+     * Both docblocks above say "per-request memo". This class is a SINGLETON, and a
+     * singleton's life is the PROCESS — on php-fpm those are the same thing and the
+     * discrepancy is invisible, which is why it survived, but the package is distributed
+     * and Octane keeps a worker warm across requests. There the consequence runs the wrong
+     * way for a floor that only ever tightens: an operator switches the MFA mandate on, and
+     * whichever workers are already warm keep serving the LOOSER policy to whoever lands on
+     * them, indefinitely and silently.
+     *
+     * REBINDING THIS `scoped` DOES NOT FIX IT — the obvious one-word edit, and it makes
+     * things worse. {@see PasswordPolicyEnforcer}, {@see DatabasePasswordExpiry},
+     * {@see DatabaseMfaMandate} and {@see DatabaseLoginAttempts} are all singletons that
+     * constructor-inject this class, and `forgetScopedInstances()` unsets the BINDING
+     * without touching an instance somebody already holds. All four — every path that
+     * enforces a policy — would pin the first request's memo for the life of the worker,
+     * and then nothing would ever empty it.
+     *
+     * {@see RequestLifetime} is replaced between requests and between queued jobs, so
+     * comparing the held token against the one the container hands out now answers "am I
+     * still in the request I computed this in?" whoever is holding the memo.
+     */
+    private function dropMemoFromAnEarlierRequest(): void
+    {
+        $lifetime = RequestLifetime::current(app());
+
+        if ($this->memoLifetime === $lifetime) {
+            return;
+        }
+
+        $this->memoLifetime = $lifetime;
+        $this->environmentPolicies = [];
+        $this->organizationPolicies = [];
     }
 
     public function setForEnvironment(AuthPolicy $policy): void

@@ -15,7 +15,7 @@ weight: 1
 > (`ResolveEnvironment` middleware, backed by an `EnvironmentResolver`); for a
 > single-tenant / on-prem deployment set `cbox-id.environments.default` to your one
 > environment key. The first environment is provisioned outside request scope — the
-> deployable app (cbox-id) creates it from its operator console; in tests you pin one
+> deployable app (cbox-id) creates it from its platform console; in tests you pin one
 > with `actingAsEnvironment('env_test')`. See
 > [Environments & the isolation model](../core-concepts/environments.md).
 

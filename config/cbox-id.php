@@ -66,6 +66,19 @@ return [
         'default_ttl_days' => env('CBOX_ID_USER_API_TOKEN_TTL_DAYS', 90),
     ],
 
+    /*
+     * Passkeys / WebAuthn.
+     *
+     * `rp_id` + `origin` are an OPTIONAL PIN, not a requirement. Left unset (the default)
+     * each request derives them from the environment's own issuer, which is the only
+     * answer that works on a deployment serving more than one host — one pair pinned to
+     * the account root rejects every tenant's passkey, and vice versa.
+     *
+     * Set them only when this deployment has exactly one passkey origin and it is not the
+     * issuer. They are honoured on the host they name and ignored on every other, because
+     * a pin the browser will contradict cannot enforce an intent — it can only guarantee
+     * a rejected ceremony. `cbox-id:doctor` reports which answer is in force.
+     */
     'webauthn' => [
         'rp_id' => env('CBOX_ID_WEBAUTHN_RP_ID'),
         'origin' => env('CBOX_ID_WEBAUTHN_ORIGIN'),

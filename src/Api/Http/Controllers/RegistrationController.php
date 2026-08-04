@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Support\ClientRegistrationDocument;
@@ -18,7 +19,15 @@ use Illuminate\Http\Request;
  */
 class RegistrationController
 {
-    public function __construct(private readonly DynamicClientRegistration $registrar) {}
+    public function __construct(
+        private readonly DynamicClientRegistration $registrar,
+        // The issuer, not `url()`. Every other URL in the registration response and in
+        // discovery is built from the environment's issuer; this one was built from the
+        // request Host, so a tenant registering through any alias of its issuer was
+        // handed a management URI on that alias — the one endpoint in the document that
+        // could name a host the issuer does not.
+        private readonly IssuerResolver $issuers,
+    ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
@@ -38,7 +47,7 @@ class RegistrationController
 
         $document = ClientRegistrationDocument::for($registration->client);
         $document['registration_access_token'] = $registration->registrationAccessToken;
-        $document['registration_client_uri'] = url('/oauth/register/'.$registration->client->client_id);
+        $document['registration_client_uri'] = $this->issuers->issuer().'/oauth/register/'.$registration->client->client_id;
 
         if ($registration->secret !== null) {
             $document['client_secret'] = $registration->secret;

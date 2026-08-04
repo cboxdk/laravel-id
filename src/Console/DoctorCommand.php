@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Console;
 
+use Cbox\Id\Identity\Contracts\RelyingParties;
+use Cbox\Id\Identity\EnvironmentRelyingParties;
 use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Organization\Models\Environment;
@@ -222,14 +224,50 @@ class DoctorCommand extends Command
             );
     }
 
+    /**
+     * Unset rp_id/origin is no longer a warning — it is the recommended state, and the
+     * Relying Party is derived from the environment's issuer. What is worth reporting is
+     * a PIN THAT DOES NOT APPLY here: it looks configured, it is silently overridden on
+     * every host but its own, and an operator reading their `.env` would conclude the
+     * opposite.
+     */
     private function checkWebAuthn(): void
     {
-        $rpId = config('cbox-id.webauthn.rp_id');
-        $origin = config('cbox-id.webauthn.origin');
+        $parties = $this->laravel->make(RelyingParties::class);
 
-        is_string($rpId) && $rpId !== '' && is_string($origin) && $origin !== ''
-            ? $this->addOk('Passkeys (WebAuthn)', "rp_id {$rpId}")
-            : $this->addWarn('Passkeys (WebAuthn)', 'rp_id/origin not set — passkey sign-in is disabled until configured.');
+        try {
+            $current = $parties->current();
+        } catch (Throwable) {
+            // Resolving the party reads the environment's issuer, which is a database
+            // lookup. Doctor is the tool you run on a box that has not migrated yet, so a
+            // missing schema is a state to report, not to die on.
+            $this->addWarn('Passkeys (WebAuthn)', 'Cannot resolve the Relying Party until migrations have run.');
+
+            return;
+        }
+
+        if (! $parties instanceof EnvironmentRelyingParties) {
+            $this->addOk('Passkeys (WebAuthn)', "rp_id {$current->id} (host-bound resolver)");
+
+            return;
+        }
+
+        $pinned = $parties->pinned();
+
+        if ($pinned === null) {
+            $this->addOk('Passkeys (WebAuthn)', "rp_id {$current->id} (derived from the issuer)");
+
+            return;
+        }
+
+        $pinned->origin === $current->origin
+            ? $this->addOk('Passkeys (WebAuthn)', "rp_id {$current->id} (pinned)")
+            : $this->addWarn(
+                'Passkeys (WebAuthn)',
+                "CBOX_ID_WEBAUTHN_ORIGIN pins {$pinned->origin}, but this environment has an issuer host "
+                ."of its own — ceremonies here run as rp_id {$current->id} instead. Unset both keys unless "
+                .'this deployment really does serve passkeys from exactly one origin.',
+            );
     }
 
     private function checkProductionHardening(): void

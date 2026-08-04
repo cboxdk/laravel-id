@@ -7,11 +7,13 @@ namespace Cbox\Id\Identity;
 use CBOR\Decoder;
 use CBOR\Normalizable;
 use CBOR\StringStream;
+use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Exceptions\InvalidAssertionResponse;
 use Cbox\Id\Identity\Exceptions\UnsupportedCredential;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Identity\ValueObjects\AssertionResult;
+use Cbox\Id\Identity\ValueObjects\RelyingParty;
 use Cbox\Id\Identity\ValueObjects\VerifiedRegistration;
 use Cbox\Id\Identity\WebAuthn\AuthenticatorData;
 use Cbox\Id\Identity\WebAuthn\CoseKey;
@@ -32,8 +34,10 @@ use Throwable;
 class NativeWebAuthnVerifier implements WebAuthnVerifier
 {
     public function __construct(
-        private readonly string $rpId,
-        private readonly string $origin,
+        // Resolved per ceremony, not captured: a deployment serving several hosts serves
+        // several Relying Parties, and the pair this verifier asserts has to be the one
+        // belonging to the host the browser actually stood on.
+        private readonly RelyingParties $relyingParties,
         // Passwordless passkeys are a primary factor, so user verification (a PIN
         // or biometric — "something you know/are") is required by default; without
         // it a passkey proves only possession. Deployments using passkeys strictly
@@ -43,8 +47,9 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
 
     public function verifyRegistration(string $challenge, string $clientResponseJson): VerifiedRegistration
     {
+        $relyingParty = $this->relyingParties->current();
         $response = $this->response($clientResponseJson);
-        $clientDataRaw = $this->verifyClientData($response, 'webauthn.create', $challenge);
+        $clientDataRaw = $this->verifyClientData($response, 'webauthn.create', $challenge, $relyingParty);
 
         $attestation = $this->decodeCbor($this->b64url($response, 'attestationObject'), 'attestationObject');
 
@@ -54,7 +59,7 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
         }
 
         $authData = AuthenticatorData::parse($authDataBytes);
-        $this->assertRpAndPresence($authData);
+        $this->assertRpAndPresence($authData, $relyingParty);
 
         if ($authData->credentialId === null || $authData->credentialPublicKey === null) {
             throw InvalidAssertionResponse::make('registration is missing attested credential data');
@@ -74,12 +79,13 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
 
     public function verifyAssertion(WebAuthnCredential $credential, string $challenge, string $clientResponseJson): AssertionResult
     {
+        $relyingParty = $this->relyingParties->current();
         $response = $this->response($clientResponseJson);
-        $clientDataRaw = $this->verifyClientData($response, 'webauthn.get', $challenge);
+        $clientDataRaw = $this->verifyClientData($response, 'webauthn.get', $challenge, $relyingParty);
 
         $authDataBytes = $this->b64url($response, 'authenticatorData');
         $authData = AuthenticatorData::parse($authDataBytes);
-        $this->assertRpAndPresence($authData);
+        $this->assertRpAndPresence($authData, $relyingParty);
 
         $signature = $this->b64url($response, 'signature');
         $signedData = $authDataBytes.hash('sha256', $clientDataRaw, true);
@@ -130,9 +136,9 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
         }
     }
 
-    private function assertRpAndPresence(AuthenticatorData $authData): void
+    private function assertRpAndPresence(AuthenticatorData $authData, RelyingParty $relyingParty): void
     {
-        if (! hash_equals(hash('sha256', $this->rpId, true), $authData->rpIdHash)) {
+        if (! hash_equals(hash('sha256', $relyingParty->id, true), $authData->rpIdHash)) {
             throw InvalidAssertionResponse::make('RP id hash mismatch');
         }
 
@@ -148,7 +154,7 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
     /**
      * @param  array<string, mixed>  $response
      */
-    private function verifyClientData(array $response, string $expectedType, string $challenge): string
+    private function verifyClientData(array $response, string $expectedType, string $challenge, RelyingParty $relyingParty): string
     {
         $clientDataRaw = $this->b64url($response, 'clientDataJSON');
 
@@ -168,7 +174,7 @@ class NativeWebAuthnVerifier implements WebAuthnVerifier
         }
 
         $presentedOrigin = $decoded['origin'] ?? null;
-        if (! is_string($presentedOrigin) || ! hash_equals($this->origin, $presentedOrigin)) {
+        if (! is_string($presentedOrigin) || ! hash_equals($relyingParty->origin, $presentedOrigin)) {
             throw InvalidAssertionResponse::make('origin mismatch');
         }
 

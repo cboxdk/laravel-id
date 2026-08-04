@@ -8,16 +8,21 @@ use CBOR\NegativeIntegerObject;
 use CBOR\TextStringObject;
 use CBOR\UnsignedIntegerObject;
 use Cbox\Id\Identity\Contracts\Passkeys;
+use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
+use Cbox\Id\Identity\EnvironmentRelyingParties;
 use Cbox\Id\Identity\Exceptions\ClonedAuthenticator;
 use Cbox\Id\Identity\Exceptions\InvalidAssertionResponse;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Identity\NativeWebAuthnVerifier;
-use Cbox\Id\Identity\UnavailableWebAuthnVerifier;
+use Cbox\Id\Identity\ValueObjects\RelyingParty;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
+use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(RefreshDatabase::class);
+uses(RefreshDatabase::class, InteractsWithTenancy::class);
 
 const RP_ID = 'example.test';
 const ORIGIN = 'https://example.test';
@@ -133,9 +138,23 @@ final class SoftwareAuthenticator
     }
 }
 
+/** A Relying Party fixed for the duration of one test — the single-origin shape. */
+function relyingParties(string $rpId = RP_ID, string $origin = ORIGIN): RelyingParties
+{
+    return new class($rpId, $origin) implements RelyingParties
+    {
+        public function __construct(private readonly string $rpId, private readonly string $origin) {}
+
+        public function current(): RelyingParty
+        {
+            return new RelyingParty($this->rpId, $this->origin);
+        }
+    };
+}
+
 function verifier(): NativeWebAuthnVerifier
 {
-    return new NativeWebAuthnVerifier(RP_ID, ORIGIN);
+    return new NativeWebAuthnVerifier(relyingParties());
 }
 
 it('verifies a genuine ES256 registration and produces a usable public key', function (): void {
@@ -247,10 +266,97 @@ it('flags a cloned authenticator when the counter does not advance', function ()
         ->toThrow(ClonedAuthenticator::class);
 });
 
-it('binds the real verifier only when configured', function (): void {
+it('binds the real verifier with NOTHING configured — the Relying Party is derived', function (): void {
     config()->set('cbox-id.webauthn.rp_id', null);
     config()->set('cbox-id.webauthn.origin', null);
     app()->forgetInstance(WebAuthnVerifier::class);
 
-    expect(app(WebAuthnVerifier::class))->toBeInstanceOf(UnavailableWebAuthnVerifier::class);
+    expect(app(WebAuthnVerifier::class))->toBeInstanceOf(NativeWebAuthnVerifier::class);
+});
+
+describe('the Relying Party is per environment, not per deployment', function (): void {
+    beforeEach(function (): void {
+        config([
+            'cbox-id.environments.base_domains' => ['cboxid.com'],
+            'cbox-id.issuer' => 'https://cboxid.com',
+            'cbox-id.webauthn.rp_id' => null,
+            'cbox-id.webauthn.origin' => null,
+        ]);
+        app()->forgetInstance(RelyingParties::class);
+    });
+
+    it('scopes a tenant subdomain to its OWN host, not the account root', function (): void {
+        $env = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'is_default' => false]);
+
+        $this->runAsEnvironment($env->id, function (): void {
+            $party = app(RelyingParties::class)->current();
+
+            // Was `cboxid.com` / `https://cboxid.com` for every environment alike, so the
+            // browser on acme.cboxid.com reported an origin nothing would accept and every
+            // tenant passkey failed with "origin mismatch".
+            expect($party->id)->toBe('acme.cboxid.com')
+                ->and($party->origin)->toBe('https://acme.cboxid.com');
+        });
+    });
+
+    it('follows a verified custom domain, where the root is not even a registrable suffix', function (): void {
+        $env = Environment::create([
+            'name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.acme.com',
+            'domain_verified_at' => now(), 'is_default' => false,
+        ]);
+
+        $this->runAsEnvironment($env->id, function (): void {
+            expect(app(RelyingParties::class)->current()->id)->toBe('id.acme.com');
+        });
+    });
+
+    it('keeps the account root on the configured issuer', function (): void {
+        $env = Environment::create(['name' => 'Root', 'slug' => 'root', 'is_default' => true]);
+
+        $this->runAsEnvironment($env->id, function (): void {
+            expect(app(RelyingParties::class)->current()->id)->toBe('cboxid.com');
+        });
+    });
+
+    it('runs a real ceremony end to end under a tenant party the root pair could not serve', function (): void {
+        $env = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'is_default' => false]);
+        $authenticator = SoftwareAuthenticator::es256();
+
+        $this->runAsEnvironment($env->id, function () use ($authenticator): void {
+            $passkeys = app(Passkeys::class);
+
+            $credential = $passkeys->register('user_1', 'reg', $authenticator->registrationResponse(
+                'reg', signCount: 1, origin: 'https://acme.cboxid.com', rpId: 'acme.cboxid.com',
+            ));
+
+            $userId = $passkeys->authenticate($credential->credential_id, 'login', $authenticator->assertionResponse(
+                'login', signCount: 9, origin: 'https://acme.cboxid.com', rpId: 'acme.cboxid.com',
+            ));
+
+            expect($userId)->toBe('user_1');
+        });
+    });
+
+    it('honours a pin where the deployment-wide issuer holds, and nowhere else', function (): void {
+        config(['cbox-id.webauthn.rp_id' => 'cboxid.com', 'cbox-id.webauthn.origin' => 'https://cboxid.com']);
+
+        $root = Environment::create(['name' => 'Root', 'slug' => 'root', 'is_default' => true]);
+        $tenant = Environment::create(['name' => 'Acme', 'slug' => 'acme', 'is_default' => false]);
+
+        // The installer writes this pair on every install, so a pin that always won would
+        // leave the fix inert on precisely the deployments that have one.
+        $this->runAsEnvironment($root->id, function (): void {
+            expect(app(RelyingParties::class)->current()->id)->toBe('cboxid.com');
+        });
+
+        $this->runAsEnvironment($tenant->id, function (): void {
+            expect(app(RelyingParties::class)->current()->id)->toBe('acme.cboxid.com');
+        });
+    });
+
+    it('ignores half a pin — an rp_id with no origin is not an answer', function (): void {
+        config(['cbox-id.webauthn.rp_id' => 'cboxid.com', 'cbox-id.webauthn.origin' => null]);
+
+        expect((new EnvironmentRelyingParties(app(IssuerResolver::class)))->pinned())->toBeNull();
+    });
 });

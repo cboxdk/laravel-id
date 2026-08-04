@@ -10,6 +10,7 @@ use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementInput;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Kernel\Crypto\DatabaseKeyManager;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Scopes\EnvironmentScope;
 use Illuminate\Contracts\Cache\Repository as Cache;
@@ -25,6 +26,11 @@ use Illuminate\Contracts\Cache\Repository as Cache;
  * Invalidation is version-tagged rather than key-deleting: the read key embeds the
  * org's current version, so a write (which increments the version) simply routes
  * the next read to a fresh key — atomic, and correct even across cache nodes.
+ *
+ * Two keys per read is the price of that (the version, then the value), and a page asks
+ * this many times, so the answer is also memoised for the REQUEST — see
+ * {@see rememberedThisRequest()}. The memo never crosses a request boundary, so
+ * "instantly visible" survives it: the very next request re-reads the version.
  *
  * Every key is ENVIRONMENT-SCOPED (same shape as {@see DatabaseKeyManager}).
  * {@see Models\Entitlement} is environment-owned, but the cache prefix is app-global and
@@ -46,6 +52,20 @@ class CachedEntitlements implements EntitlementReader, EntitlementWriter
      */
     private const VERSION_TTL_SECONDS = 2_592_000;
 
+    /**
+     * The map this request has already resolved, keyed exactly as the cache is
+     * (environment + organization), and the request it was resolved in.
+     *
+     * An authorization check is asked many times per render and answers the same thing
+     * every time — one console page paid 16 cache round trips for 8 checks against one
+     * organization, and on the default `database` store every one of those is a query.
+     *
+     * @var array<string, array<string, EntitlementValue>>
+     */
+    private array $memo = [];
+
+    private ?RequestLifetime $memoLifetime = null;
+
     public function __construct(
         private readonly DatabaseEntitlements $inner,
         private readonly Cache $cache,
@@ -58,6 +78,12 @@ class CachedEntitlements implements EntitlementReader, EntitlementWriter
 
     public function all(string $organizationId): array
     {
+        $memoKey = $this->envId().':'.$organizationId;
+
+        if (array_key_exists($memoKey, $this->rememberedThisRequest())) {
+            return $this->memo[$memoKey];
+        }
+
         $version = $this->version($organizationId);
 
         /** @var array<string, EntitlementValue> $map */
@@ -67,7 +93,35 @@ class CachedEntitlements implements EntitlementReader, EntitlementWriter
             fn (): array => $this->inner->all($organizationId),
         );
 
-        return $map;
+        return $this->memo[$memoKey] = $map;
+    }
+
+    /**
+     * The memo, emptied if it belongs to an earlier request.
+     *
+     * This class is a SINGLETON, so the memo has to be told when a request ends or it
+     * would outlive the version bump that is this class's whole invalidation story — a
+     * downgrade would keep granting for the life of an Octane worker, which is the exact
+     * failure the version-tagged keys exist to prevent. {@see RequestLifetime} is the
+     * container's answer to "is this still the same request", and it is replaced between
+     * requests and between queued jobs.
+     *
+     * A shorter memo would also have worked — key on the VERSION and re-read it every
+     * time — but that halves the cost rather than removing it, and the version read is
+     * the round trip, not the saving.
+     *
+     * @return array<string, array<string, EntitlementValue>>
+     */
+    private function rememberedThisRequest(): array
+    {
+        $lifetime = RequestLifetime::current(app());
+
+        if ($this->memoLifetime !== $lifetime) {
+            $this->memoLifetime = $lifetime;
+            $this->memo = [];
+        }
+
+        return $this->memo;
     }
 
     public function set(string $organizationId, EntitlementInput $input, EntitlementSource $source, ?string $sourceRef = null): EntitlementValue
@@ -128,6 +182,13 @@ class CachedEntitlements implements EntitlementReader, EntitlementWriter
      */
     private function invalidate(string $organizationId): void
     {
+        // The per-request memo first, and unconditionally: a caller that writes an
+        // entitlement and then reads it back IN THE SAME REQUEST — every console form
+        // that saves and re-renders — would otherwise be served the map it read before
+        // its own write. Dropped wholesale rather than per key because the environment
+        // may have changed under us since the entry was written.
+        $this->memo = [];
+
         $key = $this->versionKey($organizationId);
 
         // Read first so the counter is guaranteed to EXIST (seeded from the clock when

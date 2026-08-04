@@ -15,7 +15,7 @@ handful of calls.
 > (writes). So establish an environment first: a real request resolves one from its host
 > (`ResolveEnvironment` middleware / `EnvironmentResolver`), or set
 > `cbox-id.environments.default` for a single-tenant deployment; the deployable app (cbox-id)
-> creates the first environment from its operator console, and tests pin one with
+> creates the first environment from its platform console, and tests pin one with
 > `actingAsEnvironment('env_test')`. See
 > [Environments & the isolation model](core-concepts/environments.md).
 

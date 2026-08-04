@@ -79,3 +79,51 @@ it('serves OIDC discovery with the per-environment issuer at a tenant subdomain'
         ->assertJsonPath('jwks_uri', 'https://acme.cboxid.com/.well-known/jwks.json')
         ->assertJsonPath('token_endpoint', 'https://acme.cboxid.com/oauth/token');
 });
+
+it('holds the §3.3 invariant on BOTH hosts an environment resolves on', function (): void {
+    // The failure this exists for: a tenant onboarded at acme.cboxid.com later verifies
+    // its own domain. It keeps resolving on the subdomain (slug match), so that host went
+    // on serving a full protocol surface advertising `issuer: https://id.acme.com` — and
+    // every relying party configured against the subdomain refused the document.
+    Environment::create([
+        'name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.acme.com',
+        'domain_verified_at' => now(), 'is_default' => false,
+    ]);
+
+    // The canonical host serves it, and names itself.
+    $this->get('https://id.acme.com/.well-known/openid-configuration')
+        ->assertOk()
+        ->assertJsonPath('issuer', 'https://id.acme.com');
+
+    // The alias does not serve a contradicting document — it points at the one that does.
+    $this->get('https://acme.cboxid.com/.well-known/openid-configuration')
+        ->assertRedirect('https://id.acme.com/.well-known/openid-configuration')
+        ->assertStatus(301);
+});
+
+it('redirects the whole IdP surface off a non-canonical alias, preserving method and query', function (): void {
+    Environment::create([
+        'name' => 'Acme', 'slug' => 'acme', 'domain' => 'id.acme.com',
+        'domain_verified_at' => now(), 'is_default' => false,
+    ]);
+
+    $this->get('https://acme.cboxid.com/.well-known/jwks.json')
+        ->assertRedirect('https://id.acme.com/.well-known/jwks.json');
+
+    // 308, not 301: a client that rewrote POST /oauth/token to GET would drop the grant
+    // body and be answered with a 405 instead of a token.
+    $this->post('https://acme.cboxid.com/oauth/token?trace=1')
+        ->assertRedirect('https://id.acme.com/oauth/token?trace=1')
+        ->assertStatus(308);
+});
+
+it('leaves the platform root and the single-tenant shape on any host they answer', function (): void {
+    // The root's issuer is operator-configured and host-independent, so a health probe,
+    // an internal LB name or a second ingress must keep being served rather than bounced
+    // at the public apex.
+    Environment::create(['name' => 'Root', 'slug' => 'root', 'is_default' => true]);
+
+    $this->get('https://internal-lb.cluster.local/.well-known/openid-configuration')
+        ->assertOk()
+        ->assertJsonPath('issuer', 'https://cboxid.com');
+});

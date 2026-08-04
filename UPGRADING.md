@@ -9,9 +9,144 @@ weight: 3
 Breaking changes only, newest first. Everything else is in [`CHANGELOG.md`](CHANGELOG.md).
 
 The entries here are the ones that change behaviour for a deployment that is already
-running. Read the whole section for the version you are crossing before you deploy — two
-of the changes below fail **silently** (nothing is logged, nothing 500s) and one of them
-fires on clients you do not control.
+running. Read the whole section for the version you are crossing before you deploy —
+several of the changes below fail **silently** (nothing is logged, nothing 500s), some
+fire on clients you do not control, and the 0.87.3 entry describes damage that has already
+been done by the time you upgrade.
+
+A version with no section below needed no action. Where a run of versions is genuinely
+uneventful it is named as such rather than left out, so a gap in the headings is never
+ambiguous between "nothing to do" and "nobody wrote it down".
+
+## 0.87.3
+
+**Two security fixes. Cross this version.**
+
+**A deactivated subject authenticated with ANY password.**
+`DatabaseAccountMembers::verifyPassword()` refused a deactivated subject with
+`! $this->hasher->check($password, $this->dummyHash())`. The dummy verify exists to burn
+time and have its result thrown away; the negation made it the answer, and since a dummy
+hash matches nothing, `check()` returned false and `!false` authenticated. "Deactivated
+subject holding an active membership" is not exotic — it is an unaccepted invitation, and
+it is a removed member. The caller mints a session on that answer and clears the failure
+counters, so the session goes live the moment the subject is reactivated.
+
+- **Who is affected:** every deployment that has ever had an unaccepted invitation or a
+  removed account member. No configuration avoids it.
+- **What to look for afterwards:** sign-ins by members you removed, and by invitees who
+  never accepted. The failure counters were cleared on those attempts, so a lockout that
+  should have fired did not.
+
+**SCIM: `PATCH` on a group with a bare `members[…]` value filter detached every member.**
+`members[value eq "x"].display` was refused; `members[value eq "x"]` was not — it contains
+no `].` and does not begin with `members.`, so it cleared both guards, reached
+`sync(valueIds(…))` with a non-list value, and emptied the group. It returned 200,
+membership-changed fired, **every role mapped from that group was revoked for every
+member**, and the connector recorded a success, so it never retried or re-synced. Silent
+on both sides.
+
+- **Who is affected:** any deployment with inbound SCIM group provisioning.
+- **What to do:** after upgrading, force a full re-sync from your identity provider and
+  reconcile group-derived role grants. The revocations are real and nothing replays them.
+- `add` and `replace` now refuse any filtered `members` path; `remove` with that exact
+  path still works, because that is how an IdP detaches one member.
+
+## 0.87.1
+
+**Adds a migration that gives every existing operator a subject.** No action, but do not
+skip it on the way to 0.87.x — see the entry below for why an operator without one is
+locked out of the platform they run.
+
+## 0.87.0
+
+**A platform operator is a subject now, not a second credential store.**
+`platform_operators` held an email and a hash and nothing else, so none of what protects a
+sign-in here — password policy, breached-password refusal, lockout, TOTP, passkeys,
+step-up, session revocation — applied to the identity with the widest reach in the
+product. `platform_operators.subject_id` points at an ordinary subject in the platform
+root, and `verifyPassword()` asks that subject.
+
+Adds **two migrations**: one for the nullable `subject_id`, and one (in 0.87.1) that
+attaches a subject to every operator that lacks one, reusing the subject an operator who
+is also an account member already has. The hash moves across untouched — both tables hash
+with the configured driver and both models pass an already-hashed value through — so
+existing passwords keep working. The address is deliberately **not** marked verified: the
+operator table never asked, and claiming otherwise would hand a confirmed address to
+step-up gates that rely on it meaning something.
+
+- **If you are retiring a separate operator sign-in form**, apply 0.87.1's migration in the
+  same deploy. 0.87.0 alone attaches the subject lazily, on the operator's next successful
+  sign-in through the door that verifies the local hash — and if you have just deleted that
+  door, there is no such moment. Every pre-existing operator would then have no subject, no
+  account to sign in as, and no door that consults their hash: locked out of the platform
+  they run, by an upgrade that reports success.
+- **Do not drop the hash column yet.** It is the credential for any operator that still has
+  no subject.
+- **`PlatformOperators::findBySubject()`** is the new lookup: it answers "is this session
+  staff" from the session a host already has, so staff pages can be a permission on the one
+  session rather than a second sign-in. It excludes suspended operators itself.
+- **A deactivated subject now refuses the operator at the credential**, rather than at the
+  next session boundary.
+
+## 0.85.0
+
+**`RefreshTokens::issue()` takes two more arguments.** `auth_time` and `amr` are recorded
+on the refresh token so a refreshed ID Token can describe the ORIGINAL authentication, as
+OIDC Core §12.2 requires. Without it a session's asserted assurance level falls at its
+first refresh, which reads to a relying party gating on `acr` as the user losing their
+second factor.
+
+**If your host implements the `RefreshTokens` contract itself, widen the signature** —
+both are trailing and optional, so a host using the shipped implementation does nothing.
+
+Adds one migration (nullable `auth_time` and `amr` on `oauth_refresh_tokens`). Families
+issued before this keep working and carry no authentication context; the claims are
+optional, and a missing one is honest where a fabricated one is not.
+
+The refresh grant also returns a renewed `id_token` now. That is invisible to a relying
+party that authenticates the access token, and the difference between working and not for
+one that authenticates the ID Token.
+
+## 0.83.1
+
+**Requires `cboxdk/laravel-ssrf` ^1.1.1** — the floor is the fixed version rather than
+`^1.1`, because an existing lock file resolving 1.1.0 gets a guard whose DNS pinning
+silently discards addresses. Below 1.1.1 only the LAST of a host's validated addresses was
+pinned (curl treats a repeated `CURLOPT_RESOLVE` entry for the same `host:port` as a
+replacement, not an addition), so a dual-stack target whose AAAA sorted last —
+`accounts.google.com` is one — was reached over IPv6 alone and failed outright on a host
+with no IPv6 route.
+
+Every outbound path in this package goes through that guard: OIDC discovery, token
+exchange, JWKS retrieval, SAML metadata import, SCIM, webhooks, external actions. Whether
+it *failed* depended on the host's own IPv6 connectivity, so it presented as "works on my
+machine". **Run `composer update cboxdk/laravel-ssrf`** and confirm the resolved version.
+
+## 0.83.0
+
+**`Connections::create()` refuses a catalogue key the catalogue does not have**, rather
+than storing a connection that renders a sign-in button nobody can complete. And
+**`oauth2Config()` refuses a config naming an OIDC provider** — driving one down the
+OAuth 2.0 path would mean no `id_token` was ever verified.
+
+Adds one migration: a nullable `provider` column on connections. Existing rows become
+NULL, which is what they are — a hand-configured enterprise connection has no catalogue
+entry. The column is what keeps "the organization's enterprise SSO connection" and "a
+consumer provider this tenant enabled" apart; without it the first active row won
+whichever it happened to be, so enabling Google could silently become an organization's
+SSO.
+
+## 0.81.0, 0.82.0, 0.82.1, 0.84.0, 0.86.0 — no action
+
+Additive or corrective, with nothing to do on an upgrade. Worth knowing about:
+
+- **0.82.1** — a client's configured token lifetime now reaches the `id_token`, which was
+  hardcoded at 900s. If you registered a client with a short TTL expecting it to bind the
+  credential Kubernetes actually presents, it does now. The default is unchanged.
+- **0.86.0** — `ProviderTemplate` gains one trailing optional constructor argument;
+  `DirectoryProvider` is unchanged and existing `directories.provider` rows are untouched.
+- **0.84.0** — `cbox-id:doctor` will run a host's own `HealthCheck` implementations if you
+  register any. It runs nothing new until you do.
 
 ## 0.80.0
 

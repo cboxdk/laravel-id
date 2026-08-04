@@ -72,6 +72,17 @@ class DatabaseWebhookRegistry implements WebhookRegistry
 
     public function matching(?string $organizationId, string $eventType): Collection
     {
+        // The subscription test stays in PHP: `event_types` is a JSON column, and a
+        // portable containment predicate across SQLite, MySQL and PostgreSQL is not one
+        // expression. The set is an environment's endpoints, not a table scan.
+        return $this->forOrganization($organizationId)
+            ->filter(fn (WebhookEndpoint $endpoint): bool => in_array($eventType, $endpoint->event_types, true)
+                || in_array(WebhookEventType::WILDCARD, $endpoint->event_types, true))
+            ->values();
+    }
+
+    public function forOrganization(?string $organizationId): Collection
+    {
         return WebhookEndpoint::query()
             ->where('status', EndpointStatus::Active->value)
             ->where(function ($query) use ($organizationId): void {
@@ -81,9 +92,6 @@ class DatabaseWebhookRegistry implements WebhookRegistry
                     $query->orWhere('organization_id', $organizationId);
                 }
             })
-            ->get()
-            ->filter(fn (WebhookEndpoint $endpoint): bool => in_array($eventType, $endpoint->event_types, true)
-                || in_array(WebhookEventType::WILDCARD, $endpoint->event_types, true))
-            ->values();
+            ->get();
     }
 }

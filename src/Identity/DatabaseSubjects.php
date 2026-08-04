@@ -574,11 +574,19 @@ class DatabaseSubjects implements Subjects
 
     private function toSubject(Model $model): Subject
     {
+        $status = $model->getAttribute('status');
+
         return new Subject(
             id: $this->keyOf($model),
             email: $this->stringAttribute($model, 'email'),
             name: $this->stringAttribute($model, 'name'),
             emailVerified: $model->getAttribute('email_verified_at') !== null,
+            // The row this was loaded from already carries the status, so a caller that
+            // has to re-check standing ({@see Subject::admitsSignIn()}) need not read the
+            // same row a second time. Left null if the cast ever hands back something
+            // else, which keeps "ask the store" as the honest fallback rather than
+            // guessing a status onto an account.
+            status: $status instanceof UserStatus ? $status : null,
         );
     }
 

@@ -27,4 +27,19 @@ interface WebhookRegistry
      * @return Collection<int, WebhookEndpoint>
      */
     public function matching(?string $organizationId, string $eventType): Collection;
+
+    /**
+     * Every ACTIVE endpoint an organization's events can reach — its own plus the
+     * environment's platform-wide ones — whatever they subscribe to.
+     *
+     * The LISTING counterpart to {@see matching()}, which answers a delivery question and
+     * so must take an event type. A caller that wanted "which endpoints does this
+     * organization have" had only matching() to ask with, and recovered the answer by
+     * unioning a list of candidate event types: one full read per candidate, against a
+     * subscription filter that has always run in PHP anyway. That idiom got one query
+     * worse every time the platform learned to emit something new.
+     *
+     * @return Collection<int, WebhookEndpoint>
+     */
+    public function forOrganization(?string $organizationId): Collection;
 }

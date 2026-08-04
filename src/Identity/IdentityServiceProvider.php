@@ -18,6 +18,7 @@ use Cbox\Id\Identity\Contracts\Passkeys;
 use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\PasswordReset;
+use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\UserImport;
@@ -107,19 +108,21 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(BreachedPasswordCheck::class, NeverBreachedCheck::class);
         $this->app->singleton(EmailVerification::class, EmailVerificationService::class);
 
-        // Real WebAuthn verifier (OpenSSL signatures + vetted CBOR/COSE decoding)
-        // once rp_id + origin are configured; otherwise it refuses rather than
-        // trusting anything. Passkey orchestration always ships.
-        $this->app->singleton(WebAuthnVerifier::class, function (): WebAuthnVerifier {
-            $rpId = config('cbox-id.webauthn.rp_id');
-            $origin = config('cbox-id.webauthn.origin');
+        // WHICH Relying Party a ceremony runs under is a per-request question — one
+        // deployment-wide pair cannot answer for the account root and a tenant host at
+        // the same time. Resolved from the environment's issuer, with a configured pin
+        // honoured on the host it names ({@see EnvironmentRelyingParties}).
+        $this->app->singleton(RelyingParties::class, EnvironmentRelyingParties::class);
 
-            if (is_string($rpId) && $rpId !== '' && is_string($origin) && $origin !== '') {
-                return new NativeWebAuthnVerifier($rpId, $origin, config('cbox-id.webauthn.user_verification', true) !== false);
-            }
-
-            return new UnavailableWebAuthnVerifier;
-        });
+        // Real WebAuthn verifier (OpenSSL signatures + vetted CBOR/COSE decoding),
+        // unconditionally: rp_id/origin are no longer read from static config, so there
+        // is no "not configured yet" state left to refuse in. A deployment that wants
+        // passkeys OFF binds {@see UnavailableWebAuthnVerifier} itself — which is honest,
+        // where a silently-inert default was not.
+        $this->app->singleton(WebAuthnVerifier::class, fn (Application $app): WebAuthnVerifier => new NativeWebAuthnVerifier(
+            $app->make(RelyingParties::class),
+            config('cbox-id.webauthn.user_verification', true) !== false,
+        ));
         $this->app->singleton(Passkeys::class, PasskeyService::class);
 
         // Bulk import + lazy password-hash migration (the enterprise wedge).

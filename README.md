@@ -30,7 +30,8 @@ $user = app(Subjects::class)->create('ida@northwind.test', 'Ida', password: 's3c
 > **Environments first.** `Organization`, `User` and the other domain models are
 > environment-owned and deny-by-default — the calls above need an environment in context
 > (a request resolves one from its host, or set `cbox-id.environments.default`; the
-> deployable app creates the first one from its operator console). See
+> deployable app creates the first one from its installer, and the rest from its platform
+> console). See
 > [Environments & the isolation model](docs/core-concepts/environments.md).
 
 ## What's supported

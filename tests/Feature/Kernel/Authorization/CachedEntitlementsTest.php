@@ -6,6 +6,7 @@ use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementWriter;
 use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementInput;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -93,6 +94,40 @@ it('does not resurrect a stale snapshot when the version counter is evicted', fu
     // The cancelled plan must stay cancelled — the class promises instant propagation,
     // so a lost counter has to fail closed (re-read), never re-address the old snapshot.
     expect($reader->get('org_evict', 'plan'))->toBeNull();
+});
+
+/**
+ * The per-request memo is the one thing in this class that is not version-tagged, so it
+ * is the one thing that could out-live an invalidation. It must not.
+ *
+ * This class is a SINGLETON and the host app decorates it inside another singleton, so
+ * "per request" cannot mean "per instance" — under Octane the instance IS the worker. It
+ * means the {@see RequestLifetime} token, which the container
+ * replaces between requests and between queued jobs. Asserting BOTH halves: the memo
+ * really does collapse repeat reads inside one request, and it really is gone at the next.
+ */
+it('does not let the per-request memo out-live the request', function (): void {
+    $writer = app(EntitlementWriter::class);
+    $reader = app(EntitlementReader::class);
+
+    $writer->set('org_memo', new EntitlementInput('plan', ['tier' => 'pro']), EntitlementSource::Billing);
+    expect($reader->get('org_memo', 'plan')?->string('tier'))->toBe('pro');
+
+    // ANOTHER process cancels the plan: the row goes and the version is bumped, which is
+    // all a second worker's write leaves behind for this one to notice.
+    DB::table('entitlements')->where('key', 'plan')->delete();
+    Cache::increment('cbox-ent-ver:env_test:org_memo');
+
+    // Inside the same request the memo still answers — that is what makes eight
+    // entitlement checks on one page cost two cache round trips instead of sixteen.
+    expect($reader->get('org_memo', 'plan')?->string('tier'))->toBe('pro');
+
+    // The request ends. Laravel drops scoped instances between requests and between
+    // queued jobs; the memo has to go with them, or a cancellation would keep granting
+    // for the life of the worker.
+    app()->forgetScopedInstances();
+
+    expect($reader->get('org_memo', 'plan'))->toBeNull();
 });
 
 it('isolates the cache per organization', function (): void {

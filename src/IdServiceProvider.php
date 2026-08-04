@@ -22,6 +22,7 @@ use Cbox\Id\Kernel\Audit\AuditServiceProvider;
 use Cbox\Id\Kernel\Authorization\AuthorizationServiceProvider;
 use Cbox\Id\Kernel\Crypto\CryptoServiceProvider;
 use Cbox\Id\Kernel\Events\EventsServiceProvider;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\TenancyServiceProvider;
 use Cbox\Id\Kernel\Usage\UsageServiceProvider;
 use Cbox\Id\Maintenance\MaintenanceServiceProvider;
@@ -105,6 +106,14 @@ class IdServiceProvider extends ServiceProvider
         // singleton because a service provider populates it at boot and the command
         // reads it later, in the same process.
         $this->app->singleton(HealthChecks::class);
+
+        // The "am I still in the request I computed this in?" token. Scoped, so the
+        // container replaces it between requests and between queued jobs — which is what
+        // makes it usable as a memo guard by objects the container does NOT replace.
+        // Registered here, on the always-loaded root provider, because an unbound marker
+        // resolves to a fresh instance on every call and would silently disable every
+        // memo that trusts it ({@see RequestLifetime}).
+        $this->app->scoped(RequestLifetime::class);
 
         // Merge package defaults so config('cbox-id.*') resolves in a host app
         // even before the config is published.

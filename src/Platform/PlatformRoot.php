@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Platform;
 
 use Cbox\Id\Console\InstallCommand;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment as EnvironmentContract;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Organization\Models\Environment;
@@ -37,6 +38,10 @@ use Closure;
  */
 class PlatformRoot
 {
+    private ?Environment $memoModel = null;
+
+    private ?RequestLifetime $memoLifetime = null;
+
     public function __construct(
         private readonly EnvironmentContext $environments,
     ) {}
@@ -47,10 +52,37 @@ class PlatformRoot
      * Callers that must write an environment-OWNED row (an organization, say) need the
      * real row — a configured key with no row behind it would produce an organization
      * pointing at an environment that does not exist.
+     *
+     * MEMOISED FOR THE REQUEST. Which environment is the root cannot change mid-request:
+     * `is_default` is stamped once by the installer and moving it is a deployment event,
+     * not a user action. An account-plane page paid this five times over — every
+     * {@see run()} asks, and the account console asks on every member and account read.
+     *
+     * This does not weaken the laziness the class doc argues for. What must stay lazy is
+     * the CONTEXT the callback runs in, because a request can legitimately move between
+     * environments ({@see EnvironmentContext::runAs()}); the row this returns is a fact
+     * about the deployment, and the same one from either side of such a move.
+     * {@see RequestLifetime} bounds the memo to the request, so a `migrate` between two
+     * requests on a long-lived worker is still seen.
+     *
+     * ONLY A FOUND ROW IS REMEMBERED. "There is no platform root" is the one answer that
+     * DOES flip inside a request: {@see InstallCommand} and the first-run screen stamp the
+     * root and then, in the same call, write the operator's subject into it — through this
+     * class. A memoised null there would send that subject nowhere and leave the operator
+     * on the local bootstrap hash, the single credential path that skips the password
+     * policy. So the empty answer is re-asked, which costs a query only on a deployment
+     * that has not been installed yet.
      */
     public function model(): ?Environment
     {
-        return Environment::query()->where('is_default', true)->first();
+        $lifetime = RequestLifetime::current(app());
+
+        if ($this->memoLifetime !== $lifetime) {
+            $this->memoLifetime = $lifetime;
+            $this->memoModel = null;
+        }
+
+        return $this->memoModel ??= Environment::query()->where('is_default', true)->first();
     }
 
     /**

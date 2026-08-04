@@ -45,6 +45,70 @@ more trust than the wording it removes.
   `activate()` now revokes alongside the credential write, for the same reason
   `resetPassword()` does.
 
+## [0.88.0] - 2026-08-04
+
+### Fixed
+
+- **Discovery advertised an `issuer` that was not the host serving it.** An environment
+  resolves from either its verified custom domain or `{slug}.{base_domain}`, and both kept
+  serving the whole protocol surface — but the issuer was the custom domain
+  unconditionally. So a tenant onboarded at `acme.example.com` that later verified
+  `id.acme.com` had every existing relying party fetch discovery from the subdomain and
+  receive a different `issuer`. That is a MUST in OIDC Discovery §4.3 and RFC 8414 §3.3;
+  conformant clients throw. Every integration broke at once, from a config change nobody
+  would associate with them.
+
+  `CanonicalIssuerHost` now redirects the alias to the canonical host — 301 for safe
+  methods, **308** for the rest, because a 301 on `POST /oauth/token` lets a client rewrite
+  to GET and drop the grant body. Deployment-wide issuers (platform root, single-tenant,
+  on-prem) are deliberately not redirected: their issuer is operator-configured and
+  host-independent, so internal load-balancer names and health probes keep working.
+
+  **Upgrade consequence:** a tenant that has already verified a custom domain now has ONE
+  issuer, and its subdomain becomes a redirect. Relying parties configured against the
+  subdomain must be repointed. The break is now explicit and one-time at verification
+  instead of silent and permanent.
+
+- **WebAuthn was single-origin, so passkeys could not work on any tenant host.** The
+  relying-party id and origin were one deployment-wide pair, compared byte-for-byte against
+  what the browser reports. Subject-plane passkeys are served on tenant hosts only, so with
+  the pair set to the platform apex every tenant's enrolment and assertion failed with
+  "origin mismatch" — a shipped, documented, tested feature inert for the entire customer
+  base.
+
+  `RelyingParties` now derives the pair per environment from its issuer, and the id and the
+  origin travel together in one value object: read as separate config keys they can each be
+  individually plausible and jointly impossible. The RP id is the environment's full host,
+  not a registrable suffix — a suffix would offer one tenant's passkey on another tenant's
+  sign-in page.
+
+### Changed
+
+- **`Subject` carries its status**, so the per-request re-check that refuses a deactivated
+  account no longer costs a second read of the row `find()` already loaded. Nullable rather
+  than defaulting to active: a host-bound resolver written before the field says nothing,
+  and null means "ask the contract", so an unaware implementation keeps paying the query
+  and keeps being right.
+
+- **`RequestLifetime`** — a scoped marker whose identity is "this request or job". Hot
+  objects that are singletons, or captured by them, cannot be memoised by binding them
+  `scoped`: `forgetScopedInstances()` unsets the binding and cannot reach an instance
+  something else is holding, so the first request's memo would be pinned forever. Comparing
+  a held token against the one the container resolves works whoever holds the memo.
+  `CachedEntitlements`, `EnvironmentIssuerResolver`, `DatabaseAuthPolicies` and
+  `PlatformRoot` use it.
+
+  `PlatformRoot::model()` memoises only when a row is FOUND — "there is no platform root"
+  is the one answer that flips inside a request, and a memoised null would leave the
+  operator the installer just created on the bootstrap hash.
+
+- `WebhookRegistry::forOrganization()` — `matching()` read every active endpoint per event
+  type and filtered in PHP. The app's own catalogue lists 24 event types; aligning the
+  config with it would have made that 24 full reads per render.
+
+- `registration_client_uri` comes from the issuer resolver rather than `url()` — it was the
+  only endpoint in the document that did not.
+
 ## [0.87.3] - 2026-08-04
 
 ### Security
