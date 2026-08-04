@@ -17,6 +17,27 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Every account that predates `accounts.organization_id` is now homed.** The column was
+  added nullable in `2026_07_25_000400` with no backfill, and it is written in exactly two
+  places, both at account-CREATION time — so every account created before that date had
+  null, permanently. That is not cosmetic: the console asks whether the organization being
+  administered is the one this account owns, and against null that is false for every
+  organization, so an account owner saw no projects, no members, no API keys, no billing
+  and no settings — the whole identity-platform area, absent for the person who owns it.
+  No test could see it, because every fixture in both suites builds its account through
+  `AccountProvisioner::provision()`, which homes it on the way past; the one state a real
+  deployment was in was the one state nothing here could produce. It is also not only a
+  legacy problem — `homeAccount()` returns silently when there is no platform root yet,
+  which is precisely the window the installer and the first-run screen run in.
+
+  The migration writes raw rows rather than calling `OrganizationService::create()`: a
+  backfill runs during a deploy, and a thousand accounts should not put a thousand domain
+  events on a queue and a thousand entries on the audit chain. It is ordered ahead of
+  `2026_08_06_000100`, whose own backfill reads `accounts.organization_id` and would
+  otherwise have written null the whole way through.
+
 ### Added
 
 - **An organization can own IdP products directly.** `accounts.organization_id` has
