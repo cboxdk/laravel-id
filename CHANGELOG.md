@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-08-04
+
 ### Changed
 
 - **An account member's membership now says what they hold.** `attachSubject()` wrote a
