@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-08-04
+
 ### Removed
 
 - **The account plane's own second factor.** `account_mfa_factors`,
