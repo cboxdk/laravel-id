@@ -17,6 +17,40 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-08-05
+
+### Fixed
+
+- **`PlatformRoot` switched an environment nobody was reading.** It constructor-injected
+  `EnvironmentContext`, which is a **scoped** binding — one instance per request. Singletons
+  hold `PlatformRoot` (`AccountMembers` and `PlatformOperators` both do), so the object
+  graph captured the first request's context and kept it. `run()` resolved the platform root
+  correctly and then called `runAs()` on a dead object: the query inside ran under whatever
+  environment the live request had selected.
+
+  Invisible for as long as every caller read tables that are not environment-owned —
+  `accounts`, `account_members` — where running in the wrong environment changes nothing.
+  The first caller to read an environment-owned table through it (`memberships`, once
+  environment grants moved there in 0.94.0) found no membership on a tenant host, so an
+  account owner was refused the environment they own and the console bounced between the
+  hand-off and the sign-in.
+
+  **Anything calling `PlatformRoot::run()` and reading an environment-owned table was
+  affected**, on any host other than the platform root's own.
+
+### Changed
+
+- **The scoped-capture architecture test is transitive.** It inspected one level — a
+  singleton's own constructor parameters — and the capture above is two
+  (`AccountMembers → PlatformRoot → EnvironmentContext`), so it passed while the capture
+  was real. A singleton that holds the scoped context *through* a collaborator is exactly
+  as broken: what is long-lived is the object graph, not its first hop.
+
+  The walk follows actual property **values** rather than declared types (a constructor
+  typed against an interface says nothing about which object is on the other end),
+  terminates on cycles by object identity, and reports the whole chain rather than the leaf
+  — the leaf alone sends you to the wrong class.
+
 ## [0.95.0] - 2026-08-05
 
 ### Changed
