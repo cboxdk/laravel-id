@@ -184,9 +184,12 @@ class DoctorCommand extends Command
             return;
         }
 
-        $row->account_id === null
+        // Unowned is `project_id === null` — the same predicate {@see PlatformRoot::environment()}
+        // refuses on, and it has to stay the same one or the doctor reports a root the
+        // platform will not actually use.
+        $row->project_id === null
             ? $this->addWarn('Platform root', "Resolved from config to '{$row->slug}'. Stamp it is_default so the answer does not depend on per-process configuration.")
-            : $this->addFail('Platform root', "CBOX_ID_ENVIRONMENT_DEFAULT points at '{$row->slug}', which belongs to an account. The platform root must be an environment no customer owns.");
+            : $this->addFail('Platform root', "CBOX_ID_ENVIRONMENT_DEFAULT points at '{$row->slug}', which a customer owns. The platform root must be an environment no customer owns.");
     }
 
     private function checkIssuer(): void

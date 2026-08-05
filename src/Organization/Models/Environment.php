@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
  * environment scope. Its id is the environment key stored on every owned row.
  *
  * @property string $id
- * @property string|null $account_id
+ * @property string|null $project_id
  * @property string $name
  * @property string $slug
  * @property EnvironmentType $type
