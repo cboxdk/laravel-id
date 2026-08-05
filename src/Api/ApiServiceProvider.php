@@ -50,7 +50,16 @@ class ApiServiceProvider extends ServiceProvider
         // no environment), and "this process is alive" must not depend on a database
         // lookup or on whether this particular host is allowed to be an issuer. A
         // liveness probe that can 404 restarts healthy pods.
-        Route::middleware('throttle:300,1')->get('/up', HealthController::class);
+        //
+        // AND OUTSIDE THE RATE LIMITER, for the same reason one step further. This
+        // carried `throttle:300,1`, and `ThrottleRequests` writes to the default cache
+        // store — so the probe that answers "is this process alive" took a dependency on
+        // the cache being reachable. A Redis or database blip then failed liveness on
+        // every instance at once, the whole fleet restarted together, and each
+        // replacement crash-looped against the same dependency it was waiting to
+        // recover. The handler is a static `{"status":"ok"}`: there is no cost here to
+        // limit, and no limiter that is worth taking a dependency for.
+        Route::get('/up', HealthController::class);
 
         // Every request resolves its environment from the host first, pinning the
         // hard environment scope (own users, keys, issuer) for everything below.
