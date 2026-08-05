@@ -17,6 +17,43 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-08-05
+
+### Added
+
+- **An organization can own an IdP product with no account behind it.**
+  `projects.account_id` was `NOT NULL` *and* carried a cascade to `accounts`, so an
+  organization could only ever own a project transitively, through an account row. The
+  column is optional now, and `Projects::createForOrganization()` is what makes that
+  reachable rather than merely permitted — a nullable column no statement in the codebase
+  can leave empty is a capability nobody has.
+
+  The cascade is deliberately **kept**. Dropping the foreign key belongs with dropping
+  `accounts` itself, in one migration where both halves are visible: a `DROP TABLE` with
+  this cascade still live would take every project with it.
+
+  `uniqueSlug()` now takes the column it scopes to. The account path keys on
+  `(account_id, slug)` and the organization path on `(organization_id, slug)`; scoping to
+  the wrong one yields a slug that passes the check and then violates the index, surfacing
+  as a database error on an ordinary second project called "Default".
+
+### Migration notes
+
+- `2026_08_07_000100_let_a_project_outlive_its_account` repairs before it alters: a project
+  whose account has since been homed gets that organization. A project whose account was
+  never homed is left alone and **reported to the log** rather than refused — there is
+  nothing to derive an organization from, and inventing one is worse than a row an operator
+  can see. Those rows will lose their owner when the account plane is retired; home their
+  accounts first (see `2026_08_05_000200`).
+
+- Verified incrementally against PostgreSQL 17 and MySQL 8.4, not only by a fresh migrate:
+  seeded both legacy shapes at the pre-change migration, then migrated. Rows survived, the
+  column became nullable, and `projects_account_id_foreign` was intact afterwards on both.
+
+- SQLite implements a column change by rebuilding the table, and `environments.project_id`
+  references `projects` — so the alteration is skipped when it has already been applied.
+  That also makes the whole migration re-runnable after a partial failure.
+
 ## [0.92.0] - 2026-08-05
 
 ### Fixed
