@@ -51,10 +51,18 @@ it('costs queries on the first resolution and none on the next', function (): vo
     $cold = queriesDuring(fn () => $resolver->resolveForHost('acme.cboxid.com'));
     $warm = queriesDuring(fn () => $resolver->resolveForHost('acme.cboxid.com'));
 
-    // Cold path: the custom-domain lookup misses, the slug lookup hits, then the
-    // owning account's liveness is checked — three round trips, on EVERY request,
-    // before any endpoint logic ran.
-    expect($cold)->toBe(3)
+    // Cold path: the custom-domain lookup misses, the slug lookup hits, then ownership
+    // is walked — the environment's project, and that project's organization — and the
+    // owner's liveness read. FOUR round trips on EVERY uncached request, before any
+    // endpoint logic runs.
+    //
+    // It was three. The fourth is the price of removing `environments.account_id`, a
+    // denormalized copy of ownership that made the liveness check a single read. The copy
+    // is what made it cheap, and a copy of ownership is a second place for ownership to be
+    // wrong — so the hop is bought deliberately, and the cache is what keeps it off the
+    // hot path. The number is asserted rather than bounded precisely so that buying
+    // another one has to be a decision somebody writes down.
+    expect($cold)->toBe(4)
         ->and($warm)->toBe(0)
         ->and($resolver->resolveForHost('acme.cboxid.com')?->environmentKey())->toBe($env->id);
 });

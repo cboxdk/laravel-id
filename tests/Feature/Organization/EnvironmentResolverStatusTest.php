@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\PlatformRoot;
 use Cbox\Id\Platform\TenantProvisioner;
 use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -38,6 +40,14 @@ it('stops resolving when the owning account is suspended, and resumes on reactiv
     expect($resolver->resolveForHost('acme.cboxid.com'))->not->toBeNull();
 
     suspendOwnerOf($env);
+
+    // Read it back rather than trusting the write. The resolver compares
+    // `organizations.status` to the literal 'active', and an enum whose suspended case
+    // serialises to something else would leave this test asserting that a suspension
+    // nobody performed had no effect.
+    expect(app(PlatformRoot::class)->run(
+        fn (): mixed => DB::table('organizations')->where('id', ownerOrganizationOf($env))->value('status'),
+    ))->not->toBe('active');
     expect($resolver->resolveForHost('acme.cboxid.com'))->toBeNull();
 
     reactivateOwnerOf($env);

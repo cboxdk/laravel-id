@@ -23,6 +23,7 @@ class OrganizationService implements Organizations
         private readonly OrganizationHierarchy $hierarchy,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly EnvironmentResolutionCache $resolutionCache,
     ) {}
 
     public function create(NewOrganization $input): Organization
@@ -138,6 +139,8 @@ class OrganizationService implements Organizations
         $organization = Organization::query()->whereKey($id)->firstOrFail();
         $organization->status = $status;
         $organization->save();
+
+        $this->forgetResolvedEnvironments($organization->id);
 
         $this->events->emit(new DomainEvent(
             $action,
