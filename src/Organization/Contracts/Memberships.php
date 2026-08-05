@@ -56,4 +56,33 @@ interface Memberships
      * @return Collection<int, Membership>
      */
     public function forUser(string $userId): Collection;
+
+    /**
+     * Restrict a membership to a SUBSET of the environments its organization owns, or
+     * lift the restriction.
+     *
+     * `$all = true` is the unrestricted state and detaches every grant, so the two halves
+     * can never disagree — a boolean saying "everything" beside rows saying "these three"
+     * is a question with two answers, and the readers would have to pick one.
+     *
+     * `$environmentIds` is filtered against what the organization actually owns before
+     * anything is written. A grant naming somebody else's environment must not be
+     * storable: the gates ask "is the host environment in this member's list", so a
+     * foreign id in the list is not a stray row, it is access.
+     *
+     * @param  list<string>  $environmentIds  ignored when `$all` is true
+     */
+    public function setEnvironmentAccess(string $organizationId, string $userId, bool $all, array $environmentIds = []): void;
+
+    /**
+     * Every environment this membership may reach — the whole set its organization owns
+     * when unrestricted, the granted subset otherwise.
+     *
+     * This is what an authorization gate asks, so it answers with ids rather than models
+     * and never with null: an empty list is "nothing", which is the safe reading, and a
+     * membership that does not exist gets exactly that.
+     *
+     * @return list<string>
+     */
+    public function accessibleEnvironmentIds(string $organizationId, string $userId): array;
 }

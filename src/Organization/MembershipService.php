@@ -20,8 +20,10 @@ use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Enums\MembershipStatus;
 use Cbox\Id\Organization\Exceptions\LastOwner;
+use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Organization\Models\Membership;
 use Cbox\Id\Organization\Models\Organization;
+use Cbox\Id\Platform\Models\Project;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -252,6 +254,109 @@ class MembershipService implements Memberships
                 ->orderBy('id')
                 ->get(),
         );
+    }
+
+    /**
+     * Restrict a membership to a SUBSET of the environments its organization owns.
+     *
+     * The two halves are kept from ever disagreeing: lifting the restriction detaches
+     * every grant, so there is never a boolean saying "everything" beside rows saying
+     * "these three" — a question with two answers, which the readers would have to pick
+     * between and would pick differently.
+     *
+     * THE FILTER IS THE SECURITY CONTROL, not tidiness. The gates ask "is the host
+     * environment in this member's list", so an id in that list IS access — a grant naming
+     * another organization's environment would not be a stray row, it would be a way in.
+     * So the ids are intersected with what this organization actually owns before anything
+     * is written, and the caller's list is never trusted to have been checked already.
+     *
+     * A membership that does not exist is a no-op rather than an error: the caller has
+     * already been told who the member is by the console it rendered, and inventing a
+     * restriction for somebody who is not there writes a row nothing will ever read.
+     *
+     * @param  list<string>  $environmentIds
+     */
+    public function setEnvironmentAccess(string $organizationId, string $userId, bool $all, array $environmentIds = []): void
+    {
+        $membership = $this->of($organizationId, $userId);
+
+        if ($membership === null) {
+            return;
+        }
+
+        $membership->all_environments = $all;
+        $membership->save();
+
+        if ($all) {
+            $membership->environments()->detach();
+
+            return;
+        }
+
+        $membership->environments()->sync(
+            array_values(array_intersect($this->ownedEnvironmentIds($organizationId), $environmentIds)),
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function accessibleEnvironmentIds(string $organizationId, string $userId): array
+    {
+        $membership = $this->of($organizationId, $userId);
+
+        // No membership, no access. Answered with the empty list rather than null so a
+        // caller cannot read "unknown" as "unrestricted" — every reader of this is an
+        // authorization gate, and the two must not be the same value.
+        if ($membership === null) {
+            return [];
+        }
+
+        if ($membership->all_environments) {
+            return $this->ownedEnvironmentIds($organizationId);
+        }
+
+        // Intersected with current ownership on READ as well as on write. A grant survives
+        // an environment moving to another organization, and the row alone would then
+        // still say yes; ownership is the fact, the grant only narrows it.
+        $granted = [];
+
+        foreach ($membership->environments()->pluck('environments.id') as $id) {
+            if (is_string($id) && $id !== '') {
+                $granted[] = $id;
+            }
+        }
+
+        return array_values(array_intersect($this->ownedEnvironmentIds($organizationId), $granted));
+    }
+
+    /**
+     * Every environment this organization owns, through the projects it owns.
+     *
+     * `environments.account_id` is not consulted. An account IS an organization, so the
+     * account-keyed answer is a subset of this one at best, and it disappears entirely
+     * when the account plane is folded away — reading it here would be writing the new
+     * home in terms of the old one.
+     *
+     * @return list<string>
+     */
+    private function ownedEnvironmentIds(string $organizationId): array
+    {
+        $ids = Environment::query()
+            ->whereIn('project_id', Project::query()->where('organization_id', $organizationId)->select('id'))
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $out = [];
+
+        foreach ($ids as $id) {
+            if (is_string($id) && $id !== '') {
+                $out[] = $id;
+            }
+        }
+
+        return $out;
     }
 
     /**
