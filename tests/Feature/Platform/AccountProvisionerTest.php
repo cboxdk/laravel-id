@@ -20,6 +20,27 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
+/**
+ * The platform-root environment ("tenant 1"), which every installed deployment has: the
+ * installer stamps it before anything else, and an account provisioned without one is in
+ * the bootstrap window where it has no organization and its members have no subject.
+ */
+function provisionerPlatformRoot(): void
+{
+    if (Environment::query()->where('is_default', true)->exists()) {
+        return;
+    }
+
+    Environment::query()->create([
+        'name' => 'Platform',
+        'slug' => 'platform-'.Str::lower((string) Str::ulid()),
+        'type' => EnvironmentType::Production,
+        'status' => EnvironmentStatus::Active,
+        'is_default' => true,
+        'settings' => [],
+    ]);
+}
+
 function accountBlueprint(string $name = 'Acme', string $email = 'owner@acme.test', int $limit = 2): AccountBlueprint
 {
     return new AccountBlueprint(
@@ -147,6 +168,15 @@ it('invites a member with a role who cannot authenticate until they accept', fun
 });
 
 it('scopes a member to specific environments and resolves their access', function (): void {
+    // A PLATFORM ROOT FIRST, which every installed deployment has and this test did not.
+    // Environment access is answered through the organization now — the environment's
+    // project, and that project's organization — so an account with no organization has no
+    // reachable environments at all. Without a root there is nowhere for the organization
+    // to live, `homeAccount()` writes nothing, and this test was standing in the
+    // first-install bootstrap window while asserting a thing an administrator does long
+    // after it closes.
+    provisionerPlatformRoot();
+
     $result = app(AccountProvisioner::class)->provision(accountBlueprint(limit: 3));
     $members = app(AccountMembers::class);
     $prod = $result->environment;
@@ -162,6 +192,15 @@ it('scopes a member to specific environments and resolves their access', functio
 });
 
 it('never scopes an owner/admin and ignores foreign environment grants', function (): void {
+    // A PLATFORM ROOT FIRST, which every installed deployment has and this test did not.
+    // Environment access is answered through the organization now — the environment's
+    // project, and that project's organization — so an account with no organization has no
+    // reachable environments at all. Without a root there is nowhere for the organization
+    // to live, `homeAccount()` writes nothing, and this test was standing in the
+    // first-install bootstrap window while asserting a thing an administrator does long
+    // after it closes.
+    provisionerPlatformRoot();
+
     $result = app(AccountProvisioner::class)->provision(accountBlueprint());
     $members = app(AccountMembers::class);
 

@@ -79,6 +79,15 @@ interface AccountMembers
     public function accessibleEnvironmentIds(AccountMember $member): array;
 
     /**
+     * Whether this member reaches every environment their organization owns.
+     *
+     * Read this rather than `AccountMember::$all_environments`: the grant moved to the
+     * membership, nothing writes that column any more, and it holds whatever was true
+     * before the move.
+     */
+    public function hasAllEnvironments(AccountMember $member): bool;
+
+    /**
      * Remove a member from the account. Refuses to remove an owner — ownership must
      * be transferred first, so an account is never left ownerless. Returns whether
      * the member was removed.

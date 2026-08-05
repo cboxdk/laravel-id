@@ -256,6 +256,28 @@ class DatabaseAccountMembers implements AccountMembers
         });
     }
 
+    /**
+     * Restrict a member to a subset of environments — DELEGATED to the membership.
+     *
+     * The grant used to live here, in `account_members.all_environments` and the
+     * `account_member_environments` pivot. It lives on the membership now
+     * ({@see Memberships::setEnvironmentAccess()}), because the account plane is being
+     * folded into the organization and a restriction has to survive that.
+     *
+     * The account-plane columns are deliberately NOT written any more. Keeping both in
+     * step would be a second truth to drift, and the drift is silent in the worst
+     * direction: three authorization gates read this, and two stores that disagree means
+     * one of them is quietly granting access the administrator thought they had removed.
+     * The old columns stay in the schema, unread, until the tables are dropped — a store
+     * that is written but never read is dead weight; one that is read but never written
+     * is a lie.
+     *
+     * The signature is unchanged so the console's members page and the two console views
+     * do not move twice. They move once, to `Memberships`, when `AccountMember` itself
+     * goes.
+     *
+     * @param  list<string>  $environmentIds
+     */
     public function setEnvironmentAccess(string $id, bool $all, array $environmentIds = []): void
     {
         $member = $this->find($id);
@@ -269,41 +291,88 @@ class DatabaseAccountMembers implements AccountMembers
             return;
         }
 
-        $member->all_environments = $all;
-        $member->save();
+        $organizationId = $member->account?->organization_id;
+        $subjectId = $member->subject_id;
 
-        if ($all) {
-            $member->environments()->detach();
-
+        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
             return;
         }
 
-        // Only sync grants for environments the account actually owns — never leak a
-        // grant to another account's environment.
-        $ownEnvironmentIds = Environment::query()
-            ->where('account_id', $member->account_id)
-            ->whereIn('id', $environmentIds)
-            ->pluck('id')
-            ->all();
-
-        $member->environments()->sync($ownEnvironmentIds);
+        $this->platformRoot->run(function () use ($organizationId, $subjectId, $all, $environmentIds): void {
+            $this->memberships->setEnvironmentAccess($organizationId, $subjectId, $all, $environmentIds);
+        });
     }
 
-    public function accessibleEnvironmentIds(AccountMember $member): array
+    /**
+     * Whether this member reaches EVERY environment their organization owns.
+     *
+     * `account_members.all_environments` is not consulted, and must not be: nothing writes
+     * it any more ({@see setEnvironmentAccess()}), so the column holds whatever was true
+     * before the grant moved. Two readers still showed it — the account API's member
+     * payload and the operator console's member table — and both would have gone on
+     * reporting "All" for somebody who had since been restricted, which is the one wrong
+     * answer that matters on a page an administrator opens to check exactly that.
+     *
+     * Answered from the membership rather than by comparing set sizes, so a member of an
+     * organization that owns no environments at all reads as unrestricted (which they are)
+     * rather than as restricted-to-nothing.
+     */
+    public function hasAllEnvironments(AccountMember $member): bool
     {
-        $ids = $member->all_environments
-            ? Environment::query()->where('account_id', $member->account_id)->pluck('id')
-            : $member->environments()->pluck('environments.id');
+        $organizationId = $member->account?->organization_id;
+        $subjectId = $member->subject_id;
 
-        $out = [];
-
-        foreach ($ids as $id) {
-            if (is_string($id)) {
-                $out[] = $id;
-            }
+        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
+            return false;
         }
 
-        return $out;
+        return $this->platformRoot->run(function () use ($organizationId, $subjectId): bool {
+            $membership = $this->memberships->of($organizationId, $subjectId);
+
+            // No membership answers FALSE, not true. This is shown beside a member's row
+            // as their environment access, and "all" is the permissive reading — a member
+            // the organization has no record of must not be presented as reaching
+            // everything it owns.
+            return $membership !== null && $membership->all_environments;
+        }) ?? false;
+    }
+
+    /**
+     * Every environment this member may reach — DELEGATED to the membership.
+     *
+     * It answered from `environments.account_id` before. That column goes with the account
+     * plane, and the membership answers through project ownership instead, which is the
+     * same set for every environment that has an account: `2026_07_19_000110` gave each
+     * one a project of its account, and `2026_08_06_000100` gave each such project its
+     * account's organization.
+     *
+     * The one population where the two answers differ is an environment whose account was
+     * never homed — its project has no organization, so this returns nothing for it and
+     * the member loses access rather than gaining it. That is the safe direction, it is
+     * the same population `2026_08_07_000100` already reports to the log, and homing those
+     * accounts (`2026_08_05_000200`) is what fixes it.
+     *
+     * A member with no subject or no homed account gets the empty list. Every caller is an
+     * authorization gate, so "cannot tell" must answer as "nothing" and never as
+     * "everything".
+     *
+     * @return list<string>
+     */
+    public function accessibleEnvironmentIds(AccountMember $member): array
+    {
+        $organizationId = $member->account?->organization_id;
+        $subjectId = $member->subject_id;
+
+        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
+            return [];
+        }
+
+        // `run()` is nullable-returning by signature; an authorization gate must not
+        // receive null where it expects a list, and `?? []` is the safe reading of a scope
+        // switch that produced nothing.
+        return $this->platformRoot->run(
+            fn (): array => $this->memberships->accessibleEnvironmentIds($organizationId, $subjectId),
+        ) ?? [];
     }
 
     public function activate(string $id, string $password): bool
