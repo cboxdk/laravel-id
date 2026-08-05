@@ -17,6 +17,16 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The liveness probe no longer depends on the cache being reachable.** `/up` carried
+  `throttle:300,1`, and `ThrottleRequests` writes to the default cache store — so the one
+  endpoint whose job is to answer "is this process alive" could not answer without Redis
+  or the database. A blip in either failed liveness on every instance at once, the whole
+  fleet restarted together, and each replacement crash-looped against the same dependency
+  it was waiting to recover. The handler is a static `{"status":"ok"}`: there is no cost
+  to limit, and no limiter worth taking a dependency for.
+
 ## [0.91.1] - 2026-08-04
 
 ### Changed
