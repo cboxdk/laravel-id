@@ -244,16 +244,46 @@ class DatabaseAccountMembers implements AccountMembers
      */
     private function syncMembershipRole(AccountMember $member, AccountRole $role): void
     {
-        $organizationId = $member->account?->organization_id;
+        $organizationId = $this->homeOf($member);
         $subjectId = $member->subject_id;
 
-        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
+        if ($organizationId === null || ! is_string($subjectId) || $subjectId === '') {
             return;
         }
 
         $this->platformRoot->run(function () use ($organizationId, $subjectId, $role): void {
             $this->memberships->changeRole($organizationId, $subjectId, $role->asMembershipRole());
         });
+    }
+
+    /**
+     * The organization this member's account is homed in, resolved INSIDE the platform root.
+     *
+     * `$member->account` is an environment-scoped read — {@see Account} lives in the
+     * platform-root environment — so loading it from a TENANT host resolves nothing and the
+     * organization comes back null. That is the scope doing its job; the mistake is asking
+     * it from the wrong side.
+     *
+     * It cost a redirect loop. Both methods below took `$member->account?->organization_id`
+     * before entering the root, so on a tenant host they answered "no organization" and
+     * therefore "no reachable environments" — and `EnvironmentAdminAuth` refused the
+     * handoff it had just minted, bounced to the account console, which minted another:
+     * `/open → /admin/handoff → /admin/login → /open`. The code this replaced never had the
+     * problem because it read the `account_id` COLUMN and never followed the relation.
+     */
+    private function homeOf(AccountMember $member): ?string
+    {
+        $accountId = $member->account_id;
+
+        if ($accountId === '') {
+            return null;
+        }
+
+        $organizationId = $this->platformRoot->run(
+            fn (): mixed => Account::query()->whereKey($accountId)->value('organization_id'),
+        );
+
+        return is_string($organizationId) && $organizationId !== '' ? $organizationId : null;
     }
 
     /**
@@ -319,10 +349,10 @@ class DatabaseAccountMembers implements AccountMembers
      */
     public function hasAllEnvironments(AccountMember $member): bool
     {
-        $organizationId = $member->account?->organization_id;
+        $organizationId = $this->homeOf($member);
         $subjectId = $member->subject_id;
 
-        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
+        if ($organizationId === null || ! is_string($subjectId) || $subjectId === '') {
             return false;
         }
 
@@ -360,10 +390,10 @@ class DatabaseAccountMembers implements AccountMembers
      */
     public function accessibleEnvironmentIds(AccountMember $member): array
     {
-        $organizationId = $member->account?->organization_id;
+        $organizationId = $this->homeOf($member);
         $subjectId = $member->subject_id;
 
-        if (! is_string($organizationId) || $organizationId === '' || ! is_string($subjectId) || $subjectId === '') {
+        if ($organizationId === null || ! is_string($subjectId) || $subjectId === '') {
             return [];
         }
 

@@ -6,6 +6,7 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Kernel\Runtime\RequestLifetime;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment as EnvironmentContract;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Organization\Models\Environment;
@@ -42,9 +43,29 @@ class PlatformRoot
 
     private ?RequestLifetime $memoLifetime = null;
 
-    public function __construct(
-        private readonly EnvironmentContext $environments,
-    ) {}
+    use ResolvesEnvironment;
+
+    /**
+     * NO CONSTRUCTOR-INJECTED {@see EnvironmentContext}, and this class is the reason the
+     * rule exists rather than an exception to it.
+     *
+     * `EnvironmentContext` is a SCOPED binding — one instance per request. This object is
+     * held by singletons (`AccountMembers` among them), so injecting the context here made
+     * the singleton capture the FIRST request's instance and keep it forever. `run()` then
+     * switched an environment nobody was reading: `model()` resolved the platform root
+     * correctly, `runAs()` set it on a dead context, and the query inside ran under
+     * whatever environment the live request had selected.
+     *
+     * It was invisible for as long as every caller read tables that are not
+     * environment-owned — `accounts`, `account_members` — where running in the wrong
+     * environment changes nothing. The first caller to read an environment-owned table
+     * through it (`memberships`, when environment grants moved to the membership) found no
+     * membership on a tenant host, so an account owner was refused the environment they
+     * own and the console bounced: `/open → /admin/handoff → /admin/login → /open`.
+     *
+     * {@see ResolvesEnvironment} resolves the live context per call instead.
+     */
+    public function __construct() {}
 
     /**
      * The platform-root environment MODEL, or null when no `is_default` row exists.
@@ -134,6 +155,6 @@ class PlatformRoot
     {
         $environment = $this->environment();
 
-        return $environment === null ? null : $this->environments->runAs($environment, $callback);
+        return $environment === null ? null : $this->environments()->runAs($environment, $callback);
     }
 }

@@ -95,6 +95,64 @@ function resolvedSingletons(): array
 /**
  * @return list<string> the scoped contracts $instance captures at construction
  */
+/**
+ * TRANSITIVELY, which is the whole point and was the hole.
+ *
+ * It looked one level deep: a singleton's own constructor parameters. `AccountMembers` is
+ * a singleton that holds `PlatformRoot`, which held an `EnvironmentContext` — two levels —
+ * so the guard passed while the capture was real, and `PlatformRoot::run()` switched an
+ * environment on a context nobody was reading. A singleton that captures the scoped
+ * context THROUGH a collaborator is exactly as broken as one that captures it directly;
+ * the object graph is what is long-lived, not the first hop of it.
+ *
+ * The walk follows actual PROPERTY VALUES rather than declared types, because that is what
+ * the singleton really holds — a constructor typed against an interface tells you nothing
+ * about which object is on the other end. `$seen` is keyed on object identity, so a graph
+ * with a cycle terminates and a shared collaborator is inspected once.
+ *
+ * The reported path is the chain, not just the leaf: "AccountMembers → PlatformRoot →
+ * EnvironmentContext" is the sentence somebody needs to fix it, and the leaf alone sends
+ * them to the wrong class.
+ *
+ * @param  array<int, object>  $seen
+ * @return list<string>
+ */
+function capturedScopedContractsDeep(object $instance, array &$seen = [], string $path = ''): array
+{
+    foreach ($seen as $already) {
+        if ($already === $instance) {
+            return [];
+        }
+    }
+
+    $seen[] = $instance;
+    $here = $path === '' ? $instance::class : $path.' → '.$instance::class;
+    $captured = [];
+
+    foreach (capturedScopedContracts($instance) as $contract) {
+        $captured[] = $here.' → '.$contract;
+    }
+
+    foreach ((new ReflectionClass($instance))->getProperties() as $property) {
+        if ($property->isStatic() || ! $property->isInitialized($instance)) {
+            continue;
+        }
+
+        $value = $property->getValue($instance);
+
+        // Only objects the package itself owns. Walking into the container, the
+        // application or a vendor's connection resolver finds scoped contracts that are
+        // supposed to be there and buries the real finding in noise.
+        if (is_object($value) && str_starts_with($value::class, 'Cbox\\Id\\')) {
+            foreach (capturedScopedContractsDeep($value, $seen, $here) as $found) {
+                $captured[] = $found;
+            }
+        }
+    }
+
+    return array_values(array_unique($captured));
+}
+
 function capturedScopedContracts(object $instance): array
 {
     $constructor = (new ReflectionClass($instance))->getConstructor();
@@ -149,10 +207,11 @@ it('never lets a singleton constructor-inject a scoped tenancy context', functio
     $violations = [];
 
     foreach ($inspected as $abstract => $instance) {
-        $captured = capturedScopedContracts($instance);
+        $seen = [];
+        $captured = capturedScopedContractsDeep($instance, $seen);
 
-        if ($captured !== []) {
-            $violations[] = $abstract.' → '.$instance::class.' captures '.implode(', ', $captured);
+        foreach ($captured as $chain) {
+            $violations[] = $abstract.': '.$chain;
         }
     }
 
