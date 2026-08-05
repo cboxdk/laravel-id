@@ -1,10 +1,17 @@
 <?php
 
 declare(strict_types=1);
+use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Enums\EnvironmentStatus;
+use Cbox\Id\Organization\Enums\EnvironmentType;
+use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Platform\Models\Project;
+use Cbox\Id\Platform\PlatformRoot;
 use Cbox\Id\Tests\Support\ExternalDriverTestCase;
 use Cbox\Id\Tests\Support\MigrationTestCase;
 use Cbox\Id\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(TestCase::class)->in('Feature');
 
@@ -45,4 +52,73 @@ if (in_array(getenv('DB_CONNECTION'), ['mysql', 'mariadb', 'pgsql'], true)
     && getenv('CBOX_ID_TEST_MIGRATE_EACH') !== '1') {
     uses(RefreshDatabase::class)->in('Feature');
     uses(RefreshDatabase::class)->in('External');
+}
+
+/**
+ * Suspend / reactivate the CUSTOMER that owns an environment.
+ *
+ * Ownership runs environment → project → organization. It used to be a column on the
+ * environment (`account_id`), which made this a one-liner; the column was a denormalized
+ * copy of the same fact, and a copy of ownership is a second place for ownership to be
+ * wrong.
+ *
+ * Inside the platform root, because `organizations` is environment-owned and these tests
+ * stand on a tenant host by design — the thing they are testing is what that host serves.
+ */
+function ownerOrganizationOf(Environment $environment): string
+{
+    $projectId = $environment->refresh()->project_id;
+
+    expect($projectId)->not->toBeNull('the environment has no project, so it has no owner to suspend');
+
+    $organizationId = app(PlatformRoot::class)->run(
+        fn (): mixed => Project::query()->whereKey($projectId)->value('organization_id'),
+    );
+
+    expect($organizationId)->toBeString();
+
+    return (string) $organizationId;
+}
+
+function suspendOwnerOf(Environment $environment): void
+{
+    $id = ownerOrganizationOf($environment);
+
+    app(PlatformRoot::class)->run(fn () => app(Organizations::class)->suspend($id, 'op_test'));
+}
+
+function reactivateOwnerOf(Environment $environment): void
+{
+    $id = ownerOrganizationOf($environment);
+
+    app(PlatformRoot::class)->run(fn () => app(Organizations::class)->reactivate($id, 'op_test'));
+}
+
+/**
+ * The platform-root environment ("tenant 1") — where the platform's own people and its
+ * customers' organizations live. Idempotent: a deployment has exactly one, and so does a
+ * test.
+ *
+ * Provisioning without one used to be allowed and produced a half-born customer: an
+ * organization that was never created, an owner with nowhere to be a member. Every caller
+ * downstream then carried a null check for a state only a broken install could reach.
+ * {@see TenantProvisioner::provision()} refuses now, so a fixture that skips this gets a
+ * clear failure instead of a customer that half exists.
+ */
+function platformRootEnvironment(): Environment
+{
+    $existing = Environment::query()->where('is_default', true)->first();
+
+    if ($existing !== null) {
+        return $existing;
+    }
+
+    return Environment::query()->create([
+        'name' => 'Platform',
+        'slug' => 'platform-root-'.Str::lower((string) Str::ulid()),
+        'type' => EnvironmentType::Production,
+        'status' => EnvironmentStatus::Active,
+        'is_default' => true,
+        'settings' => [],
+    ]);
 }

@@ -5,9 +5,8 @@ declare(strict_types=1);
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Models\Environment;
-use Cbox\Id\Platform\AccountProvisioner;
-use Cbox\Id\Platform\Contracts\Accounts;
-use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
+use Cbox\Id\Platform\TenantProvisioner;
+use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -19,8 +18,10 @@ beforeEach(function (): void {
 
 function resolutionEnvironment(string $slugSeed = 'Acme'): Environment
 {
-    return app(AccountProvisioner::class)->provision(new AccountBlueprint(
-        accountName: $slugSeed,
+    platformRootEnvironment();
+
+    return app(TenantProvisioner::class)->provision(new TenantBlueprint(
+        organizationName: $slugSeed,
         ownerEmail: strtolower($slugSeed).'@test.test',
         ownerName: 'Owner',
         ownerPassword: 'supersecret123',
@@ -86,11 +87,11 @@ it('stops and resumes with its account, which the environment row never sees cha
     expect($resolver->resolveForHost('acme.cboxid.com'))->not->toBeNull();
 
     // Suspension is a mass update on `accounts`; no environment model event fires, so
-    // this only works because DatabaseAccounts invalidates explicitly.
-    app(Accounts::class)->suspend($env->account_id, 'op_test');
+    // this only works because the organization writer invalidates explicitly.
+    suspendOwnerOf($env);
     expect($resolver->resolveForHost('acme.cboxid.com'))->toBeNull();
 
-    app(Accounts::class)->reactivate($env->account_id, 'op_test');
+    reactivateOwnerOf($env);
     expect($resolver->resolveForHost('acme.cboxid.com'))->not->toBeNull();
 });
 

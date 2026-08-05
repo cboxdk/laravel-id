@@ -9,6 +9,7 @@ use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\Enums\ProjectStatus;
 use Cbox\Id\Platform\Models\Project;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -20,6 +21,28 @@ class DatabaseProjects implements OrganizationProjects, Projects
     public function find(string $id): ?Project
     {
         return Project::query()->whereKey($id)->first();
+    }
+
+    /**
+     * @return Collection<int, Project>
+     */
+    public function forOrganization(string $organizationId): Collection
+    {
+        return Project::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('created_at')
+            ->get();
+    }
+
+    public function ownedByOrganization(string $projectId, string $organizationId): bool
+    {
+        // Asked of the DATABASE rather than by loading the row and comparing: an empty
+        // owner id must never match, and a PHP-side `===` against an attribute is one
+        // forgotten guard away from answering "owned" for a project owned by nobody.
+        return $organizationId !== '' && Project::query()
+            ->whereKey($projectId)
+            ->where('organization_id', $organizationId)
+            ->exists();
     }
 
     /**

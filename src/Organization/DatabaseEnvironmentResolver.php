@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\DB;
  * The Environment model is not itself environment-owned, so these lookups run
  * unscoped by design.
  *
- * A resolved environment only serves while it AND its owning account are active:
- * a suspended environment, or one whose account is suspended/delinquent, resolves
+ * A resolved environment only serves while it AND the customer who owns it are active:
+ * a suspended environment, or one whose owner is suspended/delinquent, resolves
  * to null so the host stops serving auth entirely (the platform's off-switch for
  * an abusive or non-paying tenant actually cuts the end-user plane, not just the
  * dashboard).
@@ -65,10 +65,23 @@ class DatabaseEnvironmentResolver implements EnvironmentResolver
     }
 
     /**
-     * Gate a resolved environment on liveness: it must be active, and its owning
-     * account (if any) must be active. A null owning account is a platform-owned
-     * environment (Cbox's own / self-hosted single tenant), which has no account to
-     * suspend. Returns null when the environment must not serve.
+     * Gate a resolved environment on liveness: it must be active, and the customer who
+     * owns it must be active too. Returns null when it must not serve.
+     *
+     * OWNERSHIP RUNS THROUGH THE PROJECT — environment → project → organization — which is
+     * one hop longer than the `environments.account_id` this used to read, and worth it:
+     * that column was a denormalized copy of the same fact, and a copy of ownership is a
+     * second place for ownership to be wrong.
+     *
+     * An environment with no project is owned by nobody and serves: that is the platform
+     * root, and a self-hosted single-tenant install's lone environment. Neither has a
+     * customer to suspend, and refusing them would take the deployment down with a
+     * question about a customer it does not have.
+     *
+     * Raw queries rather than the models on purpose. `organizations` is environment-owned,
+     * so `Organization::query()` here would be scoped to whatever environment is CURRENT —
+     * which, in a resolver whose whole job is to decide what the current environment is,
+     * is either nothing or the wrong one.
      */
     private function servable(?EnvironmentModel $environment): ?EnvironmentModel
     {
@@ -76,18 +89,25 @@ class DatabaseEnvironmentResolver implements EnvironmentResolver
             return null;
         }
 
-        if ($environment->account_id !== null) {
-            $accountActive = DB::table('accounts')
-                ->where('id', $environment->account_id)
-                ->where('status', 'active')
-                ->exists();
-
-            if (! $accountActive) {
-                return null;
-            }
+        if ($environment->project_id === null) {
+            return $environment;
         }
 
-        return $environment;
+        $organizationId = DB::table('projects')->where('id', $environment->project_id)->value('organization_id');
+
+        // A project that has gone missing, or one whose organization has, is not a licence
+        // to serve. The environment names an owner; if that owner cannot be produced, the
+        // safe reading is that it must not serve — the same direction a suspension takes.
+        if (! is_string($organizationId) || $organizationId === '') {
+            return null;
+        }
+
+        $ownerActive = DB::table('organizations')
+            ->where('id', $organizationId)
+            ->where('status', 'active')
+            ->exists();
+
+        return $ownerActive ? $environment : null;
     }
 
     private function hostIsUnderBaseDomain(string $host): bool

@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Organization\Models\Environment;
-use Cbox\Id\Platform\AccountProvisioner;
-use Cbox\Id\Platform\Contracts\Accounts;
-use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
+use Cbox\Id\Platform\TenantProvisioner;
+use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -15,8 +14,10 @@ beforeEach(fn () => config(['cbox-id.environments.base_domains' => ['cboxid.com'
 
 function acmeEnvironment(): Environment
 {
-    return app(AccountProvisioner::class)->provision(new AccountBlueprint(
-        accountName: 'Acme',
+    platformRootEnvironment();
+
+    return app(TenantProvisioner::class)->provision(new TenantBlueprint(
+        organizationName: 'Acme',
         ownerEmail: 'owner@acme.test',
         ownerName: 'Owner',
         ownerPassword: 'supersecret123',
@@ -36,10 +37,10 @@ it('stops resolving when the owning account is suspended, and resumes on reactiv
 
     expect($resolver->resolveForHost('acme.cboxid.com'))->not->toBeNull();
 
-    app(Accounts::class)->suspend($env->account_id, 'op_test');
+    suspendOwnerOf($env);
     expect($resolver->resolveForHost('acme.cboxid.com'))->toBeNull();
 
-    app(Accounts::class)->reactivate($env->account_id, 'op_test');
+    reactivateOwnerOf($env);
     expect($resolver->resolveForHost('acme.cboxid.com'))->not->toBeNull();
 });
 
