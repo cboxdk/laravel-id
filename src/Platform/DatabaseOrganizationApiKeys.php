@@ -72,8 +72,16 @@ class DatabaseOrganizationApiKeys implements OrganizationApiKeys
             return null;
         }
 
+        // `revokesAccess()`, not an `isActive()` on the model. `Account::isActive()` was
+        // `status === Active` against a two-case enum, so the two were the same thing;
+        // `OrganizationStatus` has a third case, and `Deleted` must refuse a key exactly as
+        // `Suspended` does. Re-deriving that decision here would be the second place it
+        // lives — the precise mistake {@see OrganizationStatus::revokesAccess()} was written
+        // to stop, and it reads as "allowed" for whichever case somebody adds next.
+        //
+        // A key whose organization cannot be produced is refused, like a missing status.
         $organizationIsActive = $this->platformRoot->run(
-            fn (): bool => $key->organization?->isActive() ?? false,
+            fn (): bool => $key->organization?->status->revokesAccess() === false,
         ) ?? false;
 
         if (! $organizationIsActive) {
