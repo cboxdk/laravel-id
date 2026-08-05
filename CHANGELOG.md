@@ -17,6 +17,43 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-08-05
+
+### Changed
+
+- **The account plane reads its environment grants from the membership.**
+  `AccountMembers::setEnvironmentAccess()` and `accessibleEnvironmentIds()` delegate to
+  `Memberships`. The signatures are unchanged, so consumers move once — to `Memberships` —
+  when `AccountMember` itself goes, rather than twice.
+
+  `account_members.all_environments` and `account_member_environments` are **no longer
+  written**. Keeping both stores in step would be a second truth to drift, and the drift is
+  silent in the worst direction: three authorization gates read this, so two stores that
+  disagree means one is quietly granting access an administrator believes they removed.
+
+- **`AccountMembers::hasAllEnvironments()`** — read this instead of
+  `AccountMember::$all_environments`, which now holds whatever was true before the grant
+  moved. It answers **false** for a member the organization has no record of, because
+  "all" is the permissive reading and an unknown member must not get it.
+
+### Upgrade notes
+
+- **A consumer reading `AccountMember::$all_environments` directly must switch to
+  `hasAllEnvironments()`.** The column is stale from this release on, and a member who has
+  since been restricted will read as unrestricted.
+
+- Environment access is answered through the organization now — the environment's project,
+  and that project's organization. That is the same set for every environment that has an
+  account (`2026_07_19_000110` gave each one a project, `2026_08_06_000100` gave each such
+  project its account's organization). The one population where the answers differ is an
+  environment whose account was never homed: its project has no organization, so its
+  members **lose** access rather than gain it. Home those accounts
+  (`2026_08_05_000200`); `2026_08_07_000100` reports them to the log.
+
+- A deployment with no platform-root environment has accounts with no organization and
+  therefore no reachable environments. That is the first-install bootstrap window, which an
+  installed deployment leaves before anybody restricts a member's access.
+
 ## [0.94.0] - 2026-08-05
 
 ### Added
