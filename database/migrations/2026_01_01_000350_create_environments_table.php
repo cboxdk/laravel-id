@@ -25,6 +25,18 @@ return new class extends Migration
             // k8s with no writable .env — resolves the same default across every
             // replica. At most one row is true; enforced by Environment::makeDefault().
             $table->boolean('is_default')->default(false)->index();
+
+            // The PRODUCT this environment is a stage of. Null for the platform root,
+            // which is a stage of nothing — it is where the platform's own people and
+            // its customers' organizations live.
+            //
+            // No foreign key, and `projects` is created after this table so there could
+            // not be one declared here anyway. That ordering is a symptom rather than
+            // the reason: an environment is the tenancy boundary itself, and the
+            // platform plane does not take referential locks across it. A project id
+            // that resolves to nothing reads as "owned by nobody", which is the safe
+            // answer and the one every reader already handles.
+            $table->string('project_id', 26)->nullable()->index();
             $table->json('settings')->default(JsonDefault::emptyObject());
             $table->timestamps();
         });
