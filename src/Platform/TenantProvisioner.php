@@ -4,79 +4,120 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Models\Environment;
+use Cbox\Id\Organization\Models\Membership;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
-use Cbox\Id\Platform\Contracts\AccountMembers;
-use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\Projects;
-use Cbox\Id\Platform\Exceptions\AccountSuspended;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
 use Cbox\Id\Platform\Exceptions\ProjectSuspended;
-use Cbox\Id\Platform\Models\Account;
 use Cbox\Id\Platform\Models\Project;
-use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
-use Cbox\Id\Platform\ValueObjects\ProvisionedAccount;
+use Cbox\Id\Platform\ValueObjects\ProvisionedTenant;
+use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
- * Self-serve provisioning of a whole account — the customer's workspace, their first
- * project (their first IdP product) and that project's first environment. This is a
- * PLATFORM-level operation: an account owns projects which own environments, but the
- * account is not itself inside one, so it runs above any tenant scope.
+ * Self-serve provisioning of a whole customer — the organization they are, the owner who
+ * signs in for them, their first IdP product, and that product's first environment.
  *
- * The layering is Account → Project → Environment → Organization → Subject, one way,
- * never the reverse: the account plane never seeds the end-user plane, so a
- * provisioned environment is born EMPTY. Billing lives on the PROJECT, so one account
- * can own several independently-billed IdP products.
+ * A PLATFORM-level operation. The organization it creates lives in the platform root, and
+ * the environment it creates is a tenant of its own, so this runs above any one tenant's
+ * scope and switches into the root explicitly rather than inheriting it.
  *
- * Everything is one transaction: a failed step never leaves a half-born account or a
+ * The layering is Organization → Project → Environment → Subject, one way and never the
+ * reverse: the management plane never seeds the end-user plane, so a provisioned
+ * environment is born EMPTY. Billing lives on the PROJECT, so one customer can own several
+ * independently-billed products.
+ *
+ * IT WAS `AccountProvisioner`, and it created an `Account` row and then an organization
+ * beside it that shadowed it one-to-one. Two rows for one customer, two role vocabularies,
+ * two answers to "who may act for them" — and a per-member environment grant that lived on
+ * one and was read from the other. The account row is gone rather than reconciled.
+ *
+ * Everything is one transaction: a failed step never leaves a half-born customer or a
  * routable-but-orphaned environment.
  */
-class AccountProvisioner
+class TenantProvisioner
 {
     public function __construct(
         private readonly EnvironmentContext $context,
         private readonly KeyManager $keys,
-        private readonly Accounts $accounts,
-        private readonly AccountMembers $members,
+        private readonly Subjects $subjects,
+        private readonly Memberships $memberships,
         private readonly Projects $projects,
         private readonly Organizations $organizations,
         private readonly PlatformRoot $platformRoot,
     ) {}
 
-    public function provision(AccountBlueprint $blueprint): ProvisionedAccount
+    public function provision(TenantBlueprint $blueprint): ProvisionedTenant
     {
-        return DB::transaction(function () use ($blueprint): ProvisionedAccount {
-            $account = $this->accounts->create($blueprint->accountName, $blueprint->environmentLimit);
+        return DB::transaction(function () use ($blueprint): ProvisionedTenant {
+            $platformRoot = $this->platformRoot->model();
 
-            // The account's home in the platform-root environment. Account members live
-            // there as ordinary subjects rather than in a second credential store, so the
-            // account needs an organization to hold them — and account SSO then becomes an
-            // ordinary connection on it. See docs/core-concepts/unified-account-identity.md.
-            $this->homeAccount($account);
+            if ($platformRoot === null) {
+                // Refused rather than worked around. There used to be a bootstrap window
+                // here — an account provisioned before the deployment had a root, whose
+                // members had no subject and whose organization did not exist — and every
+                // caller downstream grew a null check for a state only the installer could
+                // produce. The installer stamps the root first; if it has not, this is a
+                // broken install and saying so is more useful than half a customer.
+                throw new InvalidArgumentException(
+                    'No platform-root environment exists. Run the installer before provisioning a tenant.',
+                );
+            }
 
-            $member = $this->members->create(
-                $account->id,
-                $blueprint->ownerEmail,
-                $blueprint->ownerPassword,
-                $blueprint->ownerName,
+            // THE CUSTOMER, and the only row that stands for them. Created in the platform
+            // root, which is the environment the platform's own people and its customers'
+            // organizations live in — a tenant's END USERS live in that tenant's own
+            // environments instead, which is the whole distinction the root draws.
+            [$organization, $owner, $membership] = $this->context->runAs(
+                $platformRoot,
+                function () use ($blueprint): array {
+                    $organization = $this->organizations->create(new NewOrganization(
+                        name: $blueprint->organizationName,
+                        slug: $this->uniqueOrganizationSlug($blueprint->organizationName),
+                    ));
+
+                    // One credential of record. The owner is an ordinary subject — the
+                    // same row shape a tenant's own user occupies — rather than a member
+                    // row with its own password column, which is what the account plane
+                    // had and what made "who is signed in" a question with two answers.
+                    $owner = $this->subjects->create(
+                        $blueprint->ownerEmail,
+                        $blueprint->ownerName,
+                        $blueprint->ownerPassword,
+                    );
+
+                    // …and the authority is the MEMBERSHIP, held separately, because it is
+                    // true here and nowhere else. The same person may own this
+                    // organization and be a viewer in another.
+                    $membership = $this->memberships->add($organization->id, $owner->id, MembershipRole::Owner);
+
+                    return [$organization, $owner, $membership];
+                },
             );
 
-            // The account's first IdP product. Named after the account by default;
-            // its plan allowance is the blueprint's environment limit (billing lives
-            // on the project, so this is where the allowance belongs).
-            $project = $this->projects->create($account->id, $blueprint->accountName, $blueprint->environmentLimit);
+            // The customer's first IdP product. Named after them by default; its plan
+            // allowance is the blueprint's limit, because billing lives on the product.
+            $project = $this->projects->createForOrganization(
+                $organization->id,
+                $blueprint->organizationName,
+                $blueprint->environmentLimit,
+            );
 
-            // The routing slug (subdomain) derives from the PROJECT's identity, not
-            // the stage name — so "Acme" gets acme.example, not a generic
+            // The routing slug (subdomain) derives from the PRODUCT's identity, not the
+            // stage name — so "Acme" gets acme.example rather than a generic
             // "production.example" every customer would collide on.
             $environment = $this->createEnvironment(
                 $project,
@@ -86,45 +127,29 @@ class AccountProvisioner
                 type: EnvironmentType::Production,
             );
 
-            return new ProvisionedAccount($account, $member, $project, $environment);
+            return new ProvisionedTenant($organization, $owner, $membership, $project, $environment);
         });
     }
 
     /**
-     * Stand up an additional IdP product (project) under an existing account — a
-     * separately-billed product alongside the first, no second login required.
+     * Stand up an additional IdP product under an existing organization — a
+     * separately-billed product alongside the first, with no second login.
      */
-    public function addProject(Account $account, string $name, ?int $environmentLimit = null): Project
+    public function addProject(Organization $organization, string $name, ?int $environmentLimit = null): Project
     {
-        return DB::transaction(function () use ($account, $name, $environmentLimit): Project {
-            $locked = Account::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
-
-            if (! $locked->isActive()) {
-                throw AccountSuspended::make($locked->id);
-            }
-
-            return $this->projects->create($locked->id, $name, $environmentLimit ?? 2);
-        });
+        return $this->projects->createForOrganization(
+            $organization->id,
+            $name,
+            $environmentLimit ?? 2,
+        );
     }
 
-    /**
-     * Stand up an additional environment under a PROJECT (e.g. staging alongside
-     * production), respecting that project's plan allowance.
-     *
-     * @throws EnvironmentLimitReached
-     */
     public function addEnvironment(Project $project, string $name, ?string $domain = null, EnvironmentType $type = EnvironmentType::Production): Environment
     {
         return DB::transaction(function () use ($project, $name, $domain, $type): Environment {
             // Re-check under the row lock so two concurrent adds can't both slip past
             // a limit-of-one.
             $locked = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
-            $account = Account::query()->whereKey($locked->account_id)->firstOrFail();
-
-            if (! $account->isActive()) {
-                throw AccountSuspended::make($account->id);
-            }
-
             if (! $locked->isActive()) {
                 throw ProjectSuspended::make($locked->id);
             }
@@ -144,9 +169,8 @@ class AccountProvisioner
     }
 
     /**
-     * Create an environment owned by the project (and, denormalized for back-compat
-     * reads, its account) and warm its signing key so JWKS/discovery is live the
-     * instant it is routable. Left empty of tenants by design. `$slugSeed` is what the
+     * Create an environment owned by the project and warm its signing key so
+     * JWKS/discovery is live the instant it is routable. Left empty of tenants by design. `$slugSeed` is what the
      * routing subdomain derives from.
      */
     private function createEnvironment(Project $project, string $name, ?string $domain, string $slugSeed, EnvironmentType $type): Environment
@@ -168,7 +192,6 @@ class AccountProvisioner
         }
 
         $environment = Environment::query()->create([
-            'account_id' => $project->account_id,
             'project_id' => $project->id,
             'name' => $name,
             'slug' => $this->uniqueSlug($slugSeed),
@@ -185,36 +208,14 @@ class AccountProvisioner
         return $environment;
     }
 
-    /** A slug unique across environments (the routing key when no custom domain is set). */
     /**
-     * Give the account an organization in the platform-root environment and link it.
+     * A slug unique across ORGANIZATIONS, resolved inside the platform root.
      *
-     * Runs inside that environment's scope because organizations are environment-owned —
-     * created outside it the row would be written against whatever scope happened to be
-     * current, or refused outright by the deny-by-default tenancy scope.
-     *
-     * A deployment with no platform-root environment yet (the very first install, before
-     * `cbox-id:install` has run) leaves the account unhomed rather than inventing an
-     * environment: the caller is bootstrapping, and the install flow homes it.
+     * The uniqueness index is `(environment_id, slug)`, so this is only correct while the
+     * root is the current scope — which `provision()` guarantees by calling it from inside
+     * `runAs()`. Called from outside it, the deny-by-default tenancy scope answers "no
+     * collisions" for every candidate and hands back the first one.
      */
-    private function homeAccount(Account $account): void
-    {
-        $platformRoot = $this->platformRoot->model();
-
-        if ($platformRoot === null) {
-            return;
-        }
-
-        $organization = $this->context->runAs($platformRoot, fn (): Organization => $this->organizations->create(
-            new NewOrganization(
-                name: $account->name,
-                slug: $this->uniqueOrganizationSlug($account->name),
-            ),
-        ));
-
-        $account->forceFill(['organization_id' => $organization->id])->save();
-    }
-
     private function uniqueOrganizationSlug(string $name): string
     {
         $base = $this->slug($name);
