@@ -29,6 +29,15 @@ interface Projects
      */
     public function create(string $accountId, string $name, int $environmentLimit = 2): Project;
 
+    /**
+     * Create a project an ORGANIZATION owns outright, with no account behind it.
+     *
+     * The account plane is being folded into the organization; this is the write that
+     * makes an organization a first-class owner rather than one that only ever inherits
+     * ownership through an account row.
+     */
+    public function createForOrganization(string $organizationId, string $name, int $environmentLimit = 2): Project;
+
     public function rename(string $id, string $name): void;
 
     public function suspend(string $id): void;
