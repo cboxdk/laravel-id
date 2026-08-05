@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\ValueObjects;
 
-use Cbox\Id\Platform\Models\AccountApiKey;
+use Cbox\Id\Platform\Models\OrganizationApiKey;
 
 /**
  * The result of issuing an account API key: the stored record plus the one-time
  * plaintext. The plaintext exists only here — it is never persisted and cannot be
  * recovered, so the caller must surface it to the user immediately.
  */
-readonly class IssuedAccountApiKey
+readonly class IssuedOrganizationApiKey
 {
     public function __construct(
-        public AccountApiKey $key,
+        public OrganizationApiKey $key,
         public string $plaintext,
     ) {}
 }

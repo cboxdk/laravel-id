@@ -4,35 +4,39 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
-use Cbox\Id\Platform\Contracts\AccountApiKeys;
-use Cbox\Id\Platform\Enums\AccountRole;
-use Cbox\Id\Platform\Models\AccountApiKey;
-use Cbox\Id\Platform\ValueObjects\IssuedAccountApiKey;
+use Cbox\Id\Organization\Enums\MembershipRole;
+use Cbox\Id\Platform\Contracts\OrganizationApiKeys;
+use Cbox\Id\Platform\Models\OrganizationApiKey;
+use Cbox\Id\Platform\ValueObjects\IssuedOrganizationApiKey;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
- * Eloquent-backed account API keys. The token is a high-entropy random string with
+ * Eloquent-backed organization API keys. The token is a high-entropy random string with
  * a recognisable `cbid_acc_` prefix; only its SHA-256 hash is stored, and lookup is
  * by that hash — a wrong token simply doesn't match, so there is no verification
  * timing oracle to exploit (unlike a per-record password compare).
  */
-class DatabaseAccountApiKeys implements AccountApiKeys
+class DatabaseOrganizationApiKeys implements OrganizationApiKeys
 {
+    public function __construct(
+        private readonly PlatformRoot $platformRoot,
+    ) {}
+
     /**
-     * Brand root `cbid` (Cbox ID) + plane marker `acc` (account management plane),
+     * Brand root `cbid` (Cbox ID) + plane marker `acc` (the management plane),
      * so a leaked key is identifiable at a glance and never confusable with an
      * environment-plane credential (which will carry `cbid_env_`).
      */
     private const PREFIX = 'cbid_acc_';
 
-    public function issue(string $accountId, string $name, AccountRole $role, ?DateTimeInterface $expiresAt = null): IssuedAccountApiKey
+    public function issue(string $organizationId, string $name, MembershipRole $role, ?DateTimeInterface $expiresAt = null): IssuedOrganizationApiKey
     {
         $plaintext = self::PREFIX.Str::random(40);
 
-        $key = AccountApiKey::query()->create([
-            'account_id' => $accountId,
+        $key = OrganizationApiKey::query()->create([
+            'organization_id' => $organizationId,
             'name' => $name,
             // A non-secret fragment so the key is identifiable in a list.
             'prefix' => substr($plaintext, 0, 12),
@@ -41,10 +45,10 @@ class DatabaseAccountApiKeys implements AccountApiKeys
             'expires_at' => $expiresAt,
         ]);
 
-        return new IssuedAccountApiKey($key, $plaintext);
+        return new IssuedOrganizationApiKey($key, $plaintext);
     }
 
-    public function resolve(string $plaintext): ?AccountApiKey
+    public function resolve(string $plaintext): ?OrganizationApiKey
     {
         // Cheap shape check before touching the database — a token that can't be
         // ours never triggers a lookup.
@@ -52,12 +56,27 @@ class DatabaseAccountApiKeys implements AccountApiKeys
             return null;
         }
 
-        $key = AccountApiKey::query()->with('account')->where('token_hash', $this->hash($plaintext))->first();
+        $key = OrganizationApiKey::query()->where('token_hash', $this->hash($plaintext))->first();
 
-        // The key must be live AND its owning account active — a suspended account's
-        // keys stop working, so a delinquent or compromised tenant can't keep driving
+        // The key must be live AND its organization active — a suspended organization's
+        // keys stop working, so a delinquent or compromised customer cannot keep driving
         // the management API.
-        if ($key === null || ! $key->isActive() || ! ($key->account?->isActive() ?? false)) {
+        //
+        // THE STATUS READ RUNS IN THE PLATFORM ROOT, which the account plane never had to
+        // think about: `accounts` sat outside tenancy, so `$key->account` resolved from
+        // anywhere. `organizations` is environment-owned, so the same expression written
+        // the same way resolves to null on every host but one — and null here reads as
+        // "not active", which would refuse every valid key on every tenant host. Silently,
+        // and only in production, because a test that never leaves the root cannot see it.
+        if ($key === null || ! $key->isActive()) {
+            return null;
+        }
+
+        $organizationIsActive = $this->platformRoot->run(
+            fn (): bool => $key->organization?->isActive() ?? false,
+        ) ?? false;
+
+        if (! $organizationIsActive) {
             return null;
         }
 
@@ -68,15 +87,15 @@ class DatabaseAccountApiKeys implements AccountApiKeys
 
     public function revoke(string $id): void
     {
-        AccountApiKey::query()->whereKey($id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+        OrganizationApiKey::query()->whereKey($id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
     }
 
-    public function forAccount(string $accountId): Collection
+    public function forOrganization(string $organizationId): Collection
     {
         // ULIDs are monotonic, so ordering by id is newest-first AND deterministic
         // even for keys minted within the same clock tick.
-        return AccountApiKey::query()
-            ->where('account_id', $accountId)
+        return OrganizationApiKey::query()
+            ->where('organization_id', $organizationId)
             ->orderByDesc('id')
             ->get();
     }

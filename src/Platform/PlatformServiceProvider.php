@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
-use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
-use Cbox\Id\Organization\Contracts\Memberships;
-use Cbox\Id\Platform\Contracts\AccountApiKeys;
-use Cbox\Id\Platform\Contracts\AccountMembers;
-use Cbox\Id\Platform\Contracts\Accounts;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
+use Cbox\Id\Platform\Contracts\OrganizationApiKeys;
 use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Contracts\PlatformOperators;
 use Cbox\Id\Platform\Contracts\Projects;
@@ -49,34 +45,20 @@ class PlatformServiceProvider extends ServiceProvider
             );
         });
 
-        // The account plane — the customer workspaces that own environments, and
-        // the members who administer them from the platform root.
-        $this->app->singleton(Accounts::class, DatabaseAccounts::class);
-
-        // Projects — the IdP-product layer inside an account (billing anchor).
+        // Projects — the IdP-product layer a customer owns (the billing anchor).
         $this->app->singleton(Projects::class, DatabaseProjects::class);
 
-        // The same products read from the organization side, since an account IS an
-        // organization. A second binding of the same stateless class rather than an
-        // alias of the one above: a host that swaps `Projects` for its own
-        // implementation must not silently lose this capability along with it.
+        // The same products, read from the organization side. A second binding of the
+        // same stateless class rather than an alias: a host that swaps `Projects` for its
+        // own implementation must not silently lose this capability along with it.
         $this->app->singleton(OrganizationProjects::class, DatabaseProjects::class);
 
-        $this->app->singleton(AccountMembers::class, function (Application $app): AccountMembers {
-            return new DatabaseAccountMembers(
-                $app->make(Hasher::class),
-                // Account members authenticate as subjects in the platform-root
-                // environment — one identity stack, not two.
-                $app->make(Subjects::class),
-                $app->make(Memberships::class),
-                $app->make(PlatformRoot::class),
-                // A credential write ends every session opened with the credential it
-                // replaced, and a member's sessions are ordinary subject sessions.
-                $app->make(SessionManager::class),
-            );
-        });
-
-        $this->app->singleton(AccountApiKeys::class, DatabaseAccountApiKeys::class);
+        // The management plane's machine credential. There is no `Accounts` or
+        // `AccountMembers` binding beside it any more: a customer IS an organization
+        // ({@see \Cbox\Id\Organization\Contracts\Organizations}) and a member of one IS
+        // a membership ({@see \Cbox\Id\Organization\Contracts\Memberships}), so the
+        // container no longer offers a second way to ask either question.
+        $this->app->singleton(OrganizationApiKeys::class, DatabaseOrganizationApiKeys::class);
 
         $this->app->singleton(EnvironmentApiKeys::class, DatabaseEnvironmentApiKeys::class);
 

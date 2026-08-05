@@ -9,7 +9,6 @@ use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\Enums\ProjectStatus;
 use Cbox\Id\Platform\Models\Project;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -24,76 +23,20 @@ class DatabaseProjects implements OrganizationProjects, Projects
     }
 
     /**
-     * @return Collection<int, Project>
-     */
-    public function forAccount(string $accountId): Collection
-    {
-        return Project::query()
-            ->where('account_id', $accountId)
-            ->orderBy('created_at')
-            ->get();
-    }
-
-    /**
-     * @return Collection<int, Project>
-     */
-    public function forOrganization(string $organizationId): Collection
-    {
-        return Project::query()
-            ->where('organization_id', $organizationId)
-            ->orderBy('created_at')
-            ->get();
-    }
-
-    public function ownedByOrganization(string $projectId, string $organizationId): bool
-    {
-        // Asked of the DATABASE rather than by loading the row and comparing: SQL's
-        // NULL comparison already refuses a project with no organization, where a
-        // PHP-side `===` against a nullable attribute is one forgotten null-check away
-        // from answering "owned" for a project owned by nobody. The empty-string guard
-        // covers the other end — a missing organization id arriving as '' must not be
-        // allowed to match a column that somehow holds one.
-        return $organizationId !== '' && Project::query()
-            ->whereKey($projectId)
-            ->where('organization_id', $organizationId)
-            ->exists();
-    }
-
-    public function create(string $accountId, string $name, int $environmentLimit = 2): Project
-    {
-        return Project::query()->create([
-            'account_id' => $accountId,
-            'name' => $name,
-            'slug' => $this->uniqueSlug('account_id', $accountId, $name),
-            'status' => ProjectStatus::Active,
-            'environment_limit' => max(1, $environmentLimit),
-        ]);
-    }
-
-    /**
-     * Create a project an ORGANIZATION owns outright, with no account behind it.
+     * Create a project an organization owns.
      *
-     * The account plane is being folded into the organization, and this is the write that
-     * makes the fold reachable rather than merely permitted: `2026_08_07_000100` stopped
-     * `projects.account_id` requiring a value, which by itself only means no statement in
-     * the codebase could produce such a row.
-     *
-     * `account_id` is left unset rather than written as an empty string. The column is
-     * nullable now and NULL is what "no account owns this" means; '' would satisfy the
-     * column, fail the foreign key on any engine that checks it, and read as an account id
-     * to every `where('account_id', ...)` that compares without a null check.
-     *
-     * The slug is unique within the ORGANIZATION here, against the `(organization_id,
-     * slug)` key `2026_08_06_000100` added — not within the account, which there is none
-     * of. {@see uniqueSlug()} takes the column it scopes to for exactly this reason: two
-     * owners, one rule, and no second copy of the loop to drift.
+     * The ONLY writer. There was a second, `create(string $accountId, …)`, which wrote an
+     * `account_id` and let a model hook derive the organization from it — two ways to
+     * create the same row, and the derived one was the authority for ownership while the
+     * passed one was the authority for billing. The owner is passed in now, and there is
+     * nowhere left to write a project whose owner is inferred.
      */
     public function createForOrganization(string $organizationId, string $name, int $environmentLimit = 2): Project
     {
         return Project::query()->create([
             'organization_id' => $organizationId,
             'name' => $name,
-            'slug' => $this->uniqueSlug('organization_id', $organizationId, $name),
+            'slug' => $this->uniqueSlug($organizationId, $name),
             'status' => ProjectStatus::Active,
             'environment_limit' => max(1, $environmentLimit),
         ]);
@@ -122,25 +65,22 @@ class DatabaseProjects implements OrganizationProjects, Projects
     }
 
     /**
-     * A slug derived from the name, made unique WITHIN ITS OWNER — two owners may each
-     * have a "default" project, one owner may not have two.
+     * A slug derived from the name, unique WITHIN THE OWNING ORGANIZATION — two customers
+     * may each have a "default" product, one customer may not have two.
      *
-     * Takes the owning COLUMN because there are two owners now, each with its own unique
-     * key: `(account_id, slug)` from the original table and `(organization_id, slug)` from
-     * `2026_08_06_000100`. Scoping the loop to the wrong one produces a slug that passes
-     * the check and then violates the index, which surfaces as a database error on a
-     * perfectly ordinary "create a second project called Default".
-     *
-     * @param  'account_id'|'organization_id'  $ownerColumn
+     * It took an owner COLUMN for a while, because there were two owners with two unique
+     * keys: `(account_id, slug)` and `(organization_id, slug)`. Scoping the loop to the
+     * wrong one produced a slug that passed the check and then violated the index, on an
+     * ordinary second product called "Default". One owner, one key, no parameter.
      */
-    private function uniqueSlug(string $ownerColumn, string $ownerId, string $name): string
+    private function uniqueSlug(string $organizationId, string $name): string
     {
         $base = Str::slug($name);
         $base = $base !== '' ? $base : 'project';
 
         $slug = $base;
         $n = 2;
-        while (Project::query()->where($ownerColumn, $ownerId)->where('slug', $slug)->exists()) {
+        while (Project::query()->where('organization_id', $organizationId)->where('slug', $slug)->exists()) {
             $slug = $base.'-'.$n;
             $n++;
         }
