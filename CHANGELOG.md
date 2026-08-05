@@ -17,6 +17,43 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-08-05
+
+### Added
+
+- **A membership can be restricted to a subset of the environments its organization owns.**
+  `memberships.all_environments` plus a `membership_environments` pivot, with
+  `Memberships::setEnvironmentAccess()` and `accessibleEnvironmentIds()` on the contract.
+
+  This is the account plane's per-member environment grant, moved to where it will still
+  exist once that plane is folded away. It was believed orphaned — no writer, no rows, no
+  coverage — and it is not: three authorization gates read it. Dropping the account-plane
+  tables without this would not have removed a dead feature, it would have removed the
+  basis of those gates, in the direction that matters: "no grants found" and "all
+  environments" are told apart by a boolean that would have gone with the table.
+
+  The grant belongs to the MEMBERSHIP, not the subject: the same subject may hold
+  memberships in several organizations, and a restriction one organization grants must not
+  follow them into another.
+
+  `all_environments` defaults to **true**. False would mean "restricted to the empty set",
+  so a deployment that migrated but had not yet re-pointed its readers would lock every
+  member out of every environment on the next request.
+
+  Ownership is filtered on **both** sides. On write, because an id in a member's grant list
+  IS access, so a grant naming another organization's environment is a way in rather than a
+  stray row. On read, because a grant survives an environment moving to another
+  organization and the row alone would still say yes.
+
+### Migration notes
+
+- `2026_08_08_000100_give_a_membership_its_environment_grants` adds only. The account
+  plane's `all_environments` and `account_member_environments` are untouched and keep
+  working, so the readers can be re-pointed as a separate, separately-revertible change.
+  Existing restrictions are carried over, keyed through
+  `(accounts.organization_id, account_members.subject_id)` — a membership belonging to an
+  ordinary tenant user, with no account member behind it, is not in the join.
+
 ## [0.93.0] - 2026-08-05
 
 ### Added
