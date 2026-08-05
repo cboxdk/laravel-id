@@ -19,6 +19,7 @@ use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
+use Cbox\Id\Platform\Exceptions\OrganizationSuspended;
 use Cbox\Id\Platform\Exceptions\ProjectSuspended;
 use Cbox\Id\Platform\Models\Project;
 use Cbox\Id\Platform\ValueObjects\ProvisionedTenant;
@@ -137,11 +138,15 @@ class TenantProvisioner
      */
     public function addProject(Organization $organization, string $name, ?int $environmentLimit = null): Project
     {
-        return $this->projects->createForOrganization(
-            $organization->id,
-            $name,
-            $environmentLimit ?? 2,
-        );
+        return DB::transaction(function () use ($organization, $name, $environmentLimit): Project {
+            $locked = $this->lockedActiveOrganization($organization->id);
+
+            return $this->projects->createForOrganization(
+                $locked->id,
+                $name,
+                $environmentLimit ?? 2,
+            );
+        });
     }
 
     public function addEnvironment(Project $project, string $name, ?string $domain = null, EnvironmentType $type = EnvironmentType::Production): Environment
@@ -150,6 +155,12 @@ class TenantProvisioner
             // Re-check under the row lock so two concurrent adds can't both slip past
             // a limit-of-one.
             $locked = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
+
+            // THE OWNER FIRST, then the product. Both were checked when the owner was an
+            // account; only the project check survived the move, so a suspended customer
+            // could still add environments to a product that was itself still active.
+            $this->lockedActiveOrganization($locked->organization_id);
+
             if (! $locked->isActive()) {
                 throw ProjectSuspended::make($locked->id);
             }
@@ -206,6 +217,33 @@ class TenantProvisioner
         });
 
         return $environment;
+    }
+
+    /**
+     * The organization, locked, and only if it may still be provisioned for.
+     *
+     * Read inside the platform root because `organizations` is environment-owned: asked from
+     * a tenant host the deny-by-default scope answers "no such organization", which on a
+     * write path would read as "suspended" for a perfectly active customer.
+     *
+     * `revokesAccess()` rather than a comparison against `Active`. `Deleted` is written by
+     * `archive()` and reads like a soft-delete marker, so a `!== Suspended` test here would
+     * happily sell a new product to an archived customer.
+     *
+     * An organization that cannot be produced is refused, not permitted — the same direction
+     * a suspension takes, which is the only safe reading of a missing owner on a write path.
+     */
+    private function lockedActiveOrganization(string $organizationId): Organization
+    {
+        $organization = $this->platformRoot->run(
+            fn (): ?Organization => Organization::query()->whereKey($organizationId)->lockForUpdate()->first(),
+        );
+
+        if (! $organization instanceof Organization || $organization->status->revokesAccess()) {
+            throw OrganizationSuspended::make($organizationId);
+        }
+
+        return $organization;
     }
 
     /**

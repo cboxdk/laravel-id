@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * A privileged project operation (e.g. adding an environment) was attempted for a
  * project that is not active — its own billing/plan state has suspended it. The
- * defence-in-depth guard on the write path, alongside {@see AccountSuspended}.
+ * defence-in-depth guard on the write path, alongside {@see OrganizationSuspended}.
  */
 class ProjectSuspended extends RuntimeException
 {
