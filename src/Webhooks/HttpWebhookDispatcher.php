@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Webhooks;
 
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
@@ -30,6 +31,8 @@ use Throwable;
  */
 class HttpWebhookDispatcher implements WebhookDispatcher
 {
+    use ResolvesEnvironment;
+
     public function __construct(
         private readonly WebhookRegistry $registry,
         private readonly SecretBox $secretBox,
@@ -99,7 +102,34 @@ class HttpWebhookDispatcher implements WebhookDispatcher
         }
     }
 
+    /**
+     * ACROSS EVERY ENVIRONMENT, deliberately — and this is the whole reason the method
+     * has a wrapper at all.
+     *
+     * It runs from the scheduler ({@see WebhookServiceProvider}), and a scheduler process
+     * has no ambient environment: `EnvironmentContext` is a `scoped` binding that starts
+     * null and is only ever populated by an HTTP middleware or by a job re-entering its
+     * own environment. `WebhookDelivery` and `WebhookEndpoint` are both environment-owned
+     * with a deny-by-default scope, so selecting inside that null context compiled to
+     * `WHERE 1 = 0` and the sweep returned zero, silently, forever.
+     *
+     * What that cost: a failed delivery was never retried; a `Pending` row whose job was
+     * lost was never rescued, so "durable before enqueued" was a promise nothing kept;
+     * and orphans were never terminalised, so the pruner — which takes only Delivered and
+     * Exhausted — could never remove them and `webhook_deliveries` grew without bound.
+     * Every test passed, because the suite pins an environment before it runs anything.
+     *
+     * Selection therefore happens under `withoutScope()`, and each row is handed to a job
+     * that re-enters its OWN environment before touching anything. That is the same split
+     * `QueuedPushDispatcher::retryPending()` uses in the devices module, whose docblock
+     * diagnosed this exact bug first.
+     */
     public function retryPending(int $limit = 50): int
+    {
+        return $this->environments()->withoutScope(fn (): int => $this->sweep($limit));
+    }
+
+    private function sweep(int $limit): int
     {
         // Terminalise ORPHANS first — deliveries whose endpoint has been deleted — and do
         // it in the QUERY rather than by skipping them after selection.

@@ -19,6 +19,36 @@ more trust than the wording it removes.
 
 ### Fixed
 
+- **The webhook retry sweep never ran in production.** `retryPending()` is called from the
+  scheduler, and a scheduler process has no ambient environment — `EnvironmentContext` is
+  a `scoped` binding populated only by an HTTP middleware or by a job re-entering its own
+  environment. Both models it reads are environment-owned with a deny-by-default scope, so
+  the select compiled to `WHERE 1 = 0` and the sweep returned zero. Silently, and forever.
+  A failed delivery was never retried; a `Pending` row whose job was lost was never
+  rescued, so "durable before enqueued" was a promise nothing kept; and orphans were never
+  terminalised, so the pruner could never remove them and `webhook_deliveries` grew without
+  bound. Every test passed, because the suite pins an environment before it runs anything.
+
+- **Every failed sign-in is now audited, not only the one that trips the lock.** The sole
+  entry was `user.locked_out`; everything below the threshold — and everything on a
+  deployment with no lockout policy, which returned earlier still — left no trace. That is
+  backwards for the attack the counter exists to bound: password spraying is quiet by
+  design, and three guesses each against five thousand accounts under a threshold of five
+  produced an audit trail containing nothing at all.
+
+### Security
+
+- **Disabling host verification no longer re-enables redirect chasing.** The four
+  `verify_url` toggles let an on-prem deployment reach an internal host it owns; their
+  disabled branch returned a bare `[]`, which is not "no opinion" but Guzzle's default,
+  and Guzzle follows up to five hops. An operator who set the flag to admit one internal
+  issuer also allowed every outbound fetch on that plane to be redirected — so a URL the
+  tenant controls could 302 to the cloud metadata service. `Guard::pinnedOptions()`
+  refuses redirects unconditionally and `laravel-siem`'s adapter already mirrored it;
+  these four did not.
+
+### Fixed
+
 - **The liveness probe no longer depends on the cache being reachable.** `/up` carried
   `throttle:300,1`, and `ThrottleRequests` writes to the default cache store — so the one
   endpoint whose job is to answer "is this process alive" could not answer without Redis

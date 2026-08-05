@@ -30,7 +30,20 @@ class SafeManifestUrl
     public static function pinnedOptions(string $url): array
     {
         if (config('cbox-id.access_control.verify_manifest_url', true) !== true) {
-            return [];
+            // REDIRECTS STAY REFUSED even when host verification is switched off.
+            //
+            // The toggle exists so an on-prem deployment can reach an internal host it
+            // genuinely owns. It was never meant to say "and follow this anywhere it points":
+            // returning a bare `[]` handed the caller Guzzle's default, which chases up to
+            // five hops. An operator who set the flag to allow one internal issuer also
+            // re-enabled redirect chasing for every outbound fetch on the plane — so a URL
+            // the tenant controls could 302 to `169.254.169.254` and the metadata service
+            // answered.
+            //
+            // `laravel-ssrf`'s own `Guard::pinnedOptions()` refuses redirects unconditionally
+            // for exactly this reason, and `laravel-siem`'s adapter already mirrors it. These
+            // four did not.
+            return ['allow_redirects' => false];
         }
 
         try {

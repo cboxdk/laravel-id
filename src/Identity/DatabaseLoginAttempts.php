@@ -53,6 +53,32 @@ class DatabaseLoginAttempts implements LoginAttempts
 
     public function recordFailure(string $subjectId, ?string $organizationId = null): bool
     {
+        // EVERY failure is recorded, not only the one that trips the lock.
+        //
+        // Until now the sole audit entry here was `user.locked_out`, written when the
+        // counter crossed the threshold. Everything below it — and everything on a
+        // deployment with no lockout policy at all, which returns two lines down — left
+        // no trace whatsoever.
+        //
+        // That is precisely the wrong shape for the attack this counter exists to bound.
+        // Password spraying is deliberately quiet: three guesses each against five
+        // thousand accounts, under a threshold of five, locks nobody out and produced an
+        // audit trail containing literally nothing. The one signal that would have shown
+        // it — many accounts, few attempts each, one source — was the one never written.
+        //
+        // The IP comes from the current request. Laravel's helper always returns a
+        // Request — outside HTTP it is a synthetic one whose `ip()` is null, which is
+        // the honest answer for a queue worker or a console command rather than a
+        // fabricated address. `DatabaseOtpService` audits both branches this way already.
+        $this->audit->record(new AuditEvent(
+            action: 'user.sign_in_failed',
+            actorType: ActorType::System,
+            targetType: 'user',
+            targetId: $subjectId,
+            organizationId: $organizationId,
+            ip: request()->ip(),
+        ));
+
         $threshold = $this->thresholdFor($subjectId, $organizationId);
 
         if ($threshold === null) {

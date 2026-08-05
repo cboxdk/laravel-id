@@ -11,6 +11,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\MfaRequirement;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
+use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipRole;
@@ -229,3 +230,44 @@ it("applies an organization's tighter threshold when the caller names none", fun
     expect($attempts->recordFailure($id))->toBeTrue()
         ->and($attempts->isLockedOut($id))->toBeTrue();
 });
+
+/**
+ * EVERY failed sign-in leaves a trace, not only the one that trips the lock.
+ *
+ * The sole audit entry here used to be `user.locked_out`, written when the counter
+ * crossed the threshold. Every failure below it left nothing — and so did every failure
+ * on a deployment with no lockout policy at all, because `recordFailure()` returned before
+ * reaching the audit.
+ *
+ * That is exactly backwards for the attack the counter exists to bound. Password spraying
+ * is quiet on purpose: three guesses each against five thousand accounts, under a
+ * threshold of five, locks nobody out — and produced an audit trail containing literally
+ * nothing. The signal that would have shown it (many accounts, few attempts each, one
+ * source) was the one never written.
+ */
+it('audits a failed sign-in that does not reach the lockout threshold', function (): void {
+    $subject = app(Subjects::class)->create('sprayed@acme.test', 'Sprayed', 'a-strong-unbreached-passphrase');
+
+    app(AuthPolicies::class)->setForEnvironment(new AuthPolicy(lockoutThreshold: 5));
+
+    $locked = app(LoginAttempts::class)->recordFailure($subject->id);
+
+    expect($locked)->toBeFalse('one failure must not lock a threshold of five');
+
+    $entry = AuditEntry::query()->where('action', 'user.sign_in_failed')->latest('id')->first();
+
+    expect($entry)->not->toBeNull('a failure below the threshold left no trace at all')
+        ->and($entry->target_id)->toBe($subject->id);
+})->group('security');
+
+it('audits a failed sign-in on a deployment with no lockout policy', function (): void {
+    // The earlier return: with no policy there is no threshold, so the method used to
+    // stop before anything was written. A deployment that has not configured lockout is
+    // the one that most needs the trail.
+    $subject = app(Subjects::class)->create('nopolicy@acme.test', 'None', 'a-strong-unbreached-passphrase');
+
+    expect(app(LoginAttempts::class)->recordFailure($subject->id))->toBeFalse();
+
+    expect(AuditEntry::query()->where('action', 'user.sign_in_failed')->where('target_id', $subject->id)->exists())
+        ->toBeTrue('no lockout policy meant no record of the attempt');
+})->group('security');
