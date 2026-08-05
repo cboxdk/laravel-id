@@ -134,9 +134,26 @@ class OrganizationService implements Organizations
         return Organization::query()->where('slug', $slug)->first();
     }
 
+    /**
+     * Write the status, invalidate the tenant's resolution cache, then announce it — in
+     * that order, as one operation the caller cannot half-perform.
+     *
+     * Nothing is recorded when the status did not actually change. Every verb here is
+     * documented idempotent, and a re-suspension that appended a second
+     * `organization.suspended` would leave the trail unable to answer when the
+     * organization was suspended and by whom — and would deliver a duplicate webhook for
+     * a transition that never happened. `DatabaseAccounts::transitionStatus()` carried
+     * this rule for the account plane; when ownership moved onto the organization only
+     * the archive case came with it.
+     */
     private function transitionStatus(string $id, OrganizationStatus $status, string $action, string $actorId): Organization
     {
         $organization = Organization::query()->whereKey($id)->firstOrFail();
+
+        if ($organization->status === $status) {
+            return $organization;
+        }
+
         $organization->status = $status;
         $organization->save();
 
@@ -159,5 +176,47 @@ class OrganizationService implements Organizations
         ));
 
         return $organization;
+    }
+
+    /**
+     * Suspending an organization is the platform's off-switch for a whole customer: every
+     * environment it owns must stop serving auth on the NEXT request, not whenever a cache
+     * TTL happens to lapse.
+     *
+     * The environments are untouched by the status write — {@see DatabaseEnvironmentResolver}
+     * gates liveness by reading `organizations` separately — so no environment model event
+     * fires and {@see Models\Environment::booted()} never runs. The invalidation has to be
+     * explicit here, and this is the only place it can be. Without it the suspension wrote
+     * the row and changed nothing anybody could observe: the host kept resolving, kept
+     * serving, and the console kept saying "suspended".
+     *
+     * Dropping each environment's resolved entry is enough. The host mappings survive, miss
+     * on the `env:` entry, and fall through to a full live resolution — which now refuses.
+     * So no host has to be enumerated, and reactivation restores service just as promptly.
+     *
+     * OWNERSHIP RUNS THROUGH THE PROJECT — environment → project → organization. It was one
+     * read against `environments.account_id`; that column was a denormalized copy of the
+     * same fact, and a copy of ownership is a second place for ownership to be wrong.
+     *
+     * The hierarchy is deliberately NOT walked: this matches the liveness gate exactly, and
+     * the gate compares an environment's own owning organization to 'active'. Invalidating a
+     * parent's descendants would drop entries whose resolution the write cannot change.
+     *
+     * Raw query, unscoped on purpose. `projects` is environment-owned, so `Project::query()`
+     * would be scoped to whichever environment is current — and the caller here is the
+     * platform root, suspending a customer that lives in a different one.
+     */
+    private function forgetResolvedEnvironments(string $organizationId): void
+    {
+        $environmentIds = DB::table('environments')
+            ->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('projects.organization_id', $organizationId)
+            ->pluck('environments.id');
+
+        foreach ($environmentIds as $environmentId) {
+            if (is_string($environmentId) && $environmentId !== '') {
+                $this->resolutionCache->forgetEnvironment($environmentId);
+            }
+        }
     }
 }

@@ -74,6 +74,35 @@ it('suspends and reactivates an organization, auditing the change to the operato
 });
 
 /**
+ * Every status verb is documented idempotent, and this is what idempotent has to mean for
+ * a verb that writes a trail: replaying it appends nothing.
+ *
+ * `DatabaseAccounts::transitionStatus()` enforced this for the account plane and said why —
+ * a second `organization.suspended` leaves the trail unable to answer when the organization
+ * was suspended and by whom. Moving ownership onto the organization brought the rule across
+ * for `archive()` only, so suspend and reactivate spent this refactor appending a fresh
+ * entry (and firing a fresh webhook) for a transition that never happened.
+ */
+it('records nothing when a status verb is replayed', function (): void {
+    $events = $this->fakeEvents();
+    $audit = $this->fakeAudit();
+    $orgs = app(Organizations::class);
+    $org = $this->makeOrganization('Acme');
+
+    $orgs->suspend($org->id, 'op_99');
+
+    $auditedAfterFirst = count($audit->recorded);
+    $emittedAfterFirst = count($events->emitted);
+
+    $replayed = $orgs->suspend($org->id, 'op_99');
+
+    expect($replayed->status)->toBe(OrganizationStatus::Suspended)
+        ->and($orgs->find($org->id)?->status)->toBe(OrganizationStatus::Suspended)
+        ->and($audit->recorded)->toHaveCount($auditedAfterFirst)
+        ->and($events->emitted)->toHaveCount($emittedAfterFirst);
+});
+
+/**
  * Archiving is the destructive one, so it is the one that most needs a trail. Before
  * this verb existed the only way to reach `Deleted` was to write the status onto the
  * model and `save()` it at the call site — no event, and no audit entry for the

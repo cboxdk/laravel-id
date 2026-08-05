@@ -74,7 +74,12 @@ it('keeps resolving live when the cache is turned off', function (): void {
     $resolver = app(EnvironmentResolver::class);
     $resolver->resolveForHost('acme.cboxid.com');
 
-    expect(queriesDuring(fn () => $resolver->resolveForHost('acme.cboxid.com')))->toBe(3);
+    // The same FOUR the cold path pays, statement for statement: a warmed request costs
+    // full live resolution when the cache is off, which is the whole property. It was
+    // three for the same reason the cold budget was — `environments.account_id` made the
+    // liveness check a single read. Nothing here caches, so there is no second number
+    // this could have become.
+    expect(queriesDuring(fn () => $resolver->resolveForHost('acme.cboxid.com')))->toBe(4);
 });
 
 it('stops serving a suspended environment on the very next request', function (): void {
