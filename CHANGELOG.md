@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-08-05
+
 ### Fixed
 
 - **The webhook retry sweep never ran in production.** `retryPending()` is called from the
