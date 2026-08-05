@@ -6,26 +6,26 @@ use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
-use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\Projects;
-use Cbox\Id\Platform\Models\Project;
-use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class, InteractsWithTenancy::class);
 
 /**
- * An organization can own an IdP product ALONE — no account row behind it.
+ * An organization owns an IdP product outright — it is the only thing that can.
  *
- * `2026_08_06_000100` gave `projects` an `organization_id` and said in as many words that
- * dropping the account requirement was a separate, subtractive step; `2026_08_07_000100`
- * is that step, and this is what makes it more than a schema change. A nullable column
- * with no statement in the codebase able to leave it empty is a capability nobody has.
+ * `createForOrganization()` is the one writer, and `(organization_id, slug)` is the one
+ * uniqueness rule. The pair of tests that asserted a project could still be owned from the
+ * account side went with the account plane; what is left is the rule itself, which has to
+ * hold per organization and not globally.
  *
- * These are the tests that would have failed while `account_id` was NOT NULL — which is
- * the only honest way to assert a constraint was removed: exercise the thing it forbade.
+ * ONE ASSERTION HERE WAS VACUOUS and is worth naming, because the shape recurs: this file
+ * checked `$project->account_id` was null long after the column was deleted. Eloquent
+ * answers null for an attribute a model does not have, so it passed for the wrong reason —
+ * and phpstan analyses `src` and `tests/Fixtures`, not the suite, so nothing caught it. A
+ * deleted column can only be asserted about through the schema, never through a model.
  */
 beforeEach(function (): void {
     Environment::query()->create([
@@ -38,17 +38,18 @@ beforeEach(function (): void {
     ]);
 });
 
-it('creates a project an organization owns with no account', function (): void {
+it('creates a project the organization owns outright', function (): void {
     $organizationId = strtolower((string) Str::ulid());
 
     $project = app(Projects::class)->createForOrganization($organizationId, 'Standalone');
 
-    // NULL, not ''. The column is nullable and NULL is what "no account owns this" means;
-    // an empty string satisfies the column, fails the foreign key on an engine that checks
-    // it, and reads as an account id to every comparison written without a null check.
-    expect($project->account_id)->toBeNull()
-        ->and($project->organization_id)->toBe($organizationId)
+    expect($project->organization_id)->toBe($organizationId)
         ->and($project->slug)->toBe('standalone');
+
+    // Asked of the SCHEMA, because that is the only place a column's absence is a fact.
+    // `$project->account_id` would answer null whether the column was dropped or merely
+    // empty, which is how the assertion this replaces went on passing after the drop.
+    expect(Schema::hasColumn('projects', 'account_id'))->toBeFalse();
 });
 
 it('finds it from the organization side', function (): void {
@@ -72,11 +73,10 @@ it('makes the second project of one name unique within the organization', functi
     $projects->createForOrganization($organizationId, 'Default');
     $second = $projects->createForOrganization($organizationId, 'Default');
 
-    // The account path scopes its slug loop to `(account_id, slug)`; this path has no
-    // account, so scoping to the same column would find nothing, hand back 'default'
-    // twice and violate the `(organization_id, slug)` key that 2026_08_06_000100 added —
-    // surfacing as a database error on an ordinary "create a second project called
-    // Default". Hence `uniqueSlug()` taking the column it scopes to.
+    // The slug loop has to scope to the same column the uniqueness key is on. It once
+    // scoped to `account_id` while the key was `(organization_id, slug)`, found nothing,
+    // and handed back 'default' twice — surfacing as a database error on an ordinary
+    // "create a second project called Default".
     expect($second->slug)->toBe('default-2');
 });
 
@@ -90,38 +90,4 @@ it('lets two organizations each have a default', function (): void {
 
     // The other half of the same rule, and the one a too-eager global unique index breaks.
     expect($other->slug)->toBe('default');
-});
-
-it('leaves an account-owned project owned by its account', function (): void {
-    $result = app(AccountProvisioner::class)->provision(
-        new AccountBlueprint('Acme', 'owner@acme.test', 'Owner', 'a-strong-unbreached-passphrase'),
-    );
-
-    $project = app(Projects::class)->forAccount($result->account->id)->firstOrFail();
-
-    // Nothing was rewritten. The constraint was lifted, not the relationship — a reader
-    // that has always gone through `forAccount()` sees exactly what it saw before, and
-    // `Project::booted()` still derives the organization from the account.
-    expect($project->account_id)->toBe($result->account->id)
-        ->and($project->organization_id)->toBe($result->account->organization_id);
-});
-
-it('homes a project whose account was homed after the fact', function (): void {
-    $result = app(AccountProvisioner::class)->provision(
-        new AccountBlueprint('Acme', 'owner@acme.test', 'Owner', 'a-strong-unbreached-passphrase'),
-    );
-
-    // The state a deployment that ran 2026_08_05_000200 late is in: the account has an
-    // organization, its project does not, because the project predates the backfill.
-    DB::table('projects')->where('account_id', $result->account->id)->update(['organization_id' => null]);
-
-    /** @var object{up: callable} $migration */
-    $migration = require dirname(__DIR__, 3).'/database/migrations/2026_08_07_000100_let_a_project_outlive_its_account.php';
-    $migration->up();
-
-    // Repaired, not refused. Refusing would leave the deployment unable to migrate with no
-    // action it could take that the migration could not take for it — the source is the
-    // account row, which is right there.
-    expect(Project::query()->where('account_id', $result->account->id)->value('organization_id'))
-        ->toBe($result->account->organization_id);
 });
