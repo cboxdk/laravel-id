@@ -104,7 +104,7 @@ it('records an audit event naming the actor and the choices made', function (): 
         password: 'an-audited-replacement-passphrase',
         temporary: true,
         revoke: PasswordRevocationScope::SessionsOnly,
-        actorType: 'account_member',
+        actorType: 'organization_member',
         actorId: 'member_42',
         reason: 'Locked out after losing their phone',
     ));

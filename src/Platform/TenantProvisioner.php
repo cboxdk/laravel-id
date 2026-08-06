@@ -90,15 +90,29 @@ class TenantProvisioner
                         slug: $this->uniqueOrganizationSlug($blueprint->organizationName),
                     ));
 
-                    // One credential of record. The owner is an ordinary subject — the
-                    // same row shape a tenant's own user occupies — rather than a member
-                    // row with its own password column, which is what the account plane
-                    // had and what made "who is signed in" a question with two answers.
-                    $owner = $this->subjects->create(
-                        $blueprint->ownerEmail,
-                        $blueprint->ownerName,
-                        $blueprint->ownerPassword,
-                    );
+                    // One credential of record. The owner is an ordinary subject — the same
+                    // row shape a tenant's own user occupies — rather than a member row with
+                    // its own password column, which is what the account plane had and what
+                    // made "who is signed in" a question with two answers.
+                    //
+                    // REUSED IF THE ADDRESS ALREADY HAS ONE, and that is not a convenience.
+                    // `users` is unique on (environment_id, email), so creating
+                    // unconditionally makes provisioning fail outright for anybody who
+                    // already holds a Cbox ID in the root — including the OPERATOR running
+                    // the installer, whose email is also the first customer's owner. The
+                    // account plane never met this: a member lived in its own table, so the
+                    // same person could be an operator and an owner without either row
+                    // knowing. One identity means the second caller attaches to it.
+                    //
+                    // The password is only set when the subject is being created. Handing a
+                    // blueprint's password to an existing subject would let anyone who can
+                    // provision reset the credential of anyone whose address they can guess.
+                    $owner = $this->subjects->findByEmail($blueprint->ownerEmail)
+                        ?? $this->subjects->create(
+                            $blueprint->ownerEmail,
+                            $blueprint->ownerName,
+                            $blueprint->ownerPassword,
+                        );
 
                     // …and the authority is the MEMBERSHIP, held separately, because it is
                     // true here and nowhere else. The same person may own this

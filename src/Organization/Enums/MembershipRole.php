@@ -141,4 +141,27 @@ enum MembershipRole: string
     {
         return $this->weight() > $other->weight();
     }
+
+    /**
+     * The roles a console or API may HAND OUT — inviting a colleague, stamping a machine
+     * credential, changing somebody's role.
+     *
+     * `Owner` is absent and that is the point: ownership is TRANSFERRED, never assigned.
+     * An organization has exactly one, {@see Contracts\Memberships} refuses to demote or
+     * remove the last one, and an "assign owner" control would be a second way to reach a
+     * state the transfer verb exists to keep coherent.
+     *
+     * The account plane had this method and its list was `[Admin, Developer, Viewer]` —
+     * narrower because that vocabulary carried a `Billing` case that could not be honoured
+     * faithfully and was withdrawn from the picker rather than mapped loosely. This
+     * vocabulary has no such case, so `Member` is offerable: it is the ordinary role, the
+     * one an invited colleague should usually get, and omitting it would push every
+     * invitation up to Developer.
+     *
+     * @return list<self>
+     */
+    public static function assignable(): array
+    {
+        return [self::Admin, self::Developer, self::Member, self::Viewer];
+    }
 }

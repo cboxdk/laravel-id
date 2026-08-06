@@ -81,7 +81,7 @@ requirements to the feature that addresses it, and end with what remains yours.
 > `deactivate()` a user; it cannot delete one, and there is no anonymisation service,
 > command, or endpoint anywhere in `src/`. Nor is the subject model as opaque as it
 > sounds: alongside whatever your own users table holds, this package stores contact PII
-> in its own tables — `platform_operators`, `account_members`, `magic_links`,
+> in its own tables — `platform_operators`, `memberships`, `magic_links`,
 > `invitations`, the credential-token tables, `otp_challenges`, `directory_users` and
 > `directory_groups`. None of those are covered by the retention pruner, which sweeps
 > only ephemeral protocol state.
