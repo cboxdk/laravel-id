@@ -1,0 +1,48 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('events', function (Blueprint $table): void {
+            // Claim marker for the relay. Two relays (a scheduler tick overlapping a
+            // long pass, or two app instances) previously selected the same pending
+            // rows and dispatched every event twice — every webhook delivered twice,
+            // every usage counter incremented twice.
+            //
+            // A separate column rather than stamping dispatched_at early: claiming and
+            // delivering are different facts. A row claimed but never dispatched is a
+            // relay that died mid-pass, and can be safely reclaimed once the claim goes
+            // stale — whereas an early dispatched_at would silently lose the event.
+            $table->timestamp('claimed_at')->nullable()->after('dispatched_at');
+
+            // The claim's owner. Claiming by id alone was atomic only where SKIP LOCKED
+            // applies; re-selecting by a token makes it correct on every driver.
+            $table->string('claim_token', 40)->nullable()->index();
+
+            // The relay's own query: pending rows, oldest first. Without this it is a
+            // scan of an append-only table that only grows.
+            $table->index(['dispatched_at', 'claimed_at', 'occurred_at'], 'events_relay_idx');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('events', function (Blueprint $table): void {
+            $table->dropIndex('events_relay_idx');
+
+            // Both columns, and the token's own index before the column it indexes.
+            // `claim_token` was left behind, so a rollback followed by a re-migrate
+            // failed on MySQL 1060 "duplicate column name" — invisible to the rollback
+            // test, which does a full reset where the whole table goes.
+            $table->dropIndex(['claim_token']);
+            $table->dropColumn(['claimed_at', 'claim_token']);
+        });
+    }
+};

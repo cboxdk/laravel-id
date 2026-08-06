@@ -1,0 +1,61 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\OAuthServer\Models;
+
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+
+/**
+ * A refresh token, stored only as a SHA-256 hash. Rotation is single-use:
+ * presenting a token consumes it and mints a successor in the same `family_id`.
+ * Re-presenting a consumed token is treated as theft and revokes the family.
+ *
+ * @property string $id
+ * @property string $token_hash
+ * @property string $family_id
+ * @property string $client_id
+ * @property string|null $user_id
+ * @property string|null $organization_id
+ * @property array<int, string> $scopes
+ * @property string|null $audience
+ * @property int|null $auth_time
+ * @property array<int, string>|null $amr
+ * @property string|null $jkt
+ * @property string|null $successor_token
+ * @property Carbon|null $consumed_at
+ * @property Carbon|null $revoked_at
+ * @property Carbon $expires_at
+ */
+class RefreshToken extends Model implements EnvironmentOwned
+{
+    use BelongsToEnvironment;
+    use HasUlids;
+
+    protected $table = 'oauth_refresh_tokens';
+
+    protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'scopes' => 'array',
+            // What the original authentication established, carried forward so a
+            // refreshed ID Token can describe that login rather than the refresh.
+            'amr' => 'array',
+            // The raw successor token, kept only for idempotent within-grace replay.
+            // Encrypted at rest — it is a bearer credential, never stored in the clear.
+            'successor_token' => 'encrypted',
+            'consumed_at' => 'datetime',
+            'revoked_at' => 'datetime',
+            'expires_at' => 'datetime',
+        ];
+    }
+}

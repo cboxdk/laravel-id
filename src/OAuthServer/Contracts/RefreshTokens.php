@@ -1,0 +1,56 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\OAuthServer\Contracts;
+
+use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
+
+interface RefreshTokens
+{
+    /**
+     * Issue the first refresh token of a new rotation family for this grant.
+     * Returns the raw token (only its hash is stored). When `$dpopJkt` is given
+     * (RFC 9449 §5), the token is bound to that DPoP key thumbprint and rotation
+     * will require a proof of the same key.
+     *
+     * `$authTime` and `$amr` describe the login this family descends from, and
+     * are recorded so a refreshed ID Token can still describe THAT
+     * authentication (OIDC Core §12.2) rather than the moment it was refreshed.
+     *
+     * @param  list<string>  $scopes
+     * @param  list<string>  $amr
+     */
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string;
+
+    /**
+     * Rotate a presented refresh token: validate it, consume it, and mint its
+     * successor in the same family. Presenting an already-consumed token is
+     * treated as theft — the whole family is revoked and {@see InvalidGrant} is
+     * thrown. Throws {@see InvalidGrant} for unknown/expired/revoked tokens, a
+     * client mismatch, or — for a DPoP-bound token — a missing or mismatched
+     * proof key (`$presentedJkt`).
+     *
+     * @throws InvalidGrant
+     */
+    public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null): RefreshGrant;
+
+    /**
+     * Revoke every refresh token in the family a given raw token belongs to
+     * (e.g. on logout). No-op if the token is unknown. When `$clientId` is given
+     * (RFC 7009 §2.1), the family is revoked only if the token was issued to that
+     * client — a client can't revoke another client's tokens.
+     */
+    public function revoke(string $rawToken, ?string $clientId = null): void;
+
+    /**
+     * Revoke every active refresh token a user holds, optionally scoped to one
+     * organization. The freshness lever for the federated-RBAC model: when a role
+     * or permission changes, revoke the user's refresh tokens so their next refresh
+     * forces re-authentication and re-mints a token with the new claims, instead of
+     * riding a stale grant until it expires. Returns the number revoked.
+     */
+    public function revokeForUser(string $userId, ?string $organizationId = null): int;
+}

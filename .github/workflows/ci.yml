@@ -1,0 +1,287 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    # Release tags too, so the SBOM freshness gate below actually runs where an
+    # accurate supply-chain record matters.
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.4", "8.5"]
+        # Test both the current and previous Laravel major (12 and 13).
+        testbench: ["^10.0", "^11.0"]
+    name: PHP ${{ matrix.php }} · testbench ${{ matrix.testbench }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+      - name: Pin the Laravel major
+        run: composer require "orchestra/testbench:${{ matrix.testbench }}" --dev --no-update --no-interaction
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      - name: Pint (lint)
+        run: vendor/bin/pint --test
+      # PHPStan runs on the CURRENT Laravel major only (both PHP versions), because
+      # laravel/framework declares `Illuminate\Database\Eloquent\Scope` differently
+      # per major and BOTH shapes cannot be satisfied at once:
+      #
+      #   Laravel 13  interface Scope   -> `@template TModel` on the INTERFACE
+      #   Laravel 12  interface Scope   -> `@template TModel` on the apply() METHOD
+      #
+      # So EnvironmentScope / TenantScope (src/Kernel/Tenancy/Scopes) need
+      # `@implements Scope<Model>` on 13 (level max requires the type args:
+      # missingType.generics) while on 12 the exact same line is rejected with
+      # `generics.notGeneric`. Dropping it fails 13; keeping it fails 12. Verified
+      # against laravel/framework v12.64.0 + larastan v3.10.0 on 2026-07-25: 2 errors,
+      # both generics.notGeneric on those two files, nothing else. Re-check when
+      # Laravel 12 support is dropped or 12.x moves the annotation to the interface.
+      # Pest still exercises BOTH majors at runtime below.
+      - name: PHPStan
+        if: matrix.testbench == '^11.0'
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+      # `-d memory_limit` is not optional, for the same reason it is not on PHPStan
+      # above. This suite builds the FULL schema several times in one process — the
+      # rollback test alone does it three times, and each backfill test brings its own
+      # throwaway database — and 128M (the PHP default, and what a developer machine
+      # typically has) is not enough. Without this the step passes only on a runner
+      # whose php.ini happens to be generous, and elsewhere dies with a fatal inside
+      # whichever migration happened to be running, which reads as a broken migration
+      # rather than as an exhausted process.
+      - name: Pest
+        run: php -d memory_limit=1G vendor/bin/pest
+      - name: Security audit
+        run: composer audit --no-dev
+      - name: License compliance
+        run: composer license-check
+      # The SBOM is derived from composer.lock, which differs per Laravel major, so it
+      # is only generated on the canonical cell (latest major).
+      - name: SBOM
+        if: matrix.php == '8.4' && matrix.testbench == '^11.0'
+        run: composer sbom
+      # An SBOM documents a RELEASE, so the gate lives on tags. But this is a library:
+      # composer.lock is intentionally not committed, so CI resolves fresh with
+      # `composer update` and will pick up any upstream patch published since the
+      # maintainer last ran `composer sbom`. An EXACT-match gate is therefore
+      # unwinnable — v0.52.0 failed on laravel/framework v13.20.0 -> v13.22.0, through
+      # no fault of the release — and a gate that cannot be satisfied is one people
+      # learn to ignore.
+      #
+      # So compare the dependency SET, not the resolved versions. That still catches
+      # what provenance actually cares about — a dependency added or removed without
+      # the SBOM being regenerated — while tolerating the patch drift the lockfile-less
+      # model guarantees. The authoritative record of what a release actually resolved
+      # is the uploaded artifact below, generated from that build.
+      - name: SBOM dependency set is up to date (release tags)
+        if: matrix.php == '8.4' && matrix.testbench == '^11.0' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          git show HEAD:sbom.json > /tmp/sbom-committed.json
+          jq -r '[.components[].name] | sort | .[]' /tmp/sbom-committed.json > /tmp/set-committed.txt
+          jq -r '[.components[].name] | sort | .[]' sbom.json > /tmp/set-resolved.txt
+          if ! diff -u /tmp/set-committed.txt /tmp/set-resolved.txt; then
+            echo "::error::sbom.json lists a different dependency SET than this release resolves — a dependency was added or removed without regenerating it. Run 'composer sbom' and commit before tagging."
+            exit 1
+          fi
+      - name: SBOM drift (informational)
+        if: matrix.php == '8.4' && matrix.testbench == '^11.0' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          git diff --quiet sbom.json \
+            || echo "::notice::sbom.json drifted from the current resolve (usually an upstream patch release). Run 'composer sbom' before the next tag."
+      - name: Upload SBOM
+        if: matrix.php == '8.4' && matrix.testbench == '^11.0'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-cyclonedx
+          path: sbom.json
+
+  # ---------------------------------------------------------------------------
+  # SERVER ENGINES
+  #
+  # The matrix above runs on sqlite :memory: — and running ONLY on sqlite is what
+  # let this package ship for sixty releases documenting MySQL support while its
+  # migrations could not create a single table there. Sqlite accepts a literal
+  # DEFAULT on a json column (MySQL: error 1101), has no index-key size limit
+  # (InnoDB: 3072 bytes, and utf8mb4 charges 4 bytes a character), and no
+  # identifier length limit (MySQL: 64, PostgreSQL: 63). All three bit.
+  #
+  # So the claim is now tested rather than asserted — except it was not. This job
+  # ran on the self-hosted runner, where service containers are UNREACHABLE: they
+  # start and report healthy, but the runner mounts the host's Docker socket, so the
+  # published port lands on the host while the job runs in a container that is on
+  # neither that loopback nor the service network. Every run since this job was
+  # written failed with `SQLSTATE[HY000] [2002] Connection refused`, while
+  # docs/requirements.md reported "✅ every CI run" for three engines on the strength
+  # of it. A matrix that has never connected is worse than no matrix.
+  #
+  # GITHUB-HOSTED, therefore, unlike every other job here — service containers work
+  # there. Only this job moves.
+  # ---------------------------------------------------------------------------
+  engines:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `rollback_user` is the SEPARATE credential the "Migrations down" step
+          # below connects as, and only that step. It needs to create a throwaway
+          # database of its own, and MySQL/MariaDB have no schema layer below the
+          # database — the official images grant the ordinary user rights on
+          # `laravel_id` and nothing else, so that costs root. PostgreSQL does not:
+          # `laravel` owns `laravel_id` and can CREATE SCHEMA inside it, so that cell
+          # keeps the unprivileged user. The suite itself always runs as `laravel`;
+          # nothing else in this job sees root.
+          - driver: mysql
+            image: mysql:8
+            # Host ports differ per engine so two cells can share one self-hosted
+            # runner without fighting over 3306.
+            port: 33306
+            service_port: 3306
+            health: mysqladmin ping -h 127.0.0.1 -u root -proot
+            rollback_user: root
+            rollback_password: root
+          # MariaDB is named separately in the docs and is NOT just MySQL: its
+          # `json` is an alias for longtext + a json_valid() CHECK, and unlike
+          # MySQL it does accept a literal DEFAULT there. It takes the expression
+          # form too, which is why one spelling serves both.
+          - driver: mariadb
+            image: mariadb:11
+            port: 33307
+            service_port: 3306
+            health: healthcheck.sh --connect --innodb_initialized
+            rollback_user: root
+            rollback_password: root
+          - driver: pgsql
+            image: postgres:16
+            port: 55432
+            service_port: 5432
+            health: pg_isready -U laravel -d laravel_id
+            rollback_user: laravel
+            rollback_password: secret
+    name: ${{ matrix.image }}
+    services:
+      db:
+        image: ${{ matrix.image }}
+        # Both families' variables are set; each image ignores the other's.
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: laravel_id
+          MYSQL_USER: laravel
+          MYSQL_PASSWORD: secret
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: laravel_id
+          MARIADB_USER: laravel
+          MARIADB_PASSWORD: secret
+          POSTGRES_DB: laravel_id
+          POSTGRES_USER: laravel
+          POSTGRES_PASSWORD: secret
+        ports:
+          - ${{ matrix.port }}:${{ matrix.service_port }}
+        options: >-
+          --health-cmd "${{ matrix.health }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DB_CONNECTION: ${{ matrix.driver }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ matrix.port }}
+      DB_DATABASE: laravel_id
+      DB_USERNAME: laravel
+      DB_PASSWORD: secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+          tools: composer:v2
+          # pcntl is load-bearing, not incidental: the audit-chain concurrency
+          # test forks eight appenders and SKIPS ITSELF without it. Leaving it out
+          # would make this job green while proving nothing about row locking —
+          # the one thing only a server engine can prove.
+          extensions: pdo_mysql, pdo_pgsql, sodium, openssl, pcntl
+      - run: composer update --no-interaction --no-progress --prefer-dist
+      # Migrations under Testbench's default strategy rather than the suite's
+      # RefreshDatabase, so the migrator itself is exercised on the real engine.
+      #
+      # THIS STEP PROVES up() ONLY. Testbench's rollback is scoped by `--path` to the
+      # one publishable migration this TestCase loads directly, so everything the
+      # service provider registers goes up and never comes back down: measured on
+      # postgres:16 against an empty database, 83 tables and 90 rows in `migrations`
+      # survived the run. down() is proved by the next step instead — do not read this
+      # one as covering it.
+      - name: Migrations up
+        run: php -d memory_limit=1G vendor/bin/pest tests/Feature/Kernel/Audit/AuditLogTest.php
+        env:
+          CBOX_ID_TEST_MIGRATE_EACH: "1"
+      # ...AND ALL THE WAY BACK DOWN, WITH THE DATABASE ASSERTED EMPTY AFTERWARDS.
+      #
+      # For sixty releases nothing verified down() on any engine. A step captioned
+      # "migrations up and down" existed, but `migrate:rollback` exits 0 whether it
+      # reversed the whole schema or one file, and nothing looked at the database
+      # afterwards — which is exactly how 83 surviving tables went unnoticed.
+      #
+      # So the check is the ASSERTION, not the rollback: tests/Migrations/
+      # MigrationRollbackTest.php migrates every registered path into a throwaway
+      # database, resets across all of them, and requires zero tables and zero
+      # `migrations` rows before migrating back up again. Five broken down() methods
+      # surfaced the first time it ran. If it fails, fix the migration — do not narrow
+      # what the test looks at.
+      #
+      # MariaDB runs it too. This cell is otherwise migrations-only (see below), and
+      # the schema is precisely the part of it that is known-good, so there is no
+      # reason to leave the one engine out of the check that covers the schema.
+      - name: Migrations down (database asserted empty afterwards)
+        run: php -d memory_limit=1G vendor/bin/pest --group=migrations-rollback
+        env:
+          # Its own credential: it creates a throwaway database, which costs root on
+          # MySQL/MariaDB. See `rollback_user` in the matrix above.
+          DB_USERNAME: ${{ matrix.rollback_user }}
+          DB_PASSWORD: ${{ matrix.rollback_password }}
+      # ALL THREE ENGINES NOW RUN THE FULL SUITE. Both exclusions this job shipped
+      # with have been fixed, and the reasons are kept because each one is a defect
+      # that took a whole engine out of CI:
+      #
+      # PostgreSQL (postgres:16) — WAS 338 of 1358. `$table->ulid()` compiled to
+      #   `char(26)`, and PostgreSQL blank-pads CHAR where MySQL and SQLite strip the
+      #   trailing spaces on retrieval, so any environment key shorter than 26
+      #   characters came back to PHP padded and the tenancy guard rejected its own
+      #   row:
+      #     row belongs to [env_test                  ], acting as [env_test]
+      #   Invisible in production, where an environment id IS a 26-character ULID —
+      #   and invisible from a SQL client, because Postgres' own `=` and `length()`
+      #   strip the blanks. Only PHP saw them. Every identifier column is `varchar`
+      #   as of v0.62.0 and this cell is green, so it is promoted here: a defect
+      #   that took a whole engine out of CI does not get to come back unnoticed.
+      #
+      # MariaDB (mariadb:11) — WAS 6 of 1358. Eight processes appending to an EMPTY
+      #   audit chain deadlocked each other: with no anchor row to serialise on yet,
+      #   the `FOR UPDATE` looking for it matched nothing, which InnoDB answers with a
+      #   GAP lock. MariaDB resolved the resulting pile-up as SQLSTATE 40001 (1213)
+      #   rather than the duplicate key DatabaseAuditLog::record() is written to
+      #   absorb, and three attempts is not enough for eight contenders on one gap.
+      #   Failures were LOUD, not silent. Fixed by finding the anchor with a plain
+      #   read and locking it by PRIMARY KEY — an exact PK match takes a record lock
+      #   and can never take a gap lock — with the search deliberately OUTSIDE the
+      #   transaction, because under REPEATABLE READ a consistent read inside it fixes
+      #   the snapshot the head read is then answered from. Now 1386/1386 on
+      #   mariadb:11 and 800/800 on the forking test.
+      #
+      # The old comment here said "turn MariaDB on when that is fixed. Do not fix it
+      # by skipping the test: a red cell is information, a skipped one is not." That
+      # instruction is now discharged — and it is why the exclusion was a dated note
+      # rather than a permanent `if`.
+      #
+      # The rollback group is excluded here because it already ran as its own step
+      # above, under the credential it needs; running it a second time as `laravel`
+      # would fail the MySQL cell on a privilege it deliberately does not have.
+      - name: Pest
+        run: php -d memory_limit=1G vendor/bin/pest --exclude-group=migrations-rollback

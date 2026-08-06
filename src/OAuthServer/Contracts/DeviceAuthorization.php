@@ -1,0 +1,56 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\OAuthServer\Contracts;
+
+use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
+use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
+use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
+use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
+use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
+use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
+use Cbox\Id\OAuthServer\ValueObjects\PendingDeviceAuthorization;
+
+interface DeviceAuthorization
+{
+    /**
+     * Begin a device grant: issue a device_code + user_code (RFC 8628 §3.2).
+     *
+     * @param  list<string>  $scopes
+     */
+    public function request(Client $client, array $scopes): DeviceAuthorizationResult;
+
+    /**
+     * Resolve a live (pending, unexpired) request by its `user_code`, so a
+     * verification screen can show which client and scopes are asking BEFORE the
+     * user approves. Returns null for an unknown, expired or already-decided code.
+     * Never exposes the device_code.
+     */
+    public function pending(string $userCode): ?PendingDeviceAuthorization;
+
+    /**
+     * Approve a pending grant identified by its user_code, binding the user who
+     * consented at the verification URI. Returns false if the code is unknown,
+     * expired or not pending.
+     */
+    public function approve(string $userCode, string $userId, ?string $organizationId): bool;
+
+    /**
+     * Deny a pending grant. Returns false if the code is unknown/expired.
+     */
+    public function deny(string $userCode): bool;
+
+    /**
+     * Poll for the token (RFC 8628 §3.4). Returns the approved grant, or throws.
+     *
+     * @throws DeviceAuthorizationPending while the user has not yet approved
+     * @throws DeviceSlowDown when polling faster than the interval
+     * @throws DeviceAccessDenied when the user denied the request
+     * @throws DeviceExpired when the device_code has expired
+     * @throws InvalidGrant for an unknown or already-redeemed device_code
+     */
+    public function redeem(string $clientId, string $deviceCode): DeviceGrant;
+}

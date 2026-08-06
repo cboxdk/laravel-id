@@ -1,0 +1,303 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\TokenVault;
+
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\TokenVault\Contracts\SecretVault;
+use Cbox\Id\TokenVault\Exceptions\LeaseDenied;
+use Cbox\Id\TokenVault\Exceptions\SecretNotFound;
+use Cbox\Id\TokenVault\Models\VaultGrant;
+use Cbox\Id\TokenVault\Models\VaultSecret;
+use Cbox\Id\TokenVault\ValueObjects\SecretLease;
+use Cbox\Id\TokenVault\ValueObjects\VaultOwner;
+use DateTimeInterface;
+use Illuminate\Support\Str;
+
+/**
+ * Database-backed {@see SecretVault}. This class carries the vault's security
+ * guarantees:
+ *
+ *  - SEALED AT REST — a credential is stored only as a SecretBox ciphertext bound
+ *    (AEAD) to its own row id; the plaintext is opened solely inside {@see lease()}
+ *    and never persisted unsealed, logged, or written to an audit row.
+ *  - DENY-BY-DEFAULT — every mutation and every lease first calls
+ *    {@see EnvironmentContext::requireEnvironment()} (hard tenancy), and a lease is
+ *    refused unless a live grant exists for the exact (secret, client) pair; the
+ *    refusal is UNIFORM (no enumeration oracle) and its reason is audited, not
+ *    returned.
+ *  - REVOCABLE — a revoked secret or grant, or an expired secret, can never be
+ *    leased again; revocation takes effect on the next lease.
+ *  - ACCOUNTABLE — store / rotate / revoke / grant / lease are all recorded on the
+ *    hash-chained audit trail, with the acting client and the stated purpose.
+ */
+class DatabaseSecretVault implements SecretVault
+{
+    // Lazy per-call resolution of the ambient environment. This class is a `singleton`
+    // (TokenVaultServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
+    // would pin a queue worker to the first job's environment for the life of the process.
+    use ResolvesEnvironment;
+
+    public function __construct(
+        private readonly SecretBox $secretBox,
+        private readonly AuditLog $audit,
+        private readonly int $defaultLeaseTtlSeconds,
+    ) {}
+
+    public function store(
+        string $name,
+        string $provider,
+        string $secret,
+        ?VaultOwner $owner = null,
+        ?DateTimeInterface $expiresAt = null,
+    ): VaultSecret {
+        $this->environments()->requireEnvironment();
+
+        $model = new VaultSecret;
+        // The id is assigned before sealing so secretContext() (which binds the
+        // ciphertext to this row) is stable and available at seal time.
+        $model->id = (string) Str::ulid();
+        $model->fill([
+            'name' => $name,
+            'provider' => $provider,
+            'key_version' => 1,
+            'owner_type' => $owner?->type->value,
+            'owner_id' => $owner?->id,
+            'expires_at' => $expiresAt,
+        ]);
+        $model->secret_encrypted = $this->secretBox->seal($secret, $model->secretContext());
+        $model->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'vault.secret.stored',
+            actorType: ActorType::System,
+            targetType: 'vault_secret',
+            targetId: $model->id,
+            context: ['provider' => $provider, 'name' => $name],
+        ));
+
+        return $model;
+    }
+
+    public function rotate(string $secretId, string $newSecret, ?VaultOwner $owner): VaultSecret
+    {
+        $this->environments()->requireEnvironment();
+
+        $secret = $this->ownedSecret($secretId, $owner);
+
+        if ($secret === null) {
+            throw SecretNotFound::forId($secretId);
+        }
+
+        // Re-seal under the same context (the id is unchanged) so the rotated blob
+        // stays bound to this row.
+        $secret->secret_encrypted = $this->secretBox->seal($newSecret, $secret->secretContext());
+        $secret->rotated_at = now();
+        $secret->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'vault.secret.rotated',
+            actorType: ActorType::System,
+            targetType: 'vault_secret',
+            targetId: $secret->id,
+            context: ['provider' => $secret->provider],
+        ));
+
+        return $secret;
+    }
+
+    public function revoke(string $secretId, ?VaultOwner $owner): void
+    {
+        $this->environments()->requireEnvironment();
+
+        $secret = $this->ownedSecret($secretId, $owner);
+
+        if ($secret === null) {
+            throw SecretNotFound::forId($secretId);
+        }
+
+        if ($secret->isRevoked()) {
+            return;
+        }
+
+        $secret->revoked_at = now();
+        $secret->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'vault.secret.revoked',
+            actorType: ActorType::System,
+            targetType: 'vault_secret',
+            targetId: $secret->id,
+        ));
+    }
+
+    public function grant(string $secretId, string $clientId, ?VaultOwner $owner, ?int $maxTtlSeconds = null): VaultGrant
+    {
+        $this->environments()->requireEnvironment();
+
+        // Deny-by-default: you can only grant access to a secret that exists in
+        // this environment.
+        $secret = $this->ownedSecret($secretId, $owner);
+
+        if ($secret === null) {
+            throw SecretNotFound::forId($secretId);
+        }
+
+        $grant = VaultGrant::query()
+            ->where('secret_id', $secretId)
+            ->where('client_id', $clientId)
+            ->first();
+
+        if ($grant === null) {
+            $grant = new VaultGrant;
+            $grant->id = (string) Str::ulid();
+            $grant->fill(['secret_id' => $secretId, 'client_id' => $clientId]);
+        }
+
+        // Re-granting reactivates a previously revoked pair.
+        $grant->max_ttl_seconds = $maxTtlSeconds;
+        $grant->revoked_at = null;
+        $grant->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'vault.grant.created',
+            actorType: ActorType::System,
+            targetType: 'vault_secret',
+            targetId: $secretId,
+            context: ['client_id' => $clientId, 'max_ttl_seconds' => $maxTtlSeconds],
+        ));
+
+        return $grant;
+    }
+
+    public function revokeGrant(string $secretId, string $clientId, ?VaultOwner $owner): void
+    {
+        $this->environments()->requireEnvironment();
+
+        // Resolve the secret under the caller's own ownership first: revoking a grant on
+        // a secret you do not own is another tenant's business.
+        if ($this->ownedSecret($secretId, $owner) === null) {
+            return;
+        }
+
+        $grant = VaultGrant::query()
+            ->where('secret_id', $secretId)
+            ->where('client_id', $clientId)
+            ->whereNull('revoked_at')
+            ->first();
+
+        if ($grant === null) {
+            return;
+        }
+
+        $grant->revoked_at = now();
+        $grant->save();
+
+        $this->audit->record(new AuditEvent(
+            action: 'vault.grant.revoked',
+            actorType: ActorType::System,
+            targetType: 'vault_secret',
+            targetId: $secretId,
+            context: ['client_id' => $clientId],
+        ));
+    }
+
+    public function lease(string $secretId, string $clientId, string $purpose, ?VaultOwner $owner): SecretLease
+    {
+        $this->environments()->requireEnvironment();
+
+        $secret = $this->ownedSecret($secretId, $owner);
+        $grant = $secret === null
+            ? null
+            : VaultGrant::query()
+                ->where('secret_id', $secretId)
+                ->where('client_id', $clientId)
+                ->whereNull('revoked_at')
+                ->first();
+
+        // Every failure mode fails the SAME way (LeaseDenied) so a caller cannot
+        // tell "no such secret" from "no grant"; the real reason is audited only.
+        if ($secret === null || $secret->isRevoked() || $secret->isExpired() || $grant === null) {
+            $reason = match (true) {
+                $secret === null => 'unknown_secret',
+                $secret->isRevoked() => 'secret_revoked',
+                $secret->isExpired() => 'secret_expired',
+                default => 'no_grant',
+            };
+
+            $this->audit->record(new AuditEvent(
+                action: 'vault.lease.denied',
+                actorType: ActorType::Service,
+                actorId: $clientId,
+                targetType: 'vault_secret',
+                targetId: $secretId,
+                context: ['reason' => $reason, 'purpose' => $purpose],
+            ));
+
+            throw LeaseDenied::make();
+        }
+
+        $plaintext = $this->secretBox->open($secret->secret_encrypted, $secret->secretContext());
+
+        $ttl = $this->leaseTtlSeconds($grant->max_ttl_seconds);
+        $expiresAt = now()->addSeconds($ttl);
+
+        $this->audit->record(new AuditEvent(
+            action: 'vault.secret.leased',
+            actorType: ActorType::Service,
+            actorId: $clientId,
+            targetType: 'vault_secret',
+            targetId: $secret->id,
+            context: ['provider' => $secret->provider, 'purpose' => $purpose, 'ttl_seconds' => $ttl],
+        ));
+
+        return new SecretLease(
+            secretId: $secret->id,
+            provider: $secret->provider,
+            secret: $plaintext,
+            expiresAt: $expiresAt->toDateTimeImmutable(),
+        );
+    }
+
+    /**
+     * The effective lease window: the vault-wide default, which a per-grant cap can
+     * only shorten (never extend past the ceiling).
+     */
+    /**
+     * The secret AS OWNED BY the caller's scope, or null.
+     *
+     * Secrets are environment-scoped by the tenancy kernel, but an environment holds many
+     * organizations — so the environment alone does not separate two tenants' credentials.
+     * Filtering in the QUERY (rather than fetching then comparing) means a foreign id is
+     * indistinguishable from a missing one: callers learn nothing about what exists
+     * outside their own scope. A null owner addresses only unowned (platform) secrets.
+     */
+    private function ownedSecret(string $secretId, ?VaultOwner $owner): ?VaultSecret
+    {
+        return VaultSecret::query()
+            ->whereKey($secretId)
+            ->when(
+                $owner === null,
+                fn ($query) => $query->whereNull('owner_type')->whereNull('owner_id'),
+                fn ($query) => $query
+                    ->where('owner_type', $owner?->type->value)
+                    ->where('owner_id', $owner?->id),
+            )
+            ->first();
+    }
+
+    private function leaseTtlSeconds(?int $grantMax): int
+    {
+        if ($grantMax === null) {
+            return $this->defaultLeaseTtlSeconds;
+        }
+
+        return min($this->defaultLeaseTtlSeconds, max(1, $grantMax));
+    }
+}

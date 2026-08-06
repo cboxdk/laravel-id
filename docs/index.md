@@ -1,0 +1,115 @@
+---
+title: Cbox ID
+description: Documentation for the identity framework for Laravel — the primitives behind SSO, directory sync, RBAC and audit
+weight: 1
+---
+
+# Cbox ID
+
+`cboxdk/laravel-id` is an identity **framework** for Laravel — the primitives behind central login, enterprise SSO, directory sync, RBAC, billing-driven entitlements and a
+tamper-evident audit trail. It is UI-free and interface-driven: every capability sits behind a
+contract you can bind, mock, extend or replace.
+
+Security is the core value proposition. A breach of an identity platform exposes thousands of
+customers at once, so the design is deny-by-default throughout, and every module is verified
+(tests + PHPStan level max + `composer audit`) before it ships.
+
+## How it's built
+
+The package is one Composer package with clean internal module boundaries. Two layers:
+
+- **Kernels** (`Cbox\Id\Kernel\*`) — shared primitives that depend only on the framework
+  (plus, in dependency order, each other). Tenancy, Crypto, Audit, Events, Authorization.
+- **Domain modules** (`Cbox\Id\*`) — features built on the kernels. Organization, Identity,
+  AccessControl, Directory, Federation, Webhooks, AuditQuery.
+
+Products don't embed this package — they authenticate against the running instance over OIDC
+and talk to it over its HTTP API (or, inside the same app, by resolving its contracts from the
+container). The framework itself is embedded only in the hosted app.
+
+**Client SDKs.** You don't have to hand-roll OIDC — first-party client libraries wrap sign-in,
+the profile/account redirect, back-channel token exchange, webhook-signature verification, the
+Token Vault, and app-manifest publishing:
+
+| SDK | Package | For |
+|---|---|---|
+| JavaScript / TypeScript | `@cboxdk/id-js` | any JS runtime — the core client |
+| React | `@cboxdk/id-react` | React apps (`UserButton`, `SignInButton`, hooks) |
+| Vue / Nuxt | `@cboxdk/id-vue`, `@cboxdk/id-nuxt` | Vue and Nuxt apps |
+| Python | `cbox-id-client` | Python services |
+| Go | `github.com/cboxdk/id-go` | Go services |
+| Laravel / PHP | `cboxdk/laravel-id-client` | Laravel apps consuming a Cbox ID instance |
+
+These are **separate packages** — installing `cboxdk/laravel-id` does not install any of
+them, and each SDK's own repository is the authority on what it currently supports.
+
+> **Don't want to build the app layer yourself?** There's a full, deployable
+> application built on this framework — the **cbox-id app**, a separate project with the
+> admin console, hosted login, onboarding and app-layer add-ons (risk-scoring, breached-password
+> screen, security headers) already implemented, shipped with its own operator documentation.
+> This documentation covers the framework you'd build on directly; the app is the
+> batteries-included path.
+
+## Module reference
+
+| Module | Primary contracts | What it does |
+|---|---|---|
+| `Kernel\Tenancy` | `TenantContext` | Deny-by-default org isolation; `runAs`, `scopedTo` (hierarchy roll-up), `withoutScope`. |
+| `Kernel\Crypto` | `KeyManager`, `TokenSigner`, `SecretBox` | Signing keys + JWKS + rotation; alg-allowlisted JWTs; AEAD envelope encryption. |
+| `Kernel\Audit` | `AuditLog` | Append-only, hash-chained trail; signed checkpoints. |
+| `Kernel\Events` | `EventBus` | Transactional outbox; at-least-once relay. |
+| `Kernel\Authorization` | `PolicyDecisionPoint`, `RelationshipStore`, `EntitlementReader`/`EntitlementWriter` | Owned ReBAC engine, deny-by-default PDP, billing-fed entitlement projection. |
+| `Organization` | `Organizations`, `OrganizationHierarchy`, `Memberships`, `EnvironmentResolver` | Environments, tenants, closure-tree hierarchy (reseller/parent), memberships. |
+| `Identity` | `Subjects`, `SessionManager` | Global users, federated identities, sessions, password auth. |
+| `AccessControl` | `Roles`, `AccessChecker` | RBAC with hierarchy-aware roll-down. |
+| `Directory` | `Directories`, `DirectorySync` | SCIM provisioning; deprovision revokes sessions immediately. |
+| `Federation` | `Connections`, `FederationFlow`, `AssertionValidator` | Per-org SSO connections + login orchestration (relying-party / SP side). |
+| `SamlIdp` | `SamlIdentityProvider`, `ServiceProviders`, `IdpKeyMaterial` | SAML 2.0 **Identity Provider**: downstream SPs (Salesforce, Workday, AWS) federate here — signed assertions, ACS/audience pinning, RSA-SHA256. |
+| `OAuthServer` | `TokenIssuer`, `TokenIntrospector`, `ClientRegistry`, `AuthorizationCodes`, `RefreshTokens`, `DeviceAuthorization`, `BackchannelAuthentication`, `PushedAuthorizationRequests`, `DynamicClientRegistration`, `ServiceAccounts` | OAuth 2.0 / OIDC provider: authorization-code + PKCE, client-credentials, refresh rotation, DPoP, PAR, device grant, CIBA (backchannel approval for agents), dynamic client registration, introspection/revocation. |
+| `TokenVault` | `SecretVault` | AI token vault: seals downstream third-party credentials and brokers short-lived, deny-by-default leased access to agent clients. |
+| `Governance` | `AccessReviews`, `SegregationOfDuties` | IGA: access-certification campaigns (snapshot → certify/revoke → apply on close) and Segregation-of-Duties policies (pre-grant gate + conflict detection) over roles and memberships. |
+| `ExternalActions` | `ActionPipeline`, `ExternalActions` | Inline hooks: synchronous extension points that enrich or veto an operation — in-process handlers or signed, SSRF-guarded external HTTP calls. Six points across token minting, login, registration and password change, each with its own fail policy. |
+| `Webhooks` | `WebhookRegistry`, `WebhookDispatcher` | HMAC-signed delivery + retries; fans out `EventDelivered`. |
+| `AuditQuery` | `AuditReader` | Filtered/paginated reads + SIEM pull-stream. |
+| `Api` | (HTTP routes/middleware) | The HTTP surface — OAuth/OIDC, SCIM, discovery endpoints; resolves each request's environment (`ResolveEnvironment`). |
+| `Platform` | `PlatformOperators`, `Projects`, `OrganizationProjects`, `OrganizationApiKeys` | Control-plane operators AND the self-serve management plane: a customer IS an organization, and owns projects (the billing anchor) which own environments. |
+| `Console` | (`cbox-id:install`, `cbox-id:doctor`) | Artisan commands: guided bootstrap and health checks. (Key rotation, `cbox-id:keys:rotate`, ships in `Kernel\Crypto`.) |
+
+## Sections
+
+### Getting started
+
+- [Requirements](requirements.md) — PHP, Laravel and PHP-extension versions
+- [Installation](getting-started/installation.md)
+- [Quickstart](quickstart.md) — from empty app to a federated login in a few calls
+- [Start here — the mental model](getting-started/start-here.md) — what a central IdP is, and the five things you actually decide, in one page
+- [Testing](getting-started/testing.md) — the shippable `InteractsWith*` helpers and fakes
+
+### Capabilities
+
+- [What's supported](capabilities/_index.md) — the grading vocabulary and the at-a-glance table
+- [Standards & conformance](security/standards.md) — the RFC-by-RFC matrix
+- [Feature support](capabilities/feature-support.md) — everything that is not a wire protocol
+
+### Core concepts
+
+- [Architecture & patterns](core-concepts/architecture.md) — kernels vs domain, contracts-first DI, dogfooding
+- [Environments & the isolation model](core-concepts/environments.md) — the hard identity boundary above organizations; staging/prod and white-label
+- [Authorization & the decision plane](core-concepts/authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
+- [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
+
+### Cookbook
+
+- [Cookbook](cookbook/_index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
+- [Integrating an existing app](cookbook/integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
+
+### Extension points
+
+- [Extending & customizing](extension-points/_index.md) — swap any contract; implement a SAML/OIDC validator
+
+### Security
+
+- [Security](security/_index.md) — the invariants, tenant isolation, tamper-evident audit
+- [FAPI hardening](security/fapi.md) — the enforceable FAPI 2.0 baseline for high-assurance clients
+- [Compliance mapping](security/compliance.md) — how controls map to SOC 2, ISO 27001, NIS2, GDPR, HIPAA, PCI-DSS
+- [Threat model](security/threat-model.md) — STRIDE analysis and mitigations

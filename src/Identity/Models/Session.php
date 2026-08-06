@@ -1,0 +1,53 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\Identity\Models;
+
+use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+
+/**
+ * An authenticated session. The `amr` records how the user authenticated
+ * (password, mfa, sso…). Stored in `auth_sessions` to avoid colliding with
+ * Laravel's own database session driver table.
+ *
+ * @property string $id
+ * @property string $environment_id
+ * @property string $user_id
+ * @property string|null $organization_id
+ * @property string|null $ip
+ * @property string|null $user_agent
+ * @property array<int, string> $amr
+ * @property Carbon|null $last_active_at
+ * @property Carbon $expires_at
+ * @property Carbon|null $revoked_at
+ * @property Carbon|null $created_at The authentication time. Read by OIDC `max_age` /
+ *                                   `auth_time`, so it is part of this model's contract, not bookkeeping.
+ * @property Carbon|null $updated_at
+ */
+class Session extends Model implements EnvironmentOwned
+{
+    use BelongsToEnvironment;
+    use HasUlids;
+
+    protected $table = 'auth_sessions';
+
+    protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'amr' => 'array',
+            'last_active_at' => 'datetime',
+            'expires_at' => 'datetime',
+            'revoked_at' => 'datetime',
+        ];
+    }
+}

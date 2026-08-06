@@ -1,0 +1,89 @@
+{
+    "name": "cboxdk/laravel-id",
+    "description": "cboxdk/laravel-id: a Laravel-native auth and identity framework. AuthN, SSO/SAML, SCIM, OAuth/OIDC provider, RBAC, billing-fed entitlements, tamper-evident audit.",
+    "type": "library",
+    "keywords": [
+        "cbox",
+        "laravel",
+        "identity",
+        "authentication",
+        "sso",
+        "saml",
+        "scim",
+        "oauth",
+        "oidc",
+        "rbac",
+        "audit"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "ext-openssl": "*",
+        "ext-sodium": "*",
+        "cboxdk/laravel-siem": "^0.1",
+        "cboxdk/laravel-ssrf": "^1.1.1",
+        "cboxdk/siem": "^0.1",
+        "firebase/php-jwt": "^7.0",
+        "illuminate/auth": "^12.0 || ^13.0",
+        "illuminate/contracts": "^12.0 || ^13.0",
+        "illuminate/database": "^12.0 || ^13.0",
+        "illuminate/support": "^12.0 || ^13.0",
+        "onelogin/php-saml": "^4.0",
+        "robrichards/xmlseclibs": "^3.1.5",
+        "spomky-labs/cbor-php": "^3.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0 || ^11.0",
+        "pestphp/pest": "^3.5 || ^4.0"
+    },
+    "bin": [
+        "bin/check-licenses.php",
+        "bin/generate-sbom.php"
+    ],
+    "autoload": {
+        "psr-4": {
+            "Cbox\\Id\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Cbox\\Id\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "lint": "pint --test",
+        "analyse": "phpstan analyse --no-progress --memory-limit=1G",
+        "test": "@php -d memory_limit=1G vendor/bin/pest",
+        "license-check": "@php bin/check-licenses.php",
+        "sbom": "@php bin/generate-sbom.php",
+        "sbom-check": "@php bin/generate-sbom.php --check",
+        "qa": [
+            "@lint",
+            "@analyse",
+            "@test",
+            "@license-check",
+            "@sbom-check",
+            "@composer audit"
+        ]
+    },
+    "scripts-descriptions": {
+        "license-check": "Fail if any dependency is not permissively licensed (SBOM/compliance gate).",
+        "sbom": "Generate a CycloneDX 1.5 SBOM (sbom.json) from composer.lock.",
+        "qa": "Run the full quality gate: lint, static analysis, tests, license check, security audit."
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Cbox\\Id\\IdServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}

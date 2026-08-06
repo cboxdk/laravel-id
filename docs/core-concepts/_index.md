@@ -1,0 +1,48 @@
+---
+title: Core concepts
+description: The architecture, the authorization decision plane, and entitlements
+weight: 5
+---
+
+# Core concepts
+
+How the platform is put together and the ideas you build against:
+
+- **[Architecture & patterns](architecture.md)** — kernels vs. domain modules,
+  contracts-first DI, and dogfooding.
+- **[Platform operators](platform-operators.md)** — the identity above every
+  environment: who provisions planes and can step into any one of them.
+- **[Customers, projects & the platform plane](customers-and-projects.md)** — the
+  self-serve hierarchy above environments: one login, many independently-billed IdP
+  products, with billing anchored on the project.
+- **[Environments & the isolation model](environments.md)** — the hard boundary
+  above organizations (staging/prod, white-label).
+- **[Authorization & the decision plane](authorization.md)** — live permission and
+  entitlement decisions, the hot path, and the token hybrid.
+- **[Organization access](organization-access.md)** — ordered membership roles,
+  groups, resource grants with effective-role resolution, and user API tokens
+  capped at the issuer's role.
+- **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
+  your billing engine, never billing state.
+- **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters
+  for analytics and future soft gates; local measurement, distinct from billing.
+- **[SIEM audit streaming](audit-streaming.md)** — mirror the hash-chained,
+  environment-scoped audit trail out to a customer's SIEM, isolation intact.
+- **[Inbound SCIM provisioning server](scim.md)** — the SCIM 2.0 endpoint a
+  customer's IdP pushes users and groups INTO: directory-scoped bearer auth, the
+  full User and Group lifecycle, type-checked filters and RFC 7644 error semantics.
+- **[Outbound SCIM provisioning](outbound-provisioning.md)** — push user and
+  membership changes OUT to downstream apps over their SCIM 2.0 endpoints; the
+  stateful mirror of the inbound directory.
+- **[OTP delivery channels](otp-channels.md)** — delivered one-time passcodes
+  (email/SMS) as a verification and MFA factor, and the caps that make a short
+  code safe.
+- **[AI token vault](token-vault.md)** — seal downstream third-party credentials
+  and broker short-lived, deny-by-default leased access to autonomous / AI agents.
+- **[CIBA backchannel approval](ciba.md)** — OpenID Connect Client-Initiated
+  Backchannel Authentication: human-in-the-loop approval for agent actions.
+- **[Access governance](access-governance.md)** — IGA: access-certification
+  campaigns and Segregation-of-Duties policies over roles and memberships.
+- **[External actions & inline hooks](external-actions.md)** — synchronous
+  extension points that enrich or veto an operation (in-process or external HTTP),
+  at token minting, login, registration and password change.

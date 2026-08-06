@@ -1,0 +1,142 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\Api\Http\Controllers\Sso;
+
+use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
+use Cbox\Id\SamlIdp\Enums\SamlBinding;
+use Cbox\Id\SamlIdp\Exceptions\InvalidLogoutRequest;
+use Cbox\Id\SamlIdp\Models\SamlIdpSession;
+use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
+use Cbox\Id\SamlIdp\ValueObjects\SamlLogoutOutcome;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+
+/**
+ * The IdP SingleLogoutService endpoint (SAML 2.0 Single Logout, HTTP-Redirect
+ * binding). Two shapes arrive here:
+ *
+ *  - **SP-initiated SLO** — a signed `LogoutRequest` (`SAMLRequest`). The
+ *    {@see SamlSingleLogout} service verifies its signature against the SP's
+ *    registered certificate, and we tear down the local session and 302 a signed
+ *    `LogoutResponse` back to the SP's SLO endpoint so the SP completes its logout.
+ *  - **Plain logout** — no `SAMLRequest`. We simply revoke the subject's local
+ *    sessions so the next SSO handshake re-authenticates.
+ *
+ * The endpoint only ever REVOKES a session; it never mints or elevates one, so an
+ * unauthenticated or unsigned request can gain nothing. An invalid `LogoutRequest`
+ * (unknown SP, bad signature, no SLO endpoint) is refused with 400 — never processed
+ * on trust.
+ */
+class SamlIdpLogoutController
+{
+    public function __construct(
+        private readonly SessionManager $sessions,
+        private readonly SamlSingleLogout $singleLogout,
+    ) {}
+
+    public function __invoke(Request $request): RedirectResponse|Response
+    {
+        $samlRequest = $this->param($request, 'SAMLRequest');
+
+        // A plain logout with no SAML message: revoke and done.
+        if ($samlRequest === null) {
+            $this->terminate();
+
+            return new Response('Signed out.', 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+
+        // SP-initiated SLO: VALIDATE the (signed) LogoutRequest BEFORE touching the
+        // session. Terminating first would let a bogus SLO URL force-log-out whoever
+        // is signed in (a forced-logout via a cross-site GET) before the 400.
+        try {
+            $outcome = $this->singleLogout->process(new LogoutMessage(
+                samlRequest: $samlRequest,
+                relayState: $this->param($request, 'RelayState'),
+                signature: $this->param($request, 'Signature'),
+                sigAlg: $this->param($request, 'SigAlg'),
+                binding: $request->isMethod('get') ? SamlBinding::Redirect : SamlBinding::Post,
+            ));
+        } catch (InvalidLogoutRequest) {
+            return new Response('SLO rejected.', 400, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+
+        $this->terminateSubject($outcome);
+
+        // Answer on the binding the request arrived on: a 302 carrying the signed
+        // redirect (HTTP-Redirect), or a self-submitting form (HTTP-POST, which is
+        // what Okta and ADFS prefer for SLO).
+        return $outcome->binding === SamlBinding::Post
+            ? ($outcome->postBinding?->toResponse()
+                ?? new Response($outcome->postForm, 200, ['Content-Type' => 'text/html; charset=UTF-8']))
+            : new RedirectResponse($outcome->redirectUrl);
+    }
+
+    /** Revoke every session for the currently-authenticated subject (plain logout). */
+    private function terminate(): void
+    {
+        $subjectId = auth()->id();
+
+        if (is_string($subjectId) || is_int($subjectId)) {
+            $this->sessions->revokeAllForUser((string) $subjectId);
+        }
+    }
+
+    /**
+     * Revoke every session for the subject the SP asked to log out — identified by the
+     * VERIFIED NameID from the signed request, not by auth()->id(). An SP-initiated SLO
+     * may arrive on a connection with no local session, or one signed in as a different
+     * subject, so revoking the current browser's user would log out the wrong person (or
+     * nobody). The NameID is the subject id or, per the SP's NameID format, their email.
+     */
+    private function terminateSubject(SamlLogoutOutcome $outcome): void
+    {
+        // Resolve the NameID THROUGH the service provider that presented it.
+        //
+        // This used to be `find($nameId) ?? findByEmail($nameId)` and then revoke
+        // everything. A NameID is not a secret — for the default emailAddress format it
+        // IS the person's email — so any service provider registered in the environment
+        // could sign a LogoutRequest naming any user, including one that had never
+        // federated to it, and end that person's identity-provider session along with
+        // every downstream session. Repeatedly. A relying party held a logout primitive
+        // over the whole environment.
+        //
+        // Only a subject we actually issued an assertion to, for THIS service provider,
+        // under THIS name, can be logged out by it.
+        //
+        // Matched on the digest of the pair rather than the pair itself — the two raw
+        // columns are too wide for an InnoDB index together, and an unindexed logout
+        // lookup is a table scan an unauthenticated endpoint can ask for at will.
+        //
+        // And the TTL is enforced HERE, because this is the only place it means
+        // anything. The record was written with a 30-day expiry, UPGRADING told
+        // operators records are kept 30 days, and the constant's own docblock said an
+        // SLO arriving later "has nothing to resolve and is refused" — while the read
+        // had no expiry predicate at all. A bound nobody checks is a comment.
+        $issued = SamlIdpSession::query()
+            ->where('lookup_hash', SamlIdpSession::lookupHash($outcome->spEntityId, $outcome->nameId))
+            ->where('expires_at', '>', now())
+            ->latest('created_at')
+            ->first();
+
+        if ($issued === null) {
+            // Nothing to resolve: an SP naming someone it was never told about, or a
+            // record that has aged out. Silence is the safe direction — a logout that
+            // does not happen is a nuisance; one that happens to the wrong person is an
+            // outage.
+            return;
+        }
+
+        $this->sessions->revokeAllForUser($issued->subject_id);
+    }
+
+    private function param(Request $request, string $key): ?string
+    {
+        $value = $request->input($key);
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+}

@@ -1,0 +1,5 @@
+# Files that exist for development but must not ship in the Composer package.
+# `export-ignore` removes them from `git archive`, which is what Packagist uses to
+# build the distributed zip.
+/dev              export-ignore
+/BUILD-STATUS.md  export-ignore

@@ -1,0 +1,174 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\Identity\Contracts;
+
+use Cbox\Id\ExternalActions\Enums\HookPoint;
+use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
+use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
+use Cbox\Id\Identity\Exceptions\IdentityAlreadyLinked;
+use Cbox\Id\Identity\Exceptions\PolicyViolation;
+use Cbox\Id\Identity\ValueObjects\AuthPolicy;
+use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
+use Cbox\Id\Identity\ValueObjects\FederatedProvisioning;
+use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
+use Cbox\Id\Identity\ValueObjects\Subject;
+
+/**
+ * The platform's single boundary to "who the user is". Everything else — sessions,
+ * passkeys, MFA, memberships, SSO — references a subject only by its opaque
+ * string id, so the platform never owns or assumes the host's user store.
+ *
+ * The package ships a default implementation over its own optional users table
+ * (greenfield). To pull the platform into an existing app — including one with
+ * several authenticatable models (users, admins, resellers) or a single model
+ * with role flags — bind your own implementation to this contract
+ * (config `cbox-id.subject.resolver`) and map ids to whatever model(s) you have.
+ * Ids are opaque to the platform, so namespaced ids ("reseller:42") or globally
+ * unique ids (ULID/UUID) both work.
+ */
+interface Subjects
+{
+    public function find(string $id): ?Subject;
+
+    /**
+     * Batch-load subjects by id, keyed by id — the N+1-free counterpart to {@see find}
+     * for rendering rosters/lists. Missing ids are simply absent from the result.
+     *
+     * @param  array<int, string>  $ids
+     * @return array<string, Subject>
+     */
+    public function findMany(array $ids): array;
+
+    public function findByEmail(string $email): ?Subject;
+
+    /**
+     * @throws PolicyViolation when a supplied password does not satisfy the tenant's
+     *                         {@see AuthPolicy}
+     * @throws ActionDenied when a {@see HookPoint::PreRegistration} hook refuses the
+     *                      account. The default resolver also fires
+     *                      {@see HookPoint::PostRegistration} once the subject exists.
+     */
+    public function create(string $email, ?string $name = null, ?string $password = null): Subject;
+
+    /**
+     * Resolve the subject behind a federated identity. On first sight it creates
+     * a new subject — but it NEVER merges into an existing account by email;
+     * if the email already belongs to an account it throws
+     * {@see AccountExistsForEmail}. Idempotent per
+     * (provider, subject). Linking to an existing account is explicit — see
+     * {@see link()}.
+     *
+     * @throws AccountExistsForEmail when the email already belongs to an account
+     */
+    public function provisionFederated(FederatedPrincipal $principal): Subject;
+
+    /**
+     * As {@see provisionFederated()}, but reporting whether the account was created.
+     *
+     * A first federated sign-in is a signup: the address is unverified until this
+     * platform verifies it, and the person has exactly one way in. A caller that cannot
+     * tell that case apart cannot act on either.
+     */
+    public function resolveFederated(FederatedPrincipal $principal): FederatedProvisioning;
+
+    /**
+     * Explicitly link a provider identity to an ALREADY-authenticated subject —
+     * the safe way to connect a second sign-in method, because the caller has
+     * proven control of both sides (signed in as the subject, and just completed
+     * the provider's auth). Throws
+     * {@see IdentityAlreadyLinked} if the identity
+     * belongs to a different subject.
+     *
+     * @throws IdentityAlreadyLinked when the identity is already linked to a different subject
+     */
+    public function link(string $subjectId, FederatedPrincipal $principal): void;
+
+    /**
+     * The external identities linked to a subject — for a "connected accounts" screen.
+     *
+     * @return list<LinkedIdentity>
+     */
+    public function linkedIdentities(string $subjectId): array;
+
+    public function unlink(string $subjectId, string $provider): void;
+
+    public function verifyPassword(string $subjectId, string $password): bool;
+
+    /**
+     * Set a plaintext password, applying the tenant's
+     * {@see AuthPolicy} and recording the result in the
+     * reuse history.
+     *
+     * Enforcement belongs HERE, not in the services that call it. Every way a credential
+     * can be set — signup, invitation acceptance, self-service reset, administrative
+     * assignment, bulk import — arrives through this method, so a resolver that applies
+     * the policy here cannot have a path that quietly skips it. A resolver that does not
+     * is a resolver on which the tenant's policy is advisory.
+     *
+     * @throws PolicyViolation when the password does not satisfy the effective policy
+     * @throws ActionDenied when a {@see HookPoint::PrePasswordChange} hook refuses the
+     *                      change. {@see HookPoint::PostPasswordChange} fires once it
+     *                      is written.
+     */
+    public function setPassword(string $subjectId, string $password): void;
+
+    /**
+     * Store an ALREADY-HASHED credential verbatim — the migration/import path. The
+     * hash is NOT re-hashed on the way in (that would destroy a foreign format),
+     * so it must be a format a registered {@see HashVerifier} can verify. It is
+     * transparently upgraded to the platform hasher on the subject's next
+     * successful password login (lazy migration). Use {@see setPassword()} for a
+     * plaintext password. A no-op for an unknown subject.
+     */
+    public function storeCredential(string $subjectId, string $passwordHash): void;
+
+    /**
+     * Whether the subject may authenticate right now. A resolver returns false
+     * for accounts it considers disabled, deprovisioned, or locked. The platform
+     * calls this at every login path to refuse a deactivated account a new
+     * session (an unknown subject is treated as inactive). A host resolver maps
+     * this to its own account-state model.
+     */
+    public function isActive(string $subjectId): bool;
+
+    /**
+     * Deactivate a subject: it can no longer authenticate. Existing sessions must
+     * be revoked by the caller (or the resolver) separately. Idempotent; a no-op
+     * for hosts that manage account state elsewhere.
+     */
+    public function deactivate(string $subjectId): void;
+
+    /**
+     * Re-enable a previously deactivated subject. Idempotent; a no-op for hosts
+     * that manage account state elsewhere.
+     */
+    public function reactivate(string $subjectId): void;
+
+    /**
+     * Mark the subject's email address as verified (no-op if the current address
+     * no longer matches $email — the confirmation is stale).
+     */
+    /**
+     * Change a subject's display name and/or email, audited and announced.
+     *
+     * There was no verb for this, so the console reached past the contract and called
+     * `$user->save()` on the model — the only direct model write left in it, while every
+     * neighbouring action went through a contract. Three consequences followed: no audit
+     * record for the most security-relevant mutable attribute on an account (email is the
+     * primary identifier AND the recovery channel); `user.updated` offered in the webhook
+     * picker with nothing on earth emitting it; and the outbound SCIM path's
+     * `'user.updated' => Upsert` branch permanently dead, so a legal name change reached
+     * no downstream application, ever.
+     *
+     * A changed email lands UNVERIFIED. An administrator asserting an address is not the
+     * same as its owner proving it, and treating it as proof would make this an account
+     * takeover primitive.
+     *
+     * Null leaves a field alone; passing the current value is a no-op that audits nothing.
+     */
+    public function update(string $subjectId, ?string $name = null, ?string $email = null): Subject;
+
+    public function markEmailVerified(string $subjectId, string $email): void;
+}
