@@ -72,7 +72,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 | `Webhooks` | `WebhookRegistry`, `WebhookDispatcher` | HMAC-signed delivery + retries; fans out `EventDelivered`. |
 | `AuditQuery` | `AuditReader` | Filtered/paginated reads + SIEM pull-stream. |
 | `Api` | (HTTP routes/middleware) | The HTTP surface — OAuth/OIDC, SCIM, discovery endpoints; resolves each request's environment (`ResolveEnvironment`). |
-| `Platform` | `PlatformOperators`, `Accounts`, `Projects`, `AccountMembers` | Control-plane operators AND the self-serve account plane: accounts own projects (the billing anchor) which own environments. |
+| `Platform` | `PlatformOperators`, `Projects`, `OrganizationProjects`, `OrganizationApiKeys` | Control-plane operators AND the self-serve management plane: a customer IS an organization, and owns projects (the billing anchor) which own environments. |
 | `Console` | (`cbox-id:install`, `cbox-id:doctor`) | Artisan commands: guided bootstrap and health checks. (Key rotation, `cbox-id:keys:rotate`, ships in `Kernel\Crypto`.) |
 
 ## Sections

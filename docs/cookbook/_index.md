@@ -89,14 +89,14 @@ if ($org->status->revokesAccess()) {
 > a status added in a later release fails static analysis at your call site rather than
 > silently inheriting "allowed".
 
-The same shape applies one layer up, on the platform plane — `Accounts::suspend()`
+The same shape applies to a CUSTOMER, which is an organization in the platform root —
 and `PlatformOperators::suspend()` both take the acting operator and audit internally:
 
 ```php
-use Cbox\Id\Platform\Contracts\Accounts;
+use Cbox\Id\Organization\Contracts\Organizations;
 
-app(Accounts::class)->suspend($accountId, $operatorId);   // account.suspended
-app(Accounts::class)->reactivate($accountId, $operatorId); // account.reactivated
+app(Organizations::class)->suspend($organizationId, $operatorId);    // organization.suspended
+app(Organizations::class)->reactivate($organizationId, $operatorId); // organization.reactivated
 ```
 
 Suspending an account is the widest revocation available: its members stop signing in,

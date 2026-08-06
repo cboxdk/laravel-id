@@ -12,7 +12,7 @@ How the platform is put together and the ideas you build against:
   contracts-first DI, and dogfooding.
 - **[Platform operators](platform-operators.md)** — the identity above every
   environment: who provisions planes and can step into any one of them.
-- **[Accounts, projects & the platform plane](accounts-and-projects.md)** — the
+- **[Customers, projects & the platform plane](customers-and-projects.md)** — the
   self-serve hierarchy above environments: one login, many independently-billed IdP
   products, with billing anchored on the project.
 - **[Environments & the isolation model](environments.md)** — the hard boundary
@@ -22,9 +22,6 @@ How the platform is put together and the ideas you build against:
 - **[Organization access](organization-access.md)** — ordered membership roles,
   groups, resource grants with effective-role resolution, and user API tokens
   capped at the issuer's role.
-- **[Account roles vs. membership roles](account-and-membership-roles.md)** — how the
-  two role enums correspond, the one case each has alone, and the only safe mapping in
-  each direction.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
 - **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters
