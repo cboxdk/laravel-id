@@ -80,4 +80,30 @@ class Project extends Model
     {
         return $this->belongsTo(Organization::class);
     }
+
+    /**
+     * These were deleted with the account plane — they sat below the `account()` relation
+     * and went out with it — and nothing said so.
+     *
+     * Uncast, `status` is the raw string 'active' and {@see isActive()} compares it to a
+     * ProjectStatus instance, so it answered FALSE for every project that has ever existed.
+     * {@see TenantProvisioner::addEnvironment()} gates on it, so adding a stage to a
+     * perfectly healthy product raised ProjectSuspended every time — while `provision()`
+     * hid it, building its first environment through the private path that does not check.
+     * `settings` was handing back a JSON string to every caller expecting an array.
+     *
+     * phpstan cannot see any of this: the class docblock declares `@property ProjectStatus
+     * $status`, and larastan believes the annotation rather than the cast list. An
+     * annotation is a claim; the cast is what makes it true.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => ProjectStatus::class,
+            'environment_limit' => 'integer',
+            'settings' => 'array',
+        ];
+    }
 }

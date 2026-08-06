@@ -7,6 +7,8 @@ use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\Contracts\Projects;
+use Cbox\Id\Platform\Enums\ProjectStatus;
+use Cbox\Id\Platform\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -50,6 +52,31 @@ it('creates a project the organization owns outright', function (): void {
     // `$project->account_id` would answer null whether the column was dropped or merely
     // empty, which is how the assertion this replaces went on passing after the drop.
     expect(Schema::hasColumn('projects', 'account_id'))->toBeFalse();
+});
+
+/**
+ * The casts, asserted directly rather than through a caller.
+ *
+ * They were deleted with the account plane and no test failed. `isActive()` compares
+ * `$this->status` to a ProjectStatus case, so an uncast string made it answer false for
+ * every project alive — and the only caller that gates on it, `addEnvironment()`, was in a
+ * test file that was already red for another reason. A cast is invisible until something
+ * reads through it, so it gets its own assertion.
+ */
+it('casts status, limit and settings', function (): void {
+    $project = app(Projects::class)->createForOrganization(
+        strtolower((string) Str::ulid()),
+        'Cast Check',
+        3,
+    );
+
+    $fresh = Project::query()->findOrFail($project->id);
+
+    expect($fresh->status)->toBeInstanceOf(ProjectStatus::class)
+        ->and($fresh->status)->toBe(ProjectStatus::Active)
+        ->and($fresh->isActive())->toBeTrue()
+        ->and($fresh->environment_limit)->toBeInt()
+        ->and($fresh->settings)->toBeArray();
 });
 
 it('finds it from the organization side', function (): void {

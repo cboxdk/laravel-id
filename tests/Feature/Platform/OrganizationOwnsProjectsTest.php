@@ -3,51 +3,42 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
-use Cbox\Id\Organization\Enums\EnvironmentStatus;
-use Cbox\Id\Organization\Enums\EnvironmentType;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Organization\Models\Organization;
-use Cbox\Id\Platform\AccountProvisioner;
 use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Models\Project;
-use Cbox\Id\Platform\ValueObjects\AccountBlueprint;
-use Cbox\Id\Platform\ValueObjects\ProvisionedAccount;
+use Cbox\Id\Platform\TenantProvisioner;
+use Cbox\Id\Platform\ValueObjects\ProvisionedTenant;
+use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class, InteractsWithTenancy::class);
 
 /**
- * An account IS an organization in the platform root, so an organization can own IdP
- * products directly — the bridge that lets a host read ownership from the organization
- * side without going through the account plane. `Account::projects()` is untouched and
- * keeps answering the same thing.
- */
-
-/**
- * The platform root — "tenant 1", where accounts are homed as organizations.
+ * An organization owns IdP products, and reaches every environment of every product
+ * through them.
  *
- * Named apart from the identical helper in AccountMemberSubjectTest: Pest requires
- * every test file into one process, so two functions of one name is a fatal error that
- * takes the whole run with it, not a failure in one file.
+ * THIS FILE USED TO TEST A BRIDGE. An account was homed as an organization, each owned the
+ * same projects from a different side, and most of these tests asserted the two sides
+ * agreed — that `Account::projects()` and `Organization::projects()` returned the same set,
+ * that a model hook stamped the organization from the account, that an un-homed account
+ * left the organization null. There is one side now, so agreement is not a property any
+ * more and those tests went with the plane they compared against.
+ *
+ * What survives is what was never about the bridge: the has-many-through, the isolation
+ * between two customers, the uniqueness rule, and — the one worth keeping most — that none
+ * of it is reachable from another environment.
  */
-function rootForOwnedProjects(): Environment
+function ownedProjectsRoot(): Environment
 {
-    return Environment::query()->create([
-        'name' => 'Platform',
-        'slug' => 'platform-'.Str::ulid(),
-        'type' => EnvironmentType::Production,
-        'status' => EnvironmentStatus::Active,
-        'is_default' => true,
-        'settings' => [],
-    ]);
+    return platformRootEnvironment();
 }
 
-function provisionOwningAccount(string $name, string $email): ProvisionedAccount
+function provisionOwner(string $name, string $email): ProvisionedTenant
 {
-    return app(AccountProvisioner::class)->provision(new AccountBlueprint(
-        accountName: $name,
+    return app(TenantProvisioner::class)->provision(new TenantBlueprint(
+        organizationName: $name,
         ownerEmail: $email,
         ownerName: 'Owner',
         ownerPassword: 'a-strong-unbreached-passphrase',
@@ -55,83 +46,72 @@ function provisionOwningAccount(string $name, string $email): ProvisionedAccount
     ));
 }
 
-it('gives the account\'s organization the same projects the account has', function (): void {
-    $root = rootForOwnedProjects();
-    $result = provisionOwningAccount('Acme', 'owner@acme.test');
+it('gives the organization the products it owns', function (): void {
+    $root = ownedProjectsRoot();
+    $result = provisionOwner('Acme', 'owner@acme.test');
 
-    $organizationId = $result->account->refresh()->organization_id;
-    expect($organizationId)->not->toBeNull()
-        // The link is stamped on the project itself, not inferred at read time.
-        ->and($result->project->refresh()->organization_id)->toBe($organizationId);
+    // The link is stamped on the project at CREATE, not inferred at read time.
+    expect($result->project->refresh()->organization_id)->toBe($result->organization->id);
 
-    // Read from the organization side, inside the root environment — the only place
-    // the organization row is reachable at all.
-    $this->runAsEnvironment($root, function () use ($organizationId, $result): void {
-        $organization = Organization::query()->findOrFail($organizationId);
+    // Read from the organization side, inside the root — the only place the organization
+    // row is reachable at all.
+    $this->runAsEnvironment($root, function () use ($result): void {
+        $organization = Organization::query()->findOrFail($result->organization->id);
 
-        expect($organization->projects->pluck('id')->all())->toBe([$result->project->id])
-            // …and the account-side answer is byte-for-byte the same set. Both halves
-            // of the bridge report the same ownership; neither is now authoritative
-            // over the other.
-            ->and($result->account->projects->pluck('id')->all())
-            ->toBe($organization->projects->pluck('id')->all());
+        expect($organization->projects->pluck('id')->all())->toBe([$result->project->id]);
     });
 });
 
 it('reaches the organization\'s environments through its projects', function (): void {
-    $root = rootForOwnedProjects();
-    $result = provisionOwningAccount('Acme', 'owner@acme.test');
-    $staging = app(AccountProvisioner::class)->addEnvironment($result->project, 'Staging');
+    $root = ownedProjectsRoot();
+    $result = provisionOwner('Acme', 'owner@acme.test');
+    $provisioner = app(TenantProvisioner::class);
+
+    $staging = $provisioner->addEnvironment($result->project, 'Staging');
 
     // A second, separately-billed product under the same organization.
-    $second = app(AccountProvisioner::class)->addProject($result->account, 'Product Two');
-    $secondEnvironment = app(AccountProvisioner::class)->addEnvironment($second, 'Production');
+    $second = $provisioner->addProject($result->organization, 'Product Two');
+    $secondEnvironment = $provisioner->addEnvironment($second, 'Production');
 
-    $organizationId = $result->account->refresh()->organization_id;
-
-    $this->runAsEnvironment($root, function () use ($organizationId, $result, $staging, $secondEnvironment): void {
-        $organization = Organization::query()->findOrFail($organizationId);
+    $this->runAsEnvironment($root, function () use ($result, $staging, $secondEnvironment): void {
+        $organization = Organization::query()->findOrFail($result->organization->id);
 
         // Every stage of every product, across projects — the has-many-through, not a
-        // denormalized column.
+        // denormalized column. `environments.account_id` was that column, and removing it
+        // is what made this relation the only answer rather than a second one.
         expect($organization->environments->pluck('id')->sort()->values()->all())
             ->toBe(collect([$result->environment->id, $staging->id, $secondEnvironment->id])->sort()->values()->all());
     });
 });
 
 it('never shows one organization another\'s projects', function (): void {
-    $root = rootForOwnedProjects();
-    $acme = provisionOwningAccount('Acme', 'owner@acme.test');
-    $globex = provisionOwningAccount('Globex', 'owner@globex.test');
+    $root = ownedProjectsRoot();
+    $acme = provisionOwner('Acme', 'owner@acme.test');
+    $globex = provisionOwner('Globex', 'owner@globex.test');
 
-    $acmeOrganization = $acme->account->refresh()->organization_id;
-    $globexOrganization = $globex->account->refresh()->organization_id;
+    expect($acme->organization->id)->not->toBe($globex->organization->id);
 
-    expect($acmeOrganization)->not->toBe($globexOrganization);
-
-    $this->runAsEnvironment($root, function () use ($acmeOrganization, $acme, $globex): void {
-        $organization = Organization::query()->findOrFail($acmeOrganization);
+    $this->runAsEnvironment($root, function () use ($acme, $globex): void {
+        $organization = Organization::query()->findOrFail($acme->organization->id);
 
         expect($organization->projects->pluck('id')->all())->toBe([$acme->project->id])
             ->and($organization->projects->pluck('id')->all())->not->toContain($globex->project->id)
             ->and($organization->environments->pluck('id')->all())->not->toContain($globex->environment->id);
     });
-});
+})->group('security');
 
 /**
- * @group isolation
- *
- * The relation crosses out of the environment scope by design — a project owns
- * environments and cannot be inside one. What keeps that safe is the PARENT: the
- * organization is environment-owned, so it cannot be loaded from another environment,
- * and an unreachable parent has no reachable children.
+ * The relation crosses out of the environment scope by design — a project owns environments
+ * and cannot be inside one. What keeps that safe is the PARENT: the organization is
+ * environment-owned, so it cannot be loaded from another environment, and an unreachable
+ * parent has no reachable children.
  */
 it('cannot be reached from another environment, because the organization cannot be', function (): void {
-    rootForOwnedProjects();
-    $result = provisionOwningAccount('Acme', 'owner@acme.test');
-    $organizationId = $result->account->refresh()->organization_id;
+    ownedProjectsRoot();
+    $result = provisionOwner('Acme', 'owner@acme.test');
+    $organizationId = $result->organization->id;
 
-    // The account's OWN environment is a tenant plane, not the root. From there the
+    // The customer's OWN environment is a tenant plane, not the root. From there the
     // organization is invisible even by primary key.
     $this->runAsEnvironment($result->environment, function () use ($organizationId): void {
         expect(Organization::query()->find($organizationId))->toBeNull()
@@ -143,76 +123,30 @@ it('cannot be reached from another environment, because the organization cannot 
     expect(Organization::query()->find($organizationId))->toBeNull();
 })->group('isolation');
 
-it('stamps the owning organization on any project create, not just the provisioner\'s', function (): void {
-    rootForOwnedProjects();
-    $result = provisionOwningAccount('Acme', 'owner@acme.test');
-    $organizationId = $result->account->refresh()->organization_id;
-
-    // A host reaching for the model directly still gets the link — otherwise this
-    // project would be healthy from the account side and invisible from the
-    // organization side, a one-directional split of the same fact.
-    $direct = Project::query()->create([
-        'account_id' => $result->account->id,
-        'name' => 'Straight To The Model',
-        'slug' => 'straight-to-the-model',
-    ]);
-
-    expect($direct->organization_id)->toBe($organizationId);
-});
-
-it('leaves the organization null when the account was never homed', function (): void {
-    // No platform root: provisioning cannot home the account, so its project has no
-    // organization either. "No owner" must stay null rather than borrow one.
-    Environment::query()->where('is_default', true)->update(['is_default' => false]);
-
-    $result = provisionOwningAccount('Bootstrap', 'owner@bootstrap.test');
-
-    expect($result->account->refresh()->organization_id)->toBeNull()
-        ->and($result->project->refresh()->organization_id)->toBeNull();
-});
-
 it('refuses two projects with the same handle under one organization', function (): void {
-    rootForOwnedProjects();
-    $acme = provisionOwningAccount('Acme', 'owner@acme.test');
-    $other = provisionOwningAccount('Other', 'owner@other.test');
+    ownedProjectsRoot();
+    $acme = provisionOwner('Acme', 'owner@acme.test');
 
-    $organizationId = $acme->account->refresh()->organization_id;
-
-    // Deliberately from a DIFFERENT account, so the pre-existing (account_id, slug)
-    // key cannot be what refuses this: only the organization-side uniqueness can.
+    // The DATABASE refuses it. `createForOrganization()` picks a free slug rather than
+    // colliding, so a writer reaching past it is the only way to prove the key exists —
+    // and the key is what stops two products answering to one handle if a writer ever does.
     expect(fn () => Project::query()->create([
-        'account_id' => $other->account->id,
-        'organization_id' => $organizationId,
+        'organization_id' => $acme->organization->id,
         'name' => 'Acme',
         'slug' => $acme->project->slug,
     ]))->toThrow(QueryException::class);
 });
 
-it('answers ownership by organization id, and refuses an unowned project', function (): void {
-    rootForOwnedProjects();
-    $acme = provisionOwningAccount('Acme', 'owner@acme.test');
-    $globex = provisionOwningAccount('Globex', 'owner@globex.test');
-
-    $acmeOrganization = $acme->account->refresh()->organization_id;
-    $globexOrganization = $globex->account->refresh()->organization_id;
-
-    // A project belonging to nobody on this side of the bridge (an account that
-    // predates homing).
-    $unowned = Project::query()->create([
-        'account_id' => $acme->account->id,
-        'organization_id' => null,
-        'name' => 'Legacy',
-        'slug' => 'legacy',
-    ]);
-    $unowned->forceFill(['organization_id' => null])->save();
+it('answers ownership by organization id', function (): void {
+    ownedProjectsRoot();
+    $acme = provisionOwner('Acme', 'owner@acme.test');
+    $globex = provisionOwner('Globex', 'owner@globex.test');
 
     $projects = app(OrganizationProjects::class);
 
-    expect($projects->ownedByOrganization($acme->project->id, $acmeOrganization))->toBeTrue()
-        // Another organization's product is not yours…
-        ->and($projects->ownedByOrganization($globex->project->id, $acmeOrganization))->toBeFalse()
-        // …and neither is one with no owner at all.
-        ->and($projects->ownedByOrganization($unowned->id, $acmeOrganization))->toBeFalse()
-        ->and($projects->forOrganization($acmeOrganization)->pluck('id')->all())->toBe([$acme->project->id])
-        ->and($projects->forOrganization($globexOrganization)->pluck('id')->all())->toBe([$globex->project->id]);
-});
+    expect($projects->ownedByOrganization($acme->project->id, $acme->organization->id))->toBeTrue()
+        // Another organization's product is not yours.
+        ->and($projects->ownedByOrganization($globex->project->id, $acme->organization->id))->toBeFalse()
+        ->and($projects->forOrganization($acme->organization->id)->pluck('id')->all())->toBe([$acme->project->id])
+        ->and($projects->forOrganization($globex->organization->id)->pluck('id')->all())->toBe([$globex->project->id]);
+})->group('security');
