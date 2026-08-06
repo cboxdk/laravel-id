@@ -17,6 +17,75 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-06
+
+The account plane is gone. A customer **is** an organization.
+
+### Removed
+
+- **`Account`, `AccountMember`, `AccountRole`, `AccountApiKey` and their contracts,
+  schema and migrations.** There was an `Account` row above the organization carrying the
+  same name and the same status, with its own members, its own role vocabulary and its own
+  password column — two rows for one customer, and therefore two answers to "who may act
+  for them". They kept disagreeing. Deleted rather than reconciled.
+- **`docs/core-concepts/account-and-membership-roles.md`**, which documented the mapping
+  between the two role enums and the only safe direction to translate in each way. One of
+  the two no longer exists, so the mapping is a description of a decision nobody has to
+  make.
+- **`PlatformOccupant::Account`** — a customer is an organization, so it was a second name
+  for the check `Organization` already makes, and two cases probing one table is how an
+  occupancy set starts disagreeing with itself.
+
+### Changed
+
+- **`AccountProvisioner` → `TenantProvisioner`**, `AccountBlueprint` → `TenantBlueprint`,
+  `ProvisionedAccount` → `ProvisionedTenant` (five things now, not four: the organization,
+  the owner's subject, that owner's membership, the project and the environment).
+- **`AccountApiKeys` → `OrganizationApiKeys`**, and the plaintext prefix moves from
+  `cbid_acc_` to `cbid_org_`. It is a user-visible credential format, which is exactly why
+  it changes now: after 1.0.0 the marker would permanently name a plane that has not
+  existed since before the first tag.
+- **`ActorType::AccountMember` → `ActorType::OrganizationMember`** (`organization_member`).
+- **`MembershipRole::assignable()`** replaces the account role enum's. `Owner` is absent
+  deliberately: ownership is transferred, never assigned.
+- Provisioning **attaches an existing subject** as the owner rather than failing. `users`
+  is unique on `(environment_id, email)`, so creating unconditionally made provisioning
+  impossible for anybody already holding a Cbox ID — including the operator running the
+  installer, whose address is also the first customer's owner. The blueprint's password is
+  applied only when the subject is being created.
+
+### Fixed
+
+- **The organization off-switch did not work at all.** `transitionStatus()` called a
+  cache-invalidation method that was never written, so suspend, reactivate and archive each
+  raised an `Error`. The invalidation now enumerates ownership through
+  environment → project → organization, matching the liveness gate exactly.
+- **Suspend and reactivate appended a duplicate audit entry** on replay, and fired a
+  duplicate webhook for a transition that never happened. The account writer had enforced
+  "record only on an actual change"; only the archive case came across.
+- **A suspended customer could still be sold products and environments.** The account
+  provisioner locked the account and refused; only the project check survived the move, so
+  suspension stopped reads and left writes open. An off-switch that only stops reads is not
+  one.
+- **`PlatformRoot::environment()` had stopped refusing anything.** It rejects a configured
+  platform root that a customer owns — a privilege boundary, since the platform's own
+  people are written into whatever it returns. The predicate read a deleted column, and an
+  Eloquent model answers null for an attribute it no longer has, so the guard did not break:
+  it became TRUE for every row. It had no test; it has one now.
+- **`Project::casts()` was deleted with the account relation.** Uncast, `status` is the
+  string `'active'` while `isActive()` compares it to a `ProjectStatus` case — false for
+  every project that has ever existed — so `addEnvironment()` raised `ProjectSuspended`
+  every time. `settings` was separately handing a JSON string to callers expecting an array.
+- **API-key authentication raised a fatal**: `Organization::isActive()` does not exist. The
+  check asks `OrganizationStatus::revokesAccess()`, so `Deleted` is refused exactly as
+  `Suspended` is — the account status enum had two cases and could not get this wrong.
+
+### Build
+
+- `composer qa` runs **`sbom-check`**, which compares the dependency SET and exits non-zero.
+  Plain `composer sbom` regenerates in place, so it could only ever report success.
+
+
 ## [0.96.0] - 2026-08-05
 
 ### Fixed
