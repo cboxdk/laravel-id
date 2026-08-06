@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 /**
  * Eloquent-backed organization API keys. The token is a high-entropy random string with
- * a recognisable `cbid_acc_` prefix; only its SHA-256 hash is stored, and lookup is
+ * a recognisable `cbid_org_` prefix; only its SHA-256 hash is stored, and lookup is
  * by that hash — a wrong token simply doesn't match, so there is no verification
  * timing oracle to exploit (unlike a per-record password compare).
  */
@@ -25,11 +25,17 @@ class DatabaseOrganizationApiKeys implements OrganizationApiKeys
     ) {}
 
     /**
-     * Brand root `cbid` (Cbox ID) + plane marker `acc` (the management plane),
-     * so a leaked key is identifiable at a glance and never confusable with an
-     * environment-plane credential (which will carry `cbid_env_`).
+     * Brand root `cbid` (Cbox ID) + plane marker `org` (the management plane, which an
+     * organization owns), so a leaked key is identifiable at a glance and never confusable
+     * with an environment-plane credential (which carries `cbid_env_`).
+     *
+     * It was `cbid_acc_` — the account plane's marker — and changing it is a breaking change
+     * to a user-visible credential format, which is exactly why it happens now: there is one
+     * release ahead, keys are re-minted after migrate:fresh, and no deployment carries an
+     * old key across. After 1.0.0 the prefix would name a plane that has not existed since
+     * before the first tag.
      */
-    private const PREFIX = 'cbid_acc_';
+    private const PREFIX = 'cbid_org_';
 
     public function issue(string $organizationId, string $name, MembershipRole $role, ?DateTimeInterface $expiresAt = null): IssuedOrganizationApiKey
     {

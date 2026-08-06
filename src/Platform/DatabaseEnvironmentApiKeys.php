@@ -33,7 +33,7 @@ class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
 
     /**
      * Brand root `cbid` + plane marker `env`, so a leaked key is identifiable at a
-     * glance and never confusable with an account-plane credential (`cbid_acc_`).
+     * glance and never confusable with an organization credential (`cbid_org_`).
      */
     private const PREFIX = 'cbid_env_';
 

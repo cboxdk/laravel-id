@@ -57,7 +57,7 @@ it('refuses a revoked or expired key', function (): void {
 });
 
 it('rejects a token without the cbid_env_ prefix without a query', function (): void {
-    expect(app(EnvironmentApiKeys::class)->resolve('cbid_acc_notours'))->toBeNull()
+    expect(app(EnvironmentApiKeys::class)->resolve('cbid_org_notours'))->toBeNull()
         ->and(app(EnvironmentApiKeys::class)->resolve('garbage'))->toBeNull();
 });
 

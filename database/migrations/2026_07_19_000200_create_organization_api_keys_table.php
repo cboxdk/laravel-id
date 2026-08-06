@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Schema;
  * tokens), which are locked to a single environment and can never reach management
  * operations — credentials never cross planes.
  *
- * Only the SHA-256 hash is stored; the plaintext (`cbid_acc_…`) is shown once at
+ * Only the SHA-256 hash is stored; the plaintext (`cbid_org_…`) is shown once at
  * creation. `prefix` is a non-secret display fragment so a key is recognisable in
  * a list without revealing it.
  */
@@ -48,7 +48,6 @@ return new class extends Migration
             $table->timestamp('revoked_at')->nullable();
             $table->timestamps();
 
-            
         });
     }
 
