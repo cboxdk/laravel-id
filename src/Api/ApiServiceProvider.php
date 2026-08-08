@@ -68,6 +68,30 @@ class ApiServiceProvider extends ServiceProvider
         // default) so a host that is NOT an identity provider — a multi-tenant
         // platform's account/signup root, say — 404s this whole surface instead of
         // advertising an issuer it cannot honour.
+        // THE TOKEN ENDPOINTS, held to their own wall.
+        //
+        // Same throttle, same no-store, same environment resolution as the surface below
+        // — what differs is only WHICH hosts serve them, and that is a question the host
+        // application answers ({@see firstPartyMiddleware()}). It defaults to the surface
+        // list, so a deployment that configures nothing sees no difference at all and the
+        // single-tenant shape is untouched.
+        //
+        // Carved out because a deployment can have a host that must issue tokens to the
+        // software it ships without being an identity provider for anybody else's app —
+        // a management console whose own operators enrol authenticators, say. Folded into
+        // the group below, those two facts could not be stated separately: one list
+        // decided both, so making the console's own client work meant opening discovery,
+        // dynamic registration and SCIM on the same host. Separating the endpoints is
+        // what lets the host refuse the second while granting the first.
+        Route::middleware(array_merge(
+            [ResolveEnvironment::class],
+            $this->firstPartyMiddleware(),
+            ['throttle:30,1', NoStore::class],
+        ))->group(function (): void {
+            Route::post('/oauth/token', TokenController::class);
+            Route::post('/oauth/revoke', RevocationController::class);
+        });
+
         Route::middleware(array_merge([ResolveEnvironment::class], $this->surfaceMiddleware()))->group(function (): void {
             // Public metadata — cheap, cacheable, generously throttled, and the ONLY
             // group held to the environment's canonical host. These are the documents
@@ -103,13 +127,11 @@ class ApiServiceProvider extends ServiceProvider
             // (RFC 6749 §5.1, RFC 7662 §2.2). On the GROUP so a newly added endpoint
             // inherits it rather than being one forgotten line from caching credentials.
             Route::middleware(['throttle:30,1', NoStore::class])->group(function (): void {
-                Route::post('/oauth/token', TokenController::class);
                 Route::post('/oauth/introspect', IntrospectionController::class);
 
                 // User API tokens (cbid_pat_): introspection for relying-party
                 // services. Same posture as OAuth introspection.
                 Route::post('/user-tokens/introspect', UserTokenIntrospectionController::class);
-                Route::post('/oauth/revoke', RevocationController::class);
 
                 // RFC 9126: back-channel pushed authorization requests.
                 Route::post('/oauth/par', PushedAuthorizationController::class);
@@ -246,6 +268,42 @@ class ApiServiceProvider extends ServiceProvider
             return [];
         }
 
+        return $this->stringList($configured);
+    }
+
+    /**
+     * Host-declared middleware for the TOKEN endpoints alone — `/oauth/token` and
+     * `/oauth/revoke`.
+     *
+     * Defaults to {@see surfaceMiddleware()}, so this is inert until a deployment states
+     * otherwise: configuring nothing, or configuring only `api.middleware`, keeps the
+     * token endpoints exactly where the rest of the protocol surface is.
+     *
+     * @return list<string>
+     */
+    private function firstPartyMiddleware(): array
+    {
+        $configured = config('cbox-id.api.first_party_middleware');
+
+        if (! is_array($configured)) {
+            return $this->surfaceMiddleware();
+        }
+
+        return $this->stringList($configured);
+    }
+
+    /**
+     * The non-empty strings in a configured list, in order.
+     *
+     * Anything else is dropped rather than handed to the router: a malformed entry would
+     * otherwise surface as an unrelated routing exception on the first request to any
+     * protocol endpoint, which is a long way from the config line that caused it.
+     *
+     * @param  array<array-key, mixed>  $configured
+     * @return list<string>
+     */
+    private function stringList(array $configured): array
+    {
         $middleware = [];
 
         foreach ($configured as $entry) {

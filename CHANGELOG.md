@@ -17,6 +17,37 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-08
+
+### Added
+
+- **The token endpoints can be walled separately from the rest of the IdP surface.**
+  `/oauth/token` and `/oauth/revoke` now take their middleware from
+  `cbox-id.api.first_party_middleware`, which defaults to `cbox-id.api.middleware` — so a
+  deployment that configures nothing, or configures only the existing key, sees no change
+  at all.
+
+  It exists because a host can need to issue tokens to software it ships without being an
+  identity provider for anybody else's app. A multi-tenant platform's own root serves a
+  console whose users enrol authenticators, and that enrolment is an authorization-code
+  flow against the host they are standing on — while the same host must keep answering no
+  to discovery, dynamic registration, SCIM and the SAML bindings. One middleware list
+  decided both, so making the first case work meant opening the second on the same host.
+  Two lists let the host state them separately.
+
+  Consumers do not have to do anything. `cbox-id/cbox-id` uses this to close a live 404:
+  its `.well-known/cbox-authenticator` advertised an issuer with a real `client_id` on the
+  platform root while every endpoint that document implies was absent there, so scanning
+  the enrolment QR worked on a tenant subdomain and failed on the root.
+
+### Security
+
+- **`league/commonmark` updated to 2.9.0**, clearing six advisories against 2.8.3 —
+  denial of service via deeply nested XML output and via colliding heading slugs among
+  them. A development dependency (it reaches the package through `laravel/framework`), so
+  no shipped surface was affected, but `composer audit` is part of this repository's gate
+  and it was red.
+
 ## [1.0.0] - 2026-08-06
 
 The account plane is gone. A customer **is** an organization.
