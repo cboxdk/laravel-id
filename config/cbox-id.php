@@ -409,7 +409,13 @@ return [
             // token/UserInfo layer emits the claim, but it was missing here — so a
             // dynamically-registered client could never actually obtain it. Advertised
             // and unreachable is the same bug the grant list below fixed.
-            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations'],
+            // `groups` is here for the same reason `organizations` is: both are advertised
+            // in `scopes_supported` and both emit a real claim, so a self-registering
+            // client that read discovery and asked for one got `invalid_scope`. The
+            // Kubernetes case is the one that bites — `kubectl oidc-login` reads the
+            // document, requests `openid groups`, and is refused at /authorize by the very
+            // server that told it the scope exists.
+            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'],
             /*
              * Grants a DYNAMICALLY registered client may ask for. device_code, CIBA and
              * token-exchange were advertised in discovery but absent here, so no

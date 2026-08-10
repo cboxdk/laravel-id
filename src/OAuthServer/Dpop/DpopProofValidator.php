@@ -27,8 +27,16 @@ use UnexpectedValueException;
  */
 class DpopProofValidator
 {
-    /** Asymmetric algs a proof may use — never a MAC, never `none`. */
-    private const ALLOWED_ALGS = ['ES256', 'RS256', 'EdDSA'];
+    /**
+     * Asymmetric algs a proof may use — never a MAC, never `none`.
+     *
+     * PUBLIC because the discovery document advertises it. It carried its own copy of
+     * this list, which is the shape the id_token alg bug had: two hardcoded lists in two
+     * files, correct on the day they were written and one edit from promising an alg the
+     * validator refuses. Advertising is a promise about what this code accepts, so it
+     * reads it rather than restating it.
+     */
+    public const ALLOWED_ALGS = ['ES256', 'RS256', 'EdDSA'];
 
     /** How far the proof's `iat` may be from now, in seconds. */
     private const MAX_AGE_SECONDS = 60;

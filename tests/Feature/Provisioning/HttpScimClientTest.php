@@ -208,7 +208,12 @@ it('patches a name sub-attribute rather than replacing the whole complex attribu
     $paths = array_map(fn (array $op): string => (string) ($op['path'] ?? ''), $operations);
 
     expect($paths)->toContain('name.formatted')
-        ->and($paths)->not->toContain('name', 'a pathed replace on `name` wipes givenName and familyName downstream');
+        // No message argument — see below. `toContain` is variadic and reads a second
+        // string as another needle, so `not->toContain($needle, $message)` passes on the
+        // message's absence and never checks the needle. This guard was green regardless,
+        // over a defect that shipped: a pathed replace on `name` silently wiped
+        // givenName/familyName on every push and returned 200.
+        ->and($paths)->not->toContain('name');
 });
 
 /**

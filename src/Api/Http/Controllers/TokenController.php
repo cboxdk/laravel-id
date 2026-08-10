@@ -53,7 +53,7 @@ class TokenController
      * The algorithm id_tokens are signed with. Named once so the signature and the
      * at_hash digest are derived from the same source and cannot diverge.
      */
-    private const ID_TOKEN_ALG = SigningAlg::RS256;
+    public const ID_TOKEN_ALG = SigningAlg::RS256;
 
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,

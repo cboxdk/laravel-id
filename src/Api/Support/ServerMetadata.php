@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Support;
 
-use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
-use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
+use Cbox\Id\Api\Http\Controllers\TokenController;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
+use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
 
 /**
@@ -56,13 +57,27 @@ class ServerMetadata
             // break, so we promise only what is served.
             'response_modes_supported' => ['query'],
             'grant_types_supported' => self::grantTypes(),
-            // Only the algs this environment actually holds signing keys for (and thus
-            // issues id_tokens with) — never an aspirational superset. Advertising an
-            // alg we never sign with breaks a conformant client that pins it.
-            'id_token_signing_alg_values_supported' => self::signingAlgs(),
+            // EXACTLY WHAT ID_TOKENS ARE SIGNED WITH, taken from the endpoint that signs
+            // them so the document and the signature cannot diverge.
+            //
+            // This was derived from the KEYSTORE, on the reasoning that the algs we hold
+            // keys for are the algs we issue with. The second half was never true:
+            // id_tokens are pinned to one alg. On a keystore rotated to ES256 the document
+            // promised ES256 and the id_token arrived RS256, and a relying party that
+            // pinned the advertised alg rejected it.
+            //
+            // Worse, it self-healed. `activeSigningKey()` generates a key it does not
+            // find, so issuance did not fail — it minted an RS256 key on first use, after
+            // which discovery advertised both algs and the symptom vanished, leaving one
+            // rejected login and nothing to look at.
+            //
+            // The JWKS still exposes every key: other credentials do use the other algs.
+            // It is only this list that is a promise about id_tokens specifically.
+            'id_token_signing_alg_values_supported' => [TokenController::ID_TOKEN_ALG->value],
             'code_challenge_methods_supported' => ['S256'],
             // RFC 9449: sender-constrained (DPoP) access tokens.
-            'dpop_signing_alg_values_supported' => ['ES256', 'RS256', 'EdDSA'],
+            // From the validator, not restated here — see DpopProofValidator::ALLOWED_ALGS.
+            'dpop_signing_alg_values_supported' => DpopProofValidator::ALLOWED_ALGS,
             // `groups` puts this app's roles on the ID TOKEN. Advertised because a
             // relying party that authenticates the id_token — Kubernetes, Grafana, Vault
             // — cannot discover it any other way, and without it authenticates a person
@@ -87,7 +102,8 @@ class ServerMetadata
             'request_uri_parameter_supported' => false,
             'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none'],
             // RFC 7523 client-assertion signing algs (private_key_jwt).
-            'token_endpoint_auth_signing_alg_values_supported' => ['RS256', 'ES256', 'EdDSA'],
+            // From the validator — see ClientAssertionValidator::ALLOWED_ALGS.
+            'token_endpoint_auth_signing_alg_values_supported' => ClientAssertionValidator::ALLOWED_ALGS,
         ];
 
         // The interactive `/authorize` endpoint is the host app's responsibility;
@@ -120,24 +136,6 @@ class ServerMetadata
         }
 
         return $document;
-    }
-
-    /**
-     * The distinct signing algorithms the environment currently holds keys for. These
-     * are exactly the algs published in the JWKS and therefore the only algs an
-     * id_token can be signed with. Deny-safe fallback to RS256 (the install default)
-     * if the keystore is momentarily empty, so discovery never advertises an empty set.
-     *
-     * @return list<string>
-     */
-    private static function signingAlgs(): array
-    {
-        $algs = array_values(array_unique(array_map(
-            static fn (VerificationKey $key): string => $key->alg->value,
-            app(KeyManager::class)->verificationKeys(),
-        )));
-
-        return $algs === [] ? ['RS256'] : $algs;
     }
 
     /**

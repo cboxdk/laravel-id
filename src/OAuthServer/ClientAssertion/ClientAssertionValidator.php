@@ -27,7 +27,16 @@ use Throwable;
 class ClientAssertionValidator implements ClientAssertion
 {
     /** Asymmetric signing algs a client assertion may use. */
-    private const ALLOWED_ALGS = ['RS256', 'ES256', 'EdDSA'];
+    /**
+     * Asymmetric algs a client assertion may be signed with.
+     *
+     * PUBLIC because discovery advertises it. `token_endpoint_auth_signing_alg_values_
+     * supported` carried its own copy — the third instance of the same shape in this
+     * file's neighbourhood, after the id_token alg and the DPoP list. Each was correct on
+     * the day it was written and one edit from promising an alg the validator refuses.
+     * Advertising is a statement about what this code accepts, so it reads it.
+     */
+    public const ALLOWED_ALGS = ['RS256', 'ES256', 'EdDSA'];
 
     private const REPLAY_PREFIX = 'cbox:client-assertion:jti:';
 
