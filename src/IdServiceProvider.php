@@ -16,6 +16,7 @@ use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Directory\DirectoryServiceProvider;
 use Cbox\Id\ExternalActions\ExternalActionsServiceProvider;
 use Cbox\Id\Federation\FederationServiceProvider;
+use Cbox\Id\FrontendApi\FrontendApiServiceProvider;
 use Cbox\Id\Governance\GovernanceServiceProvider;
 use Cbox\Id\Identity\IdentityServiceProvider;
 use Cbox\Id\Kernel\Audit\AuditServiceProvider;
@@ -98,6 +99,11 @@ class IdServiceProvider extends ServiceProvider
         // it registers once those modules' enums and schema are in place.
         MaintenanceServiceProvider::class,
         ApiServiceProvider::class,
+        // Last, and after the API: it registers routes on the same host and its
+        // controllers name the protocol endpoints the API module owns. Off unless
+        // `frontend_api.enabled` — a browser-facing channel should never appear on an
+        // install that has not named the origins allowed to use it.
+        FrontendApiServiceProvider::class,
     ];
 
     public function register(): void

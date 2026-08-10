@@ -401,6 +401,30 @@ return [
      * requested scope outside this list is dropped. grant_types listed here are
      * the only ones a dynamic client may be granted.
      */
+    /*
+    |---------------------------------------------------------------------------
+    | Frontend API
+    |---------------------------------------------------------------------------
+    |
+    | The browser-facing channel: a page holding a PUBLISHABLE key reads its
+    | sign-in configuration, and the signed-in user, directly — with no server of
+    | its own in the middle. It is what lets an SDK component render a themed
+    | sign-in box instead of sending the person away to a hosted page.
+    |
+    | OFF BY DEFAULT, deliberately. The safety of a public key rests entirely on
+    | the origin allow-list attached to it, so an install that has named no
+    | origins should not be answering browsers at all — and a browser-facing
+    | surface that appears silently on upgrade is one nobody reviewed.
+    |
+    | Turning it on serves `/frontend/v1/*`. Nothing there grants authority: the
+    | config document is public by nature, and the session document is authorized
+    | by the bearer token the page already holds, never by the key.
+    |
+    */
+    'frontend_api' => [
+        'enabled' => env('CBOX_ID_FRONTEND_API', false),
+    ],
+
     'oauth' => [
         'dynamic_registration' => [
             'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),

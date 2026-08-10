@@ -46,3 +46,6 @@ How the platform is put together and the ideas you build against:
 - **[External actions & inline hooks](external-actions.md)** — synchronous
   extension points that enrich or veto an operation (in-process or external HTTP),
   at token minting, login, registration and password change.
+- **[Frontend API & publishable keys](frontend-api.md)** — the browser-facing
+  channel: a public key bound to an origin allow-list, so a page can read its own
+  sign-in configuration and the signed-in user with no server in the middle.

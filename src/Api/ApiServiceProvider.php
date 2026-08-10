@@ -298,16 +298,6 @@ class ApiServiceProvider extends ServiceProvider
     }
 
     /**
-     * Host-declared middleware for the TOKEN endpoints alone — `/oauth/token` and
-     * `/oauth/revoke`.
-     *
-     * Defaults to {@see surfaceMiddleware()}, so this is inert until a deployment states
-     * otherwise: configuring nothing, or configuring only `api.middleware`, keeps the
-     * token endpoints exactly where the rest of the protocol surface is.
-     *
-     * @return list<string>
-     */
-    /**
      * Host-declared middleware for the public key set alone.
      *
      * Defaults to {@see firstPartyMiddleware()} — which itself defaults to the surface
@@ -328,6 +318,16 @@ class ApiServiceProvider extends ServiceProvider
         return $this->stringList($configured);
     }
 
+    /**
+     * Host-declared middleware for the TOKEN endpoints alone — `/oauth/token` and
+     * `/oauth/revoke`.
+     *
+     * Defaults to {@see surfaceMiddleware()}, so this is inert until a deployment states
+     * otherwise: configuring nothing, or configuring only `api.middleware`, keeps the
+     * token endpoints exactly where the rest of the protocol surface is.
+     *
+     * @return list<string>
+     */
     private function firstPartyMiddleware(): array
     {
         $configured = config('cbox-id.api.first_party_middleware');
