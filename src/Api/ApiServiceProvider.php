@@ -92,6 +92,33 @@ class ApiServiceProvider extends ServiceProvider
             Route::post('/oauth/revoke', RevocationController::class);
         });
 
+        // THE PUBLIC VERIFICATION KEYS, on their own wall.
+        //
+        // Wherever this deployment issues a token it must publish the key to verify it.
+        // The two are one fact and were gated by two different lists: a host could be
+        // given the token endpoints above and not this, which is a signature nobody can
+        // check — the same defect as advertising an endpoint that 404s, pointing the other
+        // way. It happened: opening `/oauth/token` on a multi-tenant platform's own root
+        // left JWKS behind, and an authenticator that verified against the host's key set
+        // worked on a tenant subdomain and could never work on the root.
+        //
+        // Separate from `firstPartyMiddleware()` because this document names no client and
+        // so cannot be gated on one — but it keeps `CanonicalIssuerHost`. An earlier pass
+        // dropped it on the reasoning that a key set asserts nothing and so cannot
+        // contradict itself. True, and beside the point: the reason metadata is held to the
+        // canonical host is that an ALIAS which goes on answering protocol requests is a
+        // surface the customer believes they have moved off. Keys are such a surface, and
+        // `jwks_uri` names the canonical host anyway, so an alias serving them is only ever
+        // reached by something that should not be pointed there. PerEnvironmentIssuerTest
+        // holds it, and holds it for JWKS by name.
+        Route::middleware(array_merge(
+            [ResolveEnvironment::class, CanonicalIssuerHost::class],
+            $this->verificationKeysMiddleware(),
+            ['throttle:300,1'],
+        ))->group(function (): void {
+            Route::get('/.well-known/jwks.json', JwksController::class);
+        });
+
         Route::middleware(array_merge([ResolveEnvironment::class], $this->surfaceMiddleware()))->group(function (): void {
             // Public metadata — cheap, cacheable, generously throttled, and the ONLY
             // group held to the environment's canonical host. These are the documents
@@ -101,7 +128,6 @@ class ApiServiceProvider extends ServiceProvider
             // credential rather than moving the call — or names no host at all, and
             // wrapping the whole surface in this broke both ({@see CanonicalIssuerHost}).
             Route::middleware(['throttle:300,1', CanonicalIssuerHost::class])->group(function (): void {
-                Route::get('/.well-known/jwks.json', JwksController::class);
                 Route::get('/.well-known/openid-configuration', DiscoveryController::class);
                 // RFC 8414 + RFC 9728 — the metadata MCP clients discover the server by.
                 Route::get('/.well-known/oauth-authorization-server', AuthorizationServerMetadataController::class);
@@ -281,6 +307,27 @@ class ApiServiceProvider extends ServiceProvider
      *
      * @return list<string>
      */
+    /**
+     * Host-declared middleware for the public key set alone.
+     *
+     * Defaults to {@see firstPartyMiddleware()} — which itself defaults to the surface
+     * list — so a deployment that configures nothing keeps JWKS exactly where the rest of
+     * the protocol surface is, and one that opens the token endpoints somewhere gets the
+     * keys to match unless it says otherwise.
+     *
+     * @return list<string>
+     */
+    private function verificationKeysMiddleware(): array
+    {
+        $configured = config('cbox-id.api.verification_keys_middleware');
+
+        if (! is_array($configured)) {
+            return $this->firstPartyMiddleware();
+        }
+
+        return $this->stringList($configured);
+    }
+
     private function firstPartyMiddleware(): array
     {
         $configured = config('cbox-id.api.first_party_middleware');
