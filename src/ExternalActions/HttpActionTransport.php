@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\ExternalActions;
 
 use Cbox\Id\ExternalActions\Contracts\ConcurrentActionTransport;
+use Cbox\Id\ExternalActions\Enums\ActionVerdict;
 use Cbox\Id\ExternalActions\Enums\FailPolicy;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Models\ExternalActionEndpoint;
@@ -171,7 +172,18 @@ class HttpActionTransport implements ConcurrentActionTransport
             return $this->onFailure($context);
         }
 
-        if (($json['action'] ?? 'continue') === 'deny') {
+        // AN UNRECOGNISED VERB IS AN UNANSWERED GATE, so it goes to the hook point's fail
+        // policy rather than being read as permission. `($json['action'] ?? 'continue')
+        // === 'deny'` continued on an absent action, a misspelling, and on `DENY` — which
+        // silently disabled a customer's FailClosed gate while returning 2xx, so nothing
+        // anywhere recorded a failure. See ActionVerdict.
+        $verdict = ActionVerdict::parse($json['action'] ?? null);
+
+        if ($verdict === null) {
+            return $this->onFailure($context);
+        }
+
+        if ($verdict === ActionVerdict::Deny) {
             $reason = is_string($json['reason'] ?? null) ? $json['reason'] : 'denied by external action';
 
             return ActionResult::deny($reason);

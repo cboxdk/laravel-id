@@ -62,6 +62,52 @@ it('interprets a deny reply', function (): void {
         ->and($result->reason)->toBe('user is blocked');
 });
 
+/**
+ * A VERB THE TRANSPORT DOES NOT RECOGNISE IS AN UNANSWERED GATE, not permission.
+ *
+ * `($json['action'] ?? 'continue') === 'deny'` continued on everything that was not
+ * exactly `deny`. The case that bites is casing: a customer's handler answering
+ * `{"action":"DENY","reason":"..."}` had its refusal ignored on every request, and because
+ * the response was 2xx nothing recorded a failure — their dashboard showed the hook firing
+ * successfully while it blocked nothing.
+ *
+ * `TokenMinting` is `FailClosed` ({@see HookPoint::failPolicy()}, "an unanswered gate must
+ * not read as permission"), so an unrecognised verb must land there.
+ */
+it('refuses a 2xx reply whose action it cannot recognise', function (string $body): void {
+    config()->set('cbox-id.external_actions.verify_url', false);
+    Http::fake(['*' => Http::response(json_decode($body, true), 200)]);
+
+    $registered = $this->registerActionEndpoint(HookPoint::TokenMinting, 'https://hook.example.test');
+    $result = app(ActionTransport::class)->send($registered->endpoint, new ActionContext(HookPoint::TokenMinting, []));
+
+    expect($result->allowed)->toBeFalse();
+})->with([
+    'absent action' => '{"claims":{}}',
+    'misspelled' => '{"action":"denied"}',
+    'unknown verb' => '{"action":"maybe"}',
+    'non-string' => '{"action":true}',
+]);
+
+/**
+ * …and the mirror: a verb that differs only in CASE is honoured rather than refused.
+ *
+ * Refusing `DENY` would also be failing closed, so the test above passes either way for
+ * that input — but it would mean a correctly-refusing hook is reported as broken, and the
+ * fix for that is the one that reintroduces the hole. A JSON verb is prose from another
+ * team's codebase, not a protocol token.
+ */
+it('honours a deny that differs only in case', function (): void {
+    config()->set('cbox-id.external_actions.verify_url', false);
+    Http::fake(['*' => Http::response(['action' => 'DENY', 'reason' => 'blocked domain'], 200)]);
+
+    $registered = $this->registerActionEndpoint(HookPoint::TokenMinting, 'https://hook.example.test');
+    $result = app(ActionTransport::class)->send($registered->endpoint, new ActionContext(HookPoint::TokenMinting, []));
+
+    expect($result->allowed)->toBeFalse()
+        ->and($result->reason)->toBe('blocked domain');
+});
+
 it('fails closed on a non-2xx reply', function (): void {
     config()->set('cbox-id.external_actions.verify_url', false);
     Http::fake(['*' => Http::response('nope', 500)]);
