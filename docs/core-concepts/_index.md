@@ -49,3 +49,6 @@ How the platform is put together and the ideas you build against:
 - **[Frontend API & publishable keys](frontend-api.md)** — the browser-facing
   channel: a public key bound to an origin allow-list, so a page can read its own
   sign-in configuration and the signed-in user with no server in the middle.
+- **[Migrating users off another system](migrating-users.md)** — bulk import with
+  existing hashes, and delegated authentication that imports each person at the
+  moment they sign in when those hashes cannot be exported.

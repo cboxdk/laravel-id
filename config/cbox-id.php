@@ -421,6 +421,37 @@ return [
     | by the bearer token the page already holds, never by the key.
     |
     */
+    /*
+    |---------------------------------------------------------------------------
+    | Migrating off another system
+    |---------------------------------------------------------------------------
+    |
+    | Bulk import (`UserImport`) is the first answer and the better one: it moves
+    | users WITH their existing hashes, each upgraded on first login, and the old
+    | system can be switched off the same day. It needs you to be able to EXPORT
+    | those hashes.
+    |
+    | When you cannot — the hashes sit behind an API, or in a format nothing
+    | recognises — the verification moves instead of the data. An email nobody
+    | here knows is offered to the old system, and on a yes the person is created
+    | here as a result of the login that just succeeded.
+    |
+    | Two rules hold regardless of which source you bind, and both are security
+    | properties: a user who already exists HERE is never offered to the old
+    | system (or a password they changed here could be bypassed by the one still
+    | sitting there), and a source that cannot answer refuses the sign-in rather
+    | than allowing it (or an outage in the system you are leaving becomes an
+    | authentication bypass).
+    |
+    | `verify_url` pins outbound DNS and refuses private ranges for the HTTP
+    | source. A legacy system is very often on a private network — that is what
+    | makes it legacy — so this is the switch for saying so deliberately.
+    |
+    */
+    'migration' => [
+        'verify_url' => env('CBOX_ID_MIGRATION_VERIFY_URL', true),
+    ],
+
     'frontend_api' => [
         'enabled' => env('CBOX_ID_FRONTEND_API', false),
     ],
