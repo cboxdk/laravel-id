@@ -15,9 +15,11 @@ use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Migration\Models\LegacyLoginDeclarationRecord;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -35,6 +37,8 @@ class ManifestSyncService implements AppManifests
     public function __construct(
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        // Sealing the legacy-login secret an app declares. See recordLegacyLogin().
+        private readonly SecretBox $secrets,
     ) {}
 
     public function sync(string $clientId, Manifest $manifest): ManifestSyncResult
@@ -43,13 +47,21 @@ class ManifestSyncService implements AppManifests
         $existing = $this->current($clientId);
 
         // Unchanged manifest → cheap no-op; pull/push/SDK can call this freely.
-        if ($existing !== null && $existing->checksum === $checksum) {
+        //
+        // The checksum covers the CATALOG only — permissions and roles — because it is a
+        // cross-SDK contract: id-js, id-python and id-go canonicalize the same bytes, and
+        // ManifestChecksumFixtureTest exists to stop the four drifting. So a legacy-login
+        // declaration cannot be folded into it, and is compared on its own instead. Without
+        // this, a manifest that changed ONLY where passwords go would look unchanged and be
+        // skipped.
+        if ($existing !== null && $existing->checksum === $checksum && ! $this->legacyLoginChanged($manifest)) {
             return ManifestSyncResult::unchanged();
         }
 
         $result = DB::transaction(function () use ($clientId, $manifest, $checksum): ManifestSyncResult {
             $this->syncPermissions($clientId, $manifest);
             $this->syncRoles($clientId, $manifest);
+            $this->recordLegacyLogin($clientId, $manifest);
 
             $orphanedPermissions = $this->flagOrphanedPermissions($clientId, $manifest->permissionKeys());
             $orphanedRoles = $this->flagOrphanedRoles($clientId, $manifest->roleKeys());
@@ -240,5 +252,78 @@ class ManifestSyncService implements AppManifests
         }
 
         return $keys;
+    }
+
+    /**
+     * Record where the app says its old login lives — INERT until a person approves it.
+     *
+     * Everything else this service writes is the app's own business: its roles, its
+     * permissions, affecting only what that app can express. This one names a URL that
+     * every unknown email and the password typed with it will be offered to, on the
+     * environment's sign-in path. A client holding `apps.manifest` that could switch that
+     * on by itself would be a credential harvester with a scope for the purpose.
+     *
+     * So the declaration is stored and does nothing. And a declaration whose URL DIFFERS
+     * from the approved one drops the approval, because "the app changed where passwords
+     * go" is precisely the event that must not pass unnoticed — a compromised deploy
+     * pipeline is otherwise one manifest push away from redirecting the login path.
+     *
+     * A manifest that declares nothing leaves an existing row alone rather than deleting
+     * it: an app that stops declaring has not asked for the migration to be torn down
+     * mid-flight, and an operator revoking is the way that ends.
+     */
+    private function recordLegacyLogin(string $clientId, Manifest $manifest): void
+    {
+        $declaration = $manifest->legacyLogin;
+
+        if ($declaration === null) {
+            return;
+        }
+
+        $existing = LegacyLoginDeclarationRecord::query()->first();
+
+        // Same URL, already approved: nothing to do, and the approval survives a routine
+        // redeploy that republishes an unchanged manifest.
+        if ($existing instanceof LegacyLoginDeclarationRecord && $existing->url === $declaration->url) {
+            $existing->update([
+                'client_id' => $clientId,
+                'secret_encrypted' => $this->secrets->seal($declaration->secret, $existing->secretContext()),
+            ]);
+
+            return;
+        }
+
+        $existing?->delete();
+
+        $record = LegacyLoginDeclarationRecord::query()->create([
+            'client_id' => $clientId,
+            'url' => $declaration->url,
+            // Sealed with a context derived from the row's own id, so a ciphertext lifted
+            // from one row cannot be opened as another.
+            'secret_encrypted' => '',
+        ]);
+
+        $record->update([
+            'secret_encrypted' => $this->secrets->seal($declaration->secret, $record->secretContext()),
+        ]);
+    }
+
+    /**
+     * Whether this manifest names a legacy login we do not already have on file.
+     *
+     * Deliberately compares the URL only. A rotated secret is re-sealed by
+     * {@see recordLegacyLogin()} on any sync that runs, and treating a rotation as a
+     * change here would drag the whole catalog through a rewrite for a credential nobody
+     * needs to re-approve.
+     */
+    private function legacyLoginChanged(Manifest $manifest): bool
+    {
+        $declared = $manifest->legacyLogin?->url;
+
+        if ($declared === null) {
+            return false;
+        }
+
+        return LegacyLoginDeclarationRecord::query()->where('url', $declared)->doesntExist();
     }
 }

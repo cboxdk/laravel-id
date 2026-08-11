@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\AccessControl\Manifest;
 
+use Cbox\Id\Migration\ValueObjects\LegacyLoginDeclaration;
+
 /**
  * An app's authorization manifest: the roles and permissions it declares. This is
  * the transport-agnostic contract — whether it arrived by SDK push, a pulled
@@ -20,6 +22,15 @@ readonly class Manifest
         public string $version,
         public array $permissions,
         public array $roles,
+        /**
+         * Where this app's OLD login lives, when it is migrating off one.
+         *
+         * A proposal, not an instruction — see {@see LegacyLoginDeclaration}. It rides
+         * the manifest because it is the same kind of fact as a role: something the app
+         * knows about itself, versioned with the deploy, rather than a URL somebody
+         * pastes into a console and a secret somebody pastes into an env file.
+         */
+        public ?LegacyLoginDeclaration $legacyLogin = null,
     ) {}
 
     /**

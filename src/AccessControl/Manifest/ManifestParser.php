@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl\Manifest;
 
 use Cbox\Id\AccessControl\Exceptions\InvalidManifest;
+use Cbox\Id\Migration\ValueObjects\LegacyLoginDeclaration;
 
 /**
  * Parses + validates a raw manifest document (already JSON-decoded to an array)
@@ -33,7 +34,18 @@ class ManifestParser
 
         $roles = $this->parseRoles($data['roles'] ?? [], $declaredKeys);
 
-        return new Manifest($version, $permissions, $roles);
+        /** @var array<string, mixed>|null $legacyLogin */
+        $legacyLogin = is_array($raw = $data['legacy_login'] ?? null) ? $raw : null;
+
+        return new Manifest(
+            $version,
+            $permissions,
+            $roles,
+            // Throws on a half-declaration rather than ignoring it: an app that declared
+            // something we refused should fail its deploy, not believe it is migrating
+            // when it is not.
+            $legacyLogin !== null ? LegacyLoginDeclaration::fromArray($legacyLogin) : null,
+        );
     }
 
     /**

@@ -88,6 +88,59 @@ written works here unchanged.
 > bug becomes the provider's incident. An HTTP hop buys the same flexibility with the
 > blast radius on the side that wrote the code.
 
+## Declaring it from your app instead
+
+Configuring the URL in one place and the secret in another is two places that drift. Your
+app already declares facts about itself through the manifest — its roles, its permissions,
+versioned with the deploy — and where its old login lives is the same kind of fact:
+
+```ts
+export default defineAuthz({
+  roles: [...],
+  legacyLogin: {
+    url: 'https://acme.com/api/cbox-legacy',
+    secret: process.env.CBOX_LEGACY_SECRET!,
+  },
+})
+```
+
+**A declaration arrives inert.** Everything else in a manifest affects only the app that
+declared it; this one names a URL that every unknown email and the password typed with it
+will be offered to, on the environment's whole sign-in path. A client holding
+`apps.manifest` that could switch that on by itself would be a credential harvester with a
+scope for the purpose.
+
+So it is stored, shown to an operator beside the app that proposed it, and does nothing
+until a person approves it. Re-declaring the **same** URL keeps that approval — a routine
+redeploy republishes the same manifest, and an approval people click through on every
+release is not a control. Re-declaring a **different** URL drops it, because "the app
+changed where passwords go" is precisely the event that must not pass unnoticed: a
+compromised deploy pipeline is otherwise one manifest push away from redirecting the login
+path.
+
+The URL is stored readable, because an operator has to see it before approving and a value
+nobody can inspect is a value nobody can check. The secret is sealed.
+
+## Writing the handler
+
+`@cboxdk/id-js` ships the handler so you do not write the signature check:
+
+```ts
+export const POST = createLegacyVerifier({
+  secret: process.env.CBOX_LEGACY_SECRET!,
+  async verify(email, password) {
+    const row = await db.users.findByEmail(email)
+    if (!row || !(await argon2.verify(row.password, password))) return null
+
+    return { email: row.email, name: row.name, emailVerified: !!row.confirmedAt }
+  },
+})
+```
+
+Return `null` for a wrong password. **Throwing is different** and is answered with a 503:
+your store could not decide, which is not the same as saying no, and the fail-closed rule
+below turns it into a refusal that is distinguishable in the logs.
+
 ## Two rules, and why they are not negotiable
 
 **A user who exists here is never offered to the old system.** Once somebody has migrated,
