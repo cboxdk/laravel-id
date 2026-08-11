@@ -11,6 +11,25 @@ capabilities (RBAC, governance, audit, webhooks, provisioning) see the
 [feature support matrix](../capabilities/feature-support.md); for the short version see
 [Capabilities](../capabilities/_index.md).
 
+## When this was last checked against the code
+
+Every **Partial** and **No** row states a specific, checkable limit, and a row whose limit
+has quietly been fixed is worse than no row at all — it tells an adopter they cannot do
+something they can. Verified claim by claim on 2026-08-11; two rows were stale and are
+corrected above:
+
+- `AuthnContext` in a SAML assertion was hardcoded to `…ac:classes:Password` and is now
+  derived from the session's `amr`.
+- `id_token_signing_alg_values_supported` diverged from what issuance actually signed with
+  and now reads the issuer's own constant.
+
+The rest were re-read against `src/` and hold as written — including the ones easiest to
+drift: PKCE `plain` is unredeemable because redemption always computes S256; revocation
+calls `authenticateConfidential()`; there is no `DPoP-Nonce` anywhere in the package;
+`resource` is read as a single string so a repeated parameter yields one value; and the
+dynamic registrar's `AUTH_METHODS` is `none` / `client_secret_basic` / `client_secret_post`
+with no `private_key_jwt`.
+
 ## How to read the grades
 
 Every row is graded against code in **this package's `src/`**. Nothing is graded on
@@ -106,10 +125,14 @@ left for you to discover.
 | **RFC 8725** — JWT Best Current Practices | Algorithm pinning | **Full** | Verification requires a caller-supplied allow-list, and each key is bound to its own algorithm, so the token header's `alg` never selects the key. |
 | **RFC 7516** — JWE | Encrypted tokens | **No** | No encrypted id_tokens, no encrypted UserInfo responses. |
 
-> **Known divergence.** `id_token_signing_alg_values_supported` is derived from the keys the
-> environment holds, but id_tokens are always signed **RS256**. An environment holding only
-> ES256 or EdDSA keys will advertise an algorithm it never signs id_tokens with — and
-> id_token issuance will fail there for want of an RSA key.
+> **Resolved.** `id_token_signing_alg_values_supported` used to be derived from the keys an
+> environment held while id_tokens were always signed **RS256** — so an environment holding
+> only ES256 or EdDSA advertised an algorithm it never signed with, and a conformant client
+> that pinned what discovery told it broke on the first token. It now reads
+> `TokenController::ID_TOKEN_ALG`, the constant issuance uses, and a test holds the two
+> together. The DPoP and client-assertion algorithm lists read their validators' constants
+> for the same reason: advertising is a statement about what this code accepts, so it reads
+> the code.
 
 ## SCIM 2.0 (inbound provisioning server)
 
@@ -155,7 +178,7 @@ and `onelogin/php-saml` — never hand-rolled.
 | Single Logout, IdP-initiated fan-out to other SPs | **No** | Global single logout is not implemented. |
 | IdP-initiated (unsolicited) SSO | **No** | Every issued `Response` carries `InResponseTo`. |
 | Encrypted assertions (outbound) | **No** | Issued assertions are signed, not encrypted. Correctly not advertised — the metadata publishes a signing `KeyDescriptor` only. |
-| `AuthnContext` in the assertion | **Partial** | Hardcoded to `…ac:classes:Password`; it does not reflect whether MFA was actually used. |
+| `AuthnContext` in the assertion | **Full** | Derived from the session's `amr` — the same list the OIDC side derives `acr` from, so the two protocols cannot describe one sign-in differently. A password yields `PasswordProtectedTransport` (not bare `Password`, which asserts no transport protection); a passkey yields `unspecified`, because SAML 2.0's class list predates WebAuthn and `Smartcard`/`SoftwarePKI` would both be untrue. A caller that supplies no `amr` gets `unspecified` — vague rather than wrong. The core classes cannot express "and also a second factor"; an SP that needs that should read a mapped attribute, not a class reference that cannot carry it. |
 
 ### As a relying party (you federate to a customer's IdP)
 
