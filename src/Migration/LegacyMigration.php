@@ -10,6 +10,7 @@ use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\Migration\Contracts\LegacyCredentialSource;
 use Cbox\Id\Migration\Events\UserMigrated;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Support\Facades\DB;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -58,28 +59,40 @@ class LegacyMigration
         }
 
         try {
+            // WRAPPED IN ITS OWN TRANSACTION, and that is not tidiness — it is the
+            // difference between working and not working on PostgreSQL. A failed statement
+            // there ABORTS the enclosing transaction: every subsequent query, including
+            // the recovery read below, fails with "current transaction is aborted". Laravel
+            // nests with SAVEPOINTs, so rolling back to one leaves the outer transaction
+            // usable and the recovery can actually run. Caught on sqlite it looks like
+            // nothing; on Postgres the whole request dies.
+            //
             // Created WITHOUT a password, then given the credential separately — because
             // the two ways of carrying it are not interchangeable and `create()` hashes
             // what it is handed. Passing a foreign hash there would hash the hash, and
             // the person's password would silently stop working the moment they migrated:
             // a failure that looks exactly like them mistyping it.
-            $subject = $this->subjects->create(
-                email: $imported->email,
-                name: $imported->name,
-            );
+            $subject = DB::transaction(function () use ($imported, $password) {
+                $subject = $this->subjects->create(
+                    email: $imported->email,
+                    name: $imported->name,
+                );
 
-            if ($imported->passwordHash !== null) {
-                // Verbatim. `storeCredential` is the import path: it does not re-hash, so
-                // a foreign format survives and is upgraded to the platform hasher on the
-                // next successful login — exactly what a bulk-imported user gets.
-                $this->subjects->storeCredential($subject->id, $imported->passwordHash);
-            } else {
-                // The old system proved the credential but cannot hand over its hash — an
-                // opaque API, typically. Hashing what they just proved they know is the
-                // only other honest option, and it lands them on the platform hasher
-                // immediately rather than eventually.
-                $this->subjects->setPassword($subject->id, $password);
-            }
+                if ($imported->passwordHash !== null) {
+                    // Verbatim. `storeCredential` is the import path: it does not re-hash, so
+                    // a foreign format survives and is upgraded to the platform hasher on the
+                    // next successful login — exactly what a bulk-imported user gets.
+                    $this->subjects->storeCredential($subject->id, $imported->passwordHash);
+                } else {
+                    // The old system proved the credential but cannot hand over its hash — an
+                    // opaque API, typically. Hashing what they just proved they know is the
+                    // only other honest option, and it lands them on the platform hasher
+                    // immediately rather than eventually.
+                    $this->subjects->setPassword($subject->id, $password);
+                }
+
+                return $subject;
+            });
         } catch (Throwable $e) {
             // A race: two tabs, two requests, one wins the unique index. Losing that race
             // is not a failed login — the user now exists, and the caller's retry finds
