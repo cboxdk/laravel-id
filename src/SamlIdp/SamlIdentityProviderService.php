@@ -465,7 +465,11 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         );
     }
 
-    public function issueResponse(AuthnRequest $request, string $subjectId, array $attributes = []): SamlResponseVo
+    /**
+     * @param  array<string, list<string>|string>  $attributes
+     * @param  list<string>  $amr  how the subject authenticated, from their session
+     */
+    public function issueResponse(AuthnRequest $request, string $subjectId, array $attributes = [], array $amr = []): SamlResponseVo
     {
         // Re-resolve the SP at issuance time (deny-by-default a second time): if it
         // was disabled or removed since the request was parsed, refuse.
@@ -512,7 +516,13 @@ class SamlIdentityProviderService implements SamlIdentityProvider
             nameId: $nameId,
             nameIdFormat: $serviceProvider->name_id_format->value,
             attributes: $mappedAttributes,
-            authnContext: AuthnContext::Password,
+            // DERIVED, NEVER ASSUMED. This was hardcoded to Password, so an assertion
+            // claimed a password had been typed even when the person used a passkey —
+            // a false statement in a signed document that relying parties act on, and one
+            // that disagreed with the `acr` the OIDC side derived for the same session.
+            // An empty `amr` (a caller that has not been updated) yields Unspecified,
+            // which is vague rather than wrong.
+            authnContext: AuthnContext::forAmr($amr),
             inResponseTo: $request->id,
             sessionIndex: $sessionIndex,
         );

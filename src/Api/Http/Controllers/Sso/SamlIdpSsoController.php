@@ -80,6 +80,10 @@ class SamlIdpSsoController
             return $this->handoff($request);
         }
 
+        // No `amr` from here, deliberately: this controller resolves the subject through
+        // Laravel's generic guard, which knows an id and nothing about HOW they signed in.
+        // The assertion therefore says "unspecified" — vague, and true. A host that tracks
+        // authentication methods passes them; see the parameter on issueResponse().
         $response = $this->idp->issueResponse($authnRequest, $subjectId, $this->attributesFor($subjectId));
 
         // The binding carries its own policy: a self-submitting form aimed at another

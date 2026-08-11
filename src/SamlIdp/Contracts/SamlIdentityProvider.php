@@ -67,12 +67,20 @@ interface SamlIdentityProvider
      * is projected through the SP's `attribute_mappings` into the AttributeStatement,
      * and the NameID is read from the SP's configured `name_id_attribute`.
      *
+     * `$amr` is how the subject authenticated — the same list the OIDC side derives `acr`
+     * from — and decides the `<AuthnContextClassRef>`. Optional, and its default is the
+     * reason it is optional: an omitted `amr` yields "unspecified", which is vague but
+     * true. It used to be hardcoded to `Password`, so every assertion claimed a password
+     * had been typed even for people who signed in with a passkey — a false statement in
+     * a signed document that relying parties act on.
+     *
      * @param  array<string, string|list<string>>  $attributes
+     * @param  list<string>  $amr
      *
      * @throws InvalidAuthnRequest the request has already been answered (replay)
      * @throws UnknownServiceProvider the SP referenced by the request is no longer active
      */
-    public function issueResponse(AuthnRequest $request, string $subjectId, array $attributes = []): SamlResponse;
+    public function issueResponse(AuthnRequest $request, string $subjectId, array $attributes = [], array $amr = []): SamlResponse;
 
     /**
      * Mint a signed SAML `Response` that carries a failure `StatusCode` and no
