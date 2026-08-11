@@ -255,9 +255,41 @@ class TokenController
             return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
+        $access = $this->issuer->issueForUser(
+            $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+        );
+
+        // A refresh token when the client asked for offline access — the same rule,
+        // and the same call, as the authorization-code branch above.
+        //
+        // THIS BRANCH DID NOT DO IT, and the device grant is the one that needs it
+        // most: RFC 8628 exists for CLIs, TVs and headless devices — clients with no
+        // browser to bounce through when an access token expires. `offline_access`
+        // was accepted at the device-authorization endpoint, stored on the grant and
+        // then silently dropped here, so every such client was signed out an hour
+        // later with no way back but a fresh user_code. Found by a CLI reporting
+        // "no refresh token" against a client that had been granted the scope.
+        //
+        // No `authTime`/`amr`: a device grant does not record them, so a refreshed
+        // ID Token describes the login without asserting an assurance level nobody
+        // captured. Better absent than invented.
+        $refresh = in_array('offline_access', $grant->scopes, true)
+            ? $this->refreshTokens->issue(
+                $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+            )
+            : null;
+
         return $this->tokenResponse(
-            $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt),
-            null,
+            $access,
+            // An ID Token, as every other user-present grant here returns. Its absence
+            // meant an OIDC client completing a device flow received no assertion about
+            // WHO signed in — only a bearer token — and had to call UserInfo to find out.
+            $this->idToken($client, new IdTokenGrant(
+                userId: $grant->userId,
+                organizationId: $grant->organizationId,
+                scopes: $grant->scopes,
+            ), $access),
+            $refresh,
             requestedScopes: $grant->scopes,
         );
     }

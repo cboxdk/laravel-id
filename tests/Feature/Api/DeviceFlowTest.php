@@ -198,3 +198,52 @@ it('advertises the device endpoint and grant type in metadata', function (): voi
             'urn:ietf:params:oauth:grant-type:token-exchange',
         ]]);
 });
+
+it('issues a refresh token when the device client asked for offline access', function (): void {
+    // RFC 8628 exists for CLIs, TVs and headless devices — the clients with no
+    // browser to bounce through when an access token expires. `offline_access` was
+    // accepted at the device-authorization endpoint, stored on the grant, and then
+    // dropped at redemption, so every one of them was signed out an hour later with
+    // no way back but a fresh user_code.
+    $registered = $this->makeClient(
+        ['openid', 'offline_access'],
+        grantTypes: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
+    );
+    $device = app(DeviceAuthorization::class);
+    $result = $device->request($registered->client, ['openid', 'offline_access']);
+
+    expect($device->approve($result->userCode, 'user-1', 'org-1'))->toBeTrue();
+    DeviceCode::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => DEVICE_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'device_code' => $result->deviceCode,
+    ])->assertOk()->json();
+
+    expect($body['refresh_token'] ?? null)->toBeString()
+        // And an ID Token, as every other user-present grant returns: without one an
+        // OIDC client learns nothing about WHO signed in but a bearer token.
+        ->and($body['id_token'] ?? null)->toBeString();
+});
+
+it('issues no refresh token when offline access was not asked for', function (): void {
+    // The scope is the request, not a default. A client that never asked for a
+    // long-lived session must not silently be given one.
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
+    $device = app(DeviceAuthorization::class);
+    $result = $device->request($registered->client, ['openid']);
+
+    expect($device->approve($result->userCode, 'user-1', 'org-1'))->toBeTrue();
+    DeviceCode::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => DEVICE_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'device_code' => $result->deviceCode,
+    ])->assertOk()->json();
+
+    expect($body)->not->toHaveKey('refresh_token');
+});
