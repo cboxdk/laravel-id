@@ -45,6 +45,11 @@ final class ContextStampingAuditLog implements AuditLog
         return $this->inner->verifyChain($organizationId, $fromSequence, $toSequence);
     }
 
+    public function headSequence(?string $organizationId = null): int
+    {
+        return $this->inner->headSequence($organizationId);
+    }
+
     public function checkpoint(?string $organizationId = null): AuditCheckpoint
     {
         return $this->inner->checkpoint($organizationId);

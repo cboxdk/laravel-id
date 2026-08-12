@@ -336,6 +336,13 @@ class DatabaseAuditLog implements AuditLog
             ->value('id');
     }
 
+    public function headSequence(?string $organizationId = null): int
+    {
+        $head = $this->chain($this->scopeFor($organizationId))->max('sequence');
+
+        return is_numeric($head) ? (int) $head : 0;
+    }
+
     public function verifyChain(?string $organizationId = null, int $fromSequence = 1, ?int $toSequence = null): ChainVerification
     {
         $scope = $this->scopeFor($organizationId);

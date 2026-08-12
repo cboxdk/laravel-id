@@ -39,6 +39,11 @@ class FakeAuditLog implements AuditLog
         return ChainVerification::valid(count($this->recorded));
     }
 
+    public function headSequence(?string $organizationId = null): int
+    {
+        return count($this->recorded);
+    }
+
     public function checkpoint(?string $organizationId = null): AuditCheckpoint
     {
         return (new AuditCheckpoint)->fill([

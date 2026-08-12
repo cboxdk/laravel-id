@@ -117,6 +117,16 @@ class ServerMetadata
             // RFC 7523 client-assertion signing algs (private_key_jwt).
             // From the validator — see ClientAssertionValidator::ALLOWED_ALGS.
             'token_endpoint_auth_signing_alg_values_supported' => ClientAssertionValidator::ALLOWED_ALGS,
+
+            // STATED SEPARATELY PER ENDPOINT, because they differ and RFC 8414 §2 lets
+            // them. Revocation accepts a public client — the same `none` the token
+            // endpoint accepts, which is how a browser SDK signs out. Introspection does
+            // NOT: it answers questions about a token rather than destroying one, and an
+            // unauthenticated answer to "is this token live, and whose" is an oracle.
+            // Leaving both keys out meant a client had to infer the difference by trying,
+            // and the answer to trying was a 401 every SDK swallows silently.
+            'revocation_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none'],
+            'introspection_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'private_key_jwt'],
         ];
 
         // The interactive `/authorize` endpoint is the host app's responsibility;

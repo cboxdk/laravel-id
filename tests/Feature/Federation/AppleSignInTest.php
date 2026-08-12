@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Support\FirstAuthorizationProfile;
+use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -170,4 +173,87 @@ it('still sends a pasted secret for a provider that issues one', function (): vo
         ->exchangeCode($connection, 'auth-code', 'https://id.acme.test/callback');
 
     Http::assertSent(fn ($request): bool => $request->data()['client_secret'] === 'rp-secret');
+});
+
+/**
+ * APPLE SENDS THE NAME ONCE, AND WE WERE THROWING IT AWAY.
+ *
+ * `name` never appears in Apple's id_token. It arrives as a `user` form field on the
+ * FIRST authorization and never again for that person — so a callback that read only
+ * `code` and `state` created every Sign in with Apple account with a null name,
+ * permanently. The only recovery is for the person to revoke the app in their Apple ID
+ * settings and start over.
+ */
+it('keeps the name Apple sends exactly once, on the first authorization', function (): void {
+    $setup = appleConnectionConfig();
+    $connection = $this->makeConnection(
+        $this->makeOrganization()->id,
+        ConnectionType::Oidc,
+        'Apple',
+        $setup['config'],
+        provider: 'apple',
+    );
+
+    $principal = new FederatedPrincipal(provider: 'oidc', subject: 'apple-sub-1', email: 'dana@privaterelay.appleid.com');
+
+    $merged = app(FirstAuthorizationProfile::class)->merge(
+        $connection,
+        Request::create('/callback', 'POST', [
+            'user' => json_encode(['name' => ['firstName' => 'Dana', 'lastName' => 'Reeves']]),
+        ]),
+        $principal,
+    );
+
+    expect($merged->name)->toBe('Dana Reeves');
+});
+
+/**
+ * And it is a fallback, not an override: the field is unsigned, so a name the ASSERTION
+ * carried always wins. Nothing about `user` is covered by a signature.
+ */
+it('never lets the unsigned form field replace a name the assertion carried', function (): void {
+    $setup = appleConnectionConfig();
+    $connection = $this->makeConnection(
+        $this->makeOrganization()->id,
+        ConnectionType::Oidc,
+        'Apple',
+        $setup['config'],
+        provider: 'apple',
+    );
+
+    $principal = new FederatedPrincipal(provider: 'oidc', subject: 'apple-sub-2', name: 'From The Token');
+
+    $merged = app(FirstAuthorizationProfile::class)->merge(
+        $connection,
+        Request::create('/callback', 'POST', [
+            'user' => json_encode(['name' => ['firstName' => 'Injected', 'lastName' => 'Name']]),
+        ]),
+        $principal,
+    );
+
+    expect($merged->name)->toBe('From The Token');
+});
+
+/**
+ * A provider that does not declare the behaviour gets nothing read from its callback
+ * body — this is one catalogue entry's quirk, not a general channel for setting a name.
+ */
+it('ignores a user field from a provider that does not send one', function (): void {
+    $connection = $this->makeConnection(
+        $this->makeOrganization()->id,
+        ConnectionType::Oidc,
+        'Corp',
+        ['issuer' => 'https://idp.corp', 'client_id' => 'rp', 'client_secret' => 's'],
+        provider: 'google',
+    );
+
+    $merged = app(FirstAuthorizationProfile::class)->merge(
+        $connection,
+        Request::create('/callback', 'POST', [
+            'user' => json_encode(['name' => ['firstName' => 'Should', 'lastName' => 'Not Apply']]),
+        ]),
+        new FederatedPrincipal(provider: 'oidc', subject: 'google-sub'),
+    );
+
+    expect($merged->name)->toBeNull();
 });

@@ -38,6 +38,8 @@ use Cbox\Id\Api\Http\Middleware\CanonicalIssuerHost;
 use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
 use Cbox\Id\Api\Http\Middleware\ScimContentType;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -270,8 +272,22 @@ class ApiServiceProvider extends ServiceProvider
                 // `state` — not the framework's CSRF token, which a cross-site POST from a
                 // provider cannot carry — is what proves the answer belongs to this
                 // browser. See {@see \Cbox\Id\Federation\Support\FederationFlowStash}.
+                //
+                // ALL THREE NAMES. Laravel 13's `web` group holds
+                // `PreventRequestForgery`; `ValidateCsrfToken` and `VerifyCsrfToken` are
+                // deprecated SUBCLASSES of it, and `Router::resolveMiddleware()` matches
+                // an exclusion in one direction only — the group entry must be a subclass
+                // of the excluded name, not the other way round. Excluding
+                // `VerifyCsrfToken` alone therefore removed nothing at all, and the route
+                // answered 419 to the very POST it was opened for. The reject loop skips
+                // a name that does not exist, so listing the Laravel 12 classes beside
+                // the 13 one is safe across the whole supported range.
                 Route::match(['get', 'post'], '/sso/oidc/{connection}/callback', OidcCallbackController::class)
-                    ->withoutMiddleware(VerifyCsrfToken::class);
+                    ->withoutMiddleware([
+                        PreventRequestForgery::class,
+                        ValidateCsrfToken::class,
+                        VerifyCsrfToken::class,
+                    ]);
 
                 // SP-initiated SAML login (AuthnRequest). Single Logout accepts the IdP's
                 // redirect (GET) and, for some IdPs, POST — it belongs with the login it

@@ -165,6 +165,11 @@ it('reports a chain it could not sign, keeps going, and exits non-zero', functio
             return $this->inner->verifyChain($organizationId, $fromSequence, $toSequence);
         }
 
+        public function headSequence(?string $organizationId = null): int
+        {
+            return $this->inner->headSequence($organizationId);
+        }
+
         public function checkpoint(?string $organizationId = null): AuditCheckpoint
         {
             if ($organizationId === 'org_alpha') {

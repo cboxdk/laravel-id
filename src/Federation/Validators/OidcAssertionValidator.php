@@ -66,6 +66,12 @@ class OidcAssertionValidator implements AssertionValidator
             email: $this->optionalString($claims, 'email'),
             name: $this->optionalString($claims, 'name'),
             connectionId: $connection->id,
+
+            // OIDC Core §5.1: `email_verified` is a boolean the IdP asserts. Only an
+            // explicit true carries over — a provider that omits it has not vouched for
+            // the address, and absence is not a denial we should invent an answer for.
+            emailVerified: ($claims['email_verified'] ?? null) === true ? true : null,
+
             raw: $claims,
         );
     }

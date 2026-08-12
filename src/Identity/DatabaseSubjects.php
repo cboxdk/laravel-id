@@ -214,10 +214,21 @@ class DatabaseSubjects implements Subjects
             }
 
             // First sight, no conflict: a fresh account owned by this identity.
-            $subject = $this->create(
-                $principal->email ?? $principal->subject.'@'.$principal->provider.'.federated',
-                $principal->name,
-            );
+            $email = $principal->email ?? $principal->subject.'@'.$principal->provider.'.federated';
+
+            $subject = $this->create($email, $principal->name);
+
+            // CARRY THE PROVIDER'S VERIFICATION ACROSS. A federated account has no local
+            // verification flow to complete — nobody sends it a confirmation link — so an
+            // address stored unverified stays unverified for the life of the account, and
+            // our own `/oauth/userinfo` then reports `email_verified: false` about an
+            // address Google or Entra had already proven. Only an explicit true crosses:
+            // see FederatedPrincipal::$emailVerified on why null is not false.
+            if ($principal->emailVerified === true && $principal->email !== null) {
+                $this->markEmailVerified($subject->id, $email);
+
+                $subject = $this->find($subject->id) ?? $subject;
+            }
 
             $this->writeLink($subject->id, $principal);
 

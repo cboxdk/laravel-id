@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
+use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -742,4 +743,56 @@ it('follows a configured deployment default too', function (): void {
     $claims = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
 
     expect($claims->get('exp') - $claims->get('iat'))->toBe(120);
+});
+
+/**
+ * A PUBLIC CLIENT MUST BE ABLE TO REVOKE ITS OWN TOKENS.
+ *
+ * Sign-out in every mainstream browser SDK — AppAuth-JS, oidc-client-ts with
+ * `revokeTokensOnSignout`, angular-auth-oidc-client — posts the refresh token here. A
+ * PKCE client authenticates with `none` and so holds no secret, and this endpoint
+ * required one: the answer was `401 invalid_client`, the SDK swallowed it, and the
+ * refresh token stayed valid for its whole lifetime after the person pressed sign out.
+ *
+ * Our own discovery document advertises `none` as a supported client-authentication
+ * method, so the client had every reason to expect this to work.
+ */
+it('lets a public client revoke its own refresh token, with no secret', function (): void {
+    $registered = $this->makeClient(
+        ['api.read', 'offline_access'],
+        ClientType::Public,
+        grantTypes: ['authorization_code', 'refresh_token'],
+    );
+
+    $refresh = app(RefreshTokens::class)->issue(
+        $registered->client,
+        'user-public-revoke',
+        null,
+        ['api.read', 'offline_access'],
+    );
+
+    $this->postJson('/oauth/revoke', [
+        'token' => $refresh,
+        'client_id' => $registered->client->client_id,
+    ])->assertOk();
+
+    // And it is genuinely gone: redeeming it now fails.
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'refresh_token' => $refresh,
+        'client_id' => $registered->client->client_id,
+    ])->assertStatus(400);
+});
+
+/**
+ * And the metadata says so, per endpoint. A client had to discover the difference between
+ * revocation and introspection by trying, and the answer to trying was a 401 nobody sees.
+ */
+it('advertises which client authentication each token endpoint accepts', function (): void {
+    $metadata = $this->getJson('/.well-known/openid-configuration')->json();
+
+    expect($metadata['revocation_endpoint_auth_methods_supported'])->toContain('none')
+        // Introspection answers questions about a token rather than destroying one, so
+        // an unauthenticated caller there is an oracle. It must NOT offer `none`.
+        ->and($metadata['introspection_endpoint_auth_methods_supported'])->not->toContain('none');
 });

@@ -203,14 +203,58 @@ it('reports whether a federated sign-in created the account', function (): void 
     $first = $subjects->resolveFederated($principal);
 
     expect($first->created)->toBeTrue()
-        // And it is a signup in the sense that matters: nothing about arriving through a
-        // provider verifies the address here.
+        // And it is a signup in the sense that matters: arriving through a provider that
+        // says NOTHING about the address does not verify it. A provider that explicitly
+        // asserts `email_verified: true` is the other case — see the test below.
         ->and($first->subject->emailVerified)->toBeFalse();
 
     $second = $subjects->resolveFederated($principal);
 
     expect($second->created)->toBeFalse()
         ->and($second->subject->id)->toBe($first->subject->id);
+});
+
+/**
+ * AN ADDRESS THE PROVIDER VERIFIED IS VERIFIED.
+ *
+ * `ProviderProfileMap::$emailVerified` named where each provider puts this on nine
+ * catalogue entries and nothing read it, so every account created through Google, Entra,
+ * Okta or Apple was stored unverified. A federated account has no local verification flow
+ * to finish — nobody sends it a confirmation link — so that was permanent, and our own
+ * `/oauth/userinfo` reported `email_verified: false` about an address the upstream IdP had
+ * already proven, to every relying party, forever.
+ *
+ * This cannot be an account-takeover vector: `resolveFederated()` refuses outright to
+ * attach a new identity to an existing account by email, so a provider asserting a
+ * verified address it does not own gets a NEW account holding that claim, not somebody
+ * else's. The flag decides what we then say about the account it created.
+ */
+it('carries a provider-asserted verified address onto the new account', function (): void {
+    $verified = app(Subjects::class)->resolveFederated(new FederatedPrincipal(
+        provider: 'oidc',
+        subject: 'entra|9001',
+        email: 'proven@corp.com',
+        name: 'Proven',
+        emailVerified: true,
+    ));
+
+    expect($verified->subject->emailVerified)->toBeTrue();
+});
+
+/**
+ * And only an explicit true. Null means the provider did not tell us, which is not the
+ * same as telling us no — but it is certainly not proof, and an unverified address taken
+ * as proven is how one person signs in as another.
+ */
+it('treats an unstated verification as unverified', function (): void {
+    $unstated = app(Subjects::class)->resolveFederated(new FederatedPrincipal(
+        provider: 'oidc',
+        subject: 'entra|9002',
+        email: 'unstated@corp.com',
+        emailVerified: null,
+    ));
+
+    expect($unstated->subject->emailVerified)->toBeFalse();
 });
 
 /**

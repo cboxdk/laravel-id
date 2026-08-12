@@ -7,6 +7,7 @@ use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\Governance\Contracts\SegregationOfDuties;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -133,4 +134,44 @@ it('leaves an unconflicting grant alone', function (): void {
     $roles->assign('acme', 'user-2', $b->id, GrantSource::Pushed);
 
     expect(app(SegregationOfDuties::class)->violationsFor('acme', 'user-2'))->toBe([]);
+});
+
+/**
+ * A SCAN COST TWO QUERIES PER PERSON HOLDING A ROLE.
+ *
+ * It read the organization's assignments, reduced them to distinct subjects, then asked
+ * `violationsFor()` about each — and that method fetches the subject's assignments and
+ * the applicable policies for itself. The console page it feeds re-runs on every
+ * debounced keystroke of its search box, so an organization with five thousand
+ * role-holders was ten thousand queries per keystroke.
+ *
+ * The policy set is identical for every subject in the organization by construction, and
+ * the assignments were already read. Both are hoisted; the count below is flat.
+ */
+it('scans an organization in a flat number of queries', function (): void {
+    $sod = app(SegregationOfDuties::class);
+    $a = app(Roles::class)->define('acme', 'flat-a');
+    $b = app(Roles::class)->define('acme', 'flat-b');
+
+    // Forty people, each holding both halves of the conflict, so the scan has real work
+    // to do — a fixture with one subject would pass against a per-subject query too. The
+    // policy is declared AFTER the assignments, because the grant guard would otherwise
+    // refuse the second half: a scan exists precisely to find the pairs that predate the
+    // rule.
+    foreach (range(1, 40) as $i) {
+        app(Roles::class)->assign('acme', 'flat-user-'.$i, $a->id);
+        app(Roles::class)->assign('acme', 'flat-user-'.$i, $b->id);
+    }
+
+    $sod->definePolicy('acme', 'a vs b', [$a->id, $b->id]);
+
+    $queries = 0;
+    DB::listen(function () use (&$queries): void {
+        $queries++;
+    });
+
+    $violations = $sod->scan('acme');
+
+    expect($violations)->toHaveCount(40)
+        ->and($queries)->toBeLessThan(6);
 });

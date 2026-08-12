@@ -91,5 +91,6 @@ Full docs live in [`docs/`](docs/index.md):
 
 ## License
 
-MIT. Published on Packagist as a pre-1.0 (`0.x`) release — installable via `composer
-require cboxdk/laravel-id`; the API may still shift before 1.0.
+MIT. Published on Packagist as a 1.x release under semantic versioning — installable via
+`composer require cboxdk/laravel-id`. Breaking changes wait for a major; every one that
+has happened is written up in [UPGRADING.md](UPGRADING.md).

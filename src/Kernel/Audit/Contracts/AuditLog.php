@@ -36,6 +36,16 @@ interface AuditLog
     public function verifyChain(?string $organizationId = null, int $fromSequence = 1, ?int $toSequence = null): ChainVerification;
 
     /**
+     * The sequence number of the newest entry in a scope's chain, or 0 when it has none.
+     *
+     * Exists so a caller can verify a WINDOW. `verifyChain()` reads and re-hashes every
+     * row in its range, which is the right behaviour for an auditor and the wrong one for
+     * a page that renders on every keystroke: without a way to ask where the chain ends,
+     * the only window anyone can name is "all of it".
+     */
+    public function headSequence(?string $organizationId = null): int;
+
+    /**
      * Produce a signed checkpoint over the current chain head for a scope, so its
      * root can be anchored externally. `null` organization = system trail.
      */

@@ -17,7 +17,60 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **`AuditLog::headSequence()`** — where a scope's chain ends, so a caller can verify a
+  WINDOW. `verifyChain()` reads and re-hashes every row in its range, which is right for
+  an auditor and wrong for a console page that re-renders on every keystroke; without this
+  the only window anyone could name was "all of it".
+
+- **Per-endpoint client-authentication metadata.** `revocation_endpoint_auth_methods_supported`
+  and `introspection_endpoint_auth_methods_supported` are now published, because they
+  differ: revocation accepts a public client, introspection does not.
+
 ### Fixed
+
+- **A public client could not revoke its own tokens.** `/oauth/revoke` required a client
+  secret, and a PKCE client authenticates with `none`. Every browser SDK that revokes on
+  sign-out — AppAuth-JS, oidc-client-ts, angular-auth-oidc-client — got `401
+  invalid_client`, swallowed it, and left the refresh token valid for its full lifetime
+  after the person pressed sign out. On a deployment whose own discovery document
+  advertises `none`. Nothing is weakened: RFC 7009 §2.1 scopes a revocation to the calling
+  client, which was already enforced, so the new capability is "destroy a token you are
+  holding". Introspection stays confidential-only — it answers questions about a token
+  rather than destroying one, and an unauthenticated answer is an oracle.
+
+- **A federated address the provider had verified was stored unverified, forever.**
+  `ProviderProfileMap::$emailVerified` named where nine catalogue entries put this and
+  nothing read it. A federated account has no local verification flow to finish, so every
+  Google, Entra, Okta and Apple account stayed unverified permanently — and our own
+  `/oauth/userinfo` reported `email_verified: false` to every relying party about an
+  address the upstream IdP had proven. Only an explicit `true` carries over; a provider
+  that says nothing still yields an unverified address. This is not an account-takeover
+  path: `resolveFederated()` refuses outright to attach a new identity to an existing
+  account by email.
+
+- **Sign in with Apple lost the person's name permanently.** `name` never appears in
+  Apple's id_token — it arrives in a `user` form field on the FIRST authorization and
+  never again — so a callback reading only `code` and `state` created every Apple account
+  with a null name, recoverable only by revoking the app in Apple ID settings and starting
+  over. `ProviderTemplate::$profileOnFirstAuthorizationOnly` declared this and nothing read
+  it; `FirstAuthorizationProfile` is now the reader. The field is unsigned, so it is a
+  fallback only: a name the assertion carried always wins.
+
+- **The CSRF exemption on the OIDC callback excluded nothing.** Laravel 13's `web` group
+  holds `PreventRequestForgery`; `VerifyCsrfToken` and `ValidateCsrfToken` are deprecated
+  SUBCLASSES of it, and `Router::resolveMiddleware()` matches an exclusion in one direction
+  only. So the route registered to accept Apple's cross-site POST answered 419 to it —
+  invisibly, because `PreventRequestForgery::handle()` returns early under
+  `runningUnitTests()` and every federation test stayed green. There is now an assertion on
+  the registration rather than on a request.
+
+- **A segregation-of-duties scan cost two queries per person holding a role.** It read the
+  organization's assignments, reduced them to distinct subjects, then asked
+  `violationsFor()` about each — which fetches the subject's assignments and the applicable
+  policies for itself. Both reads are hoisted; the policy set is identical for every
+  subject in the organization by construction.
 
 - **A host that resolved to nothing was the one answer never cached, and the cheapest to
   aim at.** Host→environment resolution runs before any endpoint logic on every request:

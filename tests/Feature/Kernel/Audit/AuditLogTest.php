@@ -144,3 +144,50 @@ it('records actor type, id and context', function (): void {
         ->and($entry->organization_id)->toBe('org_a')
         ->and($entry->context)->toBe(['method' => 'password']);
 });
+
+/**
+ * WHERE THE CHAIN ENDS, so a caller can verify a window rather than all of history.
+ *
+ * `verifyChain()` reads and re-hashes every row in its range. That is exactly right for
+ * an auditor and exactly wrong for a console page, which re-renders on every keystroke —
+ * and without a way to ask where a chain ends, the only window anyone could name was
+ * "from 1", which is the whole thing.
+ */
+it('reports the head sequence per scope, and zero for a chain with no entries', function (): void {
+    $log = app(AuditLog::class);
+
+    expect($log->headSequence('org_empty'))->toBe(0);
+
+    $log->record(new AuditEvent(action: 'a', organizationId: 'org_a'));
+    $log->record(new AuditEvent(action: 'b', organizationId: 'org_a'));
+    $log->record(new AuditEvent(action: 'c', organizationId: 'org_b'));
+
+    // Per scope, like every other chain operation — an organization's head must not be
+    // moved by another organization's writes.
+    expect($log->headSequence('org_a'))->toBe(2)
+        ->and($log->headSequence('org_b'))->toBe(1);
+});
+
+/**
+ * And the window it enables actually verifies: a range starting past the beginning picks
+ * its previous hash up from the entry before it, so linkage is still checked rather than
+ * assumed from genesis.
+ */
+it('verifies a window anchored to the entry before it', function (): void {
+    $log = app(AuditLog::class);
+
+    foreach (range(1, 5) as $i) {
+        $log->record(new AuditEvent(action: 'e'.$i, organizationId: 'org_w'));
+    }
+
+    $window = $log->verifyChain('org_w', fromSequence: $log->headSequence('org_w') - 1);
+
+    expect($window->valid)->toBeTrue()
+        ->and($window->verifiedCount)->toBe(2);
+
+    // And it still catches tampering INSIDE the window.
+    DB::table('audit_logs')->where('scope', 'org_w')->where('sequence', 5)
+        ->update(['action' => 'something-else']);
+
+    expect($log->verifyChain('org_w', fromSequence: 4)->valid)->toBeFalse();
+});

@@ -75,6 +75,12 @@ class OAuth2Client
             email: $this->email($template->profile, $profile, $token),
             name: $this->stringAt($profile, $template->profile->name ?? ''),
             connectionId: $connectionId,
+
+            // The catalogue names WHERE each provider puts this, because plain OAuth 2.0
+            // standardises nothing — GitHub's `/user/emails` marks it `verified`, Discord
+            // uses `verified` on the user object. Read at last, after being declared on
+            // nine entries and consumed by none.
+            emailVerified: $this->verifiedFlag($profile, $template->profile->emailVerified),
             // Keyed, because the principal's contract says so — a provider that answered
             // a bare list here would otherwise reach the audit trail as one.
             raw: array_filter($profile, 'is_string', ARRAY_FILTER_USE_KEY),
@@ -200,6 +206,25 @@ class OAuth2Client
      * a subject that changes type between providers is a subject that fails to match the
      * link written last time.
      *
+     * @param  array<mixed>  $profile
+     */
+    /**
+     * Only an explicit true. A provider that omits the field, or answers a string, has
+     * not vouched for the address — and inventing a `false` would be just as wrong as
+     * inventing a `true`, because false is a claim we would then store.
+     *
+     * @param  array<mixed>  $profile
+     */
+    private function verifiedFlag(array $profile, ?string $path): ?bool
+    {
+        if ($path === null || $path === '') {
+            return null;
+        }
+
+        return data_get($profile, $path) === true ? true : null;
+    }
+
+    /**
      * @param  array<mixed>  $profile
      */
     private function stringAt(array $profile, string $path): ?string

@@ -105,7 +105,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Outbound webhooks | **Full** | Asynchronous, uniqueness-locked, exponential backoff to a 12-attempt dead letter, stranded-delivery rescue, per-endpoint circuit breaker, gap-free per-endpoint sequence, HTTPS-only DNS-pinned SSRF guard. |
 | Webhook signature | **Full, proprietary** | HMAC-SHA256 over `"{timestamp}.{body}"`, sent as `X-Cbox-Timestamp` and `X-Cbox-Signature: t=…,v1=…`. This is **not** the Standard Webhooks specification — do not point a spec-compliant verifier at it. |
 | Webhook replay protection | **Partial** | The timestamp is signed so a receiver *can* enforce a tolerance window, but **no receiver-side verifier and no tolerance constant ship** — that half is yours. |
-| Event catalog | **Full** | 27 typed event types plus a `*` wildcard subscription. |
+| Event catalog | **Full** | 28 typed event types plus a `*` wildcard subscription. |
 | Inline hooks (external actions) | **Full** | Six points — token minting, post-login, pre/post registration, pre/post password change — each with its own fail policy (`token_minting`, `pre_registration` and `pre_password_change` fail **closed**). In-process handlers or signed, SSRF-guarded HTTP calls with pinned DNS and no redirects. A deny at a non-vetoable point is audited and folded to an allow rather than silently ignored. |
 
 ## Cryptography & secrets

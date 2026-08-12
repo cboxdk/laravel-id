@@ -365,6 +365,13 @@ a config flag so a host can drive it from its own scheduler instead:
 | `cbox-id:governance:close-overdue` | every minute | `cbox-id.governance.schedule` |
 | `cbox-id:prune` | daily at `prune.time` | `cbox-id.prune.schedule` |
 | `cbox-id:audit:checkpoint` | daily at `audit.checkpoint.time` | `cbox-id.audit.checkpoint.schedule` — **off by default**, see above |
+| `cbox-id:access-control:sync-manifests` | hourly | `cbox-id.access_control.schedule` |
+| `cbox-id:directory:sync` | hourly | `cbox-id.directory.schedule` |
+
+Nothing here retires a signing key. `cbox-id:keys:rotate --retire-after=<hours>` is the
+only thing that does, and it is deliberately NOT scheduled — a host runs it on its own
+cadence. It is called out because "the scheduler handles cleanups" reads as if it covers
+key retirement, and it does not.
 
 `cbox-id:webhooks:retry` is a scheduled closure rather than an Artisan command — to drive
 it yourself, disable `webhooks.schedule_retries` and call

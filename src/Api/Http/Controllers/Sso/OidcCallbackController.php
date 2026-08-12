@@ -12,6 +12,7 @@ use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Support\FederationFlowStash;
+use Cbox\Id\Federation\Support\FirstAuthorizationProfile;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,7 @@ class OidcCallbackController
         private readonly AssertionValidator $validator,
         private readonly FederationFlow $flow,
         private readonly FederationFlowStash $stash,
+        private readonly FirstAuthorizationProfile $firstAuthorization,
     ) {}
 
     public function __invoke(Request $request, string $connection): JsonResponse
@@ -64,6 +66,11 @@ class OidcCallbackController
             if (! is_string($nonce) || ! hash_equals($expected->nonce, $nonce)) {
                 return $this->error(401, 'OIDC nonce mismatch.');
             }
+
+            // The name a provider sends ONCE, outside the assertion — Apple, and only
+            // Apple, on the first authorization. Merged before provisioning, because
+            // provisioning is what creates the account and there is no second chance.
+            $principal = $this->firstAuthorization->merge($model, $request, $principal);
 
             $session = $this->flow->completeLogin($model, $principal);
         } catch (InvalidAssertion|ConnectionInactive) {

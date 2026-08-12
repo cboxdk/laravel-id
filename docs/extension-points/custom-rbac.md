@@ -124,7 +124,8 @@ provider and the UserInfo endpoint now carry your Spatie roles and permissions.
 
 The built-in RBAC migrations sit in a subdirectory so the auto-loader can gate them.
 `vendor:publish --tag=cbox-id-migrations` still flattens **every** migration into your
-`database/migrations`, so if you publish under the `external` driver, delete the five
+`database/migrations`, so if you publish under the `external` driver, delete the six
 RBAC files (`*_create_access_control_tables`, `*_add_app_declarations_to_access_control`,
 `*_create_group_role_mappings_table`, `*_add_tenant_assignable_to_permissions`,
-`*_scope_permissions_to_environment`) before migrating — your backend owns those tables.
+`*_scope_permissions_to_environment`,
+`*_backfill_manual_permission_environments`) before migrating — your backend owns those tables.

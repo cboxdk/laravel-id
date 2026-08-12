@@ -26,7 +26,20 @@ class RevocationController
 
     public function __invoke(Request $request): JsonResponse
     {
-        $caller = $this->clientAuth->authenticateConfidential($request);
+        // `authenticate()`, NOT `authenticateConfidential()`. Revocation has a public-client
+        // mode and this endpoint refused it: a PKCE client authenticates with `none`, so it
+        // holds no secret, so every sign-out that tried to revoke its refresh token was
+        // answered `401 invalid_client`. Every mainstream browser SDK swallows that failure
+        // quietly — so a user pressed "sign out" and their refresh token stayed valid for
+        // its whole lifetime, on a deployment whose own discovery document advertises
+        // `none` as a supported client-authentication method.
+        //
+        // Nothing is weakened by allowing it. RFC 7009 §2.1 scopes a revocation to the
+        // calling client, which `$callerId` below enforces, so the only new capability is
+        // "destroy a token you are already holding" — which is what the endpoint is for.
+        // Introspection stays confidential-only: that one ANSWERS QUESTIONS about a token
+        // rather than destroying it, and an unauthenticated answer is an oracle.
+        $caller = $this->clientAuth->authenticate($request);
 
         if ($caller === null) {
             return new JsonResponse(['error' => 'invalid_client'], 401, ['WWW-Authenticate' => 'Basic realm="revocation"']);

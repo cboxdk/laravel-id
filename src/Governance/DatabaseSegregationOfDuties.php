@@ -163,20 +163,49 @@ class DatabaseSegregationOfDuties implements SegregationOfDuties
         return $violations;
     }
 
+    /**
+     * Every violation in an organization, in TWO queries rather than two per person.
+     *
+     * This used to read the organization's assignments, reduce them to the distinct
+     * subjects, and then call {@see violationsFor()} for each — and that method asks for
+     * the subject's assignments and for the applicable policies itself. A scan of an
+     * organization where five thousand people hold a role was ten thousand queries, on a
+     * console page whose search box re-ran it on every debounced keystroke.
+     *
+     * Both reads are hoisted. The assignments are already in the first one, and the
+     * policy set is identical for every subject in the organization by construction —
+     * the query asks for this organization's policies plus the environment-wide ones,
+     * neither of which varies by person. What is left per subject is the array
+     * intersection it always was.
+     */
     public function scan(string $organizationId): array
     {
         $this->environments()->requireEnvironment();
 
-        $subjectIds = array_values(array_unique(array_map(
-            static fn (RoleAssignment $a): string => $a->user_id,
-            $this->roles->assignmentsInOrganization($organizationId),
-        )));
+        /** @var array<string, list<string>> $heldBySubject */
+        $heldBySubject = [];
 
+        foreach ($this->roles->assignmentsInOrganization($organizationId) as $assignment) {
+            $heldBySubject[$assignment->user_id][] = $assignment->role_id;
+        }
+
+        $policies = $this->applicablePolicies($organizationId);
         $violations = [];
 
-        foreach ($subjectIds as $subjectId) {
-            foreach ($this->violationsFor($organizationId, $subjectId) as $violation) {
-                $violations[] = $violation;
+        foreach ($heldBySubject as $subjectId => $held) {
+            foreach ($policies as $policy) {
+                $inConflict = array_values(array_intersect($policy->role_ids, $held));
+
+                // Two or more roles from a mutually-exclusive set held at once.
+                if (count($inConflict) >= 2) {
+                    $violations[] = new SodViolation(
+                        policyId: $policy->id,
+                        policyName: $policy->name,
+                        subjectId: (string) $subjectId,
+                        organizationId: $organizationId,
+                        conflictingRoleIds: $inConflict,
+                    );
+                }
             }
         }
 
