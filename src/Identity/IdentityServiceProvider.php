@@ -20,6 +20,7 @@ use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\PasswordReset;
 use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\SignedInSubject;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\UserImport;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
@@ -92,6 +93,10 @@ class IdentityServiceProvider extends ServiceProvider
                 is_numeric($idle) ? (int) $idle : 0,
             );
         });
+        // Laravel's guard, which is right for a host that uses it and wrong in silence
+        // for one that does not — see SignedInSubject on what that silence cost.
+        $this->app->singleton(SignedInSubject::class, GuardSignedInSubject::class);
+
         $this->app->singleton(TotpAuthenticator::class);
         $this->app->singleton(Mfa::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);

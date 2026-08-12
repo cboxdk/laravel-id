@@ -19,6 +19,13 @@ more trust than the wording it removes.
 
 ### Added
 
+- **`SignedInSubject`** — who is signed in to this browser, as the HOST understands it.
+  The package's logout endpoints asked `auth()->id()` directly, which is a guess: an
+  application that keeps its own session (which any host with a subject/operator/environment
+  split does, because a guard models one identity and it has three) answers null to it
+  forever. The default implementation still reads the guard, so a host using it sees no
+  change; a host that does not now has somewhere to say so.
+
 - **`AuditLog::headSequence()`** — where a scope's chain ends, so a caller can verify a
   WINDOW. `verifyChain()` reads and re-hashes every row in its range, which is right for
   an auditor and wrong for a console page that re-renders on every keystroke; without this
@@ -29,6 +36,16 @@ more trust than the wording it removes.
   differ: revocation accepts a public client, introspection does not.
 
 ### Fixed
+
+- **RP-initiated logout revoked nothing on a host with its own session.** `/oauth/logout`
+  is OIDC's global sign-out, and it resolved the subject with `auth()->id()`. On a host
+  that never populates Laravel's guard that is always null — so the endpoint cleared the
+  browser's own session, answered 200 and redirected, and the revocation behind it never
+  ran. Logout looked correct while other devices stayed signed in and the person's own
+  session list went on showing sessions they believed they had ended. A relying party
+  using this as global sign-out got success and no global sign-out. Now resolved through
+  {@see SignedInSubject}; the SAML IdP's plain-logout branch had the same defect and the
+  same fix.
 
 - **An outbound SCIM connection using OAuth2 client credentials retried forever instead of
   failing.** A connection with no token URL — which is every one the console could

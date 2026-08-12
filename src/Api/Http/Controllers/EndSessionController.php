@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\SignedInSubject;
 use Cbox\Id\OAuthServer\Contracts\EndSession;
 use Cbox\Id\OAuthServer\ValueObjects\EndSessionRequest;
 use Illuminate\Http\RedirectResponse;
@@ -27,6 +28,7 @@ class EndSessionController
     public function __construct(
         private readonly EndSession $endSession,
         private readonly SessionManager $sessions,
+        private readonly SignedInSubject $signedIn,
     ) {}
 
     public function __invoke(Request $request): RedirectResponse|Response
@@ -94,10 +96,14 @@ class EndSessionController
      */
     private function terminate(Request $request): void
     {
-        $subjectId = auth()->id();
+        // THROUGH THE CONTRACT, not `auth()->id()`. A host that keeps its own session
+        // answers null to the guard forever, so this revocation silently never ran while
+        // logout still cleared the browser and returned 200 — a relying party asking for
+        // global sign-out got success and no global sign-out.
+        $subjectId = $this->signedIn->id();
 
-        if (is_string($subjectId) || is_int($subjectId)) {
-            $this->sessions->revokeAllForUser((string) $subjectId);
+        if ($subjectId !== null) {
+            $this->sessions->revokeAllForUser($subjectId);
         }
 
         auth()->guard()->logout();

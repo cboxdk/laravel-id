@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\SignedInSubject;
 use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
 use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Exceptions\InvalidLogoutRequest;
@@ -78,16 +79,18 @@ class SamlIdpLogoutController
     /** Revoke every session for the currently-authenticated subject (plain logout). */
     private function terminate(): void
     {
-        $subjectId = auth()->id();
+        // Same reason as the OIDC end-session endpoint: a host with its own session
+        // answers null to Laravel's guard, and this branch then tore nothing down.
+        $subjectId = app(SignedInSubject::class)->id();
 
-        if (is_string($subjectId) || is_int($subjectId)) {
-            $this->sessions->revokeAllForUser((string) $subjectId);
+        if ($subjectId !== null) {
+            $this->sessions->revokeAllForUser($subjectId);
         }
     }
 
     /**
      * Revoke every session for the subject the SP asked to log out — identified by the
-     * VERIFIED NameID from the signed request, not by auth()->id(). An SP-initiated SLO
+     * VERIFIED NameID from the signed request, not by whoever this browser is. An SP-initiated SLO
      * may arrive on a connection with no local session, or one signed in as a different
      * subject, so revoking the current browser's user would log out the wrong person (or
      * nobody). The NameID is the subject id or, per the SP's NameID format, their email.
