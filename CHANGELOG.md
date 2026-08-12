@@ -26,6 +26,13 @@ more trust than the wording it removes.
   forever. The default implementation still reads the guard, so a host using it sees no
   change; a host that does not now has somewhere to say so.
 
+- **`Memberships::userIdsForOrganization()`** — the subject ids of an organization, for a
+  caller that only wants to filter by them. Two module pages built a `whereIn` by
+  hydrating every membership and reducing it to `pluck('user_id')`, one of them twice per
+  render. The subquery a reader would reach for instead is genuinely unavailable:
+  `Membership` is tenant-owned, so an unwrapped one meets `TenantScope`'s deny-by-default
+  and matches nothing.
+
 - **`AccessReviews::paginateItemsFor()` and `countItemsFor()`** — a campaign's snapshot is
   one row per role assignment PLUS one per membership in the organization, so it grows
   with the customer's end-user count. `itemsFor()` reads all of it, which is right for a

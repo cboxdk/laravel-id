@@ -224,6 +224,20 @@ class MembershipService implements Memberships
         );
     }
 
+    public function userIdsForOrganization(string $organizationId): array
+    {
+        /** @var list<string> */
+        return $this->tenant()->runAs(
+            GenericTenant::of($organizationId),
+            fn (): array => Membership::query()
+                ->pluck('user_id')
+                ->map(static fn (mixed $id): string => is_scalar($id) ? (string) $id : '')
+                ->filter(static fn (string $id): bool => $id !== '')
+                ->values()
+                ->all(),
+        );
+    }
+
     public function paginateForOrganization(string $organizationId, int $perPage = 25): LengthAwarePaginator
     {
         return $this->tenant()->runAs(

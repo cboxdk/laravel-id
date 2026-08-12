@@ -35,6 +35,22 @@ interface Memberships
     public function forOrganization(string $organizationId): Collection;
 
     /**
+     * Just the subject ids in an organization, for a caller that only wants to FILTER by
+     * them.
+     *
+     * Hydrating every membership to reduce it to `->pluck('user_id')` is one model per
+     * person for a list that is thrown away — and the callers doing it are pages that ask
+     * twice per render. This reads one column and nothing else.
+     *
+     * Still every member, because that is what a filter needs: bounding this would silently
+     * hide rows rather than paginate them. A caller whose own list is paginated should
+     * narrow to its page's ids instead of calling this.
+     *
+     * @return list<string>
+     */
+    public function userIdsForOrganization(string $organizationId): array;
+
+    /**
      * A single page of an organization's memberships, ordered oldest-first, for admin
      * consoles that must not hydrate an unbounded roster into one request.
      *

@@ -6,8 +6,10 @@ use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Exceptions\LastOwner;
+use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -238,4 +240,30 @@ it('answers a subject\'s organization list from an index, not a table scan', fun
  */
 it('carries an index on the column the subject lookup filters', function (): void {
     expect(Schema::hasIndex('memberships', 'memberships_user_ordered_idx'))->toBeTrue();
+});
+
+/**
+ * IDS ONLY, FOR A CALLER THAT ONLY WANTS TO FILTER BY THEM.
+ *
+ * Two module pages built a `whereIn('subject_id', …)` by hydrating every membership in the
+ * organization and reducing it to `->pluck('user_id')` — one model per person, for a list
+ * thrown away immediately, twice per render on the devices page. The subquery a reader
+ * would reach for instead is genuinely unavailable here: `Membership` is tenant-owned, so
+ * an unwrapped subquery meets `TenantScope`'s deny-by-default `1 = 0` and matches nothing.
+ */
+it('reads the subject ids of an organization without hydrating its memberships', function (): void {
+    $org = app(Organizations::class)->create(new NewOrganization('Acme', 'acme-ids'));
+    $other = app(Organizations::class)->create(new NewOrganization('Other', 'other-ids'));
+
+    $members = app(Memberships::class);
+    $members->add($org->id, 'user-a', MembershipRole::Owner);
+    $members->add($org->id, 'user-b', MembershipRole::Member);
+    $members->add($other->id, 'user-c', MembershipRole::Member);
+
+    $ids = $members->userIdsForOrganization($org->id);
+
+    // This organization's people, and only this organization's — the tenant scope is what
+    // fences it, and reading a bare column is exactly where that is easy to lose.
+    expect($ids)->toEqualCanonicalizing(['user-a', 'user-b'])
+        ->and($members->userIdsForOrganization($other->id))->toBe(['user-c']);
 });
