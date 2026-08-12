@@ -13,6 +13,7 @@ use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\PlatformRoot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class, InteractsWithTenancy::class);
@@ -193,3 +194,72 @@ it('stops answering yes when a granted environment leaves the organization', fun
     // write is what keeps a stale row from outliving the ownership it was granted under.
     expect($reachable)->toBe([]);
 })->group('security');
+
+/**
+ * THE BATCH ANSWERS EXACTLY WHAT THE SINGLE ONE DOES, for a page of people at once.
+ *
+ * The console draws "3 of 8 environments" per row, and the single-member call is three
+ * queries — the membership, its grants, and what the organization owns. Asked per row that
+ * measured at 10 queries per member and 1037 on a 101-member roster. A batch is only worth
+ * having if it cannot drift from the answer it replaces, so these assert them equal rather
+ * than asserting the batch in isolation.
+ */
+it('answers a page of members exactly as it answers them one at a time', function (): void {
+    ['organization' => $organization, 'user' => $unrestricted, 'first' => $first] = organizationWithTwoEnvironments();
+
+    [$restricted, $stranger] = app(PlatformRoot::class)->run(function () use ($organization, $first): array {
+        $restricted = strtolower((string) Str::ulid());
+        app(Memberships::class)->add($organization, $restricted, MembershipRole::Developer);
+        app(Memberships::class)->setEnvironmentAccess($organization, $restricted, all: false, environmentIds: [$first]);
+
+        return [$restricted, strtolower((string) Str::ulid())];
+    });
+
+    $batch = app(PlatformRoot::class)->run(
+        fn (): array => app(Memberships::class)->accessibleEnvironmentIdsFor($organization, [$unrestricted, $restricted, $stranger]),
+    );
+
+    $one = app(PlatformRoot::class)->run(fn (): array => [
+        $unrestricted => app(Memberships::class)->accessibleEnvironmentIds($organization, $unrestricted),
+        $restricted => app(Memberships::class)->accessibleEnvironmentIds($organization, $restricted),
+    ]);
+
+    expect($batch[$unrestricted])->toBe($one[$unrestricted])
+        ->and($batch[$restricted])->toBe($one[$restricted])
+        // Somebody who is not a member is ABSENT rather than present with an empty list.
+        // Inventing a row for them would be inventing an answer, and the caller reads a
+        // missing key the same way.
+        ->and($batch)->not->toHaveKey($stranger);
+});
+
+it('costs the same number of queries whether the page holds one member or twenty', function (): void {
+    ['organization' => $organization] = organizationWithTwoEnvironments();
+
+    $ids = app(PlatformRoot::class)->run(function () use ($organization): array {
+        $ids = [];
+
+        foreach (range(1, 20) as $ignored) {
+            $ids[] = $id = strtolower((string) Str::ulid());
+            app(Memberships::class)->add($organization, $id, MembershipRole::Developer);
+        }
+
+        return $ids;
+    });
+
+    $count = function (array $subset) use ($organization): int {
+        $queries = 0;
+        DB::listen(function () use (&$queries): void {
+            $queries++;
+        });
+
+        app(PlatformRoot::class)->run(
+            fn (): array => app(Memberships::class)->accessibleEnvironmentIdsFor($organization, $subset),
+        );
+
+        return $queries;
+    };
+
+    // The property is that it does not grow with the page, which is the whole point —
+    // not a specific number, which would break on any unrelated change to the query plan.
+    expect($count(array_slice($ids, 0, 20)))->toBe($count(array_slice($ids, 0, 1)));
+})->group('performance');

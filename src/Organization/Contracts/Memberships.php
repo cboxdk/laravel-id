@@ -85,4 +85,23 @@ interface Memberships
      * @return list<string>
      */
     public function accessibleEnvironmentIds(string $organizationId, string $userId): array;
+
+    /**
+     * The same answer for a page of members at once, keyed by user id.
+     *
+     * WHY A BATCH EXISTS AT ALL. The console draws this per row — "3 of 8 environments" —
+     * and the single-member call is three queries: the membership, the grants, and what
+     * the organization owns. A roster rendered a row at a time therefore cost three
+     * queries per person on top of the person themselves, which measured at 10 queries per
+     * member and 1037 on a 101-member page. `Subjects::findMany()` exists for the same
+     * reason and this is its other half.
+     *
+     * A user id with no membership in this organization is absent from the result rather
+     * than present with an empty list — the caller reads a missing key the same way, and
+     * inventing a row for somebody who is not a member would be inventing an answer.
+     *
+     * @param  list<string>  $userIds
+     * @return array<string, list<string>>
+     */
+    public function accessibleEnvironmentIdsFor(string $organizationId, array $userIds): array;
 }

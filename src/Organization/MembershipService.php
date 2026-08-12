@@ -330,6 +330,54 @@ class MembershipService implements Memberships
         return array_values(array_intersect($this->ownedEnvironmentIds($organizationId), $granted));
     }
 
+    public function accessibleEnvironmentIdsFor(string $organizationId, array $userIds): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        // Owned once for the whole page rather than once per member: it is a property of
+        // the ORGANIZATION, and asking it per row is most of what made this expensive.
+        $owned = $this->ownedEnvironmentIds($organizationId);
+
+        // INSIDE THE TENANT, like every other membership read in this class. `Membership`
+        // is `TenantOwned` and the scope is deny-by-default, so a bare query filtered by
+        // `organization_id` returns nothing at all — silently, and in the safe direction,
+        // which is exactly what makes it easy to write and hard to notice.
+        $memberships = $this->tenant()->runAs(
+            GenericTenant::of($organizationId),
+            fn (): Collection => Membership::query()
+                ->whereIn('user_id', $userIds)
+                ->with('environments:id')
+                ->get(),
+        );
+
+        $access = [];
+
+        foreach ($memberships as $membership) {
+            if ($membership->all_environments) {
+                $access[$membership->user_id] = $owned;
+
+                continue;
+            }
+
+            // Intersected with current ownership on READ as well as on write, exactly as
+            // the single-member call does: a grant survives an environment moving to
+            // another organization, and the row alone would then still say yes.
+            $granted = [];
+
+            foreach ($membership->environments as $environment) {
+                if ($environment->id !== '') {
+                    $granted[] = $environment->id;
+                }
+            }
+
+            $access[$membership->user_id] = array_values(array_intersect($owned, $granted));
+        }
+
+        return $access;
+    }
+
     /**
      * Every environment this organization owns, through the projects it owns.
      *
