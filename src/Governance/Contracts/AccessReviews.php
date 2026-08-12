@@ -11,6 +11,7 @@ use Cbox\Id\Governance\Exceptions\UnknownCertificationItem;
 use Cbox\Id\Governance\Models\CertificationCampaign;
 use Cbox\Id\Governance\Models\CertificationItem;
 use DateTimeInterface;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 /**
  * Access certification (periodic access review): snapshot the access grants within
@@ -74,4 +75,17 @@ interface AccessReviews
      * @return list<CertificationItem>
      */
     public function itemsFor(string $campaignId): array;
+
+    /**
+     * A page of a campaign's items, for a reviewer working through one on screen.
+     *
+     * {@see itemsFor()} reads the whole snapshot, which is one row per role assignment
+     * PLUS one per membership in the organization — a set that grows with the customer's
+     * end-user count, on a page that re-renders after every single certify or revoke.
+     */
+    /** @return LengthAwarePaginator<int, CertificationItem> */
+    public function paginateItemsFor(string $campaignId, int $perPage = 25): LengthAwarePaginator;
+
+    /** How many items a campaign holds, without reading any of them. */
+    public function countItemsFor(string $campaignId): int;
 }

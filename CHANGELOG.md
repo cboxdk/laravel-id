@@ -26,6 +26,12 @@ more trust than the wording it removes.
   forever. The default implementation still reads the guard, so a host using it sees no
   change; a host that does not now has somewhere to say so.
 
+- **`AccessReviews::paginateItemsFor()` and `countItemsFor()`** — a campaign's snapshot is
+  one row per role assignment PLUS one per membership in the organization, so it grows
+  with the customer's end-user count. `itemsFor()` reads all of it, which is right for a
+  batch job and wrong for a reviewer's screen; and counting one by loading them all was
+  the only way to answer "how many items".
+
 - **`AuditLog::headSequence()`** — where a scope's chain ends, so a caller can verify a
   WINDOW. `verifyChain()` reads and re-hashes every row in its range, which is right for
   an auditor and wrong for a console page that re-renders on every keystroke; without this

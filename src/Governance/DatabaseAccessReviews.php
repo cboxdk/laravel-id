@@ -25,6 +25,7 @@ use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Exceptions\LastOwner;
 use Cbox\Id\Organization\Models\Membership;
 use DateTimeInterface;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 
 /**
@@ -153,6 +154,20 @@ class DatabaseAccessReviews implements AccessReviews
             ->orderBy('id')
             ->get()
             ->all());
+    }
+
+    /** @return LengthAwarePaginator<int, CertificationItem> */
+    public function paginateItemsFor(string $campaignId, int $perPage = 25): LengthAwarePaginator
+    {
+        return CertificationItem::query()
+            ->where('campaign_id', $campaignId)
+            ->orderBy('id')
+            ->paginate($perPage);
+    }
+
+    public function countItemsFor(string $campaignId): int
+    {
+        return CertificationItem::query()->where('campaign_id', $campaignId)->count();
     }
 
     /**
