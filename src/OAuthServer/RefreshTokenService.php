@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Carbon\CarbonInterface;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\RefreshTokenReuse;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
+use Cbox\Id\OAuthServer\ValueObjects\ConnectedApplication;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -136,6 +138,80 @@ class RefreshTokenService implements RefreshTokens
         return RefreshToken::query()
             ->where('user_id', $userId)
             ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now()]);
+    }
+
+    public function connectedApplications(string $userId): array
+    {
+        $tokens = RefreshToken::query()
+            ->where('user_id', $userId)
+            ->whereNull('revoked_at')
+            ->orderBy('created_at')
+            ->get();
+
+        if ($tokens->isEmpty()) {
+            return [];
+        }
+
+        // Names in one query. A client id is not a thing to show somebody — "the CLI"
+        // is — and asking per row would be a query per application on a page whose
+        // entire job is to be readable.
+        $names = Client::query()
+            ->whereIn('client_id', $tokens->pluck('client_id')->unique()->all())
+            ->pluck('name', 'client_id');
+
+        $applications = [];
+
+        foreach ($tokens as $token) {
+            $existing = $applications[$token->client_id] ?? null;
+
+            // `created_at` is Eloquent's own and is not declared on the model, so it is
+            // read off the attribute bag and narrowed here rather than trusted.
+            $issuedAt = $token->getAttribute('created_at');
+            $issuedAt = $issuedAt instanceof CarbonInterface ? $issuedAt : null;
+
+            // `consumed_at` is when the grant was last exchanged, which is the honest
+            // answer to "when did this last act as me". A never-consumed grant has only
+            // ever been issued, so it falls back to that.
+            $lastUsed = $token->consumed_at ?? $issuedAt;
+
+            // The UNION of scopes across live grants: a client that asked for `openid`
+            // once and `offline_access` later can do both, and showing only the newest
+            // grant would understate what it may do.
+            $scopes = array_values(array_unique([
+                ...($existing instanceof ConnectedApplication ? $existing->scopes : []),
+                ...array_values($token->scopes),
+            ]));
+
+            $firstAuthorized = $existing instanceof ConnectedApplication
+                ? ($existing->firstAuthorizedAt ?? $issuedAt)
+                : $issuedAt;
+
+            $latest = $existing instanceof ConnectedApplication ? $existing->lastUsedAt : null;
+
+            if ($latest !== null && $lastUsed !== null && $latest->greaterThan($lastUsed)) {
+                $lastUsed = $latest;
+            }
+
+            $applications[$token->client_id] = new ConnectedApplication(
+                clientId: $token->client_id,
+                name: is_string($names[$token->client_id] ?? null) ? $names[$token->client_id] : $token->client_id,
+                scopes: $scopes,
+                organizationId: $token->organization_id,
+                firstAuthorizedAt: $firstAuthorized,
+                lastUsedAt: $lastUsed ?? $latest,
+            );
+        }
+
+        return array_values($applications);
+    }
+
+    public function revokeForUserAndClient(string $userId, string $clientId): int
+    {
+        return RefreshToken::query()
+            ->where('user_id', $userId)
+            ->where('client_id', $clientId)
             ->whereNull('revoked_at')
             ->update(['revoked_at' => now()]);
     }
