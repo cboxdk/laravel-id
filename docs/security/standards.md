@@ -15,7 +15,8 @@ capabilities (RBAC, governance, audit, webhooks, provisioning) see the
 
 Every **Partial** and **No** row states a specific, checkable limit, and a row whose limit
 has quietly been fixed is worse than no row at all — it tells an adopter they cannot do
-something they can. Verified claim by claim on 2026-08-11; two rows were stale and are
+something they can. Verified claim by claim on 2026-08-11, with the inbound-OIDC-federation table
+re-checked on 2026-08-12 when three of its rows changed; two rows were stale and are
 corrected above:
 
 - `AuthnContext` in a SAML assertion was hardcoded to `…ac:classes:Password` and is now
@@ -199,7 +200,9 @@ and `onelogin/php-saml` — never hand-rolled.
 | `id_token` verification | **Partial** | **RS256 only** — a token advertising any other `alg` is refused. `iss`, `aud` and `azp` all validated (closing shared-IdP cross-RP replay), plus `exp`/`nbf`/`iat`. |
 | JWKS fetch, cache and rotation | **Full** | SSRF-gated and DNS-pinned, 1-hour cache, one forced refetch on a `kid` miss, rate-limited so a rotation cannot amplify into a fetch flood. |
 | Issuer discovery | **Full** | `/.well-known/openid-configuration`, with the issuer-match check of OIDC Discovery §4.3 failing closed. |
-| `state` and `nonce` | **Full** | 128-bit, session-stashed, single-use, compared in constant time. |
+| `state` and `nonce` | **Full** | 128-bit, single-use, compared in constant time. Kept in the session AND in a per-connection `SameSite=None; Secure; HttpOnly` cookie, because a `form_post` answer is a cross-site POST that a `SameSite=Lax` session cookie is not sent with. |
+| `response_mode=form_post` | **Full** | Sent when the catalogue entry declares it, and the redirect URI accepts POST as well as GET. Apple switches to `form_post` by itself once any scope beyond `openid` is requested, so a GET-only relying party cannot complete a sign-in with it at all. |
+| Client authentication by signed assertion (RFC 7523 §2.2, `private_key_jwt` in shape) | **Partial** | Used where the provider issues no secret: an ES256 assertion is minted per token request from the administrator's registered signing key, `aud` the provider, cached for an hour. This is what Sign in with Apple requires. The parameter is still `client_secret` — the JWT is sent as its value, which is what Apple specifies, rather than as `client_assertion` with `client_assertion_type`. A provider wanting the RFC's own parameter names is not yet supported. |
 | **PKCE on the outbound leg** | **No** | This package requires PKCE of *its* clients but does not use it as a client. No `code_challenge` is sent and no `code_verifier` is returned. |
 | UserInfo | **No** | The endpoint is discovered but never called; claims come from the `id_token`. |
 
