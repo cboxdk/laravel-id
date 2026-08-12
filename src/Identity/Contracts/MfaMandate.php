@@ -28,4 +28,18 @@ interface MfaMandate
      * a policy meant to raise the bar.
      */
     public function requiresEnrolment(string $subjectId, ?string $organizationId = null): bool;
+
+    /**
+     * Whether a second factor is offered to this subject at all.
+     *
+     * False only under {@see MfaRequirement::Off} — "not offered", which an administrator
+     * can choose on the auth-policy screen and which nothing enforced: `Off` and
+     * `Optional` were indistinguishable everywhere, so a deployment that turned MFA off
+     * still showed everyone an enrolment panel and still let them enrol.
+     *
+     * ENROLMENT ONLY. Turning it off does not disarm a factor somebody already has —
+     * that would quietly weaken the accounts most likely to care, on a setting whose
+     * label promises nothing of the kind.
+     */
+    public function offersEnrolment(string $subjectId, ?string $organizationId = null): bool;
 }

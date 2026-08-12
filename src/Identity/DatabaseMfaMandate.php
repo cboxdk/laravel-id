@@ -36,6 +36,11 @@ class DatabaseMfaMandate implements MfaMandate
         return ! WebAuthnCredential::query()->where('user_id', $subjectId)->exists();
     }
 
+    public function offersEnrolment(string $subjectId, ?string $organizationId = null): bool
+    {
+        return $this->effectiveRequirement($subjectId, $organizationId) !== MfaRequirement::Off;
+    }
+
     /**
      * The strictest requirement binding this subject — environment baseline tightened by
      * every organization they belong to, for the same reason the password policy resolves

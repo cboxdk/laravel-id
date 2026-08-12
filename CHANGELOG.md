@@ -30,6 +30,21 @@ more trust than the wording it removes.
 
 ### Fixed
 
+- **An outbound SCIM connection using OAuth2 client credentials retried forever instead of
+  failing.** A connection with no token URL — which is every one the console could
+  register, because it had no fields for the three values `HttpScimClient` reads — failed
+  on the empty URL, was classified as a transport error, and backed off and retried until
+  every queued joiner and leaver was exhausted. Nothing about waiting was going to supply a
+  field that did not exist. A connection that cannot authenticate is now a PERMANENT
+  failure (`ScimResult::misconfigured()`), so it dead-letters where an operator can see it.
+
+- **`MfaRequirement::Off` did nothing.** "Not offered" is a setting an administrator can
+  choose on the auth-policy screen, and the enum case appeared exactly once in the
+  codebase — its own declaration. The only behavioural reader compared `!== Required`, so
+  `Off` and `Optional` were the same thing everywhere. `MfaMandate::offersEnrolment()` is
+  the reader. Enrolment only: turning it off does not disarm a factor somebody already
+  has, which would quietly weaken the accounts most likely to care.
+
 - **A public client could not revoke its own tokens.** `/oauth/revoke` required a client
   secret, and a PKCE client authenticates with `none`. Every browser SDK that revokes on
   sign-out — AppAuth-JS, oidc-client-ts, angular-auth-oidc-client — got `401

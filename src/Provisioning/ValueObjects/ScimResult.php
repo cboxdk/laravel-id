@@ -35,6 +35,21 @@ readonly class ScimResult
         return new self(0, [], true);
     }
 
+    /**
+     * A connection that cannot possibly authenticate — not a failure to reach anything.
+     *
+     * Retrying this is worse than useless: a client-credentials connection registered
+     * with no token URL used to fail here, be classified transient, and back off and
+     * retry until every queued joiner and leaver was exhausted, on a schedule, forever.
+     * Nothing about waiting was going to supply the missing field. 400 so the drain
+     * treats it as the permanent client error it is, and dead-letters it where an
+     * operator can see it.
+     */
+    public static function misconfigured(): self
+    {
+        return new self(400, ['detail' => 'the connection is missing credentials it cannot authenticate without']);
+    }
+
     public function successful(): bool
     {
         return $this->status >= 200 && $this->status < 300;

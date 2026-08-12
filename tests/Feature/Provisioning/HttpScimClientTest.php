@@ -258,3 +258,65 @@ it('treats a rejected credential as retryable and a bad request as final', funct
     'conflict — the caller must reconcile, not repeat' => [409, false],
     'not found — the caller recreates instead' => [404, false],
 ]);
+
+/**
+ * OAUTH2 CLIENT CREDENTIALS, WHICH HAD NO COVERAGE AND NO WAY TO BE CONFIGURED.
+ *
+ * The console offered the scheme and wrote nothing into `auth_config`, so the three
+ * fields this path reads were always empty. Both halves are asserted here: that a
+ * properly configured connection exchanges its credentials for a token and uses it, and
+ * that an unconfigured one fails PERMANENTLY rather than retrying forever.
+ */
+it('exchanges client credentials for a token and carries it on the SCIM call', function (): void {
+    Http::fake([
+        'auth.downstream.test/*' => Http::response(['access_token' => 'minted-token', 'expires_in' => 3600]),
+        'scim.downstream.test/*' => Http::response(json_encode(['id' => 'remote-9']), 201),
+    ]);
+
+    $connection = $this->registerProvisioningConnection(
+        authScheme: AuthScheme::OAuth2ClientCredentials,
+        secret: 'the-client-secret',
+        authConfig: [
+            'token_url' => 'https://auth.downstream.test/oauth/token',
+            'client_id' => 'scim-provisioner',
+            'scope' => 'scim:write',
+        ],
+    )->connection;
+
+    app(ScimClient::class)->createUser($connection, ScimSchema::userResource('user-9', ['userName' => 'u@example.com']));
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://auth.downstream.test/oauth/token'
+        && $request->data()['grant_type'] === 'client_credentials'
+        && $request->data()['client_id'] === 'scim-provisioner'
+        && $request->data()['client_secret'] === 'the-client-secret'
+        && $request->data()['scope'] === 'scim:write');
+
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://scim.downstream.test')
+        && $request->header('Authorization')[0] === 'Bearer minted-token');
+});
+
+/**
+ * AND A CONNECTION THAT CANNOT AUTHENTICATE FAILS PERMANENTLY.
+ *
+ * This is what the console used to register every single time: the scheme set, and no
+ * token URL because there was no field for one. It failed on the empty URL, was classified
+ * as a transport error, and the drain backed off and retried it until every queued joiner
+ * and leaver was exhausted — against a field nothing was ever going to fill in.
+ */
+it('dead-letters a client-credentials connection with nowhere to fetch a token', function (): void {
+    Http::fake();
+
+    $connection = $this->registerProvisioningConnection(
+        authScheme: AuthScheme::OAuth2ClientCredentials,
+        secret: 'the-client-secret',
+        authConfig: [],
+    )->connection;
+
+    $result = app(ScimClient::class)->createUser($connection, ScimSchema::userResource('user-10', ['userName' => 'u@example.com']));
+
+    expect($result->transient())->toBeFalse()
+        ->and($result->successful())->toBeFalse();
+
+    // And nothing left the box: an unconfigured connection makes no requests at all.
+    Http::assertNothingSent();
+});

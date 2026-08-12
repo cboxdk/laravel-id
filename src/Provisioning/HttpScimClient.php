@@ -7,6 +7,7 @@ namespace Cbox\Id\Provisioning;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Provisioning\Contracts\ScimClient;
 use Cbox\Id\Provisioning\Enums\AuthScheme;
+use Cbox\Id\Provisioning\Exceptions\MisconfiguredScimConnection;
 use Cbox\Id\Provisioning\Exceptions\UnsafeScimUrl;
 use Cbox\Id\Provisioning\Models\ProvisioningConnection;
 use Cbox\Id\Provisioning\Support\SafeScimUrl;
@@ -102,6 +103,10 @@ class HttpScimClient implements ScimClient
         try {
             $pinned = SafeScimUrl::pinnedOptions($url);
             $authorization = $this->authorization($connection);
+        } catch (MisconfiguredScimConnection) {
+            // Not a transport failure: a connection with no token endpoint or no client
+            // id can never authenticate, and no amount of backing off will change that.
+            return ScimResult::misconfigured();
         } catch (Throwable) {
             // A connection pointed at a private/metadata address (UnsafeScimUrl),
             // or a token-endpoint that could not be reached, is treated as a
@@ -160,6 +165,13 @@ class HttpScimClient implements ScimClient
         $tokenUrl = is_string($config['token_url'] ?? null) ? $config['token_url'] : '';
         $clientId = is_string($config['client_id'] ?? null) ? $config['client_id'] : '';
         $scope = is_string($config['scope'] ?? null) ? $config['scope'] : null;
+
+        // BEFORE the URL guard, because "" is not an unreachable address — it is an
+        // unfinished connection, and the two must not share a failure class. See
+        // ScimResult::misconfigured() for what retrying this used to cost.
+        if ($tokenUrl === '' || $clientId === '') {
+            throw new MisconfiguredScimConnection;
+        }
 
         SafeScimUrl::assert($tokenUrl);
         $pinned = SafeScimUrl::pinnedOptions($tokenUrl);

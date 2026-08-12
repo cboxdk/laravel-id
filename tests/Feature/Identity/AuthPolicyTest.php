@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\BreachedPasswordCheck;
+use Cbox\Id\Identity\Contracts\MfaMandate;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\DatabaseAuthPolicies;
 use Cbox\Id\Identity\Enums\MfaRequirement;
@@ -386,4 +387,28 @@ it('reads every organization override in one query', function (): void {
     expect($found)->toHaveCount(6)
         ->and($first)->toBe(1, "twelve organizations cost {$first} queries")
         ->and($second)->toBe(0, "a second read cost {$second} queries");
+});
+
+/**
+ * "NOT OFFERED" WAS NEVER ENFORCED.
+ *
+ * `MfaRequirement::Off` appeared exactly once in the codebase — its own declaration. The
+ * only behavioural reader compared `!== Required`, so `Off` and `Optional` were the same
+ * thing everywhere: an administrator chose "Not offered" on a page whose own comment
+ * promises that every control on it is live, and every person in the deployment still saw
+ * an enrolment panel and could still enrol.
+ */
+it('stops offering enrolment when the policy says a second factor is not offered', function (): void {
+    $mandate = app(MfaMandate::class);
+
+    app(AuthPolicies::class)->setForEnvironment(new AuthPolicy(mfa: MfaRequirement::Off));
+
+    expect($mandate->offersEnrolment('subject-mfa-off'))->toBeFalse();
+
+    // And Optional is the other thing entirely: nothing forces a factor, everyone may
+    // still choose one. These two used to be byte-identical in behaviour.
+    app(AuthPolicies::class)->setForEnvironment(new AuthPolicy(mfa: MfaRequirement::Optional));
+
+    expect($mandate->offersEnrolment('subject-mfa-off'))->toBeTrue()
+        ->and($mandate->requiresEnrolment('subject-mfa-off'))->toBeFalse();
 });
