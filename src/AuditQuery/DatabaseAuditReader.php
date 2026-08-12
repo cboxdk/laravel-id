@@ -36,6 +36,16 @@ class DatabaseAuditReader implements AuditReader
         );
     }
 
+    public function count(AuditQueryFilter $filter): int
+    {
+        return $this->scoped($filter->organizationId)
+            ->when($filter->action !== null, fn (Builder $q) => $q->where('action', $filter->action))
+            ->when($filter->actorId !== null, fn (Builder $q) => $q->where('actor_id', $filter->actorId))
+            ->when($filter->targetType !== null, fn (Builder $q) => $q->where('target_type', $filter->targetType))
+            ->when($filter->targetId !== null, fn (Builder $q) => $q->where('target_id', $filter->targetId))
+            ->count();
+    }
+
     public function since(?string $organizationId, int $afterSequence, int $limit = 100): array
     {
         $rows = $this->scoped($organizationId)

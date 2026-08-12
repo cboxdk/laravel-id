@@ -26,6 +26,10 @@ more trust than the wording it removes.
   forever. The default implementation still reads the guard, so a host using it sees no
   change; a host that does not now has somewhere to say so.
 
+- **`AuditReader::count()`** — how many entries a filter matches, without reading any. The
+  compliance console rendered one number by cursoring through a subject's entire audit
+  history twice, 200 rows at a time, on a live-updating input.
+
 - **`Memberships::userIdsForOrganization()`** — the subject ids of an organization, for a
   caller that only wants to filter by them. Two module pages built a `whereIn` by
   hydrating every membership and reducing it to `pluck('user_id')`, one of them twice per
