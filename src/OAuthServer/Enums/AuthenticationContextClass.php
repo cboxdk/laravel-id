@@ -26,9 +26,18 @@ enum AuthenticationContextClass: string
     /**
      * The `amr` methods that constitute a second authentication factor.
      *
+     * `webauthn` stays in the list although no door writes it any more: it is recorded on
+     * live sessions and inside issued tokens, and removing the string would quietly
+     * downgrade those to `aal1` halfway through their life. See {@see AuthMethod}.
+     *
      * @var list<string>
      */
-    private const SECOND_FACTOR_METHODS = ['mfa', 'otp', 'passkey', 'webauthn'];
+    private const SECOND_FACTOR_METHODS = [
+        AuthMethod::MultiFactor->value,
+        AuthMethod::OneTimePassword->value,
+        AuthMethod::Passkey->value,
+        'webauthn',
+    ];
 
     /**
      * The level a session with these authentication methods reached.
