@@ -19,6 +19,16 @@ more trust than the wording it removes.
 
 ### Fixed
 
+- **A host that resolved to nothing was the one answer never cached, and the cheapest to
+  aim at.** Host→environment resolution runs before any endpoint logic on every request:
+  2–3 database round trips, cached for real tenants and never for an unmapped host. A
+  wildcard DNS record or a scanner therefore bought full lookups per request against the
+  table the whole platform resolves through, while every paying tenant's host cost zero.
+  A refusal is now remembered for ten seconds — a tenth of the positive TTL — which
+  bounds the flood without changing the off-switch: suspension still cuts traffic on the
+  very next request, and account reactivation still restores it on the next one, because
+  the account writer now forgets the hosts as well as the environments.
+
 - **Sign in with Apple could not complete, and had never been able to.** The catalogue
   offered it, the setup form had fields for it, and an ES256 client-secret minter sat
   fully tested next to the flow — with nothing calling it. Three declarations on the

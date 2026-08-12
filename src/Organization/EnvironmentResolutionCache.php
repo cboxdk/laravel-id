@@ -53,29 +53,44 @@ class EnvironmentResolutionCache
     public const DEFAULT_TTL = 60;
 
     /**
+     * How long "no environment serves this host" is remembered. Deliberately a fraction
+     * of the positive TTL, and never longer than it — see {@see forHost()}.
+     */
+    public const ABSENT_TTL = 10;
+
+    /** The marker stored for a host that resolves to nothing. Not a valid environment key. */
+    private const ABSENT = '\0absent';
+
+    /**
      * The environment a host resolves to, or null when the cache cannot answer and
      * the caller must resolve live.
      *
-     * ## Only positive results are cached, deliberately
+     * ## A negative is cached too, briefly
      *
-     * A "no environment serves this host" answer is NOT cached, and that is a
-     * correctness requirement rather than an oversight. Such an answer has two very
-     * different causes — the host maps to nothing at all, or it maps to an
-     * environment that is currently refused (suspended, or its account is) — and the
-     * cache cannot tell them apart from a null. Caching the second would mean
-     * reactivating an account did not restore service until the entry lapsed, because
-     * the entry is keyed by a host that a slug-resolved environment cannot be
-     * enumerated back to.
+     * This used to cache positives only, on the reasoning that a null has two very
+     * different causes — the host maps to nothing, or it maps to something currently
+     * refused — and remembering the second would mean reactivating an account did not
+     * restore service until the entry lapsed.
      *
-     * Refusing to serve therefore costs the same lookups it always did. That is the
-     * right way round: the win here is on the hot path — the real hosts serving real
-     * traffic — and the off-switch stays exact.
+     * The reasoning was right and the conclusion was wrong, because it left the ONLY
+     * uncacheable path also the cheapest to aim at. A host that maps to nothing pays
+     * two or three database round trips, on every request, forever: point a wildcard
+     * DNS record or a scanner at the platform and each request costs full lookups while
+     * every real tenant's costs nothing. The load lands on the table the whole platform
+     * resolves through.
+     *
+     * So a null is remembered for {@see ABSENT_TTL} seconds — a tenth of the positive
+     * TTL — which bounds a flood to one resolution per host per ten seconds while
+     * costing a reactivated account at most ten seconds of delay. The off-switch is
+     * unaffected in the direction that matters: suspension still cuts traffic on the
+     * very next request, because it forgets the `env:` entry and a host mapping without
+     * one falls straight through to a live resolution that refuses.
      */
     public function forHost(string $host): ?Environment
     {
         $mapped = Cache::get($this->hostKey($host));
 
-        if (! is_string($mapped)) {
+        if (! is_string($mapped) || $mapped === self::ABSENT) {
             return null;
         }
 
@@ -84,11 +99,30 @@ class EnvironmentResolutionCache
         return $environment instanceof Environment ? $environment : null;
     }
 
+    /**
+     * True when this host is known to resolve to nothing, so the caller can skip the
+     * live lookup entirely.
+     *
+     * Separate from {@see forHost()} because that method's null already means "ask the
+     * database" — a cached absence has to be a different answer or it is not a cache at
+     * all.
+     */
+    public function knownAbsent(string $host): bool
+    {
+        return Cache::get($this->hostKey($host)) === self::ABSENT;
+    }
+
     public function putHost(string $host, ?Environment $environment): void
     {
         $ttl = $this->ttl();
 
-        if ($ttl <= 0 || $environment === null) {
+        if ($ttl <= 0) {
+            return;
+        }
+
+        if ($environment === null) {
+            Cache::put($this->hostKey($host), self::ABSENT, min(self::ABSENT_TTL, $ttl));
+
             return;
         }
 
@@ -183,6 +217,10 @@ class EnvironmentResolutionCache
         // a found collision routes a request into another environment. Only positive
         // results are cached, so this was the one poisoning vector — and closing it costs
         // a few hundred nanoseconds on a path that is already doing a cache round trip.
+        //
+        // A cached ABSENT marker is written under the same key, and an attacker who found
+        // a collision against one would only make a host resolve to nothing for ten
+        // seconds — the same answer an unmapped host already gets.
         return self::PREFIX.'host:'.hash('sha256', $host);
     }
 

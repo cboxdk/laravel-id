@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
+use Cbox\Id\Organization\EnvironmentResolutionCache;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Platform\TenantProvisioner;
 use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
@@ -132,4 +133,41 @@ it('never answers one host with another host\'s environment', function (): void 
         // Re-read, now that both are cached, to prove the entries did not collide.
         ->and($resolver->resolveForHost('acme.cboxid.com')?->environmentKey())->toBe($first->id)
         ->and($resolver->resolveForHost('globex.cboxid.com')?->environmentKey())->toBe($second->id);
+});
+
+/**
+ * THE ONE ANSWER THAT WAS NEVER CACHED WAS THE CHEAPEST TO ASK FOR.
+ *
+ * A host mapping to no environment took the full resolution — the custom-domain miss,
+ * the slug miss, the liveness walk — on every request, forever, while every real tenant's
+ * host cost nothing. Point a wildcard DNS record or a scanner at the platform and each
+ * request bought database round trips against the table the whole platform resolves
+ * through.
+ */
+it('stops re-resolving a host that maps to nothing', function (): void {
+    resolutionEnvironment();
+    $resolver = app(EnvironmentResolver::class);
+
+    $cold = queriesDuring(fn () => $resolver->resolveForHost('nobody.cboxid.com'));
+    $warm = queriesDuring(fn () => $resolver->resolveForHost('nobody.cboxid.com'));
+
+    expect($cold)->toBeGreaterThan(0)
+        ->and($warm)->toBe(0)
+        // And still nothing — a cached absence must answer the same as a live one.
+        ->and($resolver->resolveForHost('nobody.cboxid.com'))->toBeNull();
+});
+
+/**
+ * The bound on that memory. Suspension must keep cutting traffic on the very next
+ * request — which it does, because it forgets the `env:` entry and a host mapping with
+ * no environment behind it falls through to a live resolution — and reactivation must
+ * keep restoring it on the next request rather than ten seconds later, which is why the
+ * account writer forgets the HOSTS as well as the environments.
+ *
+ * The two tests above already hold both directions; this holds the thing that would
+ * silently break them: a refusal must never be remembered under the positive TTL.
+ */
+it('remembers a refusal for a fraction of the time it remembers a hit', function (): void {
+    expect(EnvironmentResolutionCache::ABSENT_TTL)
+        ->toBeLessThan(EnvironmentResolutionCache::DEFAULT_TTL);
 });

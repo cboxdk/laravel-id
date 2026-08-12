@@ -208,14 +208,28 @@ class OrganizationService implements Organizations
      */
     private function forgetResolvedEnvironments(string $organizationId): void
     {
-        $environmentIds = DB::table('environments')
+        $environments = DB::table('environments')
             ->join('projects', 'projects.id', '=', 'environments.project_id')
             ->where('projects.organization_id', $organizationId)
-            ->pluck('environments.id');
+            ->get(['environments.id', 'environments.domain', 'environments.slug']);
 
-        foreach ($environmentIds as $environmentId) {
-            if (is_string($environmentId) && $environmentId !== '') {
-                $this->resolutionCache->forgetEnvironment($environmentId);
+        foreach ($environments as $environment) {
+            if (is_string($environment->id) && $environment->id !== '') {
+                $this->resolutionCache->forgetEnvironment($environment->id);
+            }
+
+            // AND THE HOSTS, because a refusal is now remembered for ten seconds and the
+            // whole point of this method is that reactivating restores service on the
+            // next request rather than when an entry lapses. Both kinds of host a row
+            // answers on are enumerable from it — the custom domain, and the slug under
+            // each configured base domain — which is the same enumeration the model's
+            // own save hook does.
+            $this->resolutionCache->forgetHost(is_string($environment->domain) ? $environment->domain : null);
+
+            if (is_string($environment->slug) && $environment->slug !== '') {
+                foreach ($this->resolutionCache->baseDomains() as $base) {
+                    $this->resolutionCache->forgetHost($environment->slug.'.'.$base);
+                }
             }
         }
     }

@@ -17,6 +17,11 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
  * `/oauth/token`, `/oauth/userinfo` and `/oauth/decisions` therefore each paid 2–3
  * round trips up front, against a table that changes approximately never.
  *
+ * A host that resolves to NOTHING is cached too, for a tenth as long — otherwise the
+ * only uncacheable answer is also the cheapest to point a scanner or a wildcard DNS
+ * record at, and every one of those requests costs the full 2–3 round trips while every
+ * real tenant's costs zero.
+ *
  * `forKey()` is deliberately NOT cached. It is a single primary-key lookup used by the
  * outbox relay to rehydrate a stored `environment_id`, it runs off the request path,
  * and — unlike the host path — it intentionally does not gate liveness, so caching it
@@ -45,6 +50,15 @@ class CachedEnvironmentResolver implements EnvironmentResolver
 
         if ($cached !== null) {
             return $cached;
+        }
+
+        // A host we looked up recently and found nothing for. Answered from the cache
+        // rather than resolved again, because otherwise the one path that is never
+        // cached is also the cheapest one to aim traffic at — see
+        // {@see EnvironmentResolutionCache::forHost()} for the ten-second bound and what
+        // it costs a reactivated account.
+        if ($this->cache->knownAbsent($host)) {
+            return null;
         }
 
         $resolved = $this->inner->resolveForHost($host);
