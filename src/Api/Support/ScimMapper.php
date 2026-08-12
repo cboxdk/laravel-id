@@ -278,6 +278,29 @@ class ScimMapper
     }
 
     /**
+     * Whether an `emails[...]` path targets the address this server actually stores.
+     *
+     * No filter at all means the whole attribute — the pathless and `"path": "emails"`
+     * shapes — and that is the sign-in address. A filter naming `work` or `primary` is the
+     * same thing said precisely. Anything else names a secondary address this server does
+     * not model, and must not be written over the login.
+     */
+    private static function filterNamesPrimaryEmail(string $path): bool
+    {
+        if (preg_match('/\[([^\]]*)\]/', $path, $matches) !== 1) {
+            return true;
+        }
+
+        $filter = strtolower($matches[1]);
+
+        // `primary eq true` and `type eq "work"`, in every quoting and casing an IdP
+        // sends. A filter this server cannot read is treated as secondary: refusing to
+        // guess is the safe direction when the thing being guessed is somebody's identity.
+        return (bool) preg_match('/\btype\s+eq\s+["\']?work["\']?/', $filter)
+            || (bool) preg_match('/\bprimary\s+eq\s+true\b/', $filter);
+    }
+
+    /**
      * Apply one attribute of a PATCH operation, recording the canonical path in
      * `$touched` when a value was actually written. Returns false when the path names
      * something this server cannot interpret at all (the caller turns that into a 400).
@@ -326,6 +349,24 @@ class ScimMapper
                 $attributes['familyName'] = self::str($value);
                 break;
             case 'emails':
+                // ONLY WHEN THE FILTER MEANS THE SIGN-IN ADDRESS.
+                //
+                // This server stores ONE email and it is the identifier somebody signs in
+                // with. The filter is stripped so that every spelling of "the work one"
+                // is recognised — that was deliberate and is why `emails[type EQ 'work']`
+                // works — but stripping it also made `emails[type eq "home"].value`
+                // indistinguishable from it, so an IdP mapping that syncs a personal
+                // address silently replaced the person's login with it. The directory
+                // records a routine attribute update; the person can no longer sign in
+                // under the address their organization knows them by.
+                //
+                // A secondary address is not refused, because a 400 fails the WHOLE patch
+                // (RFC 7644 §3.5.2 is atomic) and would break every sync for every user
+                // who happens to have one. It is simply not something this server stores.
+                if (! self::filterNamesPrimaryEmail($path)) {
+                    return true;
+                }
+
                 $attributes['email'] = self::extractEmail($value);
                 break;
             case 'name':

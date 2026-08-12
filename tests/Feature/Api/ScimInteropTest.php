@@ -303,6 +303,9 @@ it('applies an Entra-shaped email PATCH whatever the value filter looks like', f
         'emails[type EQ "work"].value',
         "emails[type eq 'work'].value",
         'emails[primary eq true].value',
+        // No filter at all — the pathless and `"path": "emails"` shapes both mean the
+        // one address this server stores.
+        'emails',
     ];
 
     foreach ($variants as $i => $path) {
@@ -425,3 +428,55 @@ it('keeps the other name part when only one is patched', function (): void {
         'Operations' => [['op' => 'replace', 'path' => 'name.familyName', 'value' => 'Okonkwo']],
     ], $headers)->assertOk()->assertJsonPath('displayName', 'Dana Okonkwo');
 });
+
+/**
+ * A SECONDARY ADDRESS IS NOT THE LOGIN.
+ *
+ * This server stores ONE email and it is the identifier somebody signs in with. The value
+ * filter is stripped so every spelling of "the work one" is recognised — deliberate, and
+ * why `emails[type EQ 'work']` works — but that also made `emails[type eq "home"].value`
+ * indistinguishable from it. An IdP mapping that syncs a personal address therefore
+ * replaced the person's login with it: the directory records a routine attribute update,
+ * and the person can no longer sign in under the address their organization knows them by.
+ */
+it('does not let a home address become the sign-in address', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana', 'entra|home', 'dana@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [
+            ['op' => 'replace', 'path' => 'emails[type eq "home"].value', 'value' => 'dana@gmail.example'],
+        ],
+    ], $headers)
+        ->assertOk()
+        // Accepted, because a 400 fails the WHOLE patch (RFC 7644 §3.5.2 is atomic) and
+        // would break every sync for every user who happens to have a personal address.
+        // It is simply not something this server stores.
+        ->assertJsonPath('emails.0.value', 'dana@corp.com');
+})->group('security');
+
+it('still applies the work address in the same request', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana2', 'entra|both', 'dana2@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [
+            ['op' => 'replace', 'path' => 'emails[type eq "home"].value', 'value' => 'dana2@gmail.example'],
+            ['op' => 'replace', 'path' => 'emails[type eq "work"].value', 'value' => 'dana.new@corp.com'],
+        ],
+    ], $headers)->assertOk()->assertJsonPath('emails.0.value', 'dana.new@corp.com');
+});
+
+it('treats a filter it cannot read as secondary rather than guessing', function (): void {
+    $headers = $this->scimHeaders;
+    $id = provision($this, $headers, 'dana3', 'entra|odd', 'dana3@corp.com');
+
+    $this->patchJson('/scim/v2/Users/'.$id, [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [
+            ['op' => 'replace', 'path' => 'emails[something we have never seen].value', 'value' => 'nope@example.test'],
+        ],
+    ], $headers)->assertOk()->assertJsonPath('emails.0.value', 'dana3@corp.com');
+})->group('security');
