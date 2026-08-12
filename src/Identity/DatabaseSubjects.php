@@ -13,6 +13,7 @@ use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
+use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
@@ -390,6 +391,21 @@ class DatabaseSubjects implements Subjects
     public function deactivate(string $subjectId): void
     {
         $this->transitionStatus($subjectId, UserStatus::Disabled, 'user.deactivated');
+
+        // AND EVERY GRANT THEY HOLD, which is the half that outlives them.
+        //
+        // Deprovisioning revoked sessions and left the OAuth grants alone, and nothing on
+        // the refresh path asks whether the person still exists — `UserStatus` appears
+        // nowhere in `src/OAuthServer`. So a leaver's connected application went on
+        // exchanging its refresh token indefinitely: the account was disabled, they could
+        // not sign in, and the CLI on their laptop kept working. That is the exact case
+        // deprovisioning is bought for.
+        //
+        // Here rather than at each caller — SCIM, directory sync, an administrator in the
+        // console — because "this person no longer has access" has to mean the same thing
+        // however it is said, and a caller that forgets is a caller that leaves a door
+        // open. The revoker is a no-op when they hold none.
+        app(SubjectGrantRevoker::class)->revokeGrantsForUser($subjectId);
     }
 
     public function reactivate(string $subjectId): void

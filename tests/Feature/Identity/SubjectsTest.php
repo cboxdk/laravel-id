@@ -9,6 +9,8 @@ use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Identity\ValueObjects\LinkedIdentity;
+use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
+use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -210,3 +212,42 @@ it('reports whether a federated sign-in created the account', function (): void 
     expect($second->created)->toBeFalse()
         ->and($second->subject->id)->toBe($first->subject->id);
 });
+
+/**
+ * DEPROVISIONING HAS TO REACH THE THING THAT OUTLIVES A SESSION.
+ *
+ * Disabling an account revoked sessions and left the OAuth grants alone, and nothing on
+ * the refresh path asks whether the person still exists — `UserStatus` appears nowhere in
+ * `src/OAuthServer`. So a leaver's connected application went on exchanging its refresh
+ * token indefinitely: the account was disabled, they could not sign in, and the CLI on
+ * their laptop kept working. That is the exact case deprovisioning is bought for.
+ */
+it('withdraws every grant a subject holds when the account is disabled', function (): void {
+    $subject = app(Subjects::class)->create('leaver@acme.test', 'Leaver', 'a-strong-unbreached-passphrase');
+
+    $client = $this->makeClient(['api.read'], grantTypes: ['refresh_token'])->client;
+    $refresh = app(RefreshTokens::class);
+    $token = $refresh->issue($client, $subject->id, null, ['api.read']);
+
+    app(Subjects::class)->deactivate($subject->id);
+
+    expect($refresh->connectedApplications($subject->id))->toBe([]);
+
+    // And the token in the leaver's client is dead, not merely hidden from a screen.
+    expect(fn () => $refresh->rotate($client->client_id, $token))->toThrow(InvalidGrant::class);
+})->group('security');
+
+it('leaves other people\'s grants alone when one account is disabled', function (): void {
+    $leaver = app(Subjects::class)->create('leaver2@acme.test', 'Leaver', 'a-strong-unbreached-passphrase');
+    $stays = app(Subjects::class)->create('stays@acme.test', 'Stays', 'a-strong-unbreached-passphrase');
+
+    $client = $this->makeClient(['api.read'], grantTypes: ['refresh_token'])->client;
+    $refresh = app(RefreshTokens::class);
+
+    $refresh->issue($client, $leaver->id, null, ['api.read']);
+    $kept = $refresh->issue($client, $stays->id, null, ['api.read']);
+
+    app(Subjects::class)->deactivate($leaver->id);
+
+    expect($refresh->rotate($client->client_id, $kept))->not->toBeNull();
+})->group('security');
