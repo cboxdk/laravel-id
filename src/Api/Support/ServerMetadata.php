@@ -18,6 +18,23 @@ use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
  */
 class ServerMetadata
 {
+    /**
+     * The scopes this server advertises, in ONE place.
+     *
+     * `groups` puts this app's roles on the ID TOKEN. Advertised because a relying party
+     * that authenticates the id_token — Kubernetes, Grafana, Vault — cannot discover it any
+     * other way, and without it authenticates a person it can then bind no policy to.
+     *
+     * A CONSTANT BECAUSE THERE ARE TWO DOCUMENTS. OIDC discovery is not the only place a
+     * client reads this: RFC 9728 protected-resource metadata carries `scopes_supported`
+     * too, and it had its own hardcoded copy — missing `groups`, the one scope with a
+     * named victim. `kubectl oidc-login` reads a document, asks for what it says, and is
+     * refused by the server that said it. Two lists that must agree is one list.
+     *
+     * @var list<string>
+     */
+    public const SCOPES_SUPPORTED = ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'];
+
     public static function issuer(): string
     {
         // Per-environment: discovery served at a tenant subdomain must advertise that
@@ -78,11 +95,7 @@ class ServerMetadata
             // RFC 9449: sender-constrained (DPoP) access tokens.
             // From the validator, not restated here — see DpopProofValidator::ALLOWED_ALGS.
             'dpop_signing_alg_values_supported' => DpopProofValidator::ALLOWED_ALGS,
-            // `groups` puts this app's roles on the ID TOKEN. Advertised because a
-            // relying party that authenticates the id_token — Kubernetes, Grafana, Vault
-            // — cannot discover it any other way, and without it authenticates a person
-            // it can then bind no policy to.
-            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'],
+            'scopes_supported' => self::SCOPES_SUPPORTED,
             'subject_types_supported' => ['public'],
             // The claims the id_token / UserInfo actually carry — honest, not aspirational.
             // Includes the non-standard federation claims (email_verified is standard;

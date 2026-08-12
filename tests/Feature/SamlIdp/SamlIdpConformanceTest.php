@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\Models\ServiceProvider;
 use Cbox\Id\SamlIdp\Support\IdpDescriptor;
+use Cbox\Id\SamlIdp\Support\MessageGuard;
 use Cbox\Id\SamlIdp\Support\RedirectBindingSignature;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -740,3 +743,49 @@ function nameIdIn(string $xml): string
 
     return $matches[1] ?? '';
 }
+
+/**
+ * ONE REPLAY NAMESPACE PER ENVIRONMENT, not one per deployment.
+ *
+ * An SP EntityID is chosen by the customer, so two tenants can legitimately register the
+ * same one — `urn:federation:MicrosoftOnline` is not a hypothetical. Keyed on the SP alone,
+ * tenant A claiming a message id made the SAME id arriving from tenant B's SP look like a
+ * replay: a genuine sign-in refused, and deliberately causable by anybody who can send one
+ * message to their own tenant.
+ *
+ * The SP-side store learned this already — `consumed_assertions` carries an
+ * `environment_id` — and the IdP side never did.
+ */
+it('does not let one environment burn another environment\'s message ids', function (): void {
+    $guard = app(MessageGuard::class);
+    $environments = app(EnvironmentContext::class);
+
+    $sp = 'urn:federation:MicrosoftOnline';
+    $messageId = '_a-message-id-both-tenants-can-produce';
+
+    $claimedInA = $environments->runAs(
+        GenericEnvironment::of('env_tenant_a'),
+        fn (): bool => $guard->consume($sp, $messageId, 300),
+    );
+
+    $claimedInB = $environments->runAs(
+        GenericEnvironment::of('env_tenant_b'),
+        fn (): bool => $guard->consume($sp, $messageId, 300),
+    );
+
+    expect($claimedInA)->toBeTrue()
+        ->and($claimedInB)->toBeTrue('one tenant burned another tenant\'s message id');
+})->group('security');
+
+it('still refuses a replay within the same environment', function (): void {
+    $guard = app(MessageGuard::class);
+    $environments = app(EnvironmentContext::class);
+
+    $result = $environments->runAs(GenericEnvironment::of('env_tenant_a'), fn (): array => [
+        $guard->consume('urn:sp', '_replayed', 300),
+        $guard->consume('urn:sp', '_replayed', 300),
+    ]);
+
+    expect($result[0])->toBeTrue()
+        ->and($result[1])->toBeFalse('a replayed message id was claimed twice');
+})->group('security');

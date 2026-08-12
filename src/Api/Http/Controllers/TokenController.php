@@ -328,7 +328,25 @@ class TokenController
         // the approving user (with auth_time and the request nonce).
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt);
 
-        return $this->tokenResponse($access, $this->idToken($client, IdTokenGrant::fromAuthorization($grant), $access), null, $grant->scopes);
+        // AND A REFRESH TOKEN WHEN `offline_access` WAS GRANTED — the same fix the device
+        // grant needed, in the branch directly above, and the reasoning carries over
+        // unchanged. CIBA is the decoupled flow: the client that started it has no browser
+        // to bounce the person through when the access token expires, which is the whole
+        // reason it exists. Accepting `offline_access` at the backchannel endpoint and then
+        // dropping it here left an approved agent dead at first expiry, with no way back
+        // but a second approval from the person it was acting for.
+        //
+        // `authTime` and `amr` are carried through, unlike the device grant: CIBA DOES
+        // record how the person approved it, and a refreshed ID Token that kept them is
+        // strictly more honest than one that omits them.
+        $refresh = in_array('offline_access', $grant->scopes, true)
+            ? $this->refreshTokens->issue(
+                $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+                $grant->authTime, $grant->amr,
+            )
+            : null;
+
+        return $this->tokenResponse($access, $this->idToken($client, IdTokenGrant::fromAuthorization($grant), $access), $refresh, $grant->scopes);
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse

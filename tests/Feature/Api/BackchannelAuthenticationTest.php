@@ -284,3 +284,58 @@ it('refuses a public client, which has no secret to prove anything with', functi
 
     expect(BackchannelAuthRequest::query()->count())->toBe(0, 'a prompt was created for an unauthenticated client');
 });
+
+/**
+ * CIBA IS THE DECOUPLED FLOW: the client that starts it has no browser to bounce the
+ * person through when an access token expires — that is the whole reason it exists.
+ *
+ * `offline_access` was accepted at the backchannel endpoint, carried on the grant, and
+ * then dropped at redemption, so an approved agent was dead an hour later with no way back
+ * but a second approval from the person it acts for. The device grant beside it had the
+ * identical defect and was fixed; the reasoning was never carried one branch over.
+ */
+it('issues a refresh token when the CIBA client asked for offline access', function (): void {
+    $registered = $this->makeClient(
+        ['openid', 'offline_access'],
+        grantTypes: [CIBA_GRANT, 'refresh_token'],
+    );
+    $user = $this->makeUser('agent@example.test');
+    $ciba = app(BackchannelAuthentication::class);
+
+    $result = $ciba->request($registered->client, ['openid', 'offline_access'], $user->id);
+    expect($ciba->approve($result->requestId, $user->id, 'org-1'))->toBeTrue();
+
+    BackchannelAuthRequest::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => CIBA_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'auth_req_id' => $result->authReqId,
+    ])->assertOk()->json();
+
+    expect($body['refresh_token'] ?? null)->toBeString()
+        ->and($body['id_token'] ?? null)->toBeString();
+});
+
+it('issues no CIBA refresh token when offline access was not asked for', function (): void {
+    // The scope is the request, not a default: a client that never asked for one must not
+    // be handed a credential that outlives the person's attention.
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT, 'refresh_token']);
+    $user = $this->makeUser('agent2@example.test');
+    $ciba = app(BackchannelAuthentication::class);
+
+    $result = $ciba->request($registered->client, ['openid'], $user->id);
+    $ciba->approve($result->requestId, $user->id, 'org-1');
+
+    BackchannelAuthRequest::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => CIBA_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'auth_req_id' => $result->authReqId,
+    ])->assertOk()->json();
+
+    expect($body['refresh_token'] ?? null)->toBeNull();
+});

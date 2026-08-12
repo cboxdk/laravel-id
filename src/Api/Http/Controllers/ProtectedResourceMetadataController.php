@@ -22,7 +22,10 @@ class ProtectedResourceMetadataController
         return response()->json([
             'resource' => $issuer,
             'authorization_servers' => [$issuer],
-            'scopes_supported' => ['openid', 'profile', 'email', 'offline_access', 'organizations'],
+            // From the same constant discovery reads. This list had its own copy and was
+            // one scope short — `groups`, which is exactly the one a Kubernetes client
+            // asks for after reading a document that promised it.
+            'scopes_supported' => ServerMetadata::SCOPES_SUPPORTED,
             'bearer_methods_supported' => ['header'],
         ]);
     }
