@@ -25,7 +25,7 @@ corrected above:
   and now reads the issuer's own constant.
 
 The rest were re-read against `src/` and hold as written — including the ones easiest to
-drift: PKCE `plain` is unredeemable because redemption always computes S256; revocation
+drift: PKCE `plain` is refused at issue time and redemption computes S256 regardless; revocation
 calls `authenticateConfidential()`; there is no `DPoP-Nonce` anywhere in the package;
 `resource` is read as a single string so a repeated parameter yields one value; and the
 dynamic registrar's `AUTH_METHODS` is `none` / `client_secret_basic` / `client_secret_post`
@@ -64,7 +64,7 @@ what the deployable app, an add-on package, or a future release does.
 |---|---|---|---|
 | **RFC 6749** — The OAuth 2.0 Authorization Framework | Grants at `/oauth/token` | **Partial** | `authorization_code`, `client_credentials`, `refresh_token` implemented. **No** `password` (ROPC), **no** `implicit` — both refused as `unsupported_grant_type`. |
 | **RFC 6750** — Bearer Token Usage | `Authorization: Bearer` on protected endpoints | **Full** | `bearer_methods_supported: ["header"]`; form/query delivery not accepted. |
-| **RFC 7636** — PKCE | `code_challenge` / `code_verifier` | **Partial** | `S256` only, and only `S256` is advertised. `plain` is **not** supported: a code stored with `pkce_method=plain` can never be redeemed. Public-client enforcement is applied on `/oauth/par`; at `/authorize` it is host-supplied. |
+| **RFC 7636** — PKCE | `code_challenge` / `code_verifier` | **Partial** | `S256` only, and only `S256` is advertised. `plain` is refused **at issue time** rather than being stored and failing later at redemption, so a host learns which end is wrong. The challenge must be a 43-character base64url digest and the verifier 43–128 unreserved characters (§4.1). Public-client enforcement is applied on `/oauth/par`; at `/authorize` it is host-supplied. |
 | **RFC 7662** — Token Introspection | `POST /oauth/introspect` | **Partial** | Access tokens only — refresh tokens are opaque and **not** introspectable. Caller must authenticate as a **confidential** client, and may only introspect **its own** tokens, so a separate resource server cannot introspect. `token_type_hint` is ignored. |
 | **RFC 7009** — Token Revocation | `POST /oauth/revoke` | **Partial** | Access tokens (by `jti`) and refresh tokens (revoking the whole family). **Confidential clients only** — a public client cannot revoke its own token, which §2.1 expects. `token_type_hint` is ignored. |
 | **RFC 8414** — Authorization Server Metadata | `/.well-known/oauth-authorization-server` | **Full** | Same document as OIDC discovery. `authorization_endpoint` is **omitted** unless you configure where your app serves it — §2 permits omission, and advertising a route the package does not serve would be worse. |

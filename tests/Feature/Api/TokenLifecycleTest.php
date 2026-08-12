@@ -796,3 +796,61 @@ it('advertises which client authentication each token endpoint accepts', functio
         // an unauthenticated caller there is an oracle. It must NOT offer `none`.
         ->and($metadata['introspection_endpoint_auth_methods_supported'])->not->toContain('none');
 });
+
+/**
+ * AN ID TOKEN IS FOR A CLIENT THAT ASKED WHO THIS IS.
+ *
+ * Every user-present branch of the token endpoint minted one regardless of scope, so a
+ * client that requested `api.read` and nothing else was handed a signed assertion
+ * carrying `sub` and `org` — a subject identifier and a tenant, to an OAuth-only client
+ * that never asked for identity. UserInfo has always refused that same client for the
+ * same reason, so the endpoint contradicted itself about who is entitled to an identity
+ * claim.
+ */
+it('returns no id_token when openid was not granted', function (): void {
+    $registered = $this->makeClient(['api.read'], grantTypes: ['authorization_code']);
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id,
+        'user-no-openid',
+        null,
+        'https://app.test/cb',
+        ['api.read'],
+        Base64Url::encode(hash('sha256', 'a-verifier-of-sufficient-length-0123456789abc', true)),
+    );
+
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'code_verifier' => 'a-verifier-of-sufficient-length-0123456789abc',
+    ])->assertOk()->json();
+
+    expect($body)->toHaveKey('access_token')
+        ->and($body)->not->toHaveKey('id_token');
+});
+
+/** And the client that DOES ask still gets one. */
+it('returns an id_token when openid was granted', function (): void {
+    $registered = $this->makeClient(['openid', 'api.read'], grantTypes: ['authorization_code']);
+
+    $code = app(AuthorizationCodes::class)->issue(
+        $registered->client->client_id,
+        'user-openid',
+        null,
+        'https://app.test/cb',
+        ['openid', 'api.read'],
+        Base64Url::encode(hash('sha256', 'a-verifier-of-sufficient-length-0123456789abc', true)),
+    );
+
+    $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'code' => $code,
+        'redirect_uri' => 'https://app.test/cb',
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'code_verifier' => 'a-verifier-of-sufficient-length-0123456789abc',
+    ])->assertOk()->assertJsonStructure(['access_token', 'id_token']);
+});

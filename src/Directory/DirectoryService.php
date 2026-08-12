@@ -10,6 +10,7 @@ use Cbox\Id\Directory\Enums\DirectoryStatus;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\ValueObjects\RegisteredDirectory;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 
 class DirectoryService implements Directories
 {
@@ -17,6 +18,10 @@ class DirectoryService implements Directories
 
     public function registerPull(string $organizationId, string $name, DirectoryProvider $provider, array $credentials): Directory
     {
+        // Same reason as every other writer of an `organization_id`: the environment stamp
+        // and the named owner are written side by side and nothing checks they agree.
+        OwnerEnvironment::assertLocal($organizationId, Directory::class);
+
         $directory = new Directory;
         $directory->fill([
             'organization_id' => $organizationId,
@@ -43,6 +48,8 @@ class DirectoryService implements Directories
 
     public function register(string $organizationId, string $name): RegisteredDirectory
     {
+        OwnerEnvironment::assertLocal($organizationId, Directory::class);
+
         $token = 'scim_'.bin2hex(random_bytes(32));
 
         $directory = new Directory;

@@ -70,6 +70,20 @@ more trust than the wording it removes.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **Global sign-out now requires a verified `id_token_hint`.** `/oauth/logout` is
   unauthenticated by design — a relying party reaches it by redirecting the browser — and
   it answers GET. Once the previous release made the revocation actually fire on a host
@@ -217,6 +231,20 @@ more trust than the wording it removes.
   the enrolment QR worked on a tenant subdomain and failed on the root.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **`league/commonmark` updated to 2.9.0**, clearing six advisories against 2.8.3 —
   denial of service via deeply nested XML output and via colliding heading slugs among
@@ -460,6 +488,20 @@ The account plane is gone. A customer **is** an organization.
   produced an audit trail containing nothing at all.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Disabling host verification no longer re-enables redirect chasing.** The four
   `verify_url` toggles let an on-prem deployment reach an internal host it owns; their
@@ -785,6 +827,20 @@ The account plane is gone. A customer **is** an organization.
 ## [0.87.3] - 2026-08-04
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **A deactivated subject authenticated with ANY password.** `DatabaseAccountMembers::verifyPassword()`
   refused a deactivated subject with `! $this->hasher->check($password, $this->dummyHash())`.
@@ -1182,6 +1238,20 @@ The account plane is gone. A customer **is** an organization.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **A client could choose its own token audience after the user had authorized.** The RFC
   8707 `resource` parameter was read at the token endpoint, validated as an absolute URI,
   and stamped verbatim into the access token's `aud` — while nothing recorded what the
@@ -1203,6 +1273,20 @@ The account plane is gone. A customer **is** an organization.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **A `persistent` NameID was the subject's email address, identical at every service
   provider.** `resolveNameId()` never consulted the format — it returned whatever the
   service provider's `name_id_attribute` pointed at, which defaults to `email`. SAML Core
@@ -1219,6 +1303,20 @@ The account plane is gone. A customer **is** an organization.
 ## [0.78.0] - 2026-08-02
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **A captured SAML `LogoutRequest` was a permanent, unauthenticated logout against the
   person it named.** The relying-party half of Single Logout verified the signature and
@@ -1292,6 +1390,20 @@ The account plane is gone. A customer **is** an organization.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **Any registered service provider could log out any subject in the environment.** Single
   Logout took the NameID from a signed `LogoutRequest`, resolved it as a subject id OR an
   email, and revoked every session that person had — anywhere. A NameID is not a secret;
@@ -1364,6 +1476,20 @@ the directory and the downstream app diverge with nothing to reconcile them.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **A role its declaring app had retired was still grantable.** Orphaning keeps the row
   and its existing assignments — deleting them would revoke access on a deploy blip — and
   the console stops offering the role. But `assign()` did not refuse it, so an
@@ -1379,6 +1505,20 @@ the directory and the downstream app diverge with nothing to reconcile them.
 ## [0.74.0] - 2026-08-01
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **A SAML assertion naming no audience was accepted.** php-saml checks the audience only
   when one is PRESENT — `if (!empty($validAudiences))` — and nothing here re-checked it,
@@ -1452,6 +1592,20 @@ the directory and the downstream app diverge with nothing to reconcile them.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **`POST /oauth/decisions` now pins the audience.** It accepted any active access token
   and checked neither the audience nor a scope, while answering with strictly more than
   UserInfo does — the subject's entire permission and entitlement set in the organization.
@@ -1484,6 +1638,20 @@ the directory and the downstream app diverge with nothing to reconcile them.
 ## [0.71.0] - 2026-08-01
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Segregation of duties now runs at the grant chokepoint, not in front of it.** The rule
   was correct and was only ever asked on the paths a host can intercept — the console's
@@ -1528,6 +1696,20 @@ the directory and the downstream app diverge with nothing to reconcile them.
 ## [0.70.0] - 2026-08-01
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 **Restores two controls that 0.68.0 and 0.69.0 shipped without.** Both were deleted by
 accident, not by decision, and both were released. Those two versions have since been
@@ -1810,6 +1992,20 @@ sign-in path, and one is a migration blocker that presented as "wrong password".
 ## [0.63.0] - 2026-07-27
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **`POST /user-tokens/introspect` checked no scope at all.** It resolved the caller's
   environment API key and verified only that it was *valid*, while every other management
@@ -2111,6 +2307,20 @@ Typed-model debt from the platform review. **Two breaking contract changes** —
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **A transposed key pair could publish the private key at the JWKS endpoint, and
   nothing caught it.** `DatabaseKeyManager` returned `array{0: string, 1: string}`
   destructured as `[$public, $private]` — both `string`, so swapping them was invisible
@@ -2157,6 +2367,20 @@ were refuted and dropped rather than "fixed"; several were re-priced down. See
 `UPGRADING.md` — **this release refuses things earlier versions accepted.**
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Invitations are environment-scoped.** `invitations` was the only credential-bearing
   table without an `environment_id`, and `byToken()` matched on the hash alone — so a
@@ -2417,6 +2641,20 @@ the time of the cut.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **An invited member's subject is minted deactivated.** An invitation must not be a way
   in before it is accepted.
 - **An address that already has a subject is reused, never re-credentialed.** Otherwise
@@ -2465,6 +2703,20 @@ manifests before upgrading if tenants compose app permissions into their own rol
   (client_credentials) deployment legitimately has none.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **One-time credentials are claimed with a conditional update, not a read-then-write.**
   Password-reset tokens, TOTP steps and MFA recovery codes could each be consumed twice
@@ -2545,6 +2797,20 @@ Platform-review remediation. Every finding was adversarially verified before it 
 fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropped.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Refresh-token rotation is now idempotent within the reuse-grace window.** A replayed
   token in the window returned a second, independent live token; it now returns the same
@@ -2627,6 +2893,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - Inline hooks fail CLOSED, veto before any token row is written, cannot overwrite reserved
   claims, and make signed, SSRF-guarded, no-redirect egress calls. See
   [security/external-actions.md](docs/security/external-actions.md).
@@ -2686,6 +2966,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
     idempotent re-close, SoD gate + detection, environment isolation, scheduled close).
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - Certification **applies** revokes against the real access contracts rather than
   recording paper decisions; un-reviewed items default to revoke; a refused revoke is
@@ -2755,6 +3049,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - The token vault seals downstream credentials at rest and never returns which secret ids
   exist (uniform `LeaseDenied`); CIBA keeps the client's polling secret and the host's
   approval handle as separate identifiers so a client can never approve its own request.
@@ -2823,6 +3131,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
     constant-time miss path.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - OTP is treated as an auth factor: codes are CSPRNG-generated, stored only as a
   keyed HMAC (never plaintext), single-use, TTL-bounded, attempt-capped and
@@ -2894,6 +3216,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
     the circuit breaker, deny-by-default, SSRF refusal and secret-at-rest.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - Outbound provisioning egress is SSRF-guarded and DNS-pinned on every request
   (SCIM base URL and OAuth token URL), TLS-verify on, with connection secrets sealed
@@ -2970,6 +3306,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
     an in-memory fake sink, synchronous pump) — dogfooded by the suite.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Environment isolation for streaming is structural, proven at both stages.** An
   env-A audit entry only ever matches/writes env-A streams (dispatch), and the pump
@@ -3088,6 +3438,20 @@ fixed; the SSRF-redirect and PAR-under-validation reports were refuted and dropp
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - **SAML IdP — XML Signature Wrapping (XSW) hardening on the POST-binding
   signed-`AuthnRequest` path (defense-in-depth).** `onelogin/php-saml`'s
   `Utils::validateSign()` confirms *a* signature verifies against the SP certificate
@@ -3133,6 +3497,20 @@ A follow-up hardening + DX pass from a deep review, plus operator MFA and
 contract-level suspension.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Outbound OIDC token exchange is now SSRF-guarded.** `OidcClient::exchangeCode()`
   POSTed to an org-admin-configured `token_endpoint` without the SSRF guard the
@@ -3223,6 +3601,20 @@ deny-by-default global scope across every tenant table rather than by per-query
 discipline. Breaking: adds `environment_id` to several tables (schema change).
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - **Environment isolation is now defense-in-depth.** `WebhookEndpoint` +
   `WebhookDelivery` were not environment-owned — a platform-wide (null-org)
@@ -3355,6 +3747,20 @@ breaking change: the schema and query scoping change platform-wide.
 
 ### Security
 
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
+
 - Hardening pass: SAML `InResponseTo` enforcement, DPoP enforced at the resource
   surface and bound to refresh tokens, account-status gating across all login
   paths, step-up on MFA enrollment / provider unlink, webhook DNS pinning +
@@ -3407,6 +3813,20 @@ releases, and only the latest `0.x` tag is supported.
 - **Audit** — an append-only, hash-chained trail with signed checkpoints.
 
 ### Security
+
+- **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
+  branch of the token endpoint issued one regardless of scope, so a client requesting
+  `api.read` and nothing else got back a signed assertion carrying `sub` and `org` — a
+  subject identifier and a tenant, to an OAuth-only client that never asked for identity.
+  UserInfo has always refused that same client for the same reason, so the endpoint was
+  contradicting itself about who is entitled to an identity claim.
+
+- **A client or directory can no longer be registered against an organization from another
+  environment.** `EnvironmentScope` stamps a new row with the ambient environment and never
+  looks at the `organization_id` written beside it, so a caller in E1 naming a tenant of E2
+  produced a row stamped E1 claiming to belong to E2 — and `client_credentials` would then
+  mint E1's `iss` carrying E2's `org`. `MembershipService::add()` had refused this from the
+  start; the check is now shared (`OwnerEnvironment`) and applied by the other writers.
 
 - Fixed a cross-tenant account-takeover vector in federated identity linking:
   SSO connection identities are now namespaced to their connection.

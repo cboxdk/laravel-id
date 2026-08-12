@@ -72,3 +72,47 @@ it('rejects a client mismatch', function (): void {
 it('rejects an unknown code', function (): void {
     app(AuthorizationCodes::class)->exchange('cid_1', 'ac_does_not_exist', 'https://app.test/cb', 'v');
 })->throws(InvalidGrant::class);
+
+/**
+ * RFC 7636's SHAPES ARE THE SECURITY PROPERTY, not decoration.
+ *
+ * The verifier's 43–128 unreserved characters are what make it hold the entropy the
+ * challenge commits to; a short one is a guessable one. And `plain` was accepted at issue
+ * time and then unredeemable, because redemption always computes S256 — the right
+ * direction, at the wrong moment. The host got a working code and the user got a broken
+ * sign-in, with the error surfacing at the exchange where nothing says which end was
+ * wrong.
+ */
+it('refuses a code_challenge_method other than S256, at issue time', function (): void {
+    ['challenge' => $challenge] = pkcePair();
+
+    expect(fn () => app(AuthorizationCodes::class)->issue(
+        'cid_1', 'user_1', null, 'https://app.test/cb', ['openid'], $challenge, 'plain',
+    ))->toThrow(InvalidGrant::class);
+});
+
+it('refuses a challenge that is not a base64url S256 digest', function (): void {
+    expect(fn () => app(AuthorizationCodes::class)->issue(
+        'cid_1', 'user_1', null, 'https://app.test/cb', ['openid'], 'not-a-digest',
+    ))->toThrow(InvalidGrant::class);
+});
+
+it('refuses a verifier outside RFC 7636 length and alphabet', function (): void {
+    $codes = app(AuthorizationCodes::class);
+
+    // Too short — 42 characters, one under the floor.
+    $short = str_repeat('a', 42);
+    $code = $codes->issue('cid_1', 'user_1', null, 'https://app.test/cb', ['openid'],
+        Base64Url::encode(hash('sha256', $short, true)));
+
+    expect(fn () => $codes->exchange('cid_1', $code, 'https://app.test/cb', $short))
+        ->toThrow(InvalidGrant::class);
+
+    // In range, but carrying a character the grammar does not admit.
+    $illegal = str_repeat('a', 40).'/+=';
+    $second = $codes->issue('cid_1', 'user_1', null, 'https://app.test/cb', ['openid'],
+        Base64Url::encode(hash('sha256', $illegal, true)));
+
+    expect(fn () => $codes->exchange('cid_1', $second, 'https://app.test/cb', $illegal))
+        ->toThrow(InvalidGrant::class);
+});

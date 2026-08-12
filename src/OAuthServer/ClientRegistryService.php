@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -15,6 +16,13 @@ class ClientRegistryService implements ClientRegistry
 {
     public function register(NewClient $input): RegisteredClient
     {
+        // The named owner must live in THIS environment. `EnvironmentScope` stamps the new
+        // row with the ambient one and never looks at the `organization_id` beside it, so
+        // a client could be registered here claiming a tenant of somewhere else — and
+        // `client_credentials` would then mint this environment's `iss` carrying that
+        // environment's `org`.
+        OwnerEnvironment::assertLocal($input->organizationId, Client::class);
+
         $secret = null;
 
         $client = new Client;

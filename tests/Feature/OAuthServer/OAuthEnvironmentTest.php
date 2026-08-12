@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Tenancy\Exceptions\CrossEnvironmentAccess;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
+use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\ValueObjects\NewClient;
+use Cbox\Id\Organization\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 
@@ -61,3 +66,52 @@ it('scopes access-token records to their environment', function (): void {
     // From env_a it is still reachable, proving it exists (just isolated).
     $this->runAsEnvironment('env_a', fn () => expect(AccessToken::find($token->id))->not->toBeNull());
 })->group('isolation');
+/**
+ * THE ENVIRONMENT STAMP AND THE NAMED OWNER ARE WRITTEN SIDE BY SIDE, AND NOTHING
+ * CHECKED THEY AGREE.
+ *
+ * `EnvironmentScope` stamps a new row with the ambient environment and fences reads by
+ * it. It never looks at the `organization_id` beside the stamp — so a caller in E1
+ * supplying an organization that lives in E2 got a row stamped E1 claiming a tenant of
+ * E2. For an OAuth client that is not a bookkeeping oddity: `client_credentials` would
+ * mint E1's `iss` carrying E2's `org`, and every relying party downstream reads `org` as
+ * the tenant the token speaks for.
+ *
+ * `MembershipService::add()` refused this from the beginning; the other writers of an
+ * `organization_id` did not. `OwnerEnvironment` is that check, shared.
+ */
+it('refuses to register a client owned by another environment\'s organization', function (): void {
+    // Created from INSIDE the other environment — the model's own guard refuses a row
+    // stamped elsewhere, which is the boundary working one layer down.
+    $this->actingAsEnvironment('env_b');
+    $foreign = Organization::query()->create(['name' => 'Theirs', 'slug' => 'theirs']);
+
+    $this->actingAsEnvironment('env_a');
+
+    expect(fn () => app(ClientRegistry::class)->register(new NewClient(
+        'Sneaky', ClientType::Confidential, redirectUris: [], scopes: ['api.read'],
+        organizationId: $foreign->id,
+    )))->toThrow(CrossEnvironmentAccess::class);
+})->group('security');
+
+/**
+ * And the ordinary case is untouched: an organization of THIS environment registers
+ * normally, and so does a client with no organization at all — an environment-wide client
+ * is a real shape, not a missing owner.
+ */
+it('still registers a client for a local organization, and for none', function (): void {
+    $this->actingAsEnvironment('env_a');
+    $local = Organization::query()->create(['name' => 'Mine', 'slug' => 'mine', 'environment_id' => 'env_a']);
+
+    $owned = app(ClientRegistry::class)->register(new NewClient(
+        'Mine', ClientType::Confidential, redirectUris: [], scopes: ['api.read'],
+        organizationId: $local->id,
+    ));
+
+    $shared = app(ClientRegistry::class)->register(new NewClient(
+        'Environment-wide', ClientType::Confidential, redirectUris: [], scopes: ['api.read'],
+    ));
+
+    expect($owned->client->organization_id)->toBe($local->id)
+        ->and($shared->client->organization_id)->toBeNull();
+});

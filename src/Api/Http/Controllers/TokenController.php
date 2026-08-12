@@ -219,7 +219,7 @@ class TokenController
 
         return $this->tokenResponse(
             $access,
-            $this->idToken($client, IdTokenGrant::fromAuthorization($grant), $access),
+            $this->idTokenIfOpenId($client, IdTokenGrant::fromAuthorization($grant), $access),
             $refresh,
             $grant->scopes,
         );
@@ -284,7 +284,7 @@ class TokenController
             // An ID Token, as every other user-present grant here returns. Its absence
             // meant an OIDC client completing a device flow received no assertion about
             // WHO signed in — only a bearer token — and had to call UserInfo to find out.
-            $this->idToken($client, new IdTokenGrant(
+            $this->idTokenIfOpenId($client, new IdTokenGrant(
                 userId: $grant->userId,
                 organizationId: $grant->organizationId,
                 scopes: $grant->scopes,
@@ -346,7 +346,7 @@ class TokenController
             )
             : null;
 
-        return $this->tokenResponse($access, $this->idToken($client, IdTokenGrant::fromAuthorization($grant), $access), $refresh, $grant->scopes);
+        return $this->tokenResponse($access, $this->idTokenIfOpenId($client, IdTokenGrant::fromAuthorization($grant), $access), $refresh, $grant->scopes);
     }
 
     private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
@@ -403,6 +403,24 @@ class TokenController
         return $grant->userId !== null
             ? $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $grant->audience, $dpopJkt)
             : $this->issuer->issueClientCredentials($client, $grant->scopes, $grant->audience, $dpopJkt);
+    }
+
+    /**
+     * An ID Token, but only for a grant that actually asked to be told who this is.
+     *
+     * OIDC Core §3.1.3.3 ties the ID Token to the `openid` scope, and every branch here
+     * minted one regardless — so a client that requested `api.read` and nothing else got
+     * back a signed assertion carrying `sub` and `org`. That is a subject identifier and
+     * a tenant handed to an OAuth-only client that never asked for identity and may have
+     * no business holding one; UserInfo has always refused the same client for the same
+     * reason (`UserInfoController` requires `openid`), so the endpoint was contradicting
+     * itself about who is entitled to an identity claim.
+     */
+    private function idTokenIfOpenId(Client $client, IdTokenGrant $grant, IssuedToken $access): ?string
+    {
+        return in_array('openid', $grant->scopes, true)
+            ? $this->idToken($client, $grant, $access)
+            : null;
     }
 
     private function idToken(Client $client, IdTokenGrant $grant, IssuedToken $access): string

@@ -28,6 +28,23 @@ class AuthorizationCodeService implements AuthorizationCodes
         array $amr = [],
         ?string $resource = null,
     ): string {
+        // S256 ONLY, REFUSED AT ISSUE TIME. Redemption always computes S256, so a code
+        // minted with `plain` could never be redeemed — it failed closed, which is the
+        // right direction and the wrong moment: the host got a working code and a user
+        // got a broken sign-in, with the error arriving at the exchange where nothing
+        // says which of the two ends was wrong. RFC 7636 §4.2 permits `plain` only where
+        // S256 is unavailable, which is not a case that exists on a PHP server.
+        if ($codeChallengeMethod !== 'S256') {
+            throw InvalidGrant::make('code_challenge_method must be S256');
+        }
+
+        // RFC 7636 §4.2: the challenge is base64url of a SHA-256 digest, so it is 43
+        // characters of the unreserved set. Anything else is a host bug, and storing it
+        // means the failure surfaces one round trip later against the verifier.
+        if (preg_match('/^[A-Za-z0-9\-._~]{43}$/', $codeChallenge) !== 1) {
+            throw InvalidGrant::make('code_challenge is not a base64url-encoded S256 digest');
+        }
+
         $code = 'ac_'.bin2hex(random_bytes(32));
 
         AuthorizationCode::query()->create([
@@ -66,6 +83,15 @@ class AuthorizationCodeService implements AuthorizationCodes
 
             if (! hash_equals($record->redirect_uri, $redirectUri)) {
                 throw InvalidGrant::make('redirect_uri mismatch');
+            }
+
+            // RFC 7636 §4.1: the verifier is 43–128 characters of `[A-Za-z0-9-._~]`.
+            // Checked because the ABNF is the security property — it is what makes the
+            // verifier hold the entropy the challenge commits to — and a short or
+            // out-of-alphabet one is a client bug worth naming rather than a silent
+            // hash mismatch.
+            if (preg_match('/^[A-Za-z0-9\-._~]{43,128}$/', $codeVerifier) !== 1) {
+                throw InvalidGrant::make('code_verifier must be 43-128 unreserved characters');
             }
 
             // PKCE S256: challenge = base64url(sha256(verifier)).

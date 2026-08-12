@@ -100,6 +100,12 @@ class TokenExchangeService implements TokenExchange
      * A `resource` (RFC 8707) rebinds the new token's audience, so it must be a
      * well-formed ABSOLUTE URI — never a relative path or arbitrary string that could
      * seed a misleading `aud`. Null (no rebinding) is fine.
+     *
+     * AND NO FRAGMENT, which RFC 8707 §2 forbids outright. The token endpoint rejects one
+     * before any grant runs, so this was never reachable through HTTP — but a service
+     * whose own rule is weaker than its only caller's is one refactor away from being the
+     * rule. A fragment in `aud` is a value resource servers normalise inconsistently,
+     * which is the whole reason the RFC bans it.
      */
     private function validatedResource(?string $resource): ?string
     {
@@ -107,9 +113,13 @@ class TokenExchangeService implements TokenExchange
             return null;
         }
 
-        $scheme = parse_url($resource, PHP_URL_SCHEME);
+        $parts = parse_url($resource);
 
-        if (! is_string($scheme) || $scheme === '' || filter_var($resource, FILTER_VALIDATE_URL) === false) {
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host']) || isset($parts['fragment'])) {
+            throw InvalidTokenExchange::invalidResource();
+        }
+
+        if (filter_var($resource, FILTER_VALIDATE_URL) === false) {
             throw InvalidTokenExchange::invalidResource();
         }
 
