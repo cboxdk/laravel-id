@@ -26,6 +26,9 @@ class DatabaseKeyManager implements KeyManager
 
     private const CACHE_TTL = 3600;
 
+    /** P-256 coordinates are 32 bytes wide, whatever their numeric value. See `coordinate()`. */
+    private const P256_COORDINATE_BYTES = 32;
+
     public function __construct(
         private readonly SecretBox $secretBox,
     ) {}
@@ -244,10 +247,29 @@ class DatabaseKeyManager implements KeyManager
         }
 
         $jwk['crv'] = 'P-256';
-        $jwk['x'] = Base64Url::encode($this->material($details, 'ec', 'x'));
-        $jwk['y'] = Base64Url::encode($this->material($details, 'ec', 'y'));
+        $jwk['x'] = Base64Url::encode($this->coordinate($this->material($details, 'ec', 'x')));
+        $jwk['y'] = Base64Url::encode($this->coordinate($this->material($details, 'ec', 'y')));
 
         return $jwk;
+    }
+
+    /**
+     * An EC coordinate at its full curve width, zero-padded on the left.
+     *
+     * OPENSSL HANDS BACK AN INTEGER; RFC 7518 §6.2.1.2 ASKS FOR A FIXED-WIDTH OCTET STRING.
+     * `openssl_pkey_get_details()` produces the coordinate through `BN_bn2bin`, which is
+     * unpadded — so a coordinate that happens to be numerically small arrives 31 bytes
+     * instead of 32, and the JWKS then publishes an `x` or `y` from which no relying party
+     * can rebuild the point. `openssl_pkey_get_public()` on their side simply refuses it.
+     *
+     * Roughly one ES256 key in 128, decided when the key is generated and fixed for its
+     * life: an environment either publishes a usable JWKS for that key or it never does,
+     * and nothing in the product would say which. It read as an intermittent CI failure for
+     * precisely that reason — the key is fresh in every run.
+     */
+    private function coordinate(string $material): string
+    {
+        return str_pad($material, self::P256_COORDINATE_BYTES, "\x00", STR_PAD_LEFT);
     }
 
     /**

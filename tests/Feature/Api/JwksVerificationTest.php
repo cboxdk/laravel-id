@@ -130,6 +130,29 @@ it('publishes an ES256 key an RP can verify with, from the served crv/x/y alone'
     expect(JWT::decode($token, keysFromPublishedJwks())->sub)->toBe('u-ec');
 });
 
+/**
+ * THE COORDINATE IS A FIXED-WIDTH OCTET STRING, not a number.
+ *
+ * OpenSSL returns EC coordinates through `BN_bn2bin`, which drops leading zero bytes. A
+ * P-256 coordinate that happens to be numerically small therefore arrives 31 bytes wide,
+ * and a JWKS carrying it cannot be rebuilt into a point by anybody.
+ *
+ * The test above would only catch it on the roughly one key in 128 that has a short
+ * coordinate — which is why it presented as an intermittent CI failure rather than as a
+ * bug. This one asserts the width directly, so it is the same answer on every run.
+ */
+it('publishes P-256 coordinates at their full width, however small the number', function (): void {
+    app(KeyManager::class)->activeSigningKey(SigningAlg::ES256);
+
+    /** @var array{keys: list<array<string, string>>} $jwks */
+    $jwks = test()->getJson('/.well-known/jwks.json')->assertOk()->json();
+
+    $ec = collect($jwks['keys'])->firstWhere('crv', 'P-256');
+
+    expect(strlen(Base64Url::decode((string) $ec['x'])))->toBe(32)
+        ->and(strlen(Base64Url::decode((string) $ec['y'])))->toBe(32);
+});
+
 it('publishes an EdDSA (OKP) key an RP can verify with, from the served x alone', function (): void {
     app(KeyManager::class)->activeSigningKey(SigningAlg::EdDSA);
     $token = app(TokenSigner::class)->sign(['sub' => 'u-ed', 'exp' => time() + 60], SigningAlg::EdDSA);
