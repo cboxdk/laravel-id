@@ -279,6 +279,25 @@ return [
     ],
 
     /*
+     * Directory sync (inbound, API-pull: Google Workspace, Microsoft Entra).
+     *
+     * `schedule` is the whole feature working or not working. A pull connector reconciles
+     * on a timer by definition — nobody pushes to it — and the ONE caller of
+     * `cbox-id:directory:sync` was the console screen that creates a directory. So a
+     * customer connected Entra, saw one successful sync, and never got another: joiners
+     * never arrived, and — the half that matters — LEAVERS were never deprovisioned, while
+     * the guide told them syncing is what "closes the gap where a leaver still has a
+     * working account".
+     *
+     * Hourly rather than every minute: this is a full pull of a customer's directory over
+     * somebody else's rate-limited API, and the thing it is racing is a person's notice
+     * period. Set the interval yourself by turning this off and scheduling the command.
+     */
+    'directory' => [
+        'schedule' => env('CBOX_ID_DIRECTORY_SCHEDULE', true),
+    ],
+
+    /*
      * Federation (inbound SSO). `verify_url` (SSRF guard) applies the same
      * loopback/private/link-local/reserved blocking and DNS-pinning as webhook
      * delivery to org-admin-configured outbound IdP endpoints (e.g. an OIDC

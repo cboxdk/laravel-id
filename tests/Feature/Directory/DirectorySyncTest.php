@@ -9,6 +9,7 @@ use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Organization\Contracts\Memberships;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -108,3 +109,27 @@ it('emits an event and records audit on provisioning', function (): void {
     $events->assertEmitted('directory.user.provisioned');
     $audit->assertRecorded('directory.user.provisioned');
 });
+
+/**
+ * A PULL CONNECTOR HAS NO OTHER TRIGGER.
+ *
+ * The only caller of `cbox-id:directory:sync` was the console screen that CREATES a
+ * directory, so a customer connected Entra, saw one successful sync, and never got
+ * another: joiners never arrived, and leavers were never deprovisioned — while the guide
+ * tells them syncing is what "closes the gap where a leaver still has a working account".
+ *
+ * Asserted against the registered schedule rather than by reading the provider, because
+ * the failure was that nothing registered it at all.
+ */
+it('reconciles directories on a schedule', function (): void {
+    $events = collect(app(Schedule::class)->events())
+        ->map(fn ($event): string => (string) $event->description);
+
+    expect($events)->toContain('cbox-id:directory:sync');
+
+    // The opt-out (`cbox-id.directory.schedule => false`) is deliberately not asserted
+    // here: the schedule is registered at BOOT, so proving it requires an application
+    // built with the flag already off — a test of the harness rather than of this
+    // package. It is the same guard the four other scheduled jobs in this package use,
+    // and the failure that mattered was that nothing registered a schedule at all.
+})->group('provisioning');
