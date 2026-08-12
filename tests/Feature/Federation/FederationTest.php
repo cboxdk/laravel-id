@@ -13,6 +13,7 @@ use Cbox\Id\Identity\Exceptions\AccountInactive;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -166,3 +167,73 @@ it('refuses to activate a connection from another organization (IDOR)', function
 
     expect($connections->forOrganization($orgA->id))->toBeNull(); // still draft
 });
+
+/**
+ * "WHICH CONNECTION DOES THIS ORGANIZATION SIGN IN WITH" IS ASKED FIVE TIMES A RENDER.
+ *
+ * Measured on the dashboard: the page asks, the setup checklist asks the identical
+ * question again, the connectors overview a third time, and Volt runs `with()` twice. It
+ * is one row that cannot change mid-request.
+ *
+ * The memo that fixes it is the dangerous kind — this service is a singleton, so it is
+ * bounded by the request lifetime and dropped by the writes that change the answer. These
+ * hold that second half, which is the one memoising introduces.
+ */
+it('answers the same connection question once per request', function (): void {
+    $org = $this->makeOrganization();
+    $connections = app(Connections::class);
+
+    $connection = $connections->create($org->id, ConnectionType::Saml, 'Okta', [
+        'idp_entity_id' => 'https://idp.example/metadata',
+        'idp_sso_url' => 'https://idp.example/sso',
+        'idp_certificate' => 'cert',
+    ]);
+    $connections->activate($org->id, $connection->id);
+
+    $queries = 0;
+    DB::listen(function () use (&$queries): void {
+        $queries++;
+    });
+
+    $connections->forOrganization($org->id);
+    $connections->forOrganization($org->id);
+    $connections->forOrganization($org->id);
+
+    expect($queries)->toBe(1);
+});
+
+it('does not answer from a memo the write it just made invalidated', function (): void {
+    $org = $this->makeOrganization();
+    $connections = app(Connections::class);
+
+    // Ask BEFORE there is one, so the memo holds the null.
+    expect($connections->forOrganization($org->id))->toBeNull();
+
+    $created = $connections->create($org->id, ConnectionType::Saml, 'Okta', [
+        'idp_entity_id' => 'https://idp.example/metadata',
+        'idp_sso_url' => 'https://idp.example/sso',
+        'idp_certificate' => 'cert',
+    ]);
+
+    // A connection is created as a DRAFT, so it is `activate()` that changes the answer —
+    // which is the write the memo has to survive being wrong about.
+    $connections->activate($org->id, $created->id);
+
+    expect($connections->forOrganization($org->id)?->id)->toBe($created->id);
+});
+
+it('does not answer one organization from another organization\'s memo', function (): void {
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B');
+    $connections = app(Connections::class);
+
+    $connection = $connections->create($a->id, ConnectionType::Saml, 'Okta', [
+        'idp_entity_id' => 'https://idp.example/metadata',
+        'idp_sso_url' => 'https://idp.example/sso',
+        'idp_certificate' => 'cert',
+    ]);
+    $connections->activate($a->id, $connection->id);
+
+    expect($connections->forOrganization($a->id))->not->toBeNull()
+        ->and($connections->forOrganization($b->id))->toBeNull();
+})->group('security');

@@ -13,10 +13,30 @@ use Cbox\Id\Federation\ValueObjects\OAuth2ConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\SamlConnectionConfig;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Illuminate\Support\Str;
 
 class ConnectionService implements Connections
 {
+    /**
+     * The enterprise connection per organization, for the request in flight.
+     *
+     * ASKED FIVE TIMES PER DASHBOARD RENDER, measured: the page asks, the setup checklist
+     * asks the identical question again, the connectors overview asks a third time, and
+     * Volt runs `with()` twice. It is one row, it cannot change mid-request, and the answer
+     * decides how an organization signs in.
+     *
+     * Keyed on the request lifetime as well as the organization, like every other memo in
+     * this package: this service is a singleton, and a memo that outlived the request would
+     * hand a queue worker the first job's connection for the life of the process — the
+     * failure {@see RequestLifetime} exists to make impossible.
+     *
+     * @var array<string, Connection|null>
+     */
+    private array $memo = [];
+
+    private ?RequestLifetime $memoLifetime = null;
+
     public function __construct(private readonly SecretBox $secretBox) {}
 
     public function create(
@@ -27,6 +47,10 @@ class ConnectionService implements Connections
         array $mappings = [],
         ?string $provider = null,
     ): Connection {
+        // Same reason as `activate()`: creating a connection changes which one an
+        // organization signs in with.
+        unset($this->memo[$organizationId]);
+
         if ($provider !== null && ProviderCatalog::find($provider) === null) {
             // Refused rather than stored. A connection labelled with a key the catalogue
             // does not have would render a sign-in button nobody can complete, and the
@@ -61,7 +85,18 @@ class ConnectionService implements Connections
 
     public function forOrganization(string $organizationId): ?Connection
     {
-        return Connection::query()
+        $lifetime = RequestLifetime::current(app());
+
+        if ($this->memoLifetime !== $lifetime) {
+            $this->memo = [];
+            $this->memoLifetime = $lifetime;
+        }
+
+        if (array_key_exists($organizationId, $this->memo)) {
+            return $this->memo[$organizationId];
+        }
+
+        return $this->memo[$organizationId] = Connection::query()
             ->where('organization_id', $organizationId)
             ->where('status', ConnectionStatus::Active->value)
             // Catalogue providers are offered as buttons, not as the way an organization
@@ -88,6 +123,11 @@ class ConnectionService implements Connections
 
     public function activate(string $organizationId, string $id): void
     {
+        // The memo answers "which connection does this organization sign in with", and
+        // this is the method that changes it. A memo that survives its own write is the
+        // bug memoising introduces.
+        unset($this->memo[$organizationId]);
+
         // Scope to the owning org so an admin can't flip another tenant's draft.
         Connection::query()
             ->whereKey($id)
