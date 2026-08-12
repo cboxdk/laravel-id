@@ -11,6 +11,7 @@ use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Federation\Support\FederationFlowStash;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class OidcCallbackController
         private readonly OidcRelyingParty $client,
         private readonly AssertionValidator $validator,
         private readonly FederationFlow $flow,
+        private readonly FederationFlowStash $stash,
     ) {}
 
     public function __invoke(Request $request, string $connection): JsonResponse
@@ -39,15 +41,16 @@ class OidcCallbackController
             return $this->error(404, 'Unknown or inactive OIDC connection.');
         }
 
-        $stashed = $request->session()->pull('oidc.'.$model->id);
-        $expectedState = is_array($stashed) && is_string($stashed['state'] ?? null) ? $stashed['state'] : null;
-        $expectedNonce = is_array($stashed) && is_string($stashed['nonce'] ?? null) ? $stashed['nonce'] : null;
+        // Pulled, not read: a replayed callback finds nothing stashed and fails closed.
+        $expected = $this->stash->pull($request, $model->id);
 
+        // `string()` reads the query OR the body, which is what makes a `form_post`
+        // callback work at all — Apple POSTs these rather than putting them in the URL.
         $state = $request->string('state')->toString();
         $code = $request->string('code')->toString();
 
-        // CSRF: the state must match the one we issued for this session.
-        if ($expectedState === null || $code === '' || ! hash_equals($expectedState, $state)) {
+        // CSRF: the state must match the one we issued for this browser.
+        if ($expected === null || $code === '' || ! $expected->matches($state)) {
             return $this->error(400, 'Invalid OIDC state or missing code.');
         }
 
@@ -58,7 +61,7 @@ class OidcCallbackController
             // Replay defense: the id_token's nonce must be the one we sent.
             $nonce = $principal->raw['nonce'] ?? null;
 
-            if ($expectedNonce === null || ! is_string($nonce) || ! hash_equals($expectedNonce, $nonce)) {
+            if (! is_string($nonce) || ! hash_equals($expected->nonce, $nonce)) {
                 return $this->error(401, 'OIDC nonce mismatch.');
             }
 

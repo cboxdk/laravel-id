@@ -17,6 +17,34 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sign in with Apple could not complete, and had never been able to.** The catalogue
+  offered it, the setup form had fields for it, and an ES256 client-secret minter sat
+  fully tested next to the flow — with nothing calling it. Three declarations on the
+  provider template were inert: `secretKind: SignedJwt`, `responseMode: 'form_post'`, and
+  the redirect URI's method. The token exchange sent whatever the administrator had been
+  forced to type into a "client secret" field for a provider that issues none; the
+  authorization request never asked for the response mode Apple switches to by itself the
+  moment a scope beyond `openid` is requested; and the callback then arrived as a
+  cross-site POST at a GET-only route. Each failure looked like something else — a wrong
+  client id, a cancelled sign-in, an expired link.
+
+  `OidcClient` now mints the assertion per request from the connection's own key material
+  (`SigningKeyCredential`, carried through `OidcConnectionConfig`), sends `response_mode`
+  when the catalogue declares one, and the callback accepts POST. The choice is made from
+  the connection's material rather than its provider name, so a hand-configured OIDC
+  connection can authenticate the same way — this is RFC 7523 §2.2 `private_key_jwt` in
+  everything but the parameter name.
+
+- **A `form_post` callback arrived with no session, so its state was always missing.** A
+  `SameSite=Lax` session cookie is not sent on a cross-site POST: the callback ran against
+  an empty session, found no stashed `state`, and told the person their sign-in link had
+  expired. The pair now also travels in a dedicated `SameSite=None; Secure; HttpOnly`
+  cookie scoped to one connection and read once (`FederationFlowStash`). It stays
+  browser-bound, which is the entire point of `state` — moving it to a server-side store
+  keyed by `state` would have turned a CSRF defence into a lookup table.
+
 ## [1.1.0] - 2026-08-08
 
 ### Added

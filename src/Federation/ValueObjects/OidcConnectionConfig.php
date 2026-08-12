@@ -40,6 +40,14 @@ readonly class OidcConnectionConfig
         public array $signingKeys = [],
         public ?string $signingKey = null,
         public array $scopes = [],
+
+        /**
+         * Set when the provider issues no secret to paste and expects a signed assertion
+         * minted per request instead — see {@see SigningKeyCredential}. Mutually exclusive
+         * with `$clientSecret` in practice; the client prefers this one when both exist,
+         * because a provider that mints cannot also accept a pasted string.
+         */
+        public ?SigningKeyCredential $signingCredential = null,
     ) {}
 
     /**
@@ -57,6 +65,7 @@ readonly class OidcConnectionConfig
             signingKeys: self::stringMap($config, 'signing_keys'),
             signingKey: self::optional($config, 'signing_key'),
             scopes: self::stringList($config, 'scopes'),
+            signingCredential: SigningKeyCredential::fromArray($config),
         );
     }
 
@@ -75,6 +84,7 @@ readonly class OidcConnectionConfig
             'signing_keys' => $this->signingKeys,
             'signing_key' => $this->signingKey,
             'scopes' => $this->scopes,
+            ...($this->signingCredential?->toArray() ?? []),
         ], static fn (mixed $value): bool => $value !== null && $value !== []);
     }
 

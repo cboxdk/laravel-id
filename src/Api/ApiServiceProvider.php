@@ -38,6 +38,7 @@ use Cbox\Id\Api\Http\Middleware\CanonicalIssuerHost;
 use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
 use Cbox\Id\Api\Http\Middleware\ScimContentType;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -260,7 +261,17 @@ class ApiServiceProvider extends ServiceProvider
             Route::middleware(['web', 'throttle:30,1'])->group(function (): void {
                 // OIDC (RP-initiated) login. The id_token signature + nonce are the auth.
                 Route::get('/sso/oidc/{connection}/redirect', OidcRedirectController::class);
-                Route::get('/sso/oidc/{connection}/callback', OidcCallbackController::class);
+
+                // AND POST, because `response_mode=form_post` is a thing providers choose
+                // for us. Apple switches to it the moment a scope beyond `openid` is asked
+                // for; a GET-only redirect URI answers that with 405, and the person sees
+                // a blank failure that looks exactly like they cancelled. The callback
+                // reads `state`/`code` from the query or the body indifferently, and
+                // `state` — not the framework's CSRF token, which a cross-site POST from a
+                // provider cannot carry — is what proves the answer belongs to this
+                // browser. See {@see \Cbox\Id\Federation\Support\FederationFlowStash}.
+                Route::match(['get', 'post'], '/sso/oidc/{connection}/callback', OidcCallbackController::class)
+                    ->withoutMiddleware(VerifyCsrfToken::class);
 
                 // SP-initiated SAML login (AuthnRequest). Single Logout accepts the IdP's
                 // redirect (GET) and, for some IdPs, POST — it belongs with the login it

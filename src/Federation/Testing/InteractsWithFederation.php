@@ -22,9 +22,10 @@ trait InteractsWithFederation
         string $name = 'Okta',
         array $config = [],
         bool $active = true,
+        ?string $provider = null,
     ): Connection {
         $connections = app(Connections::class);
-        $connection = $connections->create($organizationId, $type, $name, $config);
+        $connection = $connections->create($organizationId, $type, $name, $config, provider: $provider);
 
         if ($active) {
             $connections->activate($organizationId, $connection->id);

@@ -26,21 +26,32 @@ use Illuminate\Support\Facades\Http;
  */
 class OidcClient implements OidcRelyingParty
 {
-    public function __construct(private readonly Connections $connections) {}
+    public function __construct(
+        private readonly Connections $connections,
+        private readonly AppleClientSecret $signedSecrets,
+    ) {}
 
     public function authorizeUrl(Connection $connection, string $redirectUri, string $state, string $nonce): string
     {
         $config = $this->connections->oidcConfig($connection);
 
         $endpoint = $config->requireField($config->authorizationEndpoint, 'authorization_endpoint');
-        $query = http_build_query([
+        $query = http_build_query(array_filter([
             'response_type' => 'code',
             'client_id' => $config->clientId,
             'redirect_uri' => $redirectUri,
             'scope' => $config->scopeString(),
             'state' => $state,
             'nonce' => $nonce,
-        ]);
+
+            // ONLY WHEN THE PROVIDER REQUIRES ONE. Apple switches to `form_post` by
+            // itself the moment a scope beyond `openid` is asked for, so a request that
+            // stays silent here does not get the query-string redirect it was written
+            // for — it gets a POST, to a handler that never runs, and the person sees
+            // what looks like a cancellation. Declaring it makes the callback method a
+            // property of the connection instead of a consequence of the scope list.
+            'response_mode' => $this->responseMode($connection),
+        ], static fn (?string $value): bool => $value !== null && $value !== ''));
 
         return $endpoint.(str_contains($endpoint, '?') ? '&' : '?').$query;
     }
@@ -74,7 +85,7 @@ class OidcClient implements OidcRelyingParty
                 'code' => $code,
                 'redirect_uri' => $redirectUri,
                 'client_id' => $config->clientId,
-                'client_secret' => $config->requireField($config->clientSecret, 'client_secret'),
+                'client_secret' => $this->clientSecret($connection, $config),
             ]);
 
         if (! $response->successful()) {
@@ -88,5 +99,48 @@ class OidcClient implements OidcRelyingParty
         }
 
         return $idToken;
+    }
+
+    /**
+     * The credential this connection authenticates to the token endpoint with.
+     *
+     * Most providers issue a string the administrator pastes once. Apple issues nothing
+     * of the kind: it expects an ES256 JWT signed with a key you downloaded, valid at
+     * most six months. Stored as a pasted string, that assertion works — and then stops
+     * working on a day nobody changed anything, with an error indistinguishable from a
+     * wrong client id. Minted per request, it cannot expire on its own.
+     *
+     * The connection's own material decides, not the catalogue: a connection carrying a
+     * signing key mints, whatever it calls itself. That keeps a hand-configured OIDC
+     * connection — no catalogue key at all — able to use the same authentication.
+     */
+    private function clientSecret(Connection $connection, OidcConnectionConfig $config): string
+    {
+        $credential = $config->signingCredential;
+
+        if ($credential === null) {
+            return $config->requireField($config->clientSecret, 'client_secret');
+        }
+
+        return $this->signedSecrets->mint(
+            $connection->id,
+            $credential->issuerId,
+            $credential->keyId,
+            $credential->privateKey,
+            $config->clientId,
+        );
+    }
+
+    /**
+     * The `response_mode` the catalogue declares for this provider, if any.
+     *
+     * A connection with no catalogue key is hand-configured, and a hand-configured
+     * connection gets the default: we have nothing to declare on its behalf.
+     */
+    private function responseMode(Connection $connection): ?string
+    {
+        $provider = $connection->provider;
+
+        return $provider === null ? null : ProviderCatalog::find($provider)?->responseMode;
     }
 }
