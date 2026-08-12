@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform;
 
+use Cbox\Id\Identity\DatabaseSessionManager;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
@@ -26,6 +27,15 @@ use Illuminate\Support\Str;
  */
 class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
 {
+    /**
+     * How long a `last_used_at` write is skipped after the last one, in seconds.
+     *
+     * The same window {@see DatabaseSessionManager::TOUCH_THROTTLE_SECONDS}
+     * and the Frontend API door use. It is a column an operator reads before revoking a
+     * key, not a real-time counter.
+     */
+    private const TOUCH_THROTTLE_SECONDS = 60;
+
     // Lazy per-call resolution of the ambient environment. This class is a `singleton`
     // (PlatformServiceProvider) and EnvironmentContext is `scoped`, so injecting it here
     // would pin a queue worker to the first job's environment for the life of the process.
@@ -71,7 +81,16 @@ class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
             return null;
         }
 
-        $key->forceFill(['last_used_at' => now()])->save();
+        // THROTTLED, like every other `last_used_at` in this package
+        // ({@see \Cbox\Id\FrontendApi\Http\Middleware\AuthenticateFrontendApi::touch()},
+        // {@see \Cbox\Id\Identity\DatabaseSessionManager::TOUCH_THROTTLE_SECONDS}). It is a
+        // column nobody reads in real time — it tells an operator whether a key is still
+        // wired into something before they revoke it — and writing it on every request
+        // turns a customer polling a read endpoint into a write on one hot row, with the
+        // lock contention that implies.
+        if ($key->last_used_at === null || $key->last_used_at->diffInSeconds(now()) >= self::TOUCH_THROTTLE_SECONDS) {
+            $key->forceFill(['last_used_at' => now()])->save();
+        }
 
         return $key;
     }

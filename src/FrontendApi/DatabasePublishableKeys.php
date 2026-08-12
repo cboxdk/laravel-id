@@ -7,6 +7,7 @@ namespace Cbox\Id\FrontendApi;
 use Cbox\Id\FrontendApi\Contracts\PublishableKeys;
 use Cbox\Id\FrontendApi\Enums\KeyMode;
 use Cbox\Id\FrontendApi\Exceptions\UnusableOrigin;
+use Cbox\Id\FrontendApi\Models\AllowedOrigin;
 use Cbox\Id\FrontendApi\Models\PublishableKey;
 use Cbox\Id\FrontendApi\Support\Origin;
 use Illuminate\Database\Eloquent\Builder;
@@ -68,12 +69,18 @@ class DatabasePublishableKeys implements PublishableKeys
             return false;
         }
 
+        // FROM THE ORIGINS TABLE INWARD, because that is the side the index is on.
+        // Driving this from `frontend_api_keys` and filtering with `whereHas` makes the
+        // origin the inner predicate, so a NON-matching origin — the case an anonymous
+        // caller controls — walks every active key in the environment. Started from the
+        // indexed column, a miss is one probe.
+        //
         // Origins are normalized on the way in AND stored normalized, so this stays the
         // exact comparison {@see PublishableKey::allowsOrigin()} makes. The database does
         // it here only because a preflight carries no key to load an allow-list from.
-        return PublishableKey::query()
-            ->whereNull('revoked_at')
-            ->whereHas('origins', static fn (Builder $query): Builder => $query->where('origin', $normalized))
+        return AllowedOrigin::query()
+            ->where('origin', $normalized)
+            ->whereHas('key', static fn (Builder $query): Builder => $query->whereNull('revoked_at'))
             ->exists();
     }
 

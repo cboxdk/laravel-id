@@ -28,6 +28,20 @@ class PlatformServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // SHARED, or the memo inside it is not a memo.
+        //
+        // `PlatformRoot::model()` memoises the root environment for the request and says
+        // so — "an account-plane page paid this five times over" — but the memo lives on
+        // the instance, and the idiom everywhere in this platform is
+        // `app(PlatformRoot::class)->run(...)`. Unbound, every one of those calls built a
+        // fresh object and re-queried: one console page render was measured making 407
+        // `where is_default` selects, all of them the same question.
+        //
+        // `scoped` rather than `singleton` because the answer is request-bounded by
+        // design: an octane worker that kept it would serve a stale root across a
+        // migration, which is the case {@see RequestLifetime} exists to bound.
+        $this->app->scoped(PlatformRoot::class);
+
         $this->app->singleton(PlatformOperators::class, function (Application $app): PlatformOperators {
             return new DatabasePlatformOperators(
                 $app->make(Hasher::class),

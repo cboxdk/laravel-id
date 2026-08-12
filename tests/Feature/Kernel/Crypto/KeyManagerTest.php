@@ -212,8 +212,17 @@ it('publishes only public material in the JWKS', function (SigningAlg $alg): voi
         return;
     }
 
-    expect($jwk['x'])->toBe(Base64Url::encode($details['ec']['x']))
-        ->and($jwk['y'])->toBe(Base64Url::encode($details['ec']['y']));
+    // COMPARED AS NUMBERS, not as byte strings. OpenSSL returns EC coordinates through
+    // `BN_bn2bin`, which is unpadded, while RFC 7518 §6.2.1.2 asks for a fixed-width octet
+    // string — so on the roughly one key in 158 with a numerically small coordinate, the
+    // published value is 32 bytes and openssl's is 31 and a byte comparison fails. That is
+    // the same 1-in-158 coin toss the padding fix exists to remove; asserting the padded
+    // form here would just move the flake into this file.
+    expect(ltrim(Base64Url::decode($jwk['x']), "\x00"))->toBe(ltrim($details['ec']['x'], "\x00"))
+        ->and(ltrim(Base64Url::decode($jwk['y']), "\x00"))->toBe(ltrim($details['ec']['y'], "\x00"))
+        // And the width itself, which is the property the padding is for.
+        ->and(strlen(Base64Url::decode($jwk['x'])))->toBe(32)
+        ->and(strlen(Base64Url::decode($jwk['y'])))->toBe(32);
 })->with([
     'RS256' => SigningAlg::RS256,
     'ES256' => SigningAlg::ES256,

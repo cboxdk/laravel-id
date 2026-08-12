@@ -151,7 +151,14 @@ class AuthenticateFrontendApi
     /**
      * CORS headers for an origin already proven to be on the key's allow-list.
      *
-     * `Vary: Origin` is not optional: without it a shared cache can hand one customer's
+     * `Vary` NAMES BOTH HEADERS THE ANSWER DEPENDS ON, and the key is the one that was
+     * missing. The middleware picks the ENVIRONMENT from the key rather than from the
+     * host, so one URL, one origin and two keys are two different documents — and a
+     * browser cache keyed on the URL alone would serve environment A's configuration to a
+     * page holding environment B's key. `private` keeps shared caches out of it; the
+     * browser's own cache is the one that needed telling.
+     *
+     * `Vary: Origin` is not optional either: without it a shared cache can hand one customer's
      * `Access-Control-Allow-Origin` to another customer's browser, and the second one is
      * refused for reasons nobody can reproduce.
      *
@@ -169,7 +176,11 @@ class AuthenticateFrontendApi
         $response->headers->set('Access-Control-Allow-Headers', self::HEADER.', Authorization, Content-Type, Accept');
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         $response->headers->set('Access-Control-Max-Age', '600');
-        $response->headers->set('Vary', 'Origin');
+        // Appended, not set: a controller may already have varied on something of its own,
+        // and clobbering that would be a caching bug introduced by the CORS layer.
+        $vary = array_filter(array_map(trim(...), explode(',', (string) $response->headers->get('Vary', ''))));
+
+        $response->headers->set('Vary', implode(', ', array_unique([...$vary, 'Origin', self::HEADER])));
 
         return $response;
     }

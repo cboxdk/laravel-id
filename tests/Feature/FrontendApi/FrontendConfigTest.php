@@ -111,6 +111,21 @@ it('leaks no counts, ids or private configuration', function (): void {
     }
 });
 
+/**
+ * ONE URL, ONE ORIGIN, TWO KEYS — TWO DOCUMENTS.
+ *
+ * The door picks the environment from the KEY, not from the host, so a browser cache keyed
+ * on the URL alone would serve one environment's configuration to a page holding the
+ * other's key. `private` keeps shared caches out of it; the browser's own cache is the one
+ * that had to be told.
+ */
+it('varies on the key as well as the origin', function (): void {
+    $response = $this->withHeaders(asBrowser())->getJson('/frontend/v1/config')->assertOk();
+
+    expect($response->headers->get('Vary'))->toContain('X-Cbox-Publishable-Key')
+        ->and($response->headers->get('Vary'))->toContain('Origin');
+});
+
 it('is cached privately, never in a shared cache', function (): void {
     // The document differs per environment, and a shared cache keyed on the URL alone
     // would serve one customer's configuration to another customer's page.

@@ -40,6 +40,13 @@ function tenantOwnedEnvironment(): Environment
     // `is_default` row present, environment() never reaches it.
     Environment::query()->where('is_default', true)->update(['is_default' => false]);
 
+    // And drop the resolved instance. `PlatformRoot` memoises the root for the LIFETIME OF
+    // A REQUEST and is bound `scoped` so that memo is shared — the provisioning above
+    // already resolved it, and a real deployment reading a row this fixture then changes
+    // would be doing it on a later request. Forgetting the instance is what "a later
+    // request" means in a test process.
+    app()->forgetInstance(PlatformRoot::class);
+
     return $environment;
 }
 
