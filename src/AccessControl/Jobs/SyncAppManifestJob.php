@@ -42,14 +42,19 @@ class SyncAppManifestJob implements ShouldQueue
             return;
         }
 
-        $context->set(GenericEnvironment::of($client->environment_id));
-
-        try {
-            $puller->pull($client);
-        } catch (Throwable $e) {
-            // A bad or unreachable app must not fail the fleet-wide sweep; its
-            // existing declared catalog simply stands until the next successful pull.
-            report($e);
-        }
+        // `runAs`, NOT `set`. A worker process is long-lived and handles job after job:
+        // `set()` leaves this client's environment pinned when the body exits, so the next
+        // job on that worker starts inside it. Deny-by-default turns that into a
+        // wrong-tenant read rather than an unscoped one, which is the better failure and
+        // still the wrong answer. Every other job in this package uses `runAs`.
+        $context->runAs(GenericEnvironment::of($client->environment_id), function () use ($puller, $client): void {
+            try {
+                $puller->pull($client);
+            } catch (Throwable $e) {
+                // A bad or unreachable app must not fail the fleet-wide sweep; its
+                // existing declared catalog simply stands until the next successful pull.
+                report($e);
+            }
+        });
     }
 }

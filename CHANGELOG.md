@@ -30,6 +30,22 @@ more trust than the wording it removes.
   compliance console rendered one number by cursoring through a subject's entire audit
   history twice, 200 rows at a time, on a live-updating input.
 
+- **Certification-item reads are fenced to the campaign's own organization.**
+  `CertificationItem` is environment-owned and not tenant-owned, and organizations share an
+  environment — so `where('campaign_id', …)` alone made the id the whole authorization, and
+  the fence lived in one console's discipline. `AccessReviews`' three item readers now carry
+  the predicate themselves.
+
+- **`Projects` gained owner-carrying verbs** — `renameForOrganization()`,
+  `suspendForOrganization()`, `reactivateForOrganization()`. `Project` is the one model in
+  the hierarchy with no global scope at all, so `rename($id, …)` is a write across every
+  customer's projects fenced only by each caller remembering to resolve first. The bare
+  verbs are deprecated.
+
+- **`SyncAppManifestJob` restores the environment it borrowed.** It used `set()` rather
+  than `runAs()`, so on a long-lived worker the next job started inside the last client's
+  environment.
+
 - **`Memberships::userIdsForOrganization()`** — the subject ids of an organization, for a
   caller that only wants to filter by them. Two module pages built a `whereIn` by
   hydrating every membership and reducing it to `pluck('user_id')`, one of them twice per
@@ -51,6 +67,26 @@ more trust than the wording it removes.
 - **Per-endpoint client-authentication metadata.** `revocation_endpoint_auth_methods_supported`
   and `introspection_endpoint_auth_methods_supported` are now published, because they
   differ: revocation accepts a public client, introspection does not.
+
+### Security
+
+- **Global sign-out now requires a verified `id_token_hint`.** `/oauth/logout` is
+  unauthenticated by design — a relying party reaches it by redirecting the browser — and
+  it answers GET. Once the previous release made the revocation actually fire on a host
+  with its own session, "revoke every session this browser's owner holds" became something
+  any page could cause by sending somebody through a link: no credential, nothing minted,
+  a denial of service against every user of a deployment. The teardown now fires only when
+  a hint this server verified names the person actually holding the browser; without it,
+  only that browser is signed out. Introduced and fixed before release.
+
+- **A federated `email_verified` is carried only for a domain the connection's owner has
+  proven.** A connection is configured by a CUSTOMER — they choose the issuer, so they can
+  point one at an IdP they run and assert `email: ceo@somebody-else.com, email_verified:
+  true`. Since `email_verified` is exactly the claim a downstream relying party uses to
+  decide two accounts are the same person, carrying it unconditionally would let any tenant
+  mint a verified address in another company's domain. Domain verification is the boundary
+  this platform already uses to decide an organization speaks for a domain, so it is the
+  one applied here. Introduced and fixed before release.
 
 ### Fixed
 

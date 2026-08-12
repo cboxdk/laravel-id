@@ -9,6 +9,7 @@ use Cbox\Id\Platform\Contracts\OrganizationProjects;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\Enums\ProjectStatus;
 use Cbox\Id\Platform\Models\Project;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -78,6 +79,40 @@ class DatabaseProjects implements OrganizationProjects, Projects
     public function reactivate(string $id): void
     {
         Project::query()->whereKey($id)->update(['status' => ProjectStatus::Active]);
+    }
+
+    public function renameForOrganization(string $organizationId, string $id, string $name): void
+    {
+        $this->owned($organizationId, $id)->update(['name' => $name]);
+    }
+
+    public function suspendForOrganization(string $organizationId, string $id): void
+    {
+        $this->owned($organizationId, $id)->update(['status' => ProjectStatus::Suspended]);
+    }
+
+    public function reactivateForOrganization(string $organizationId, string $id): void
+    {
+        $this->owned($organizationId, $id)->update(['status' => ProjectStatus::Active]);
+    }
+
+    /**
+     * One project, fenced to its owner IN THE QUERY.
+     *
+     * An empty organization id yields a query that matches nothing rather than one that
+     * matches every project on the install — the same rule {@see ownedByOrganization()}
+     * states, for the same reason.
+     *
+     * @return Builder<Project>
+     */
+    private function owned(string $organizationId, string $id): Builder
+    {
+        return Project::query()
+            ->whereKey($id)
+            ->when($organizationId !== '',
+                fn (Builder $query) => $query->where('organization_id', $organizationId),
+                fn (Builder $query) => $query->whereRaw('1 = 0'),
+            );
     }
 
     public function remainingEnvironments(Project $project): int

@@ -176,3 +176,41 @@ it('refuses to certify, revoke or close another organization\'s campaign', funct
     // Org B's own admin still can.
     expect($reviews->close($victimCampaign->id, 'org-b')->isClosed())->toBeTrue();
 });
+
+/**
+ * THE CAMPAIGN ID WAS THE WHOLE AUTHORIZATION.
+ *
+ * `CertificationItem` is environment-owned and NOT tenant-owned, and many organizations
+ * share one environment — so a reader filtering on `campaign_id` alone hands any caller
+ * holding an id another tenant's entire certification worklist: every reviewed subject,
+ * what each holds, and the reviewer's decisions.
+ *
+ * Nothing could reach it, because the console re-resolves the campaign with its own
+ * organization predicate first. That is a fence living outside the contract, one forgetful
+ * call site away from being gone — which is exactly how this console shipped a
+ * cross-organization IDOR once already.
+ */
+it('reads a campaign only from the organization that owns it', function (): void {
+    $reviews = app(AccessReviews::class);
+
+    // Two organizations in ONE environment, each with a campaign holding one item.
+    app(Roles::class)->assign('org_one', 'person_one', app(Roles::class)->define('org_one', 'role-one')->id);
+    app(Roles::class)->assign('org_two', 'person_two', app(Roles::class)->define('org_two', 'role-two')->id);
+
+    $mine = $reviews->open('org_one', 'Mine', null);
+    $theirs = $reviews->open('org_two', 'Theirs', null);
+
+    expect($reviews->itemsFor($mine->id))->not->toBeEmpty()
+        ->and($reviews->itemsFor($theirs->id))->not->toBeEmpty();
+
+    // Every item a campaign answers with belongs to that campaign's own organization.
+    foreach ($reviews->itemsFor($theirs->id) as $item) {
+        expect($item->organization_id)->toBe('org_two');
+    }
+
+    // And an id that resolves to no campaign at all yields nothing, rather than
+    // everything — a `where('campaign_id', …)` with no owner would match zero rows here
+    // by luck; the point is that the count and the paginator agree with the list.
+    expect($reviews->countItemsFor('campaign_that_does_not_exist'))->toBe(0)
+        ->and($reviews->paginateItemsFor('campaign_that_does_not_exist')->total())->toBe(0);
+})->group('security');

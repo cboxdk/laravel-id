@@ -6,6 +6,7 @@ use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Platform\Contracts\OrganizationProjects;
+use Cbox\Id\Platform\Enums\ProjectStatus;
 use Cbox\Id\Platform\Models\Project;
 use Cbox\Id\Platform\TenantProvisioner;
 use Cbox\Id\Platform\ValueObjects\ProvisionedTenant;
@@ -149,4 +150,50 @@ it('answers ownership by organization id', function (): void {
         ->and($projects->ownedByOrganization($globex->project->id, $acme->organization->id))->toBeFalse()
         ->and($projects->forOrganization($acme->organization->id)->pluck('id')->all())->toBe([$acme->project->id])
         ->and($projects->forOrganization($globex->organization->id)->pluck('id')->all())->toBe([$globex->project->id]);
+})->group('security');
+
+/**
+ * THE PROJECT MUTATORS TOOK AN ID AND NO OWNER.
+ *
+ * `Project` is the one model in this hierarchy with no global scope at all — it sits above
+ * the environment and below the organization, so neither `EnvironmentScope` nor
+ * `TenantScope` applies. `whereKey($id)->update(...)` is therefore a global write across
+ * every customer's projects, and what stood between an admin of one organization and
+ * another's product was three console call sites each remembering to re-resolve first.
+ *
+ * The owner-carrying verbs put the predicate in the query, so the fence and the write
+ * agree by signature.
+ */
+it('will not rename or suspend a project another organization owns', function (): void {
+    $projects = app(OrganizationProjects::class);
+
+    $mine = $projects->createForOrganization('org_mine', 'Mine');
+    $theirs = $projects->createForOrganization('org_theirs', 'Theirs');
+
+    $projects->renameForOrganization('org_mine', $theirs->id, 'Stolen');
+    $projects->suspendForOrganization('org_mine', $theirs->id);
+
+    $after = Project::query()->whereKey($theirs->id)->first();
+
+    expect($after?->name)->toBe('Theirs')
+        ->and($after?->status)->toBe(ProjectStatus::Active);
+
+    // And it still does the job on one's own.
+    $projects->renameForOrganization('org_mine', $mine->id, 'Renamed');
+
+    expect(Project::query()->whereKey($mine->id)->value('name'))->toBe('Renamed');
+})->group('security');
+
+/**
+ * An empty owner matches nothing rather than everything — the same rule
+ * `ownedByOrganization()` states, and the reason it asks the database rather than
+ * comparing an attribute in PHP.
+ */
+it('treats an empty organization id as owning no project', function (): void {
+    $projects = app(OrganizationProjects::class);
+    $project = $projects->createForOrganization('org_mine', 'Mine');
+
+    $projects->renameForOrganization('', $project->id, 'Nobody');
+
+    expect(Project::query()->whereKey($project->id)->value('name'))->toBe('Mine');
 })->group('security');

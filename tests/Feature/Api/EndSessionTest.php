@@ -154,15 +154,65 @@ it('refuses to redirect when client_id contradicts the hint audience', function 
     ]))->assertOk();
 });
 
-it('revokes the authenticated subject sessions on logout', function (): void {
+/**
+ * GLOBAL SIGN-OUT NEEDS A VERIFIED `id_token_hint`, and that is not a formality.
+ *
+ * This endpoint is unauthenticated by design — a relying party reaches it by redirecting
+ * the browser — and it answers GET. So without proof of WHICH End-User the request
+ * concerns, "revoke every session this browser's owner holds" is a thing any page on the
+ * internet can cause by sending the victim through a link: a denial of service against
+ * every user of every deployment, mints nothing, needs no credential.
+ *
+ * The hint is the proof. `EndSessionService` verifies it against this server's own keys
+ * and returns its `sub`; the teardown fires only when that names the person actually
+ * holding the browser.
+ */
+it('revokes every session when a verified id_token_hint names the signed-in subject', function (): void {
+    $client = logoutClient();
     $subject = $this->makeUser('alice@example.test');
     $sessions = app(SessionManager::class);
     $session = $sessions->start($subject->id, null, ['pwd']);
 
     expect($sessions->active($session->id))->not->toBeNull();
 
-    // auth()->id() drives the teardown; authenticate the guard with the subject id.
-    $this->actingAs(new GenericUser(['id' => $subject->id, 'remember_token' => '']))->get('/oauth/logout')->assertOk();
+    $this->actingAs(new GenericUser(['id' => $subject->id, 'remember_token' => '']))
+        ->get('/oauth/logout?'.http_build_query([
+            'client_id' => $client->client->client_id,
+            'id_token_hint' => idTokenHint($client->client->client_id, ['sub' => $subject->id]),
+        ]))->assertOk();
 
     expect($sessions->active($session->id))->toBeNull();
 });
+
+it('signs out only this browser when the request cannot say who it is about', function (): void {
+    $subject = $this->makeUser('bob@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($subject->id, null, ['pwd']);
+
+    // No hint: the browser is signed out (the session cookie is cleared) and the person's
+    // other devices are left alone. This is the shape a forged cross-site navigation
+    // takes, and it used to revoke everything.
+    $this->actingAs(new GenericUser(['id' => $subject->id, 'remember_token' => '']))
+        ->get('/oauth/logout')->assertOk();
+
+    expect($sessions->active($session->id))->not->toBeNull();
+})->group('security');
+
+/**
+ * And a hint naming somebody ELSE revokes nothing — the two ids are compared, so a valid
+ * token minted for another subject cannot be used to sign that subject out.
+ */
+it('ignores a verified hint that names a different subject', function (): void {
+    $client = logoutClient();
+    $subject = $this->makeUser('carol@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($subject->id, null, ['pwd']);
+
+    $this->actingAs(new GenericUser(['id' => $subject->id, 'remember_token' => '']))
+        ->get('/oauth/logout?'.http_build_query([
+            'client_id' => $client->client->client_id,
+            'id_token_hint' => idTokenHint($client->client->client_id, ['sub' => 'somebody-else']),
+        ]))->assertOk();
+
+    expect($sessions->active($session->id))->not->toBeNull();
+})->group('security');

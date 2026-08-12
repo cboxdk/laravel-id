@@ -20,8 +20,9 @@ use Illuminate\Support\Facades\Log;
  * against the client's allow-list, sends the browser back there (carrying `state`).
  *
  * Session teardown is the controller's job; the open-redirect guard lives in the
- * {@see EndSession} resolver. The endpoint only ever REVOKES a session and never
- * mints one, so an unauthenticated or forged request cannot gain anything.
+ * {@see EndSession} resolver. The endpoint only ever REVOKES a session and never mints
+ * one — but "revokes" is not automatically harmless, and how much it revokes depends on
+ * whether the request can be believed. See {@see terminate()}.
  */
 class EndSessionController
 {
@@ -42,7 +43,7 @@ class EndSessionController
 
         $result = $this->endSession->resolve($endSessionRequest);
 
-        $this->terminate($request);
+        $this->terminate($request, $result->subject);
 
         if ($result->hasRedirect()) {
             return new RedirectResponse((string) $result->redirectTo);
@@ -91,10 +92,26 @@ class EndSessionController
     }
 
     /**
-     * Revoke every session for the currently-authenticated subject and clear this
-     * browser's session, so a subsequent SSO handshake requires re-authentication.
+     * End the session, and decide HOW MUCH of it to end from whether the request can be
+     * believed.
+     *
+     * This endpoint is unauthenticated by design — RP-Initiated Logout is reached by a
+     * browser redirect from a relying party — and it answers GET. So the global revoke
+     * can only be driven by a request that PROVES which End-User it concerns, which is
+     * exactly what `id_token_hint` is for: `$verifiedSubject` is the `sub` of a hint this
+     * server verified against its own keys, or null when none was supplied.
+     *
+     * Without that proof, only this browser is signed out. With it — and only when the
+     * hint names the person actually holding this browser — every session that person
+     * holds is revoked, which is what a relying party means by global sign-out.
+     *
+     * THE DISTINCTION IS THE WHOLE CONTROL. When the subject came from the host's session
+     * alone, `<img src="https://id.example.com/oauth/logout">` on any page in the world
+     * signed the viewer out of every device they owned. The endpoint mints nothing, so
+     * that was never an escalation — it was a denial of service against every user of
+     * every deployment, delivered by an image tag.
      */
-    private function terminate(Request $request): void
+    private function terminate(Request $request, ?string $verifiedSubject): void
     {
         // THROUGH THE CONTRACT, not `auth()->id()`. A host that keeps its own session
         // answers null to the guard forever, so this revocation silently never ran while
@@ -102,7 +119,7 @@ class EndSessionController
         // global sign-out got success and no global sign-out.
         $subjectId = $this->signedIn->id();
 
-        if ($subjectId !== null) {
+        if ($subjectId !== null && $verifiedSubject !== null && hash_equals($subjectId, $verifiedSubject)) {
             $this->sessions->revokeAllForUser($subjectId);
         }
 

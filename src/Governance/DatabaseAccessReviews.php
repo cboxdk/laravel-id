@@ -26,6 +26,7 @@ use Cbox\Id\Organization\Exceptions\LastOwner;
 use Cbox\Id\Organization\Models\Membership;
 use DateTimeInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 /**
@@ -149,25 +150,50 @@ class DatabaseAccessReviews implements AccessReviews
 
     public function itemsFor(string $campaignId): array
     {
-        return array_values(CertificationItem::query()
-            ->where('campaign_id', $campaignId)
-            ->orderBy('id')
-            ->get()
-            ->all());
+        return array_values($this->items($campaignId)->orderBy('id')->get()->all());
     }
 
     /** @return LengthAwarePaginator<int, CertificationItem> */
     public function paginateItemsFor(string $campaignId, int $perPage = 25): LengthAwarePaginator
     {
-        return CertificationItem::query()
-            ->where('campaign_id', $campaignId)
-            ->orderBy('id')
-            ->paginate($perPage);
+        return $this->items($campaignId)->orderBy('id')->paginate($perPage);
     }
 
     public function countItemsFor(string $campaignId): int
     {
-        return CertificationItem::query()->where('campaign_id', $campaignId)->count();
+        return $this->items($campaignId)->count();
+    }
+
+    /**
+     * The items of a campaign, fenced to the organization that campaign belongs to.
+     *
+     * THE CAMPAIGN ID WAS THE WHOLE AUTHORIZATION. `CertificationItem` is environment-owned
+     * and not tenant-owned — many organizations share one environment — so a reader that
+     * filtered on `campaign_id` alone would hand any caller holding an id another tenant's
+     * entire certification worklist: every reviewed subject, the role or membership each
+     * holds, and the reviewer's decisions.
+     *
+     * No caller could reach it today, because the console re-resolves the campaign with its
+     * own organization predicate before every read. That is the fence living outside the
+     * contract, one call site's vigilance away from being gone — the same shape that shipped
+     * a cross-organization IDOR on this very console. The predicate belongs in the query.
+     *
+     * A campaign that does not resolve (wrong environment, or simply absent) yields a query
+     * that matches nothing rather than one that matches everything.
+     *
+     * @return Builder<CertificationItem>
+     */
+    private function items(string $campaignId): Builder
+    {
+        $organizationId = CertificationCampaign::query()->whereKey($campaignId)->value('organization_id');
+
+        return CertificationItem::query()
+            ->where('campaign_id', $campaignId)
+            ->when(
+                is_string($organizationId) && $organizationId !== '',
+                fn (Builder $query) => $query->where('organization_id', $organizationId),
+                fn (Builder $query) => $query->whereRaw('1 = 0'),
+            );
     }
 
     /**

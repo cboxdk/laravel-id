@@ -6,6 +6,7 @@ namespace Cbox\Id\Federation\Validators;
 
 use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
@@ -70,10 +71,52 @@ class OidcAssertionValidator implements AssertionValidator
             // OIDC Core §5.1: `email_verified` is a boolean the IdP asserts. Only an
             // explicit true carries over — a provider that omits it has not vouched for
             // the address, and absence is not a denial we should invent an answer for.
-            emailVerified: ($claims['email_verified'] ?? null) === true ? true : null,
+            //
+            // AND ONLY FOR A DOMAIN THIS CONNECTION'S OWNER HAS PROVEN. A connection is
+            // configured by a CUSTOMER: they choose the issuer, so they can point one at
+            // an IdP they run and assert anything, including
+            // `email: ceo@somebody-else.com, email_verified: true`. Carrying that through
+            // unconditionally would let any tenant mint a verified address in another
+            // company's domain — and `email_verified` is precisely the claim a relying
+            // party downstream uses to decide two accounts are the same person.
+            //
+            // Domain verification is the boundary this platform already uses to decide an
+            // organization speaks for a domain (it is what routes home-realm sign-in), so
+            // it is the right one here: an organization that has proven `corp.com` may
+            // vouch for `dana@corp.com`, and for nothing else.
+            emailVerified: $this->verifiedFor($connection, $claims),
 
             raw: $claims,
         );
+    }
+
+    /**
+     * Whether this connection may assert that it verified this address.
+     *
+     * Null rather than false when it may not: the provider's claim is simply not carried,
+     * which leaves the address unverified — the state it would have been in anyway. See
+     * the call site for why the domain is the boundary.
+     *
+     * @param  array<string, mixed>  $claims
+     */
+    private function verifiedFor(Connection $connection, array $claims): ?bool
+    {
+        if (($claims['email_verified'] ?? null) !== true) {
+            return null;
+        }
+
+        $email = $this->optionalString($claims, 'email');
+
+        if ($email === null) {
+            return null;
+        }
+
+        $organizationId = $connection->organization_id;
+        $verified = app(DomainVerification::class)->forEmail($email);
+
+        // An empty owner vouches for nothing — the same rule every ownership check in
+        // this codebase states, for the same reason.
+        return $organizationId !== '' && $verified?->organization_id === $organizationId ? true : null;
     }
 
     /**
