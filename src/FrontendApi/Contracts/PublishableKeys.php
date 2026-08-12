@@ -32,6 +32,20 @@ interface PublishableKeys
      */
     public function resolve(string $key): ?PublishableKey;
 
+    /**
+     * Whether ANY active key in this environment names that origin.
+     *
+     * FOR THE PREFLIGHT, and only for it. A CORS preflight carries no custom headers — a
+     * browser advertises their NAMES in `Access-Control-Request-Headers` and sends the
+     * values only on the real request — so the key that identifies the caller does not
+     * exist yet at preflight time. Answering on the origin alone is what makes this
+     * channel usable from a browser at all, and it gives nothing away: a preflight grants
+     * no access, the real request must still present a key that names this origin, and a
+     * caller already sending an `Origin` header learns nothing by being told it is
+     * registered — they own that origin.
+     */
+    public function allowsOrigin(string $origin): bool;
+
     /** Withdraw a key. Idempotent; a key already revoked keeps its original timestamp. */
     public function revoke(string $id): void;
 

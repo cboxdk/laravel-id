@@ -6,6 +6,8 @@ use Cbox\Id\FrontendApi\Contracts\PublishableKeys;
 use Cbox\Id\FrontendApi\Enums\KeyMode;
 use Cbox\Id\FrontendApi\FrontendApiServiceProvider;
 use Cbox\Id\FrontendApi\Models\PublishableKey;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -121,13 +123,104 @@ it('admits an allowed origin and echoes exactly that origin back', function (): 
         ->and($response->headers->get('Access-Control-Allow-Credentials'))->toBe('true');
 });
 
-it('answers a preflight without requiring anything else', function (): void {
+/**
+ * THE PREFLIGHT A REAL BROWSER SENDS, which is the only one that matters.
+ *
+ * A browser never puts the value of a custom header on the preflight — it advertises the
+ * NAME in `Access-Control-Request-Headers` and sends the value on the real request. A test
+ * that helpfully includes `X-Cbox-Publishable-Key` on the OPTIONS is testing a request no
+ * browser produces, which is how this door shipped refusing every genuine preflight and
+ * therefore every cross-origin call in the product, with the suite green.
+ */
+it('answers the preflight a browser actually sends, with no key on it', function (): void {
+    issueKey();
+
+    $response = $this->call('OPTIONS', '/frontend/v1/config', [], [], [], [
+        'HTTP_ORIGIN' => 'https://app.acme.test',
+        'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+        'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'x-cbox-publishable-key, content-type',
+    ]);
+
+    expect($response->getStatusCode())->toBe(204)
+        // A 204 with no headers is a refusal the browser cannot tell from a success —
+        // the headers ARE the answer, so they are what this asserts.
+        ->and($response->headers->get('Access-Control-Allow-Origin'))->toBe('https://app.acme.test')
+        ->and($response->headers->get('Access-Control-Allow-Credentials'))->toBe('true')
+        ->and($response->headers->get('Vary'))->toContain('Origin')
+        ->and($response->headers->get('Access-Control-Allow-Headers'))->toContain('X-Cbox-Publishable-Key')
+        // `/frontend/v1/session` reads a bearer token the page already holds. Without this
+        // the endpoint is unreachable cross-origin however good the rest of the door is.
+        ->and($response->headers->get('Access-Control-Allow-Headers'))->toContain('Authorization');
+});
+
+it('refuses a preflight from an origin no active key names', function (): void {
+    issueKey(['https://app.acme.test']);
+
+    $response = $this->call('OPTIONS', '/frontend/v1/config', [], [], [], [
+        'HTTP_ORIGIN' => 'https://evil.test',
+        'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+    ]);
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and($response->headers->has('Access-Control-Allow-Origin'))->toBeFalse();
+});
+
+it('stops answering the preflight once the only key naming that origin is revoked', function (): void {
     $key = issueKey();
+    app(PublishableKeys::class)->revoke($key->id);
 
     $this->call('OPTIONS', '/frontend/v1/config', [], [], [], [
-        'HTTP_X_CBOX_PUBLISHABLE_KEY' => $key->key,
         'HTTP_ORIGIN' => 'https://app.acme.test',
-    ])->assertNoContent();
+        'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+    ])->assertStatus(401);
+});
+
+/**
+ * The preflight grants NOTHING. It is answered on the origin alone, so the thing that must
+ * still hold is that the real request is not.
+ */
+it('still requires a key on the real request the preflight cleared', function (): void {
+    issueKey();
+
+    $this->withHeaders(['Origin' => 'https://app.acme.test'])
+        ->getJson('/frontend/v1/config')
+        ->assertStatus(401);
+});
+
+/**
+ * ONE ENVIRONMENT CANNOT RESOLVE ANOTHER'S KEY.
+ *
+ * Every other test in this file runs inside a single pinned environment, so the scope that
+ * enforces this is the one thing they cannot see — deleting it left the whole suite green
+ * while a key minted by one customer answered for another's data.
+ */
+it('cannot resolve a key belonging to another environment', function (): void {
+    $environments = app(EnvironmentContext::class);
+    $keys = app(PublishableKeys::class);
+
+    $theirs = $environments->runAs(
+        GenericEnvironment::of('env_theirs'),
+        fn (): PublishableKey => $keys->issue('Theirs', KeyMode::Test, ['https://app.acme.test']),
+    );
+
+    $resolved = $environments->runAs(
+        GenericEnvironment::of('env_ours'),
+        fn (): ?PublishableKey => $keys->resolve($theirs->key),
+    );
+
+    expect($resolved)->toBeNull();
+});
+
+it('will not answer a preflight for an origin only another environment allow-listed', function (): void {
+    app(EnvironmentContext::class)->runAs(
+        GenericEnvironment::of('env_theirs'),
+        fn (): PublishableKey => app(PublishableKeys::class)->issue('Theirs', KeyMode::Test, ['https://theirs.test']),
+    );
+
+    $this->call('OPTIONS', '/frontend/v1/config', [], [], [], [
+        'HTTP_ORIGIN' => 'https://theirs.test',
+        'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+    ])->assertStatus(401);
 });
 
 it('serves nothing at all when the channel is switched off', function (): void {

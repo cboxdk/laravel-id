@@ -8,6 +8,7 @@ use Cbox\Id\Migration\Models\LegacyLoginDeclarationRecord;
 use Cbox\Id\Migration\Sources\DeclaredCredentialSource;
 use Cbox\Id\Migration\ValueObjects\LegacyLoginDeclaration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -86,6 +87,52 @@ it('keeps the approval when the same url is redeclared', function (): void {
     declare_();
 
     expect(LegacyLoginDeclarationRecord::query()->first()?->isApproved())->toBeTrue();
+});
+
+/**
+ * THE SAME URL FROM A DIFFERENT APP IS NOT A REDEPLOY.
+ *
+ * The URL is shown in the console in the clear, deliberately, so anybody who can read it
+ * can name it. Matching on the URL alone let any other client in the environment holding
+ * `apps.manifest` re-seal an approved row with its own secret. The declaring app's handler
+ * then fails every signature check — and because this path is fail-closed, every
+ * un-migrated user stops being able to sign in, silently, while `client_id` names the
+ * wrong app to whoever comes to investigate.
+ */
+it('drops the approval when a different app claims the same url', function (): void {
+    declare_();
+    LegacyLoginDeclarationRecord::query()->update(['approved_at' => now()]);
+
+    declare_('https://legacy.acme.test/verify', 'client-b');
+
+    $record = LegacyLoginDeclarationRecord::query()->first();
+
+    expect($record?->isApproved())->toBeFalse()
+        ->and($record?->client_id)->toBe('client-b');
+});
+
+/**
+ * An operator asking "who moved this, and when" after an incident has one place to look,
+ * and it must not be a field buried in a routine sync that reads identically to one
+ * renaming a role.
+ */
+it('records its own audit entry when an app moves where passwords go', function (): void {
+    declare_();
+    declare_('https://somewhere-else.test/verify');
+
+    $entries = DB::table('audit_logs')->where('action', 'app.legacy_login_declared')->orderBy('sequence')->get();
+
+    expect($entries)->toHaveCount(2)
+        ->and(json_decode((string) $entries[0]->context, true)['change'] ?? null)->toBe('declared')
+        ->and(json_decode((string) $entries[1]->context, true)['change'] ?? null)->toBe('moved')
+        ->and(json_decode((string) $entries[1]->context, true)['approval_dropped'] ?? null)->toBeTrue();
+});
+
+it('says nothing in the trail when a redeploy changes nothing', function (): void {
+    declare_();
+    declare_();
+
+    expect(DB::table('audit_logs')->where('action', 'app.legacy_login_declared')->count())->toBe(1);
 });
 
 it('refuses a declaration that would send passwords in the clear', function (): void {

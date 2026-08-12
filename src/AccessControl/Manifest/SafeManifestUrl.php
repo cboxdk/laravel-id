@@ -6,6 +6,7 @@ namespace Cbox\Id\AccessControl\Manifest;
 
 use Cbox\Id\AccessControl\Exceptions\UnsafeManifestUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
+use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Ssrf\Contracts\UrlGuard;
 use Cbox\Ssrf\Exceptions\BlockedUrl;
 
@@ -29,7 +30,7 @@ class SafeManifestUrl
      */
     public static function pinnedOptions(string $url): array
     {
-        if (config('cbox-id.access_control.verify_manifest_url', true) !== true) {
+        if (! UrlVerification::enforced('cbox-id.access_control.verify_manifest_url')) {
             // REDIRECTS STAY REFUSED even when host verification is switched off.
             //
             // The toggle exists so an on-prem deployment can reach an internal host it

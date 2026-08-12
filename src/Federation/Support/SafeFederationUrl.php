@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation\Support;
 
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
+use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Cbox\Ssrf\Contracts\UrlGuard;
 use Cbox\Ssrf\Exceptions\BlockedUrl;
@@ -23,7 +24,7 @@ class SafeFederationUrl
         // A single-tenant/on-prem deployment can disable enforcement to reach an
         // internal IdP (also disabled in the flow tests). Keep it true in any
         // multi-tenant deployment.
-        if (config('cbox-id.federation.verify_url', true) !== true) {
+        if (! UrlVerification::enforced('cbox-id.federation.verify_url')) {
             return;
         }
 
@@ -46,7 +47,7 @@ class SafeFederationUrl
      */
     public static function pinnedOptions(string $url): array
     {
-        if (config('cbox-id.federation.verify_url', true) !== true) {
+        if (! UrlVerification::enforced('cbox-id.federation.verify_url')) {
             // REDIRECTS STAY REFUSED even when host verification is switched off.
             //
             // The toggle exists so an on-prem deployment can reach an internal host it

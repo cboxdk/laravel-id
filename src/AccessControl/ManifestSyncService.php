@@ -19,6 +19,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Migration\Enums\LegacyLoginChange;
 use Cbox\Id\Migration\Models\LegacyLoginDeclarationRecord;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Database\Eloquent\Builder;
@@ -58,10 +59,12 @@ class ManifestSyncService implements AppManifests
             return ManifestSyncResult::unchanged();
         }
 
-        $result = DB::transaction(function () use ($clientId, $manifest, $checksum): ManifestSyncResult {
+        $legacyLogin = LegacyLoginChange::None;
+
+        $result = DB::transaction(function () use ($clientId, $manifest, $checksum, &$legacyLogin): ManifestSyncResult {
             $this->syncPermissions($clientId, $manifest);
             $this->syncRoles($clientId, $manifest);
-            $this->recordLegacyLogin($clientId, $manifest);
+            $legacyLogin = $this->recordLegacyLogin($clientId, $manifest);
 
             $orphanedPermissions = $this->flagOrphanedPermissions($clientId, $manifest->permissionKeys());
             $orphanedRoles = $this->flagOrphanedRoles($clientId, $manifest->roleKeys());
@@ -101,6 +104,27 @@ class ManifestSyncService implements AppManifests
                 'orphaned_permissions' => $result->orphanedPermissionKeys,
             ],
         ));
+
+        if ($legacyLogin !== LegacyLoginChange::None) {
+            // ITS OWN ENTRY, not a field on the sync above. "An app changed where the
+            // passwords of everybody who has not migrated yet are sent" is the one thing
+            // in a manifest that is not about that app alone, and an operator searching
+            // the trail for it should not have to know that it rides inside a routine
+            // `app.manifest_synced` that looks identical to one renaming a role.
+            $this->audit->record(new AuditEvent(
+                action: 'app.legacy_login_declared',
+                actorType: ActorType::System,
+                targetType: 'client',
+                targetId: $clientId,
+                context: [
+                    'change' => $legacyLogin->value,
+                    'url' => $manifest->legacyLogin?->url,
+                    // Stated because it is the consequence, and because the console's
+                    // approval button is the only thing that undoes it.
+                    'approval_dropped' => $legacyLogin === LegacyLoginChange::Moved,
+                ],
+            ));
+        }
 
         return $result;
     }
@@ -272,26 +296,37 @@ class ManifestSyncService implements AppManifests
      * it: an app that stops declaring has not asked for the migration to be torn down
      * mid-flight, and an operator revoking is the way that ends.
      */
-    private function recordLegacyLogin(string $clientId, Manifest $manifest): void
+    private function recordLegacyLogin(string $clientId, Manifest $manifest): LegacyLoginChange
     {
         $declaration = $manifest->legacyLogin;
 
         if ($declaration === null) {
-            return;
+            return LegacyLoginChange::None;
         }
 
         $existing = LegacyLoginDeclarationRecord::query()->first();
 
-        // Same URL, already approved: nothing to do, and the approval survives a routine
-        // redeploy that republishes an unchanged manifest.
-        if ($existing instanceof LegacyLoginDeclarationRecord && $existing->url === $declaration->url) {
+        // Same URL FROM THE SAME CLIENT: a routine redeploy republishing an unchanged
+        // manifest, and the approval survives it. The client has to match as well —
+        // matching on the URL alone would let any other client in the environment holding
+        // `apps.manifest` re-seal an approved row with its own secret. The declaring app's
+        // handler would then fail every signature check, and because this path is
+        // fail-closed, every un-migrated user in the environment stops being able to sign
+        // in, silently, while `client_id` names the wrong app to whoever investigates.
+        if ($existing instanceof LegacyLoginDeclarationRecord
+            && $existing->url === $declaration->url
+            && $existing->client_id === $clientId
+        ) {
             $existing->update([
-                'client_id' => $clientId,
                 'secret_encrypted' => $this->secrets->seal($declaration->secret, $existing->secretContext()),
             ]);
 
-            return;
+            return LegacyLoginChange::None;
         }
+
+        $change = $existing instanceof LegacyLoginDeclarationRecord
+            ? LegacyLoginChange::Moved
+            : LegacyLoginChange::Declared;
 
         $existing?->delete();
 
@@ -306,6 +341,8 @@ class ManifestSyncService implements AppManifests
         $record->update([
             'secret_encrypted' => $this->secrets->seal($declaration->secret, $record->secretContext()),
         ]);
+
+        return $change;
     }
 
     /**

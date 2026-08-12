@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\FrontendApi\Contracts\FrontendConfigContributor;
 use Cbox\Id\FrontendApi\Contracts\PublishableKeys;
 use Cbox\Id\FrontendApi\Enums\KeyMode;
 use Cbox\Id\FrontendApi\FrontendApiServiceProvider;
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -15,6 +19,25 @@ beforeEach(function (): void {
 
     $this->key = app(PublishableKeys::class)->issue('Site', KeyMode::Test, ['https://app.acme.test']);
 });
+
+/**
+ * A real subject with a real access token — the shape a page holds after a sign-in.
+ *
+ * @return array{id: string, token: string, jti: string}
+ */
+function subjectWithLiveToken(): array
+{
+    $subject = app(Subjects::class)->create(email: 'ada@acme.test', name: 'Ada Lovelace');
+
+    $issued = app(TokenIssuer::class)->issueForUser(
+        test()->makeClient(['openid'])->client,
+        $subject->id,
+        null,
+        ['openid'],
+    );
+
+    return ['id' => $subject->id, 'token' => $issued->token, 'jti' => $issued->jti];
+}
 
 function asBrowser(): array
 {
@@ -33,6 +56,35 @@ it('gives a browser the endpoints and its own mode', function (): void {
         ->assertOk()
         ->assertJsonPath('mode', 'test')
         ->assertJsonStructure(['issuer', 'endpoints' => ['authorization', 'token', 'jwks'], 'social']);
+});
+
+/**
+ * A CONTRIBUTOR ADDS TO THE DOCUMENT. It does not redefine it.
+ *
+ * The host registers these, and the host is trusted — but "trusted" is not the same as
+ * "unconstrained". A contributor that returned its own `issuer` or `endpoints` would point
+ * every embedded sign-in box in the product somewhere else, and the contract's promise
+ * would be a docblock rather than a rule.
+ */
+it('lets a contributor add to the document but never overwrite it', function (): void {
+    app()->bind('test-contributor', fn (): FrontendConfigContributor => new class implements FrontendConfigContributor
+    {
+        public function contribute(array $config): array
+        {
+            return ['issuer' => 'https://evil.test', 'endpoints' => [], 'appearance' => ['accent' => '#bada55']];
+        }
+    });
+    app()->tag(['test-contributor'], FrontendConfigContributor::class);
+
+    // The controller is resolved with its contributors at construction, so the tag has to
+    // be in place before the request builds one.
+    (new FrontendApiServiceProvider($this->app))->register();
+
+    $body = $this->withHeaders(asBrowser())->getJson('/frontend/v1/config')->assertOk()->json();
+
+    expect($body['issuer'])->not->toBe('https://evil.test')
+        ->and($body['endpoints'])->not->toBe([])
+        ->and($body['appearance'])->toBe(['accent' => '#bada55']);
 });
 
 /**
@@ -81,4 +133,44 @@ it('never caches who is signed in', function (): void {
     $response = $this->withHeaders(asBrowser())->getJson('/frontend/v1/session')->assertOk();
 
     expect($response->headers->get('Cache-Control'))->toContain('no-store');
+});
+
+/**
+ * THE AUTHENTICATED BRANCH, which had no coverage at all — `return null` at the top of
+ * `bearer()` used to leave the whole file green while every avatar in the product went
+ * anonymous.
+ */
+it('names the person a live token belongs to, and nothing else about them', function (): void {
+    $subject = subjectWithLiveToken();
+
+    $this->withHeaders(asBrowser() + ['Authorization' => 'Bearer '.$subject['token']])
+        ->getJson('/frontend/v1/session')
+        ->assertOk()
+        ->assertJsonPath('user.id', $subject['id'])
+        ->assertJsonPath('user.email', 'ada@acme.test')
+        // A label, an initial and an id. Anything else on a user record is either private
+        // or somebody else's business, and a passthrough is how it leaks.
+        ->assertJsonPath('user', fn (array $user): bool => array_keys($user) === ['id', 'email', 'name']);
+});
+
+it('goes back to anonymous the moment the token stops being live', function (): void {
+    $subject = subjectWithLiveToken();
+
+    app(TokenIntrospector::class)->revoke($subject['jti']);
+
+    $this->withHeaders(asBrowser() + ['Authorization' => 'Bearer '.$subject['token']])
+        ->getJson('/frontend/v1/session')
+        ->assertOk()
+        ->assertJsonPath('user', null);
+});
+
+/**
+ * The publishable key names an environment and says a browser is asking. The TOKEN is the
+ * entire authority — a page holding a key and somebody else's expired token learns nothing.
+ */
+it('refuses to answer a token it cannot introspect', function (): void {
+    $this->withHeaders(asBrowser() + ['Authorization' => 'Bearer not-a-real-token'])
+        ->getJson('/frontend/v1/session')
+        ->assertOk()
+        ->assertJsonPath('user', null);
 });

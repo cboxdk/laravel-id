@@ -14,6 +14,7 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\OAuthServer\JwtTokenIssuer;
 use Cbox\Ssrf\Contracts\UrlGuard;
@@ -184,7 +185,7 @@ class DatabaseExternalActions implements ExternalActions
      */
     private function assertSafeUrl(string $url): void
     {
-        if (config('cbox-id.external_actions.verify_url', true) !== true) {
+        if (! UrlVerification::enforced('cbox-id.external_actions.verify_url')) {
             return;
         }
 

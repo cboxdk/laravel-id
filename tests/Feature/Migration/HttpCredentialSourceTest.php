@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Cbox\Id\Migration\Sources\HttpCredentialSource;
-use Cbox\Ssrf\Contracts\UrlGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
@@ -20,7 +19,7 @@ beforeEach(function (): void {
 
 function httpSource(string $url = 'https://legacy.acme.test/verify'): HttpCredentialSource
 {
-    return new HttpCredentialSource(app(Factory::class), app(UrlGuard::class), $url, 'shared-secret');
+    return new HttpCredentialSource(app(Factory::class), $url, 'shared-secret');
 }
 
 it('accepts what the handler says yes to', function (): void {
@@ -41,11 +40,58 @@ it('signs the request the way the rest of the platform signs outbound calls', fu
 
     httpSource()->verify('ada@legacy.test', 'pw');
 
+    // RECOMPUTED, not pattern-matched. Asserting the header merely starts with `t=` and
+    // contains `,v1=` passes for a constant, for a digest over the wrong key, and for one
+    // over a public string — every way this signature can be worthless while looking right.
     Http::assertSent(function ($request): bool {
-        return str_starts_with((string) $request->header('X-Cbox-Signature')[0], 't=')
-            && str_contains((string) $request->header('X-Cbox-Signature')[0], ',v1=')
-            && $request->header('X-Cbox-Timestamp') !== [];
+        [$timestamp, $signature] = explode(',', (string) $request->header('X-Cbox-Signature')[0]);
+
+        return hash_equals(
+            'v1='.hash_hmac('sha256', substr($timestamp, 2).'.'.$request->body(), 'shared-secret'),
+            $signature,
+        );
     });
+});
+
+it('sends the password it was given, in the body it signed', function (): void {
+    Http::fake(['*' => Http::response(['email' => 'ada@legacy.test'], 200)]);
+
+    httpSource()->verify('ada@legacy.test', 'correct horse');
+
+    // `verify()` and `find()` differ on the wire by this one key, and nothing else. A
+    // transport that dropped the password would still satisfy every other test in this
+    // file while asking the handler a question it cannot answer.
+    Http::assertSent(fn ($request): bool => $request->data() === [
+        'email' => 'ada@legacy.test',
+        'password' => 'correct horse',
+    ]);
+});
+
+it('asks without a password when it only wants to know whether the address is known', function (): void {
+    Http::fake(['*' => Http::response(['email' => 'ada@legacy.test'], 200)]);
+
+    httpSource()->find('ada@legacy.test');
+
+    Http::assertSent(fn ($request): bool => $request->data() === ['email' => 'ada@legacy.test']);
+});
+
+/**
+ * THE HANDLER ANSWERS ABOUT THE ADDRESS IT WAS ASKED ABOUT, or it does not answer.
+ *
+ * The handler is the customer's code. A loose lookup in it — a LIKE, a join that dropped a
+ * WHERE, an alias table — would otherwise let somebody who knows one old password be
+ * migrated in as whichever identity that query happened to return.
+ */
+it('refuses a person the handler returned who is not the person it was asked about', function (): void {
+    Http::fake(['*' => Http::response(['email' => 'admin@acme.test'], 200)]);
+
+    expect(httpSource()->verify('attacker@legacy.test', 'pw'))->toBeNull();
+});
+
+it('accepts the same address back in different case or with stray whitespace', function (): void {
+    Http::fake(['*' => Http::response(['email' => '  Ada@Legacy.test '], 200)]);
+
+    expect(httpSource()->verify('ada@legacy.test', 'pw')?->email)->toBe('  Ada@Legacy.test ');
 });
 
 /**

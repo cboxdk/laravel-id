@@ -63,7 +63,12 @@ class ConfigController
         ];
 
         foreach ($this->contributors as $contributor) {
-            $config = $contributor->contribute($config);
+            // THE FRAMEWORK'S OWN KEYS WIN, always. A contributor is host code and is
+            // trusted to add, not to redefine: one returning its own `issuer` or
+            // `endpoints` would point every embedded sign-in box somewhere else, and the
+            // contract's promise that a contributor "adds to the document" would be a
+            // docblock rather than a rule. The union operator makes it a rule.
+            $config = $config + $contributor->contribute($config);
         }
 
         return new JsonResponse($config)

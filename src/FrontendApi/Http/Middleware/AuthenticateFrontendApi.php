@@ -25,12 +25,15 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * THE ORDER MATTERS AND IS DELIBERATE:
  *
- *  1. Preflight is answered before anything else, and answered without touching the
- *     database beyond the key lookup. A browser sends OPTIONS with no cookies and no
- *     body, and making it wait on the rate limiter would throttle the request that
- *     precedes every real one.
- *  2. Key, then origin. A missing key is a client that has not been configured; a bad
- *     origin is a key being used from somewhere its owner did not name.
+ *  1. Preflight is answered FIRST and ON THE ORIGIN ALONE. This is not a shortcut, it is
+ *     the only thing that works: a browser preflight carries no custom headers — it
+ *     advertises their names in `Access-Control-Request-Headers` and sends the values on
+ *     the real request — so requiring the key here refuses the OPTIONS, and the browser
+ *     never sends the POST. A preflight grants nothing; the real request still has to
+ *     present a key that names this origin.
+ *  2. Then key, then origin, for every real request. A missing key is a client that has
+ *     not been configured; a bad origin is a key being used from somewhere its owner did
+ *     not name.
  *  3. Rate limiting AFTER both, keyed by the key. Limiting before identification means
  *     one abusive caller exhausts a bucket shared with every legitimate one.
  *
@@ -64,10 +67,18 @@ class AuthenticateFrontendApi
     public function handle(Request $request, Closure $next): Response
     {
         $origin = (string) $request->headers->get('Origin', '');
+
+        // Answered before the key is even looked for — see the ordering note above.
+        if ($request->getMethod() === 'OPTIONS') {
+            return $this->keys->allowsOrigin($origin)
+                ? $this->cors(new Response('', 204), $origin)
+                : $this->refuse('unauthorized', 'That origin is not on any active key\'s allow-list.', 401);
+        }
+
         $key = $this->presentedKey($request);
 
         if ($key === null) {
-            return $this->refuse('missing_key', 'No publishable key was presented.', 401, $request);
+            return $this->refuse('missing_key', 'No publishable key was presented.', 401);
         }
 
         $resolved = $this->keys->resolve($key);
@@ -75,23 +86,17 @@ class AuthenticateFrontendApi
         if (! $resolved instanceof PublishableKey) {
             // Deliberately the same shape as a bad origin below. Telling an anonymous
             // caller "that key exists but not from here" confirms the key.
-            return $this->refuse('unauthorized', 'That publishable key cannot be used from this origin.', 401, $request);
+            return $this->refuse('unauthorized', 'That publishable key cannot be used from this origin.', 401);
         }
 
         if (! $resolved->allowsOrigin($origin)) {
-            return $this->refuse('unauthorized', 'That publishable key cannot be used from this origin.', 401, $request);
-        }
-
-        // Preflight: answered here, before the limiter, because it precedes every real
-        // request and has nothing to throttle.
-        if ($request->getMethod() === 'OPTIONS') {
-            return $this->cors(new Response('', 204), $origin);
+            return $this->refuse('unauthorized', 'That publishable key cannot be used from this origin.', 401);
         }
 
         $limiterKey = 'cbox-frontend-api:'.$resolved->id;
 
         if (RateLimiter::tooManyAttempts($limiterKey, self::PER_MINUTE)) {
-            $response = $this->refuse('rate_limited', 'Too many requests.', 429, $request);
+            $response = $this->refuse('rate_limited', 'Too many requests.', 429);
             $response->headers->set('Retry-After', (string) RateLimiter::availableIn($limiterKey));
 
             return $response;
@@ -158,7 +163,10 @@ class AuthenticateFrontendApi
     {
         $response->headers->set('Access-Control-Allow-Origin', $origin);
         $response->headers->set('Access-Control-Allow-Credentials', 'true');
-        $response->headers->set('Access-Control-Allow-Headers', self::HEADER.', Content-Type, Accept');
+        // `Authorization` is here because `/frontend/v1/session` reads a bearer token the
+        // page already holds; without it that endpoint is unusable cross-origin no matter
+        // what the preflight answers.
+        $response->headers->set('Access-Control-Allow-Headers', self::HEADER.', Authorization, Content-Type, Accept');
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         $response->headers->set('Access-Control-Max-Age', '600');
         $response->headers->set('Vary', 'Origin');
@@ -174,7 +182,7 @@ class AuthenticateFrontendApi
      * was not authorized to make. The developer sees the real reason in devtools' network
      * tab and in our logs; the page sees nothing it could branch on.
      */
-    private function refuse(string $code, string $message, int $status, Request $request): Response
+    private function refuse(string $code, string $message, int $status): Response
     {
         return new JsonResponse(['error' => $code, 'error_description' => $message], $status);
     }

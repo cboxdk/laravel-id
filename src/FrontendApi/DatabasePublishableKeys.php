@@ -9,6 +9,7 @@ use Cbox\Id\FrontendApi\Enums\KeyMode;
 use Cbox\Id\FrontendApi\Exceptions\UnusableOrigin;
 use Cbox\Id\FrontendApi\Models\PublishableKey;
 use Cbox\Id\FrontendApi\Support\Origin;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -57,6 +58,23 @@ class DatabasePublishableKeys implements PublishableKeys
             ->first();
 
         return $found instanceof PublishableKey ? $found : null;
+    }
+
+    public function allowsOrigin(string $origin): bool
+    {
+        $normalized = Origin::normalize($origin);
+
+        if ($normalized === null) {
+            return false;
+        }
+
+        // Origins are normalized on the way in AND stored normalized, so this stays the
+        // exact comparison {@see PublishableKey::allowsOrigin()} makes. The database does
+        // it here only because a preflight carries no key to load an allow-list from.
+        return PublishableKey::query()
+            ->whereNull('revoked_at')
+            ->whereHas('origins', static fn (Builder $query): Builder => $query->where('origin', $normalized))
+            ->exists();
     }
 
     public function revoke(string $id): void

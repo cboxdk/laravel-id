@@ -8,7 +8,6 @@ use Cbox\Id\Identity\ValueObjects\ImportedUser;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Migration\Contracts\LegacyCredentialSource;
 use Cbox\Id\Migration\Models\LegacyLoginDeclarationRecord;
-use Cbox\Ssrf\Contracts\UrlGuard;
 use Illuminate\Http\Client\Factory as Http;
 
 /**
@@ -35,7 +34,6 @@ class DeclaredCredentialSource implements LegacyCredentialSource
 {
     public function __construct(
         private readonly Http $http,
-        private readonly UrlGuard $ssrf,
         private readonly SecretBox $secrets,
     ) {}
 
@@ -69,6 +67,6 @@ class DeclaredCredentialSource implements LegacyCredentialSource
 
         $secret = $this->secrets->open($record->secret_encrypted, $record->secretContext());
 
-        return new HttpCredentialSource($this->http, $this->ssrf, $record->url, $secret);
+        return new HttpCredentialSource($this->http, $record->url, $secret);
     }
 }

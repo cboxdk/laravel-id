@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks\Support;
 
+use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Id\Webhooks\Exceptions\UnsafeWebhookUrl;
 use Cbox\Ssrf\Contracts\UrlGuard;
 use Cbox\Ssrf\Exceptions\BlockedUrl;
@@ -44,7 +45,7 @@ class SafeWebhookUrl
         // A single-tenant/on-prem deployment can disable enforcement to deliver
         // to internal hosts (also disabled in the delivery tests). Keep it true in
         // any multi-tenant deployment.
-        if (config('cbox-id.webhooks.verify_url', true) !== true) {
+        if (! UrlVerification::enforced('cbox-id.webhooks.verify_url')) {
             return;
         }
 
@@ -67,7 +68,7 @@ class SafeWebhookUrl
      */
     public static function pinnedOptions(string $url): array
     {
-        if (config('cbox-id.webhooks.verify_url', true) !== true) {
+        if (! UrlVerification::enforced('cbox-id.webhooks.verify_url')) {
             // REDIRECTS STAY REFUSED even when host verification is switched off.
             //
             // The toggle exists so an on-prem deployment can reach an internal host it

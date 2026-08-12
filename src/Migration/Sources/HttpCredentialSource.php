@@ -6,7 +6,7 @@ namespace Cbox\Id\Migration\Sources;
 
 use Cbox\Id\Identity\ValueObjects\ImportedUser;
 use Cbox\Id\Migration\Contracts\LegacyCredentialSource;
-use Cbox\Ssrf\Contracts\UrlGuard;
+use Cbox\Id\Migration\Support\SafeLegacyLoginUrl;
 use Illuminate\Http\Client\Factory as Http;
 use Throwable;
 
@@ -33,7 +33,6 @@ class HttpCredentialSource implements LegacyCredentialSource
 {
     public function __construct(
         private readonly Http $http,
-        private readonly UrlGuard $ssrf,
         private readonly string $url,
         private readonly string $secret,
         private readonly int $timeoutMs = 3000,
@@ -41,20 +40,20 @@ class HttpCredentialSource implements LegacyCredentialSource
 
     public function verify(string $email, string $password): ?ImportedUser
     {
-        return $this->ask(['email' => $email, 'password' => $password]);
+        return $this->ask(['email' => $email, 'password' => $password], $email);
     }
 
     public function find(string $email): ?ImportedUser
     {
         // No password: the handler is being asked "do you know this address", which is
         // for tooling only. The contract forbids the login path from using it.
-        return $this->ask(['email' => $email]);
+        return $this->ask(['email' => $email], $email);
     }
 
     /**
      * @param  array<string, string>  $payload
      */
-    private function ask(array $payload): ?ImportedUser
+    private function ask(array $payload, string $asked): ?ImportedUser
     {
         if (! str_starts_with($this->url, 'https://')) {
             // Refused rather than warned. A credential over plain http is readable by
@@ -73,12 +72,8 @@ class HttpCredentialSource implements LegacyCredentialSource
             // input. This one does not: an operator configured it. So the guard stays on
             // unless somebody states otherwise, and the same switch the external-action
             // hooks use is the one to state it with, rather than a second concept.
-            $pinned = config('cbox-id.migration.verify_url', true) === true
-                ? $this->ssrf->pinnedOptions($this->url)
-                : [];
-
             $response = $this->http
-                ->withOptions($pinned)
+                ->withOptions(SafeLegacyLoginUrl::pinnedOptions($this->url))
                 ->timeout($this->timeoutMs / 1000)
                 ->withHeaders([
                     'X-Cbox-Timestamp' => (string) $timestamp,
@@ -103,10 +98,10 @@ class HttpCredentialSource implements LegacyCredentialSource
             return null;
         }
 
-        return $this->toImportedUser($response->json());
+        return $this->toImportedUser($response->json(), $asked);
     }
 
-    private function toImportedUser(mixed $json): ?ImportedUser
+    private function toImportedUser(mixed $json, string $asked): ?ImportedUser
     {
         if (! is_array($json)) {
             return null;
@@ -118,6 +113,15 @@ class HttpCredentialSource implements LegacyCredentialSource
             // A handler that answers 200 with nothing usable has said no in an unhelpful
             // way. Treated as no rather than as an error, because the alternative is an
             // exception on a login path over somebody else's response shape.
+            return null;
+        }
+
+        if (mb_strtolower(trim($email)) !== mb_strtolower(trim($asked))) {
+            // THE HANDLER ANSWERS ABOUT THE ADDRESS IT WAS ASKED ABOUT, or it does not
+            // answer. Without this, a handler with a loose lookup — a LIKE, a join that
+            // drops a WHERE, an alias table — lets somebody who knows one old password
+            // be migrated in as whichever identity that query happened to return. The
+            // handler is the customer's code, and this is our side of that trust.
             return null;
         }
 
