@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-12
+
 ### Added
 
 - **`SignedInSubject`** — who is signed in to this browser, as the HOST understands it.
