@@ -18,6 +18,46 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.8.0
+
+**Three behaviour changes that are silent by design. Read all three before deploying.**
+
+**Global sign-out now needs a verified `id_token_hint`.** `/oauth/logout` is
+unauthenticated — a relying party reaches it by redirecting the browser — and it answers
+GET. It previously revoked every session the browser's owner held, which made "revoke all
+of this person's sessions" something any page on the internet could cause by sending them
+through a link: no credential, nothing minted, a denial of service against every user of a
+deployment. The teardown now fires only when a hint this server verified names the person
+actually holding the browser.
+
+*What breaks:* an integration that sends the browser to `/oauth/logout` with no
+`id_token_hint` still signs that browser out — and no longer ends the person's sessions on
+their other devices. Nothing errors. If you rely on RP-initiated logout as global
+sign-out, send `id_token_hint` (the `id_token` you were issued for that user). Every Cbox
+ID SDK accepts one; in most it is an optional trailing argument you are probably not
+passing.
+
+**An ID Token is issued only when `openid` was granted.** Every user-present grant used to
+return one regardless of scope, so a client that asked for `api.read` and nothing else got
+back a signed assertion carrying `sub` and `org`. UserInfo has always refused that same
+client, so the endpoint contradicted itself about who is entitled to an identity claim.
+
+*What breaks:* a client that reads the `id_token` without having requested `openid` now
+finds it absent. Add `openid` to the scopes it requests. Watch for integrations that
+authorize with a per-call scope override — the override is what decides, not your
+configured default.
+
+**PKCE is refused at issue time unless it is well-formed S256.** `plain` was accepted and
+then unredeemable, because redemption always computed S256 — failing closed at the wrong
+moment, so the host got a working code and the user got a broken sign-in with nothing
+saying which end was wrong. `code_challenge_method` must now be `S256`, the challenge must
+be a 43-character base64url digest, and the verifier 43–128 characters of
+`[A-Za-z0-9-._~]` (RFC 7636 §4.1).
+
+*What breaks:* a host generating a verifier shorter than 43 characters, or passing a
+placeholder challenge, now fails at `/authorize` with `invalid_request` instead of at
+redemption. That is the intended direction, but it moves when you find out.
+
 ## 0.87.3
 
 **Two security fixes. Cross this version.**
