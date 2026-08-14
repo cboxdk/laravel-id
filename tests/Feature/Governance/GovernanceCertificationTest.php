@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\Governance\Contracts\AccessReviews;
+use Cbox\Id\Governance\Enums\AccessKind;
 use Cbox\Id\Governance\Enums\PendingPolicy;
 use Cbox\Id\Governance\Enums\ReviewDecision;
 use Cbox\Id\Governance\Exceptions\CampaignClosed;
@@ -203,14 +204,36 @@ it('reads a campaign only from the organization that owns it', function (): void
     expect($reviews->itemsFor($mine->id))->not->toBeEmpty()
         ->and($reviews->itemsFor($theirs->id))->not->toBeEmpty();
 
-    // Every item a campaign answers with belongs to that campaign's own organization.
-    foreach ($reviews->itemsFor($theirs->id) as $item) {
-        expect($item->organization_id)->toBe('org_two');
-    }
+    // A ROW THAT DISAGREES WITH ITS CAMPAIGN, which is the only thing the fence can be
+    // observed by. Every item a snapshot writes carries its campaign's own organization,
+    // so asserting `organization_id === 'org_two'` over rows written by `open('org_two')`
+    // holds whether the predicate exists or not — this test asserted exactly that and
+    // stayed green with the fence deleted.
+    //
+    // Written by hand because nothing in the product produces one. That is the point: the
+    // fence is what makes a stray or hand-written row unreadable through the contract,
+    // and `CertificationItem` is environment-owned but NOT tenant-owned, so without it a
+    // campaign id is the whole authorization.
+    $stray = CertificationItem::query()->create([
+        'campaign_id' => $theirs->id,
+        'organization_id' => 'org_one',
+        'subject_id' => 'person_one',
+        'access_type' => AccessKind::Role,
+        'access_ref' => 'role-one',
+        'decision' => ReviewDecision::Pending,
+    ]);
 
-    // And an id that resolves to no campaign at all yields nothing, rather than
-    // everything — a `where('campaign_id', …)` with no owner would match zero rows here
-    // by luck; the point is that the count and the paginator agree with the list.
-    expect($reviews->countItemsFor('campaign_that_does_not_exist'))->toBe(0)
-        ->and($reviews->paginateItemsFor('campaign_that_does_not_exist')->total())->toBe(0);
+    $ids = array_map(static fn (CertificationItem $item): string => $item->id, $reviews->itemsFor($theirs->id));
+
+    // `in_array`, NOT `expect($ids)->not->toContain($id, 'message')`. Pest's `toContain`
+    // is VARIADIC: a second argument is another needle, not a failure message, so the
+    // negated form asserts "contains neither" — and an array that never held the message
+    // string satisfies it however wrong the first needle is. That is how this very test
+    // came to pass with the fence deleted.
+    expect(in_array($stray->id, $ids, true))
+        ->toBeFalse('a campaign answered with another organization\'s row');
+
+    // The count and the paginator read through the same fence, so all three agree.
+    expect($reviews->countItemsFor($theirs->id))->toBe(count($ids))
+        ->and($reviews->paginateItemsFor($theirs->id)->total())->toBe(count($ids));
 })->group('security');
