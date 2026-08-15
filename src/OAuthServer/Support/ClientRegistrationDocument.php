@@ -23,11 +23,35 @@ class ClientRegistrationDocument
             'client_id' => $client->client_id,
             'client_id_issued_at' => $client->created_at?->getTimestamp(),
             'client_name' => $client->name,
-            'token_endpoint_auth_method' => $client->type === ClientType::Public ? 'none' : 'client_secret_basic',
+            'token_endpoint_auth_method' => self::authMethod($client),
             'grant_types' => array_values($client->grant_types),
             'response_types' => in_array('authorization_code', $client->grant_types, true) ? ['code'] : [],
             'redirect_uris' => array_values($client->redirect_uris),
             'scope' => implode(' ', $client->scopes),
+            // Echoed so the registrant can read back what the server actually stored —
+            // RFC 7591 §3.2.1 says the response states the registered metadata, and a
+            // client rotating keys through RFC 7592 has no other way to confirm which
+            // set is live. Public halves only; the private key never came here.
+            ...($client->jwks !== null ? ['jwks' => $client->jwks] : []),
         ];
+    }
+
+    /**
+     * What this client actually authenticates with.
+     *
+     * DERIVED FROM ITS CREDENTIAL, not from its type. This returned
+     * `client_secret_basic` for every confidential client, which is wrong for the one kind
+     * that holds no secret: a `private_key_jwt` client registers a JWK Set and the registry
+     * deliberately issues it no secret. The document therefore told such a client to
+     * authenticate with a Basic header it had no password for — in the same response that
+     * was supposed to complete its registration.
+     */
+    private static function authMethod(Client $client): string
+    {
+        if ($client->type === ClientType::Public) {
+            return 'none';
+        }
+
+        return $client->jwks !== null ? 'private_key_jwt' : 'client_secret_basic';
     }
 }

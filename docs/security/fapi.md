@@ -37,7 +37,7 @@ honest per-requirement status, not a conformance claim.
 | **Signing algorithm** — FAPI 2.0 permits only `PS256`, `ES256`, `EdDSA` | ❌ tokens are signed **`RS256`**, which the profile does not permit; `PS256` is not implemented |
 | **No `alg: none`, no symmetric (HS\*)** | ✅ closed alg set (RS256 / ES256 / EdDSA), per-key alg binding |
 | **Short-lived, revocable tokens** | ✅ 15-min access tokens, `jti`-tracked, `/oauth/revoke`, refresh rotation + reuse detection |
-| **Confidential clients authenticated** | ✅ `private_key_jwt` (RFC 7523 §3) or a secret verified in constant time (public clients rely on PKCE). Note a **dynamically registered** client cannot select `private_key_jwt` |
+| **Confidential clients authenticated** | ✅ `private_key_jwt` (RFC 7523 §3) or a secret verified in constant time (public clients rely on PKCE). Dynamically registered clients may select `private_key_jwt` and supply their key set inline as `jwks` |
 
 ## What is not met yet
 

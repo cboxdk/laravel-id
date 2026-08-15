@@ -17,6 +17,37 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-08-15
+
+### Added
+
+- **Dynamic Client Registration accepts `private_key_jwt`.** Discovery has advertised it in
+  `token_endpoint_auth_methods_supported` at the token, revocation and introspection
+  endpoints since those documents were written; `DynamicClientRegistrar::AUTH_METHODS`
+  listed three methods and not that one. A conformant client read the metadata, asked for
+  the strongest method the server claimed, and got `400 unsupported
+  token_endpoint_auth_method` — for a capability that was complete behind the door.
+  `ClientAuthenticator` has always verified the assertion and `ClientRegistry` has always
+  stored a JWK Set in place of issuing a secret. Only the way in was shut.
+
+  Register with `token_endpoint_auth_method: "private_key_jwt"` and the key set inline as
+  `jwks`. A registration naming that method without keys is refused rather than minting a
+  client holding neither credential, and `jwks` on any other method is refused rather than
+  stored and never read.
+
+  `jwks_uri` is **refused**, not ignored. Fetching a registrant-chosen URL from an endpoint
+  that is unauthenticated in `open` mode is a server-side request forgery primitive handed
+  out by a public API; ignoring it silently would register a client whose keys are never
+  read, which it discovers when every assertion it signs is rejected for no stated reason.
+
+### Fixed
+
+- **The RFC 7592 client document reports the auth method the client actually has.** It
+  derived `token_endpoint_auth_method` from the client's TYPE, so every confidential client
+  was told `client_secret_basic` — including a `private_key_jwt` client, which holds no
+  secret to put in a Basic header, in the very response completing its registration. The
+  registered `jwks` is echoed too, so a key rotation can be read back.
+
 ## [1.9.0] - 2026-08-15
 
 ### Added

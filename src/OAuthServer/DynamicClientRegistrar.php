@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Api\Support\ClientAuthenticator;
+use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
@@ -28,7 +30,19 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     // would pin a queue worker to the first job's environment for the life of the process.
     use ResolvesEnvironment;
 
-    private const AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post'];
+    /**
+     * The methods a client may register with — and this list has to agree with
+     * `token_endpoint_auth_methods_supported` in {@see ServerMetadata}.
+     *
+     * `private_key_jwt` was missing while discovery advertised it in three places (token,
+     * revocation, introspection). The token endpoint has always accepted it
+     * ({@see ClientAuthenticator}) and the registry has always stored
+     * a JWK Set instead of issuing a secret — only this door refused, with `unsupported
+     * token_endpoint_auth_method`. A conformant client read the metadata, asked for the
+     * strongest method the server claimed, and was turned away from a capability that was
+     * fully built behind it. Advertised-but-unfulfilled, pointing the unusual way round.
+     */
+    private const AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post', 'private_key_jwt'];
 
     public function __construct(
         private readonly ClientRegistry $clients,
@@ -54,6 +68,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             grantTypes: $grantTypes,
             responseTypes: $responseTypes,
             scopes: $this->scopes($request),
+            jwks: $this->jwks($request, $authMethod),
         );
     }
 
@@ -65,6 +80,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             redirectUris: $metadata->redirectUris,
             grantTypes: $metadata->grantTypes,
             scopes: $metadata->scopes,
+            // The registry issues NO secret when a key set arrives — one credential
+            // mechanism, not two — so this is what makes a private_key_jwt registration
+            // produce a client that can actually authenticate rather than one with
+            // neither credential.
+            jwks: $metadata->jwks,
         ));
 
         $registrationToken = 'reg_'.bin2hex(random_bytes(32));
@@ -98,6 +118,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             'redirect_uris' => $metadata->redirectUris,
             'grant_types' => $metadata->grantTypes,
             'scopes' => $metadata->scopes,
+            // RFC 7592 §2.2: an update REPLACES the metadata, so keys omitted from the
+            // new document are gone. Leaving the old set in place would mean a client
+            // could never rotate away from a compromised key through the API it was told
+            // to manage itself with.
+            'jwks' => $metadata->jwks,
         ])->save();
 
         return $client;
@@ -131,6 +156,50 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         }
 
         return $method;
+    }
+
+    /**
+     * The client's public JWK Set, required by and only meaningful for `private_key_jwt`.
+     *
+     * RFC 7591 §2 defines both `jwks` and `jwks_uri`, and this accepts the inline one
+     * ONLY. `jwks_uri` means the server fetches a URL the registrant chose, on a schedule
+     * the registrant influences, from an endpoint that is unauthenticated in `open` mode —
+     * a server-side request forgery primitive handed out by a public API. It is refused
+     * OUT LOUD rather than dropped: silently ignoring it would register a client whose
+     * keys the server never reads, and the first thing that client learns is that every
+     * assertion it signs is rejected, with nothing anywhere saying why. That is the same
+     * defect as advertising a method and refusing it, one layer in.
+     *
+     * @param  array<string, mixed>  $request
+     * @return array<string, mixed>|null
+     */
+    private function jwks(array $request, string $authMethod): ?array
+    {
+        $jwks = $request['jwks'] ?? null;
+
+        if (isset($request['jwks_uri'])) {
+            throw InvalidClientMetadata::metadata('jwks_uri is not supported here — register the key set inline as "jwks"');
+        }
+
+        if ($authMethod !== 'private_key_jwt') {
+            // Keys on a client that authenticates some other way would be stored and never
+            // consulted. Refusing says which of the two the registrant got wrong.
+            if ($jwks !== null) {
+                throw InvalidClientMetadata::metadata('jwks is only accepted with token_endpoint_auth_method "private_key_jwt"');
+            }
+
+            return null;
+        }
+
+        // A private_key_jwt client with no keys can never authenticate — the registry
+        // issues it no secret either, so registering one mints a credential-less client
+        // that 401s forever.
+        if (! is_array($jwks) || ! isset($jwks['keys']) || ! is_array($jwks['keys']) || $jwks['keys'] === []) {
+            throw InvalidClientMetadata::metadata('token_endpoint_auth_method "private_key_jwt" requires a non-empty "jwks" key set');
+        }
+
+        /** @var array<string, mixed> $jwks */
+        return $jwks;
     }
 
     /**

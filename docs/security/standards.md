@@ -26,10 +26,16 @@ corrected above:
 
 The rest were re-read against `src/` and hold as written — including the ones easiest to
 drift: PKCE `plain` is refused at issue time and redemption computes S256 regardless; revocation
-calls `authenticateConfidential()`; there is no `DPoP-Nonce` anywhere in the package;
-`resource` is read as a single string so a repeated parameter yields one value; and the
-dynamic registrar's `AUTH_METHODS` is `none` / `client_secret_basic` / `client_secret_post`
-with no `private_key_jwt`.
+calls `authenticateConfidential()`; there is no `DPoP-Nonce` anywhere in the package; and
+`resource` is read as a single string so a repeated parameter yields one value.
+
+One entry on that list was a real divergence and is now closed. The dynamic registrar's
+`AUTH_METHODS` omitted `private_key_jwt` while `token_endpoint_auth_methods_supported`
+advertised it at three endpoints — so a conformant client that read the metadata and asked
+for the strongest method the server claimed was answered `400 unsupported
+token_endpoint_auth_method`. Everything behind that door was already built. A test now
+registers a client for **every** method the discovery document advertises, so the two
+cannot drift apart again without the suite saying so.
 
 ## How to read the grades
 
@@ -74,8 +80,8 @@ what the deployable app, an add-on package, or a future release does.
 | **RFC 8693** — Token Exchange | `urn:ietf:params:oauth:grant-type:token-exchange` | **Partial** | Access-token→access-token only, down-scope-only, with `resource` re-audiencing and DPoP continuity. **No delegation or impersonation**: `actor_token`, `may_act` and the `act` claim are deliberately absent, as are the `id_token` and `saml2` token types. |
 | **RFC 9449** — DPoP | Sender-constrained tokens | **Partial** | Proof validated for `typ`/`alg`/signature/`htm`/`htu`/`iat`/`ath`, with a database-backed single-use `jti` replay guard; `cnf.jkt` bound into access and refresh tokens and checked on rotation and exchange. **No DPoP nonce** (§8–9): no `DPoP-Nonce` header, no `use_dpop_nonce`. DPoP is **opt-in per token** — there is no switch to *require* sender-constrained tokens, so a client that omits the header simply gets a Bearer token. |
 | **RFC 8707** — Resource Indicators | `resource` binds the access token's `aud` | **Partial** | **Single-valued only** — §2 permits repeating `resource`, and a second value is dropped. Not advertised in metadata (there is no registered metadata key), so this is under-advertised rather than over-advertised. |
-| **RFC 7591** — Dynamic Client Registration | `POST /oauth/register` | **Partial** | Three modes (`disabled` / `protected` / `open`), advertised only when enabled. Redirect-URI rules include RFC 8252 private-use schemes and loopback. **A DCR client cannot register `private_key_jwt`** — the registrar's auth-method allow-list is `none` / `client_secret_basic` / `client_secret_post` and it ingests no `jwks`/`jwks_uri`. |
-| **RFC 7592** — DCR Management Protocol | `GET`/`PUT`/`DELETE /oauth/register/{client}` | **Partial** | Registration access token compared in constant time. The returned document reports `token_endpoint_auth_method` as `client_secret_basic` for every confidential client, including one registered for `client_secret_post` or `private_key_jwt`. |
+| **RFC 7591** — Dynamic Client Registration | `POST /oauth/register` | **Partial** | Three modes (`disabled` / `protected` / `open`), advertised only when enabled. Redirect-URI rules include RFC 8252 private-use schemes and loopback. Every method in `token_endpoint_auth_methods_supported` is registrable, `private_key_jwt` included, with the key set supplied inline as `jwks`. **`jwks_uri` is refused** rather than ignored: fetching a registrant-chosen URL from an endpoint that is unauthenticated in `open` mode is SSRF handed out by a public API. |
+| **RFC 7592** — DCR Management Protocol | `GET`/`PUT`/`DELETE /oauth/register/{client}` | **Partial** | Registration access token compared in constant time. The returned document derives `token_endpoint_auth_method` from the credential the client actually holds, and echoes the registered `jwks` so a key rotation can be read back. It still reports `client_secret_basic` for a client registered as `client_secret_post` — the distinction is not persisted. |
 | **RFC 9207** — Authorization Server Issuer Identification | `iss` on the authorization response | **Host-supplied** | The package **advertises** `authorization_response_iss_parameter_supported` whenever you configure an `authorization_endpoint`, but it emits no authorization response and therefore appends no `iss`. If you serve your own `/authorize`, you must append it or the advertisement is a lie to mix-up-hardened clients. |
 | **RFC 7523 §3** — JWT client authentication | `private_key_jwt` | **Full** | `RS256`/`ES256`/`EdDSA`; `iss == sub == client_id`; audience must be the issuer or the token endpoint; `exp` mandatory and capped at 300 s; single-use `jti`. |
 | **RFC 7523 §2.1** — JWT bearer *authorization* grant | `urn:ietf:params:oauth:grant-type:jwt-bearer` | **No** | Not a supported grant. Do not confuse with §3 above, which is. |
@@ -90,7 +96,7 @@ what the deployable app, an add-on package, or a future release does.
 | Method | Grade |
 |---|---|
 | `client_secret_basic`, `client_secret_post`, `none` | **Full** |
-| `private_key_jwt` (RFC 7523 §3) | **Full** — but not reachable through Dynamic Client Registration; register such clients programmatically. |
+| `private_key_jwt` (RFC 7523 §3) | **Full**, and registrable through Dynamic Client Registration by supplying `jwks` inline. |
 | `client_secret_jwt` | **No** — no MAC algorithms are accepted for client assertions. Not advertised. |
 | `tls_client_auth` / `self_signed_tls_client_auth` (RFC 8705) | **No** — not advertised. |
 

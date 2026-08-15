@@ -263,3 +263,104 @@ it('advertises the registration endpoint in discovery only when enabled', functi
         ->assertOk()
         ->assertJsonPath('registration_endpoint', rtrim(url('/'), '/').'/oauth/register');
 });
+
+/**
+ * The registration door and the metadata document have to agree about what this server
+ * accepts.
+ *
+ * They did not. `token_endpoint_auth_methods_supported` advertised `private_key_jwt` at
+ * the token, revocation and introspection endpoints; `DynamicClientRegistrar::AUTH_METHODS`
+ * listed three methods and not that one, so registering with it returned
+ * `400 unsupported token_endpoint_auth_method`. The capability behind the door was
+ * complete the whole time — `ClientAuthenticator` verifies the assertion, `ClientRegistry`
+ * stores a JWK Set and deliberately issues no secret alongside it. Only the way in was
+ * shut, and the document said otherwise.
+ */
+it('accepts every auth method its own discovery document advertises', function (): void {
+    openDcr();
+
+    $advertised = $this->getJson('/.well-known/oauth-authorization-server')
+        ->assertOk()
+        ->json('token_endpoint_auth_methods_supported');
+
+    expect($advertised)->toBeArray()->not->toBeEmpty();
+
+    foreach ($advertised as $method) {
+        // `none` cannot take client_credentials and private_key_jwt needs its keys — the
+        // point is that none of them is refused AS A METHOD.
+        $body = [
+            'client_name' => 'Conformance probe '.$method,
+            'token_endpoint_auth_method' => $method,
+            'grant_types' => ['authorization_code'],
+            'redirect_uris' => ['https://app.test/cb'],
+        ];
+
+        if ($method === 'private_key_jwt') {
+            $body['jwks'] = ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'n' => 'abc', 'e' => 'AQAB']]];
+        }
+
+        $response = $this->postJson('/oauth/register', $body);
+
+        expect($response->status())->toBe(
+            201,
+            "discovery advertises {$method} and registration refused it: ".(string) $response->getContent(),
+        );
+    }
+});
+
+it('registers a private_key_jwt client with its keys, and issues no secret', function (): void {
+    openDcr();
+
+    $jwks = ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'n' => 'abc', 'e' => 'AQAB']]];
+
+    $response = $this->postJson('/oauth/register', [
+        'client_name' => 'Assertion client',
+        'token_endpoint_auth_method' => 'private_key_jwt',
+        'grant_types' => ['client_credentials'],
+        'jwks' => $jwks,
+    ])->assertStatus(201);
+
+    // The document tells the truth about how to authenticate. It used to answer
+    // `client_secret_basic` for every confidential client — including this one, which
+    // holds no secret to put in a Basic header.
+    $response->assertJsonPath('token_endpoint_auth_method', 'private_key_jwt')
+        ->assertJsonPath('jwks', $jwks)
+        ->assertJsonMissingPath('client_secret');
+
+    $client = Client::query()->where('client_id', $response->json('client_id'))->firstOrFail();
+
+    expect($client->jwks)->toBe($jwks)
+        // One credential mechanism, not two.
+        ->and($client->secret_hash)->toBeNull();
+});
+
+it('refuses a private_key_jwt registration with no keys, rather than minting a client that can never authenticate', function (): void {
+    openDcr();
+
+    $this->postJson('/oauth/register', [
+        'client_name' => 'Keyless',
+        'token_endpoint_auth_method' => 'private_key_jwt',
+        'grant_types' => ['client_credentials'],
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_client_metadata');
+});
+
+/**
+ * `jwks_uri` is refused OUT LOUD.
+ *
+ * Accepting it would have the server fetch a URL the registrant chose, from an endpoint
+ * that is unauthenticated in `open` mode — SSRF handed out by a public API. Dropping it
+ * silently would be worse in a quieter way: the client registers, believes its keys are
+ * on file, and every assertion it signs is rejected with nothing anywhere saying why.
+ */
+it('refuses jwks_uri instead of silently ignoring it', function (): void {
+    openDcr();
+
+    $response = $this->postJson('/oauth/register', [
+        'client_name' => 'Remote keys',
+        'token_endpoint_auth_method' => 'private_key_jwt',
+        'grant_types' => ['client_credentials'],
+        'jwks_uri' => 'https://app.test/jwks.json',
+    ])->assertStatus(400);
+
+    expect((string) $response->json('error_description'))->toContain('jwks_uri');
+});
