@@ -59,6 +59,30 @@ it('does not list or filter another directory users', function (): void {
     $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "dana@alpha.test"'), [
         'Authorization' => 'Bearer '.$this->beta->token,
     ])->assertStatus(200)->assertJsonPath('totalResults', 0);
+
+    // AND A COMPOUND `or`, which is the only shape that can observe the grouping.
+    //
+    // `ScimUserFilter::apply()` nests its clauses in their own closure precisely so an
+    // `or` cannot escape the caller's directory predicate. A single-clause filter is
+    // identical with or without that closure, so every filter test in this suite passed
+    // whether the wrapper existed or not.
+    //
+    // THE ORDER MATTERS. Only the clauses after the first carry `or`, so the one that
+    // escapes an unwrapped filter is the SECOND — which is where the other directory's
+    // user has to be named. Unwrapped, this request becomes `(environment = ? AND
+    // directory_id = beta AND userName = 'nobody@beta.test') OR (userName =
+    // 'dana@alpha.test')`, and the right-hand side is fenced by nothing at all: beta
+    // reads alpha's row, from any directory, in any environment.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "nobody@beta.test" or userName eq "dana@alpha.test"'), [
+        'Authorization' => 'Bearer '.$this->beta->token,
+    ])->assertStatus(200)->assertJsonPath('totalResults', 0);
+
+    // The positive control: the same compound filter DOES answer for the directory that
+    // owns the row, so a zero above is the fence rather than a filter that matches
+    // nothing at all.
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "nobody@alpha.test" or userName eq "dana@alpha.test"'), [
+        'Authorization' => 'Bearer '.$this->alpha->token,
+    ])->assertStatus(200)->assertJsonPath('totalResults', 1);
 });
 
 it('does not let one directory deactivate or delete another directory user', function (): void {

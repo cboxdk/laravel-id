@@ -150,17 +150,27 @@ it('refuses an AuthnRequest from a disabled SP', function () {
         ->toThrow(UnknownServiceProvider::class);
 });
 
+/**
+ * THE ONLY XXE TEST IN THIS PACKAGE, and it was passing for the wrong reason.
+ *
+ * `IssueInstant` was hardcoded to a fixed date that has since gone stale, so the request
+ * was refused by the freshness check long before anything looked at the DOCTYPE — and
+ * `InvalidAuthnRequest` is the single rejection class for every reason on this path, so
+ * removing the entity guard entirely left this green. A current timestamp plus the
+ * guard's own message is what makes it about XXE.
+ */
 it('refuses a request carrying an XXE / DOCTYPE payload', function () {
     $this->registerSamlServiceProvider(entityId: 'https://sp.example.test/metadata');
 
     $xxe = '<?xml version="1.0"?><!DOCTYPE samlp:AuthnRequest [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
-        .'<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_x" Version="2.0" IssueInstant="2026-01-01T00:00:00Z">'
+        .'<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_x" Version="2.0" IssueInstant="'
+        .gmdate('Y-m-d\TH:i:s\Z').'">'
         .'<saml:Issuer>https://sp.example.test/metadata&xxe;</saml:Issuer></samlp:AuthnRequest>';
 
     $encoded = base64_encode((string) gzdeflate($xxe));
 
     expect(fn () => $this->samlIdp()->parseAuthnRequest($encoded))
-        ->toThrow(InvalidAuthnRequest::class);
+        ->toThrow(InvalidAuthnRequest::class, 'malformed or unsafe XML');
 });
 
 it('rejects malformed base64 / XML', function () {
@@ -261,20 +271,43 @@ it('refuses an unsigned POST-binding request when the SP requires signing', func
         ->toThrow(InvalidAuthnRequest::class);
 });
 
-it('refuses a POST-binding request signed with SHA-1 (algorithm pin)', function () {
+/**
+ * ONE ALGORITHM AT A TIME, and the message asserted.
+ *
+ * This flipped signature AND digest together and asserted the exception CLASS — which is
+ * the single rejection type for every reason on this path. Deleting either pin left the
+ * other throwing the same class, so neither could be observed alone and the test would
+ * have kept passing with half the control gone. The builder already takes the two
+ * independently.
+ */
+it('refuses a POST-binding request whose SIGNATURE is RSA-SHA1', function () {
     $keypair = $this->samlSigningKeypair();
     $sp = $this->registerSamlServiceProvider(certificate: $keypair['certificate'], wantAuthnRequestsSigned: true);
 
-    $sha1Request = $this->makeSignedPostAuthnRequest(
+    $request = $this->makeSignedPostAuthnRequest(
         $sp->entity_id,
         $keypair['privateKey'],
         $keypair['certificate'],
         signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+    );
+
+    expect(fn () => $this->samlIdp()->parseAuthnRequest($request, null, null, null, false))
+        ->toThrow(InvalidAuthnRequest::class, 'unsupported signature algorithm (RSA-SHA256 required)');
+});
+
+it('refuses a POST-binding request whose DIGEST is SHA-1, signature notwithstanding', function () {
+    $keypair = $this->samlSigningKeypair();
+    $sp = $this->registerSamlServiceProvider(certificate: $keypair['certificate'], wantAuthnRequestsSigned: true);
+
+    $request = $this->makeSignedPostAuthnRequest(
+        $sp->entity_id,
+        $keypair['privateKey'],
+        $keypair['certificate'],
         digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1',
     );
 
-    expect(fn () => $this->samlIdp()->parseAuthnRequest($sha1Request, null, null, null, false))
-        ->toThrow(InvalidAuthnRequest::class);
+    expect(fn () => $this->samlIdp()->parseAuthnRequest($request, null, null, null, false))
+        ->toThrow(InvalidAuthnRequest::class, 'unsupported digest algorithm (SHA-256 required)');
 });
 
 /**

@@ -209,7 +209,13 @@ XML;
         $dsig->setCanonicalMethod(XMLSecurityDSig::EXC_C14N);
         $dsig->addReference(
             $assertion,
-            ($sha1 || $digestSha1) ? XMLSecurityDSig::SHA1 : XMLSecurityDSig::SHA256,
+            // THE DIGEST FOLLOWS ITS OWN FLAG, and only its own. It used to follow
+            // `$sha1` as well, which coupled the two algorithms — so `sha1: true` produced
+            // an all-SHA-1 document where the SIGNATURE pin fires first, and deleting that
+            // pin left the DIGEST pin throwing the same exception class. Neither pin could
+            // be observed alone, which is exactly how the digest check was once deleted
+            // and shipped.
+            $digestSha1 ? XMLSecurityDSig::SHA1 : XMLSecurityDSig::SHA256,
             ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', XMLSecurityDSig::EXC_C14N],
             ['id_name' => 'ID', 'overwrite' => false],
         );
@@ -302,8 +308,13 @@ it('rejects a SAML response signed with RSA-SHA1 (algorithm downgrade)', functio
 
     // A genuinely-signed response, but with the deprecated RSA-SHA1 / SHA-1 pair
     // onelogin still accepts. The RP must pin RSA-SHA256 and refuse it.
+    //
+    // The MESSAGE is asserted, not just the class: `InvalidAssertion` is the single
+    // rejection type on this path, so `->throws(InvalidAssertion::class)` passes for any
+    // reason at all — including the digest pin catching what the signature pin was
+    // supposed to.
     app(AssertionValidator::class)->validate($connection, $idp->response(sha1: true));
-})->throws(InvalidAssertion::class);
+})->throws(InvalidAssertion::class, 'unsupported SAML signature algorithm (RSA-SHA256 required)');
 
 /**
  * RSA-SHA256 signature, SHA-1 digest. A conformant-looking document that is weak where it
