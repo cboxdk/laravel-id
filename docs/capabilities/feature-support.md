@@ -142,6 +142,6 @@ own repositories are the authority on what they support.
 | JavaScript / TypeScript | `@cboxdk/id-js` |
 | React | `@cboxdk/id-react` |
 | Vue / Nuxt | `@cboxdk/id-vue`, `@cboxdk/id-nuxt` |
-| Python | `cbox-id-client` |
+| Python | *(unpublished — source only)* |
 | Go | `github.com/cboxdk/id-go` |
 | Laravel / PHP | `cboxdk/laravel-id-client` |
