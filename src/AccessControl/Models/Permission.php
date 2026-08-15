@@ -24,9 +24,20 @@ use Illuminate\Support\Carbon;
  * {@see BelongsToEnvironment} trait, whose strict
  * `environment_id = current` would hide the intentional platform-global (null) rows.
  *
+ * `organization_id` is the third tier of ownership, and the only one a TENANT authors:
+ * null means the row is shared with every organization in its environment (what the
+ * environment-plane form writes, and what every row predating the column is), and a value
+ * means exactly one tenant may see, bind, edit or delete it. It has NO global scope,
+ * because nothing in the console populates {@see TenantContext} and a deny-by-default
+ * scope resolved from an empty context would hide the shared tier from everybody. The
+ * fence is {@see self::scopeVisibleToOrganization()} and
+ * {@see self::scopeOwnedByOrganization()} — named so the rule has one implementation
+ * rather than one per page that remembers to write it.
+ *
  * @property string $id
  * @property string|null $client_id
  * @property string|null $environment_id
+ * @property string|null $organization_id
  * @property string $name
  * @property string|null $description
  * @property bool $tenant_assignable
@@ -76,6 +87,54 @@ class Permission extends Model
                     ->orWhereNull($inner->qualifyColumn('environment_id'));
             });
         });
+    }
+
+    /**
+     * What an organization may SEE: its own rows, plus the environment's shared tier.
+     *
+     * A null organization is the environment plane (and operator tooling), which sees the
+     * shared tier ONLY. That is narrower than it could be — an environment administrator
+     * arguably owns everything in their environment — and it is the deliberate direction:
+     * a tenant's `feature:action` keys name what that tenant bought (`acme.billing.refund`
+     * is a customer list one row at a time), and the console has no page that needs to
+     * read them. Widening later is a query; unreading a disclosure is not.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeVisibleToOrganization(Builder $query, ?string $organizationId): void
+    {
+        if ($organizationId === null) {
+            $query->whereNull($query->qualifyColumn('organization_id'));
+
+            return;
+        }
+
+        $query->where(function (Builder $inner) use ($organizationId): void {
+            $inner->whereNull($inner->qualifyColumn('organization_id'))
+                ->orWhere($inner->qualifyColumn('organization_id'), $organizationId);
+        });
+    }
+
+    /**
+     * What an organization may WRITE: exactly its own rows, never the shared tier.
+     *
+     * Not the same predicate as {@see self::scopeVisibleToOrganization()}, and the
+     * difference is the whole point. Visibility includes the shared tier because roles are
+     * composed from it; authorship must not, or a tenant editing a key they can see would
+     * be editing every peer's catalog — and deleting one cascades `role_permission` for
+     * every role in the environment.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeOwnedByOrganization(Builder $query, ?string $organizationId): void
+    {
+        if ($organizationId === null) {
+            $query->whereNull($query->qualifyColumn('organization_id'));
+
+            return;
+        }
+
+        $query->where($query->qualifyColumn('organization_id'), $organizationId);
     }
 
     /**

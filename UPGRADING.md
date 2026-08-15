@@ -18,6 +18,45 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.9.0
+
+**Manual permissions can now have an owning organization, and existing rows keep their old
+meaning.**
+
+`permissions` gains a nullable `organization_id`. Null means what every row means today:
+shared with every organization in the environment. A value means one tenant owns the row —
+only they see it, compose it into roles, edit it, or delete it.
+
+This exists because the catalog had no tenant tier at all. A console that offers permission
+authoring to an organization administrator — which ours does, because roles are made of
+permissions and offering one while hiding the other is not a usable console — wrote every
+row into the environment-wide tier. One tenant could rename a key a peer's roles were built
+from, and deleting one cascades the `role_permission` rows for **every** role in the
+environment.
+
+*What breaks:* nothing on its own. The migration is additive and **does not backfill** —
+every existing row stays shared, because each was authored when shared was the only
+available outcome and roles across the environment may already bind it. Stamping a guessed
+owner would silently revoke permissions from live roles.
+
+*What to do* if you render your own permission console: the fence is not a global scope,
+because it cannot be — nothing populates `TenantContext` on a console plane, and a
+deny-by-default scope reading an empty context would hide the shared tier from everybody.
+Apply it explicitly, and note that the two predicates are deliberately not the same one:
+
+```php
+// What a tenant may SEE — their own rows plus the environment's shared tier.
+Permission::query()->visibleToOrganization($organizationId)->get();
+
+// What a tenant may WRITE — their own rows and nothing else. Resolve every edit and
+// delete target through this, never through the visibility predicate.
+Permission::query()->ownedByOrganization($organizationId)->whereKey($id)->first();
+```
+
+Passing `null` to either is the environment plane asking for the shared tier: `visible`
+returns the shared rows only, and `owned` matches the shared rows only — so an
+environment-plane form cannot resolve a tenant's private key either.
+
 ## 1.8.0
 
 **Three behaviour changes that are silent by design. Read all three before deploying.**

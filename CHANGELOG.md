@@ -17,6 +17,31 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-15
+
+### Added
+
+- **Manual permissions can be owned by an organization.** `permissions` gains a nullable
+  `organization_id`, and `Permission` gains the pair of predicates that fence it:
+  `visibleToOrganization()` — a tenant's own rows plus the environment's shared tier, which
+  their roles are composed from — and `ownedByOrganization()`, which is what an edit or
+  delete target must be resolved through. The two are deliberately not the same query; a
+  console that authorized writes with the visibility one would hand every tenant the whole
+  shared tier to delete.
+
+  The catalog previously had no tenant tier at all. A console that offers permission
+  authoring to an organization administrator — the usable shape, since roles are made of
+  permissions — wrote every row into the environment-wide tier: one tenant could rename a
+  key a peer's roles were built from, and deleting one cascades the `role_permission` rows
+  for every role in the environment. Found by a third-party review of the console that
+  consumes this package, not by this package's own suite, which had no test for a boundary
+  the schema could not express.
+
+  The migration is additive and does not backfill: existing rows keep the shared meaning
+  they were authored under, because roles across the environment may already bind them and
+  a guessed owner would silently revoke live grants. `UPGRADING.md` has what a host
+  rendering its own permission console must apply.
+
 ## [1.8.0] - 2026-08-12
 
 ### Added
