@@ -105,3 +105,48 @@ it('advertises the PAR endpoint in the authorization-server metadata', function 
         ->assertJsonPath('pushed_authorization_request_endpoint', fn (string $v): bool => str_ends_with($v, '/oauth/par'))
         ->assertJsonPath('require_pushed_authorization_requests', false);
 });
+
+/**
+ * The pushed body cannot name a client other than the one that authenticated.
+ *
+ * This is the control that makes the PAR endpoint's thin validation safe. It stores
+ * parameters largely as given — RFC 9126 §2.1 would have the AS validate them here, and
+ * this package validates them at `/authorize` instead, which the conformance matrix grades
+ * as host-supplied and which the reference console does. That division only holds while
+ * `client_id` is fixed by authentication: if the stored payload could name a different
+ * client, the consent page reads `client_id` from the pushed payload in preference to the
+ * query, and would resolve, and validate redirect URIs against, somebody else's client.
+ *
+ * `push()` overwrites it. That is one line with a comment, which is exactly the kind of
+ * line a later refactor drops while every existing test stays green.
+ */
+it('fixes client_id to the authenticated client, whatever the body says', function (): void {
+    $registered = $this->makeClient();
+    $victim = $this->makeClient();
+
+    $par = app(PushedAuthorizationRequests::class);
+
+    $pushed = $par->push($registered->client, parRequest($victim->client->client_id));
+
+    $params = $par->consume($registered->client->client_id, $pushed['request_uri']);
+
+    expect($params)->not->toBeNull()
+        ->and($params['client_id'])->toBe($registered->client->client_id)
+        ->and($params['client_id'])->not->toBe($victim->client->client_id);
+})->group('security');
+
+/**
+ * …and the record is keyed to that client too, so the victim cannot redeem it either.
+ */
+it('refuses to hand a pushed request to a client that did not push it', function (): void {
+    $registered = $this->makeClient();
+    $other = $this->makeClient();
+
+    $par = app(PushedAuthorizationRequests::class);
+    $uri = $par->push($registered->client, parRequest($registered->client->client_id))['request_uri'];
+
+    expect($par->consume($other->client->client_id, $uri))->toBeNull()
+        // …and it is still there for its rightful owner: a failed lookup must not
+        // consume the single use.
+        ->and($par->consume($registered->client->client_id, $uri))->not->toBeNull();
+})->group('security');
