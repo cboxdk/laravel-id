@@ -93,7 +93,27 @@ it('disables an operator factor and its recovery codes', function (): void {
  * step is recorded, an update conditioned on the earlier step affects zero rows. That is
  * the whole reason the losing request in a real race cannot proceed.
  */
-it('consumes a TOTP step with an update that a concurrent duplicate cannot win', function (): void {
+/**
+ * The loser of a genuine race gets nothing — asserted through PRODUCTION's write.
+ *
+ * The version this replaces built the conditional UPDATE in the test and asserted it
+ * affected zero rows. That is the test's own SQL: it proves the database honours a WHERE
+ * clause, which was never in doubt, and says nothing about whether
+ * `DatabaseOperatorMfa::verifyTotp()` still uses one. Verified — replacing production's
+ * conditional update with a plain `update()` and `return true` left all six tests in this
+ * file green, including the one named after the race.
+ *
+ * Two requests presenting the SAME intercepted code both pass the in-PHP replay check,
+ * because both read the factor before either writes. Only the atomic update separates
+ * them, and on the operator plane one code admitting two sign-ins is the worst place for
+ * it. So the interleaving is what has to be reproduced.
+ *
+ * The seam is the authenticator: `matchStep()` is called AFTER production has read the
+ * factor and BEFORE it writes, so a decorator that advances the row there puts production
+ * in exactly the state the losing request is in — holding a stale `last_used_step` and
+ * about to attempt a write another request has already made.
+ */
+it('refuses the step when another request advanced it between the read and the write', function (): void {
     $mfa = app(OperatorMfa::class);
     $totp = app(TotpAuthenticator::class);
 
@@ -101,20 +121,28 @@ it('consumes a TOTP step with an update that a concurrent duplicate cannot win',
     $mfa->confirmTotp('op_race', $totp->codeAt($enrollment->secret, time()));
 
     $step = intdiv(time() + 30, 30);
-    expect($mfa->verifyTotp('op_race', $totp->codeAt($enrollment->secret, time() + 30)))->toBeTrue();
+    $code = $totp->codeAt($enrollment->secret, time() + 30);
 
-    $factor = OperatorMfaFactor::query()->where('operator_id', 'op_race')->firstOrFail();
-    expect($factor->last_used_step)->toBe($step);
+    // The concurrent winner, committing inside production's own read-write gap.
+    app()->instance(TotpAuthenticator::class, new class($totp, $step) extends TotpAuthenticator
+    {
+        public function __construct(private readonly TotpAuthenticator $inner, private readonly int $step) {}
 
-    // The write the loser of the race would attempt: same step, conditioned on the state
-    // it read before the winner committed. Zero rows, so it cannot claim the code.
-    $claimed = OperatorMfaFactor::query()
-        ->whereKey($factor->id)
-        ->where(fn ($query) => $query->whereNull('last_used_step')->orWhere('last_used_step', '<', $step))
-        ->update(['last_used_step' => $step]);
+        public function matchStep(string $base32Secret, string $code, ?int $timestamp = null, int $window = 1): ?int
+        {
+            $matched = $this->inner->matchStep($base32Secret, $code, $timestamp, $window);
 
-    expect($claimed)->toBe(0, 'a second request could claim a step already consumed');
+            OperatorMfaFactor::query()
+                ->where('operator_id', 'op_race')
+                ->update(['last_used_step' => $this->step]);
 
-    // And the ordinary sequential replay is still refused.
-    expect($mfa->verifyTotp('op_race', $totp->codeAt($enrollment->secret, time() + 30)))->toBeFalse();
+            return $matched;
+        }
+    });
+
+    // Resolved fresh so it takes the decorated authenticator.
+    app()->forgetInstance(OperatorMfa::class);
+
+    expect(app(OperatorMfa::class)->verifyTotp('op_race', $code))
+        ->toBeFalse('a second request claimed a step another had already consumed');
 });

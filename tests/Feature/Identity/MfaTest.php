@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Models\MfaFactor;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -170,4 +171,52 @@ it('removes every factor and recovery code, and says so in the audit trail', fun
 
     expect(AuditEntry::query()->where('action', 'user.mfa_disabled')->where('target_id', $user->id)->exists())
         ->toBeTrue('disabling a second factor left no audit entry');
+});
+
+/**
+ * The loser of a genuine race gets nothing — the same property the operator plane holds,
+ * on the plane where every ordinary user's second factor lives.
+ *
+ * `MfaService::verifyTotp()` advances the step with a conditional UPDATE and returns
+ * `$advanced === 1`, so two requests presenting the SAME intercepted code cannot both
+ * succeed: both pass the in-PHP replay check, because both read the factor before either
+ * writes, and only the atomic update separates them. Nothing here asserted that. The
+ * sibling test on the operator plane appeared to, and did not — it built the conditional
+ * update in the test and asserted the DATABASE honoured a WHERE clause, which was never
+ * in doubt. Replacing production's update with a plain one left every MFA test on both
+ * planes green.
+ *
+ * The seam is the authenticator: `matchStep()` runs after production has read the factor
+ * and before it writes, so advancing the row there puts production in exactly the state
+ * the losing request is in.
+ */
+it('refuses the step when another request advanced it between the read and the write', function (): void {
+    $mfa = app(Mfa::class);
+    $totp = app(TotpAuthenticator::class);
+
+    $enrollment = $mfa->enrollTotp('user_race', 'race@corp.test');
+    $mfa->confirmTotp('user_race', $totp->codeAt($enrollment->secret, time()));
+
+    $step = intdiv(time() + 30, 30);
+    $code = $totp->codeAt($enrollment->secret, time() + 30);
+
+    app()->instance(TotpAuthenticator::class, new class($totp, $step) extends TotpAuthenticator
+    {
+        public function __construct(private readonly TotpAuthenticator $inner, private readonly int $step) {}
+
+        public function matchStep(string $base32Secret, string $code, ?int $timestamp = null, int $window = 1): ?int
+        {
+            $matched = $this->inner->matchStep($base32Secret, $code, $timestamp, $window);
+
+            // The concurrent winner, committing inside production's read-write gap.
+            MfaFactor::query()->where('user_id', 'user_race')->update(['last_used_step' => $this->step]);
+
+            return $matched;
+        }
+    });
+
+    app()->forgetInstance(Mfa::class);
+
+    expect(app(Mfa::class)->verifyTotp('user_race', $code))
+        ->toBeFalse('a second request claimed a step another had already consumed');
 });
