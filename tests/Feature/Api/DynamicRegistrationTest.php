@@ -329,7 +329,13 @@ it('registers a private_key_jwt client with its keys, and issues no secret', fun
 
     $client = Client::query()->where('client_id', $response->json('client_id'))->firstOrFail();
 
-    expect($client->jwks)->toBe($jwks)
+    // `toEqual`, NOT `toBe`. MySQL 8 stores a JSON column as a parsed document and
+    // normalises object key order on the way back out, so a round-tripped key set returns
+    // the same pairs in a different order. `toBe` is `===`, which for arrays means same
+    // order as well — so this passed on sqlite and Postgres, which round-trip the text
+    // verbatim, and failed only on the MySQL leg of the engine matrix. What is under test
+    // is which keys were stored, never what order they came back in.
+    expect($client->jwks)->toEqual($jwks)
         // One credential mechanism, not two.
         ->and($client->secret_hash)->toBeNull();
 });

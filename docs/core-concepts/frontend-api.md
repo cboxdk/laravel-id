@@ -143,6 +143,30 @@ key only got the request through the door and said which environment to look in.
 holding a key and no token learns nothing about anybody, which is the property that makes
 the key safe to publish.
 
+## What this package serves, and what it does not
+
+**Those two endpoints are the whole of it.** `config` and `session` — nothing else on
+`/frontend/v1/*` comes from here.
+
+That matters because the SDKs offer more than two calls. `@cboxdk/id-js` has `signIn()`,
+and `@cboxdk/id-react`'s `<SignIn/>` component drives it; between them they post to
+`/frontend/v1/sign-in`, `/frontend/v1/sign-in/factor`,
+`/frontend/v1/sign-in/passkey/options` and `/frontend/v1/sign-in/passkey`. **A bare
+`cboxdk/laravel-id` install answers 404 to all four** — and from a browser a 404 on a
+cross-origin request is indistinguishable from the network being down, so the SDK reports
+a connection failure and the cause is invisible.
+
+The split is deliberate rather than an omission. Those endpoints take a password, decide
+whether a second factor is owed, and mint a single-use login ticket: they *are* the
+sign-in policy, and this package no more owns your sign-in policy than it owns your login
+page. The reference implementation is in
+[`cboxdk/cbox-id`](https://github.com/cboxdk/cbox-id) — `routes/web.php`, under the
+`frontend/v1` prefix. A host that wants the embedded sign-in either runs that or
+implements the same four routes.
+
+If you only need to draw the environment's theme and read who is signed in — which is what
+`useCboxConfig()` and `<UserButton/>` do — this package is enough on its own.
+
 ## What may never go on this channel
 
 The temptation is real for each of these, and each is one array merge away.
