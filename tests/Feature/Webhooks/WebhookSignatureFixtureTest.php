@@ -38,6 +38,56 @@ it('is an honest HMAC vector for every fixture case', function (array $case): vo
         ->toBe($case['reversed_order_signature']);
 })->with(WebhookSignatureFixture::dataset());
 
+/**
+ * The TEMPLATES are what every SDK reads, and nothing checked them.
+ *
+ * Each case carries both a `signed_payload` literal and the parts it was built from, and
+ * the document carries the templates that say how to build it — but the two halves were
+ * never compared. So `signed_payload_template` could be edited to `{body}.{timestamp}`
+ * and this file stayed green: the vector test hashes the LITERAL `signed_payload`, which
+ * nobody changed, and the delivery test compares the dispatcher against
+ * `expectedHeader()`, which reads the edited template — so flipping the template and the
+ * dispatcher together passed both.
+ *
+ * That is precisely the regression the fixture exists to prevent, described in its own
+ * docblock, reachable by editing the one field the docblock never asserts. Every SDK
+ * builds its expectation from these templates, so an unpinned template is an unpinned
+ * wire format in five languages at once.
+ */
+it('builds each case literal from the templates it publishes', function (array $case): void {
+    $document = WebhookSignatureFixture::document();
+
+    $signedPayload = strtr($document['signed_payload_template'], [
+        '{timestamp}' => (string) $case['timestamp'],
+        '{body}' => $case['body'],
+    ]);
+
+    // The template and the literal must be the same fact stated twice. Either one edited
+    // alone is now a failure, which is what makes the pair worth carrying.
+    expect($signedPayload)->toBe($case['signed_payload'], 'the signed-payload template disagrees with the case it published');
+
+    $header = strtr($document['header_template'], [
+        '{timestamp}' => (string) $case['timestamp'],
+        '{signature}' => $case['signature'],
+    ]);
+
+    expect($header)->toBe($case['header'], 'the header template disagrees with the case it published');
+})->with(WebhookSignatureFixture::dataset());
+
+/**
+ * …and the order is timestamp-then-body, stated once, here.
+ *
+ * The check above proves the two halves AGREE; it cannot notice both being flipped in the
+ * same edit. This is the one place the wire format is written down as a constant rather
+ * than derived from something — and it is deliberately not read from the file it guards.
+ */
+it('signs the timestamp before the body, which is the wire format', function (): void {
+    $document = WebhookSignatureFixture::document();
+
+    expect($document['signed_payload_template'])->toBe('{timestamp}.{body}')
+        ->and($document['header_template'])->toBe('t={timestamp},v1={signature}');
+});
+
 it('signs a real delivery exactly as the shared fixture specifies', function (): void {
     Http::fake(['*' => Http::response('', 200)]);
     $registered = $this->registerWebhook('org_a', 'https://hook.test/x', ['organization.member_added']);
