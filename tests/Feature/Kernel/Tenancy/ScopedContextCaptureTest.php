@@ -198,10 +198,18 @@ it('never lets a singleton constructor-inject a scoped tenancy context', functio
     // GUARD AGAINST THIS TEST BECOMING HOLLOW. If resolution starts failing wholesale
     // (a refactor, a provider reorder), the loop below would iterate nothing and pass
     // green while checking NOTHING — which is exactly the failure mode this whole
-    // exercise is about. The floor is well under the ~90 singletons the package binds,
-    // so it will not flap, but it will catch an empty set.
-    expect(count($inspected))->toBeGreaterThan(40,
-        'The architecture test inspected almost no singletons — it is not proving anything. '
+    // exercise is about.
+    //
+    // COUNTED OVER THIS PACKAGE'S OWN BINDINGS. The floor was 40 against the whole
+    // container, which holds ~312 singletons of which ~112 are ours — so Laravel's and
+    // Testbench's 200 satisfied 40 by themselves, and every provider in this package
+    // could have stopped registering while this still passed, having inspected not one
+    // class it exists to police. A floor a dependency can satisfy on the subject's
+    // behalf is not a floor.
+    $ours = array_filter(array_keys($inspected), fn (string $abstract): bool => str_starts_with($abstract, 'Cbox\\Id\\'));
+
+    expect(count($ours))->toBeGreaterThan(60,
+        'The architecture test inspected almost none of THIS package\'s singletons — it is not proving anything. '
         .'Unresolvable bindings: '.implode(', ', $unresolvable));
 
     $violations = [];
@@ -334,9 +342,12 @@ function guardsItsMemoWithRequestLifetime(object $instance): bool
 it('never lets a singleton memoise request state with nothing to invalidate it', function (): void {
     ['inspected' => $inspected] = resolvedSingletons();
 
-    // Same floor as the test above, and for the same reason: a loop over an empty set
-    // passes green while proving nothing.
-    expect(count($inspected))->toBeGreaterThan(40);
+    // Same floor as the test above, over the same set and for the same reason: a loop
+    // over an empty set passes green while proving nothing, and a count of the WHOLE
+    // container is one the framework can satisfy on this package's behalf.
+    $ours = array_filter(array_keys($inspected), fn (string $abstract): bool => str_starts_with($abstract, 'Cbox\\Id\\'));
+
+    expect(count($ours))->toBeGreaterThan(60);
 
     $scoped = (function (): array {
         // A `scoped` binding is also `shared`, so the two are indistinguishable from
