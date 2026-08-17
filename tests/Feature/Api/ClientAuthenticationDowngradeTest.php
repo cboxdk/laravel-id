@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
@@ -107,4 +108,54 @@ it('still admits a confidential client presenting its secret', function (): void
         'client_id' => $registered->client->client_id,
         'client_secret' => $registered->secret,
     ])->assertOk();
+})->group('security');
+
+/**
+ * An RFC 7592 update retires the secret when the client says it no longer uses one.
+ *
+ * The downgrade bypass above is closed at the DOOR — `ClientAuthenticator` treats "secret
+ * still on file" as proof the client is confidential, so a downgraded client cannot log in
+ * on `client_id` alone. This is the other half, and it was left open: the row went on
+ * carrying a live credential that the client's own registered metadata says is not in use.
+ *
+ * Reported by a third-party security pass and confirmed against the code before acting:
+ * after updating a `client_secret_basic` client to `none`, its type flipped to Public and
+ * `secret_hash` stayed exactly where it was.
+ */
+it('clears the secret when a client updates itself to an auth method that has none', function (string $method, array $extra): void {
+    $registered = $this->makeClient();
+
+    expect($registered->client->secret_hash)->not->toBeNull();
+
+    $registrar = app(DynamicClientRegistration::class);
+
+    $registrar->update($registered->client, $registrar->validate(array_merge([
+        'client_name' => 'Updated',
+        'token_endpoint_auth_method' => $method,
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+    ], $extra)));
+
+    expect($registered->client->fresh()?->secret_hash)->toBeNull();
+})->with([
+    'downgraded to none' => ['none', []],
+    'switched to private_key_jwt' => ['private_key_jwt', ['jwks' => ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'n' => 'abc', 'e' => 'AQAB']]]]],
+])->group('security');
+
+it('keeps the secret when the client still authenticates with one', function (): void {
+    $registered = $this->makeClient();
+    $before = $registered->client->secret_hash;
+
+    $registrar = app(DynamicClientRegistration::class);
+
+    $registrar->update($registered->client, $registrar->validate([
+        'client_name' => 'Renamed but still confidential',
+        'token_endpoint_auth_method' => 'client_secret_basic',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+    ]));
+
+    // The positive control: clearing it unconditionally would lock every confidential
+    // client out of its own account on the next metadata edit.
+    expect($registered->client->fresh()?->secret_hash)->toBe($before);
 })->group('security');

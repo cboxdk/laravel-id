@@ -123,6 +123,18 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // could never rotate away from a compromised key through the API it was told
             // to manage itself with.
             'jwks' => $metadata->jwks,
+            // AND THE SECRET GOES WITH THE METHOD. A client that updates itself to `none`
+            // or to `private_key_jwt` no longer authenticates with a shared secret, and
+            // leaving the hash on the row kept a credential alive that the client's own
+            // registered metadata says is not in use.
+            //
+            // `ClientAuthenticator` already refuses to LOG IN with it — the disjunction
+            // there treats "secret still on file" as proof the client is confidential,
+            // which is what closes the downgrade bypass. This is the other half: the row
+            // should not carry a live credential the client believes it has retired, and
+            // an update back to `client_secret_basic` should mint a fresh one rather than
+            // silently resurrect the old.
+            'secret_hash' => $metadata->usesASharedSecret() ? $client->secret_hash : null,
         ])->save();
 
         return $client;

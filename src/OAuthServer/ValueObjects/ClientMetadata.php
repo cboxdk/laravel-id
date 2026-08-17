@@ -54,4 +54,17 @@ readonly class ClientMetadata
     {
         return $this->tokenEndpointAuthMethod === 'private_key_jwt';
     }
+
+    /**
+     * Whether this client authenticates with a shared secret at all.
+     *
+     * Neither `none` nor `private_key_jwt` does: one holds no credential, the other holds
+     * the private half of a key set. Asked so an RFC 7592 update can retire a secret the
+     * client's own new metadata says it no longer uses, rather than leaving a live
+     * credential on a row that claims not to have one.
+     */
+    public function usesASharedSecret(): bool
+    {
+        return ! $this->isPublic() && ! $this->usesPrivateKeyJwt();
+    }
 }
