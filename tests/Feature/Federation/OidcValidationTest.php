@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\Models\VerifiedDomain;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -279,3 +281,85 @@ it('drives an end-to-end OIDC SSO login through the federation flow', function (
         ->and($session->user_id)->toBe($user?->id)
         ->and($session->amr)->toBe(['sso']);
 });
+
+/**
+ * `email_verified` crosses only for a domain the CONNECTION'S OWNER has proven.
+ *
+ * A connection is configured by a customer: they choose the issuer, so they can point one
+ * at an IdP they run and assert anything in it — including
+ * `email: ceo@somebody-else.com, email_verified: true`. Carrying that through
+ * unconditionally lets any tenant mint a verified address in another company's domain,
+ * and a verified address is what account linking and `/oauth/userinfo` both trust.
+ *
+ * The fence was added during this review and shipped with NO TEST. Both of its clauses
+ * survived mutation — deleting either the empty-owner check or the ownership comparison
+ * left the whole suite green — which is how a security fix becomes decoration.
+ *
+ * Asserted against a domain verified by a DIFFERENT organization, because that is the
+ * only fixture where the fence and its absence differ: a domain nobody has verified is
+ * refused by the lookup itself, and would pass with the fence removed too.
+ */
+function verifiedDomainFor(string $organizationId, string $domain): void
+{
+    $verification = app(DomainVerification::class);
+    $added = $verification->add($organizationId, $domain);
+
+    // Straight to verified: the DNS challenge itself is DomainVerificationTest's subject.
+    VerifiedDomain::query()->whereKey($added->id)->update(['verified_at' => now()]);
+}
+
+it('does not carry email_verified for a domain another organization proved', function (): void {
+    $keys = rsaKeypair();
+    $victim = (string) Str::ulid();
+
+    // The victim owns corp.com. The attacker owns the connection.
+    verifiedDomainFor($victim, 'corp.com');
+
+    $connection = oidcConnection(['signing_keys' => ['kid-1' => $keys['public']]]);
+
+    $principal = app(AssertionValidator::class)->validate($connection, idToken($keys['private'], [
+        'email' => 'ceo@corp.com',
+        'email_verified' => true,
+    ]));
+
+    // The sign-in still succeeds — this is not an authentication decision. What must not
+    // travel is the CLAIM that the address is proven.
+    expect($principal->email)->toBe('ceo@corp.com')
+        ->and($principal->emailVerified)->not->toBeTrue();
+})->group('security');
+
+it('carries email_verified for a domain the connection owner proved', function (): void {
+    $keys = rsaKeypair();
+    $owner = (string) Str::ulid();
+
+    verifiedDomainFor($owner, 'corp.com');
+
+    $connection = oidcConnection(['signing_keys' => ['kid-1' => $keys['public']]], $owner);
+
+    $principal = app(AssertionValidator::class)->validate($connection, idToken($keys['private'], [
+        'email' => 'alice@corp.com',
+        'email_verified' => true,
+    ]));
+
+    // The other half: a fence that refused everything would pass the test above and
+    // silently leave every federated account unverified forever, which is the defect the
+    // propagation was built to fix in the first place.
+    expect($principal->emailVerified)->toBeTrue();
+})->group('security');
+
+it('does not invent verification the provider never asserted', function (): void {
+    $keys = rsaKeypair();
+    $owner = (string) Str::ulid();
+
+    verifiedDomainFor($owner, 'corp.com');
+
+    $connection = oidcConnection(['signing_keys' => ['kid-1' => $keys['public']]], $owner);
+
+    // No `email_verified` at all. Null is not false and neither is true: a provider that
+    // will not vouch for an address has not vouched for it, however well we know the domain.
+    $principal = app(AssertionValidator::class)->validate($connection, idToken($keys['private'], [
+        'email' => 'alice@corp.com',
+    ]));
+
+    expect($principal->emailVerified)->not->toBeTrue();
+})->group('security');
