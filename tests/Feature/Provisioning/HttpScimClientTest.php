@@ -94,6 +94,55 @@ it('refuses a single reconcile result whose externalId does not actually match',
     expect(app(ScimClient::class)->findByExternalId($connection, 'user-1'))->toBeNull();
 });
 
+/**
+ * `totalResults` is a number the PEER puts in its own JSON, so it cannot be the whole
+ * check.
+ *
+ * The guard has two clauses — the peer's own count, and the size of the list actually
+ * returned — and only the first was exercised. Verified: deleting
+ * `|| count($resources) > 1` left all 42 provisioning tests green, because the existing
+ * ambiguity test reports `totalResults: 3` and is caught by the clause that remains, and
+ * the single-result test is caught by the externalId comparison further down.
+ *
+ * So the untested clause was the one that does not take the remote server's word for it.
+ * Two records BOTH carrying the requested externalId is a downstream directory in a state
+ * nobody can resolve correctly: picking the first is a coin toss over which remote
+ * account this subject's updates and deactivations go to from now on. "Refuse rather than
+ * guess", as the code says.
+ */
+it('refuses an ambiguous match even when the peer reports a single result', function (): void {
+    Http::fake(['*' => Http::response(json_encode([
+        'schemas' => [ScimSchema::LIST_RESPONSE_URN],
+        // The peer says one. The list says two. Believing the count is how an arbitrary
+        // remote record becomes this subject's mirror.
+        'totalResults' => 1,
+        'Resources' => [
+            ['id' => 'claimant-a', 'externalId' => 'user-1'],
+            ['id' => 'claimant-b', 'externalId' => 'user-1'],
+        ],
+    ]), 200)]);
+    $connection = $this->registerProvisioningConnection()->connection;
+
+    // BOTH carry the requested externalId, so the identity check further down would
+    // happily accept the first — this can only pass because the list size is checked.
+    expect(app(ScimClient::class)->findByExternalId($connection, 'user-1'))->toBeNull();
+});
+
+it('refuses an ambiguous match when the peer omits totalResults entirely', function (): void {
+    Http::fake(['*' => Http::response(json_encode([
+        'schemas' => [ScimSchema::LIST_RESPONSE_URN],
+        // Absent, not wrong. `is_int(null)` is false, so the count clause is the only
+        // thing standing between this response and an arbitrary binding.
+        'Resources' => [
+            ['id' => 'claimant-a', 'externalId' => 'user-1'],
+            ['id' => 'claimant-b', 'externalId' => 'user-1'],
+        ],
+    ]), 200)]);
+    $connection = $this->registerProvisioningConnection()->connection;
+
+    expect(app(ScimClient::class)->findByExternalId($connection, 'user-1'))->toBeNull();
+});
+
 it('exchanges an OAuth2 client-credentials grant for the bearer it presents', function (): void {
     Http::fake([
         'https://idp.downstream.test/token' => Http::response(json_encode(['access_token' => 'minted-access-token', 'token_type' => 'Bearer']), 200),
