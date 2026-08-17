@@ -95,6 +95,99 @@ it('never deletes a webhook delivery that is still owed a retry', function (): v
         ->toBe(['failed', 'pending']);
 });
 
+/**
+ * The provisioning outbox, which had the same hazard as the two above and no test.
+ *
+ * `pending` and `failed` are live work: `OutboxProvisioningService::retryPending()`
+ * selects on exactly those two statuses, so deleting one silently drops a user
+ * create/update/deactivate that a downstream SaaS is still owed. The predicate's own
+ * comment says this. Nothing asserted it — and a comment is not a control, which is the
+ * lesson this file's two sibling tests already encode for `events` and
+ * `webhook_deliveries`.
+ *
+ * All four statuses, because the assertion that matters is WHICH TWO survive: a
+ * predicate that deleted everything and one that deleted nothing both satisfy a bare
+ * count.
+ */
+it('never deletes a provisioning operation the outbox still owes', function (): void {
+    $rows = [];
+
+    foreach (['pending', 'delivered', 'failed', 'exhausted'] as $status) {
+        $rows[] = [
+            'id' => (string) Str::ulid(),
+            'environment_id' => (string) Str::ulid(),
+            'connection_id' => (string) Str::ulid(),
+            'user_id' => 'user_1',
+            'type' => 'user.upsert',
+            'payload' => '{}',
+            'status' => $status,
+            'created_at' => now()->subYear(),
+            'updated_at' => now()->subYear(),
+        ];
+    }
+
+    DB::table('provisioning_operations')->insert($rows);
+
+    expect(app(Pruner::class)->prune(PrunableTable::ProvisioningOperations)->deleted)->toBe(2)
+        ->and(DB::table('provisioning_operations')->pluck('status')->sort()->values()->all())
+        ->toBe(['failed', 'pending']);
+});
+
+/**
+ * Every table whose deadness depends on a STATUS has a test naming which statuses live.
+ *
+ * Three of the ten prunable tables decide by status rather than by a timestamp alone,
+ * and each is a place where getting the predicate wrong deletes work the platform still
+ * owes somebody — an undelivered event, an unretried webhook, an unsynced user. Two had
+ * a test and the third did not, and the third was the one whose comment described the
+ * danger most explicitly.
+ *
+ * Checked from the SOURCE of the enum rather than from a list here, so a new table with
+ * a status predicate cannot be added without this failing.
+ */
+it('tests the live-work predicate of every status-driven prunable table', function (): void {
+    $source = (string) file_get_contents(dirname(__DIR__, 3).'/src/Maintenance/Enums/PrunableTable.php');
+    $tests = (string) file_get_contents(__FILE__);
+
+    // ANCHORED ON deadRows(). The enum states the same `self::X =>` arms in several
+    // methods, so searching the whole file finds whichever came first — for every case
+    // that was `keyColumn()`, whose arms contain no predicate at all, and the sweep
+    // matched nothing. The floor below is what said so rather than the assertion.
+    $start = mb_strpos($source, 'public function deadRows(');
+    expect($start)->not->toBeFalse('deadRows() was not found — this guard is reading the wrong file');
+
+    $deadRows = mb_substr($source, (int) $start);
+
+    /** @var list<string> $statusDriven */
+    $statusDriven = [];
+
+    foreach (PrunableTable::cases() as $table) {
+        $at = mb_strpos($deadRows, 'self::'.$table->name);
+
+        if ($at === false) {
+            continue;
+        }
+
+        // To the next arm, so one case's predicate cannot be credited to its neighbour.
+        $rest = mb_substr($deadRows, $at + 1);
+        $next = mb_strpos($rest, "\n            self::");
+        $body = $next === false ? $rest : mb_substr($rest, 0, $next);
+
+        if (str_contains($body, "whereIn('status'")) {
+            $statusDriven[] = $table->name;
+        }
+    }
+
+    expect(count($statusDriven))->toBeGreaterThan(1, 'the predicate sweep found almost nothing — it is reading the wrong file');
+
+    $untested = array_values(array_filter(
+        $statusDriven,
+        fn (string $name): bool => ! str_contains($tests, 'PrunableTable::'.$name),
+    ));
+
+    expect($untested)->toBe([], 'status-driven prunable tables with no live-work test: '.implode(', ', $untested));
+});
+
 it('leaves the hash-chained audit trail verifiable, because it never touches it', function (): void {
     $audit = app(AuditLog::class);
 
