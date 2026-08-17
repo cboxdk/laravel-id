@@ -290,3 +290,43 @@ it('locks the chain anchor by primary key, and locks nothing at all on an empty 
     expect($order)->toHaveCount(2)
         ->and($anchorLock($order[0]))->toBeTrue();
 });
+
+/**
+ * The other half of the retry predicate: an error that is NOT contention reaches the
+ * caller, once, unchanged.
+ *
+ * `isContention()` decides retry-versus-rethrow, and every test above exercises the
+ * retry side. Nothing exercised the rethrow side — so a predicate that answered true too
+ * broadly would turn a genuine fault (a bad column, a dead connection) into eight
+ * pointless attempts, several seconds of randomised backoff, and finally a
+ * `CannotAppendToAuditChain` blaming contention for a bug that has nothing to do with
+ * concurrency. The class's own docblock states the rule — "retrying a malformed
+ * statement eight times just delays the same failure" — and it was the one branch with
+ * no assertion behind it.
+ *
+ * ATTEMPTS ARE COUNTED, not just the exception type. Asserting only that a QueryException
+ * escapes would pass just as well if the predicate had retried eight times first and
+ * rethrown the last one, which is precisely the behaviour being ruled out.
+ */
+it('hands a non-contention failure straight to the caller, without retrying it', function (): void {
+    $log = app(AuditLog::class);
+    $attempts = 0;
+
+    AuditEntry::creating(function () use (&$attempts): void {
+        $attempts++;
+
+        // SQLSTATE 42S22 — unknown column. A real fault, and one no amount of waiting
+        // fixes. Deliberately NOT 40001 or a duplicate key, which are the two shapes
+        // that legitimately mean "try again".
+        throw new QueryException(
+            'testing',
+            'insert into "audit_logs" ("nope") values (?)',
+            [1],
+            new PDOException("SQLSTATE[42S22]: Column not found: 1054 Unknown column 'nope' in 'field list'"),
+        );
+    });
+
+    expect(fn () => $log->record(AuditEvent::forSystem('boom')))->toThrow(QueryException::class);
+
+    expect($attempts)->toBe(1, "a real fault was retried {$attempts} times as if it were contention");
+});
