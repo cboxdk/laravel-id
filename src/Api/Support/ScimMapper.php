@@ -40,22 +40,25 @@ class ScimMapper
      */
     public static function fromRequest(Request $request, ?string $externalId = null): ScimUser
     {
-        $userName = $request->string('userName')->toString();
-        $externalId ??= $request->string('externalId')->toString() ?: $userName;
+        // Read case-insensitively (RFC 7643 §2.1). PATCH has always lowercased its paths;
+        // POST and PUT read exact casing, so a provisioner sending `UserName` had it
+        // silently read as empty — see ScimAttributes.
+        $userName = ScimAttributes::string($request, 'userName');
+        $externalId ??= ScimAttributes::string($request, 'externalId') ?: $userName;
 
-        $email = self::extractEmail($request->input('emails'));
+        $email = self::extractEmail(ScimAttributes::get($request, 'emails'));
 
         // Okta's default SCIM profile sends the name PARTS and NEVER name.formatted or
         // displayName. Reading only `name.formatted` here meant a create landed with no
         // stored name at all: displayName fell back to the userName (an email address),
         // and a later single-part PATCH had nothing to merge against. The parts are
         // persisted, and the display name is composed from them.
-        $givenName = self::nullableStr($request->input('name.givenName'));
-        $familyName = self::nullableStr($request->input('name.familyName'));
+        $givenName = self::nullableStr(ScimAttributes::get($request, 'name.givenName'));
+        $familyName = self::nullableStr(ScimAttributes::get($request, 'name.familyName'));
 
-        $displayName = $request->string('displayName')->toString();
+        $displayName = ScimAttributes::string($request, 'displayName');
         if ($displayName === '') {
-            $formatted = self::nullableStr($request->input('name.formatted'));
+            $formatted = self::nullableStr(ScimAttributes::get($request, 'name.formatted'));
             $displayName = $formatted ?? trim(($givenName ?? '').' '.($familyName ?? ''));
         }
 
@@ -86,7 +89,7 @@ class ScimMapper
      */
     private static function activeFromRequest(Request $request): bool
     {
-        $value = $request->input('active');
+        $value = ScimAttributes::get($request, 'active');
 
         if ($value === null) {
             return true;

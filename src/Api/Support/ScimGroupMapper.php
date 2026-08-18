@@ -73,7 +73,7 @@ class ScimGroupMapper
      */
     public static function memberIds(array $body): array
     {
-        $members = $body['members'] ?? null;
+        $members = self::attribute($body, 'members');
 
         if (! is_array($members)) {
             return [];
@@ -93,11 +93,35 @@ class ScimGroupMapper
     }
 
     /**
+     * A top-level attribute, matched without regard to case (RFC 7643 §2.1).
+     *
+     * @param  array<string, mixed>  $body
+     */
+    private static function attribute(array $body, string $name): mixed
+    {
+        if (array_key_exists($name, $body)) {
+            return $body[$name];
+        }
+
+        $needle = strtolower($name);
+
+        foreach ($body as $key => $value) {
+            if (strtolower((string) $key) === $needle) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $body
      */
     public static function displayName(array $body): ?string
     {
-        $name = $body['displayName'] ?? null;
+        // Case-insensitive, per RFC 7643 §2.1 — a provisioner sending `displayname` had
+        // its group create refused as "displayName is required". See ScimAttributes.
+        $name = self::attribute($body, 'displayName');
 
         return is_string($name) && $name !== '' ? $name : null;
     }
@@ -107,7 +131,7 @@ class ScimGroupMapper
      */
     public static function externalId(array $body): ?string
     {
-        $external = $body['externalId'] ?? null;
+        $external = self::attribute($body, 'externalId');
 
         return is_string($external) && $external !== '' ? $external : null;
     }

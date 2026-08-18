@@ -480,3 +480,45 @@ it('treats a filter it cannot read as secondary rather than guessing', function 
         ],
     ], $headers)->assertOk()->assertJsonPath('emails.0.value', 'dana3@corp.com');
 })->group('security');
+
+/*
+ * RFC 7643 §2.1: "Attribute names are case-insensitive."
+ *
+ * PATCH honoured that — {@see ScimMapper} lowercases the path before matching — and POST
+ * and PUT did not, reading `userName`, `displayName`, `members` and the `name.*` parts
+ * with exact casing straight off the request. So a conformant provisioner that spells
+ * them differently had its values silently read as empty: a create landing with no
+ * username, a group replace dropping its entire member list. The same client, against the
+ * same server, worked on PATCH and failed on POST.
+ *
+ * Only the NAMES are made case-insensitive here. Whether two userNames differing by case
+ * are the same ACCOUNT is a separate question this directory already answers with its
+ * `user_name_lower` index, and nothing in this change touches it.
+ */
+it('creates a user whatever case the provisioner spells the attributes in', function (): void {
+    $response = $this->postJson('/scim/v2/Users', [
+        'UserName' => 'dana',
+        'ExternalID' => 'entra|99',
+        'Name' => ['GivenName' => 'Dana', 'FamilyName' => 'Reeves'],
+        'Emails' => [['value' => 'dana@corp.com', 'primary' => true]],
+        'Active' => true,
+    ], $this->scimHeaders);
+
+    $response->assertCreated();
+
+    expect($response->json('userName'))->toBe('dana')
+        ->and($response->json('active'))->toBeTrue();
+
+    // And it landed as a real row, not an empty one that merely returned 201.
+    expect(DirectoryUser::query()->where('user_name_lower', 'dana')->exists())->toBeTrue();
+})->group('security');
+
+it('replaces a user whatever case the attributes are spelled in', function (): void {
+    $id = provision($this, $this->scimHeaders, 'dana', 'okta|1', 'dana@corp.com');
+
+    $this->putJson('/scim/v2/Users/'.$id, [
+        'UserName' => 'dana',
+        'Emails' => [['value' => 'dana@corp.com', 'primary' => true]],
+        'Active' => false,
+    ], $this->scimHeaders)->assertOk()->assertJsonPath('active', false);
+})->group('security');

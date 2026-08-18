@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Scim;
 
 use Cbox\Id\Api\Exceptions\InvalidScimRequest;
+use Cbox\Id\Api\Support\ScimAttributes;
 use Cbox\Id\Api\Support\ScimMapper;
 use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Contracts\DirectoryUsers;
@@ -59,7 +60,10 @@ class UserController extends ScimController
         // userName is REQUIRED (RFC 7643 §4.1.1). Without this an empty/absent userName
         // provisioned a 201 with a blank name — a resource the IdP can't address by
         // filter. Refuse at the edge with the SCIM-typed error.
-        if ($request->string('userName')->toString() === '') {
+        // Read case-insensitively, like the mapper below (RFC 7643 §2.1). Reading exact
+        // case HERE refused a conformant `UserName` at the edge with "userName is
+        // required", before the mapper it now agrees with ever ran.
+        if (ScimAttributes::string($request, 'userName') === '') {
             return $this->error('400', 'userName is required.', 'invalidValue');
         }
 
@@ -86,7 +90,10 @@ class UserController extends ScimController
         }
 
         // A full replace must still carry the required userName (RFC 7643 §4.1.1).
-        if ($request->string('userName')->toString() === '') {
+        // Read case-insensitively, like the mapper below (RFC 7643 §2.1). Reading exact
+        // case HERE refused a conformant `UserName` at the edge with "userName is
+        // required", before the mapper it now agrees with ever ran.
+        if (ScimAttributes::string($request, 'userName') === '') {
             return $this->error('400', 'userName is required.', 'invalidValue');
         }
 

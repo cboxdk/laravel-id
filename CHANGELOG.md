@@ -19,6 +19,21 @@ more trust than the wording it removes.
 
 ## [1.15.0] - 2026-08-18
 
+### Fixed
+
+- **SCIM attribute names are now read case-insensitively on POST and PUT.** RFC 7643 §2.1
+  is explicit that attribute names are case-insensitive, and PATCH honoured it — the path
+  is lowercased before matching — while create and replace read `userName`, `displayName`,
+  `members` and the `name.*` parts with exact casing straight off the request. A
+  conformant provisioner spelling them differently had its values silently read as empty:
+  a user created with no username (refused at the edge as "userName is required"), or a
+  group replace dropping its entire member list. The same client, against the same server,
+  worked on PATCH and failed on POST.
+
+  Only the NAMES are case-insensitive. Whether two userNames differing by case are the
+  same account is a separate question the directory already answers with its
+  `user_name_lower` index, and this does not touch it.
+
 ### Security
 
 - **A client's registered scopes are now a ceiling for every token, not just the access
