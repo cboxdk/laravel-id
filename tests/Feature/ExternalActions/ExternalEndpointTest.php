@@ -90,7 +90,7 @@ it('fires a tenant hook only for its own organization', function (): void {
     $orgA = app(ExternalActions::class)->register(HookPoint::TokenMinting, 'https://a.example.test', 'org_a');
     app(ExternalActions::class)->register(HookPoint::TokenMinting, 'https://b.example.test', 'org_b');
     // The environment's own policy hook applies to everyone by design.
-    app(ExternalActions::class)->register(HookPoint::TokenMinting, 'https://env.example.test', null);
+    app(ExternalActions::class)->registerForEnvironment(HookPoint::TokenMinting, 'https://env.example.test');
 
     $forOrgA = app(ExternalActions::class)->active(HookPoint::TokenMinting, 'org_a');
 

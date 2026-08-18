@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\Support\BrowserStartUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Illuminate\Support\Facades\Http;
@@ -35,7 +36,13 @@ class OidcClient implements OidcRelyingParty
     {
         $config = $this->connections->oidcConfig($connection);
 
-        $endpoint = $config->requireField($config->authorizationEndpoint, 'authorization_endpoint');
+        // Checked here rather than only at write time, so a connection already in the
+        // database — configured before this guard existed, or through a future write path
+        // — cannot be used as an open redirect wearing this platform's domain.
+        $endpoint = BrowserStartUrl::assert(
+            $config->requireField($config->authorizationEndpoint, 'authorization_endpoint'),
+            'authorization_endpoint',
+        );
         $query = http_build_query(array_filter([
             'response_type' => 'code',
             'client_id' => $config->clientId,

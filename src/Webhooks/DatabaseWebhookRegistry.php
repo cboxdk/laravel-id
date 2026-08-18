@@ -19,11 +19,24 @@ class DatabaseWebhookRegistry implements WebhookRegistry
 {
     public function __construct(private readonly SecretBox $secretBox) {}
 
-    public function register(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
+    public function register(string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
     {
-        // NOTE on organizationId === null: that is PLATFORM-wide coverage — matching()
-        // delivers every org's events to it. Only an operator-plane caller may pass null;
-        // the tenant console always supplies its own org. See the console call sites.
+        return $this->store($organizationId, $url, $eventTypes);
+    }
+
+    public function registerForEnvironment(string $url, array $eventTypes): RegisteredEndpoint
+    {
+        return $this->store(null, $url, $eventTypes);
+    }
+
+    /**
+     * @param  list<string>  $eventTypes
+     */
+    private function store(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
+    {
+        // A null organization here is PLATFORM-wide coverage — matching() delivers every
+        // org's events to it. It is unreachable except through registerForEnvironment(),
+        // which is the whole point of splitting the two.
         // SSRF guard: refuse endpoints that point at non-public addresses.
         SafeWebhookUrl::assert($url);
 

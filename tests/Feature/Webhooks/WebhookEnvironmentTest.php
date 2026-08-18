@@ -42,7 +42,7 @@ beforeEach(fn () => config(['cbox-id.webhooks.verify_url' => false]));
 it('never matches a platform-wide endpoint across environments', function (): void {
     // A platform-wide (org = null) endpoint in env_a.
     $this->runAsEnvironment('env_a', fn () => app(WebhookRegistry::class)
-        ->register(null, 'https://a.example.com/hook', ['user.created']));
+        ->registerForEnvironment('https://a.example.com/hook', ['user.created']));
 
     // From env_b, the same platform-wide event must match nothing.
     $matchInB = $this->runAsEnvironment('env_b', fn () => app(WebhookRegistry::class)
@@ -61,7 +61,7 @@ it('flushes a pending event in ITS OWN environment, not the ambient one (R7a)', 
     // A real environment row (forKey resolves it) with an endpoint scoped to it.
     $envA = Environment::create(['name' => 'A', 'slug' => 'flush-a', 'is_default' => false]);
     $this->runAsEnvironment($envA->id, fn () => app(WebhookRegistry::class)
-        ->register(null, 'https://a.example.com/hook', ['user.created']));
+        ->registerForEnvironment('https://a.example.com/hook', ['user.created']));
 
     // Emit the event inside env A (stamps environment_id = envA), but FLUSH from a
     // different ambient context — delivery must still fire for env A's endpoint.
@@ -99,7 +99,7 @@ it('sweeps deliveries from every environment, including from no environment at a
     foreach ([$envA, $envB] as $environment) {
         $this->runAsEnvironment($environment->id, function (): void {
             $endpoint = app(WebhookRegistry::class)
-                ->register(null, 'https://hooks.sweep.example/in', ['user.created'])
+                ->registerForEnvironment('https://hooks.sweep.example/in', ['user.created'])
                 ->endpoint;
 
             // A failure whose backoff window has already elapsed — due, on any sweep that

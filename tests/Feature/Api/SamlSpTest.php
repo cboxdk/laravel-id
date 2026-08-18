@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Support\BrowserStartUrl;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Tests\Support\SamlIdp;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -190,3 +192,25 @@ it('refuses a replayed LogoutRequest at the SLO endpoint', function (): void {
     expect(Session::query()->where('user_id', $userId)->whereNull('revoked_at')->count())
         ->toBe(1, 'a replayed LogoutRequest ended a session it had already been used for');
 });
+
+/**
+ * The guard is only a guard where it is CALLED. A connection stored before
+ * {@see BrowserStartUrl} existed still redirects through this
+ * controller, so the check lives on the read path and this drives the whole route.
+ *
+ * `https://okta.com@evil.example/sso` reads as Okta to anybody scanning the URL bar and
+ * resolves to evil.example — a phishing page reached through a link that begins with this
+ * platform's own domain.
+ */
+it('will not SP-initiate to a start URL that reads as one host and resolves to another', function (): void {
+    $id = samlSpConnection($this->makeOrganization()->id, extra: [
+        'idp_sso_url' => 'https://idp.example.test@evil.example/sso',
+    ]);
+
+    $response = $this->get('http://localhost/sso/saml/'.$id.'/login');
+
+    $response->assertStatus(422);
+    expect($response->headers->get('Location'))->toBeNull()
+        // And no authn request left behind for a login that will never happen.
+        ->and(DB::table('saml_auth_requests')->where('connection_id', $id)->count())->toBe(0);
+})->group('security');

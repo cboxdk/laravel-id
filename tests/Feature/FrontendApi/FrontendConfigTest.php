@@ -189,3 +189,70 @@ it('refuses to answer a token it cannot introspect', function (): void {
         ->assertOk()
         ->assertJsonPath('user', null);
 });
+
+/*
+ * BEING FRIENDLIER ABOUT THE SHAPE OF THE ANSWER IS NOT LICENCE TO BE LAXER ABOUT WHO
+ * GETS IT. This endpoint answers `{"user": null}` to a stranger on purpose — signed out
+ * is a state, not an error — and for a while it read the bearer straight off the header
+ * and asked nothing else of it. `/oauth/userinfo` next door asks three things: the token
+ * must be audienced here, it must carry `openid`, and it must satisfy its own DPoP
+ * binding. Every one of those was a way to turn a token minted for something else into
+ * somebody's name and email address.
+ *
+ * These refusals are 401s and not `{"user": null}`: a rejected stolen token must not
+ * render identically to a logged-out visitor, or it is invisible both to the integrator
+ * debugging it and in the logs.
+ */
+it('refuses a token minted for somebody else\'s API', function (): void {
+    $subject = app(Subjects::class)->create(email: 'ada@acme.test', name: 'Ada Lovelace');
+    $issued = app(TokenIssuer::class)->issueForUser(
+        $this->makeClient(['openid'])->client,
+        $subject->id,
+        null,
+        ['openid'],
+        // RFC 8707: minted for a customer's own resource server, which may hold it — and
+        // must not be able to trade it for the identity of the person who granted it.
+        'https://api.acme.test',
+    );
+
+    $this->withHeaders(asBrowser() + ['Authorization' => 'Bearer '.$issued->token])
+        ->getJson('/frontend/v1/session')
+        ->assertStatus(401)
+        ->assertJsonPath('error', 'invalid_token');
+});
+
+it('refuses a token that was never an identity token', function (): void {
+    $subject = app(Subjects::class)->create(email: 'ada@acme.test', name: 'Ada Lovelace');
+    $issued = app(TokenIssuer::class)->issueForUser(
+        $this->makeClient(['api.read'])->client,
+        $subject->id,
+        null,
+        // No `openid`. A pure API token was never granted the right to name its holder.
+        ['api.read'],
+    );
+
+    $this->withHeaders(asBrowser() + ['Authorization' => 'Bearer '.$issued->token])
+        ->getJson('/frontend/v1/session')
+        ->assertStatus(401)
+        ->assertJsonPath('error_description', 'the access token lacks the openid scope');
+});
+
+it('refuses a sender-constrained token presented without its proof', function (): void {
+    $subject = app(Subjects::class)->create(email: 'ada@acme.test', name: 'Ada Lovelace');
+    $issued = app(TokenIssuer::class)->issueForUser(
+        $this->makeClient(['openid'])->client,
+        $subject->id,
+        null,
+        ['openid'],
+        null,
+        // The client asked to be sender-constrained; the whole point is that the token
+        // alone is worthless to a thief. This was the one door where it still worked.
+        dpopJkt: 'a-thumbprint-nobody-can-prove',
+    );
+
+    $response = $this->withHeaders(asBrowser() + ['Authorization' => 'Bearer '.$issued->token])
+        ->getJson('/frontend/v1/session')
+        ->assertStatus(401);
+
+    expect($response->headers->get('WWW-Authenticate'))->toStartWith('DPoP ');
+});

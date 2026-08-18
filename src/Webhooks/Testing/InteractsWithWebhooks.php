@@ -14,6 +14,13 @@ trait InteractsWithWebhooks
      */
     protected function registerWebhook(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
     {
-        return app(WebhookRegistry::class)->register($organizationId, $url, $eventTypes);
+        $registry = app(WebhookRegistry::class);
+
+        // A test fixture keeps the nullable shorthand — writing a table of cases where one
+        // row is platform-wide is exactly what it is for. Production callers do not: they
+        // reach registerForEnvironment() by name.
+        return $organizationId === null
+            ? $registry->registerForEnvironment($url, $eventTypes)
+            : $registry->register($organizationId, $url, $eventTypes);
     }
 }

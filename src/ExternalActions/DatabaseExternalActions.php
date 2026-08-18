@@ -41,7 +41,17 @@ class DatabaseExternalActions implements ExternalActions
         private readonly AuditLog $audit,
     ) {}
 
-    public function register(HookPoint $hookPoint, string $url, ?string $organizationId = null): RegisteredActionEndpoint
+    public function register(HookPoint $hookPoint, string $url, string $organizationId): RegisteredActionEndpoint
+    {
+        return $this->store($hookPoint, $url, $organizationId);
+    }
+
+    public function registerForEnvironment(HookPoint $hookPoint, string $url): RegisteredActionEndpoint
+    {
+        return $this->store($hookPoint, $url, null);
+    }
+
+    private function store(HookPoint $hookPoint, string $url, ?string $organizationId): RegisteredActionEndpoint
     {
         $this->environments()->requireEnvironment();
         $this->assertSafeUrl($url);

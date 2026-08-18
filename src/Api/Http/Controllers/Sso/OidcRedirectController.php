@@ -7,6 +7,8 @@ namespace Cbox\Id\Api\Http\Controllers\Sso;
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Enums\ConnectionType;
+use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Support\FederationFlowStash;
 use Cbox\Id\Federation\ValueObjects\FederationFlowState;
 use Illuminate\Http\JsonResponse;
@@ -43,8 +45,20 @@ class OidcRedirectController
 
         $redirectUri = url('/sso/oidc/'.$model->id.'/callback');
 
-        return new RedirectResponse(
-            $this->client->authorizeUrl($model, $redirectUri, $flow->state, $flow->nonce),
-        );
+        try {
+            $authorizeUrl = $this->client->authorizeUrl($model, $redirectUri, $flow->state, $flow->nonce);
+        } catch (InvalidAssertion|UnsafeFederationUrl $e) {
+            // A connection whose authorization endpoint is missing or not a URL we will
+            // send a browser to. Answered rather than thrown: this is reachable by
+            // anybody who clicks the organization's sign-in button, and a stack trace
+            // tells the person who clicked nothing they can act on while telling anybody
+            // watching rather more than they should learn.
+            return new JsonResponse([
+                'error' => 'This SSO connection is misconfigured. Contact your administrator.',
+                'error_description' => $e->getMessage(),
+            ], 502);
+        }
+
+        return new RedirectResponse($authorizeUrl);
     }
 }

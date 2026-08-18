@@ -216,3 +216,20 @@ it('completes a form_post callback carrying no session, on the flow cookie alone
 
     expect(app(SessionManager::class)->active((string) $response->json('session_id')))->not->toBeNull();
 });
+
+/**
+ * The guard is only a guard where it is CALLED. A connection stored before
+ * {@see BrowserStartUrl} existed still redirects through this controller, so the check
+ * lives on the read path and this test drives the whole route rather than the helper.
+ */
+it('will not send a browser to a plaintext authorization endpoint', function (): void {
+    $setup = oidcFlowSetup();
+    $setup['config']['authorization_endpoint'] = 'http://idp.corp/authorize';
+    $connection = $this->makeConnection($this->makeOrganization()->id, ConnectionType::Oidc, 'Corp OIDC', $setup['config']);
+
+    $response = $this->get('/sso/oidc/'.$connection->id.'/redirect');
+
+    // 502, not a 500: reachable by anybody who clicks the organization's sign-in button.
+    $response->assertStatus(502);
+    expect($response->headers->get('Location'))->toBeNull();
+})->group('security');

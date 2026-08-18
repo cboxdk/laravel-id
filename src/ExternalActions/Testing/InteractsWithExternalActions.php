@@ -56,6 +56,13 @@ trait InteractsWithExternalActions
 
     protected function registerActionEndpoint(HookPoint $hookPoint, string $url, ?string $organizationId = null): RegisteredActionEndpoint
     {
-        return app(ExternalActions::class)->register($hookPoint, $url, $organizationId);
+        $actions = app(ExternalActions::class);
+
+        // A test fixture keeps the nullable shorthand — a table of cases where one row is
+        // environment-wide is exactly what it is for. Production callers do not: they
+        // reach registerForEnvironment() by name.
+        return $organizationId === null
+            ? $actions->registerForEnvironment($hookPoint, $url)
+            : $actions->register($hookPoint, $url, $organizationId);
     }
 }

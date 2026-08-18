@@ -17,6 +17,58 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-08-18
+
+### Security
+
+- **`/frontend/v1/session` asked nothing of the token but that it be live.** It read the
+  bearer straight off the `Authorization` header, introspected it, and answered with the
+  holder's id, name and email address. `/oauth/userinfo` next door asks three further
+  things, and every one of them was a way in: a token minted for a customer's own API
+  (RFC 8707 `resource`) could be replayed here by that API to learn the identity of the
+  person who granted it; a pure API token carrying no `openid` scope was never an identity
+  token at all; and a DPoP-bound token — whose entire premise is that it is worthless to a
+  thief without the key — worked here on its own, because this was the one door that
+  skipped the proof. The endpoint now requires the issuer audience, the `openid` scope,
+  and a valid DPoP proof for any token carrying `cnf.jkt`; `enforce()` returns immediately
+  for an ordinary bearer, so nothing changes for clients that never asked to be
+  sender-constrained. These three refusals answer `401` rather than `{"user": null}`:
+  signed out is still a state and not an error, but a rejected token must not render
+  identically to a logged-out visitor.
+
+- **Federation start URLs are checked before a browser is sent to one.** An organization's
+  OIDC `authorization_endpoint` and SAML `idp_sso_url` are the one tenant-configured value
+  this platform puts in a `Location:` header, and they were used exactly as typed. The
+  destination is somebody else's IdP by design, so the host cannot be constrained — but
+  the shape can, and `BrowserStartUrl` now requires https, refuses `javascript:`/`data:`
+  and anything without a host, refuses embedded credentials
+  (`https://acme.okta.com@evil.example/` reads as Okta and resolves to evil.example), and
+  refuses a fragment. Without it, an ordinary SSO connection was an open-redirect
+  primitive flying this platform's own domain. The check is on the READ path, so
+  connections already stored are covered; a connection that fails it now answers `502`
+  (OIDC) or `422` (SAML) with a message an administrator can act on, instead of a 500, and
+  the SAML path no longer leaves an authn-request row behind for a login that cannot
+  happen.
+
+### Changed
+
+- **BREAKING: reach beyond one tenant is a different call, not a different argument.**
+  `WebhookRegistry::register()` and `ExternalActions::register()` took the owning
+  organization as a nullable parameter where `null` meant "every organization in this
+  environment" — a webhook endpoint fed every tenant's members joining, sign-ins failing
+  and roles changing; an external action consulted at `token_minting`, where it can refuse
+  issuance, for all of them. `ExternalActions::register()` went further and DEFAULTED that
+  argument to `null`, so a caller who simply left it off got the widest scope the platform
+  has. Both `register()` methods now take a non-nullable `string $organizationId`, and the
+  platform-wide case has its own method — `registerForEnvironment()` — which cannot be
+  reached by a variable that happens to be null and whose callers are one grep away. The
+  console's environment plane is the only production caller of either.
+
+  Upgrading: `register($orgId, …)` is unchanged when `$orgId` is a string. Replace
+  `register(null, …)` with `registerForEnvironment(…)`. The `InteractsWithWebhooks` and
+  `InteractsWithExternalActions` test traits keep their nullable shorthand — a fixture
+  table where one row is environment-wide is exactly what it is for.
+
 ## [1.10.0] - 2026-08-15
 
 ### Added

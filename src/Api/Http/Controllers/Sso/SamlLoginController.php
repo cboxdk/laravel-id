@@ -8,6 +8,7 @@ use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Cbox\Id\Federation\Saml\SamlSettings;
+use Cbox\Id\Federation\Support\BrowserStartUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -47,6 +48,13 @@ class SamlLoginController
             // Parsing the config asserts every required field — including the SSO URL
             // used below — so the separate pre-check this replaces is now redundant.
             $config = $this->connections->samlConfig($model);
+
+            // Checked here rather than only at write time, so a connection already in the
+            // database — configured before this guard existed, or through a future write
+            // path — cannot be used as an open redirect wearing this platform's domain.
+            // Inside this block, and before the request row below: a connection we will
+            // not redirect to should not leave an authn request behind either.
+            $ssoUrl = BrowserStartUrl::assert($config->idpSsoUrl, 'idp_sso_url');
             $authn = new AuthnRequest(SamlSettings::for($config));
         } catch (Throwable) {
             return new Response('SAML connection is not fully configured.', 422);
@@ -69,8 +77,8 @@ class SamlLoginController
             $params['RelayState'] = $relayState;
         }
 
-        $separator = str_contains($config->idpSsoUrl, '?') ? '&' : '?';
+        $separator = str_contains($ssoUrl, '?') ? '&' : '?';
 
-        return new RedirectResponse($config->idpSsoUrl.$separator.http_build_query($params));
+        return new RedirectResponse($ssoUrl.$separator.http_build_query($params));
     }
 }

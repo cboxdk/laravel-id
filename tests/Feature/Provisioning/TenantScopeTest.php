@@ -71,7 +71,7 @@ it('does not read an empty tenant scope as environment-wide', function (): void 
 
 it('refuses to pause another organization\'s webhook endpoint', function (): void {
     $victim = app(WebhookRegistry::class)->register('org_b', 'https://hooks.b.example', ['user.created']);
-    $platform = app(WebhookRegistry::class)->register(null, 'https://hooks.platform.example', ['user.created']);
+    $platform = app(WebhookRegistry::class)->registerForEnvironment('https://hooks.platform.example', ['user.created']);
 
     // Org A knows the ids and tries both.
     app(WebhookRegistry::class)->pause($victim->endpoint->id, 'org_a');

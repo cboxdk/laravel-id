@@ -11,9 +11,28 @@ use Illuminate\Support\Collection;
 interface WebhookRegistry
 {
     /**
+     * Register an endpoint OWNED by one organization: it receives that organization's
+     * events and no other's.
+     *
      * @param  list<string>  $eventTypes
      */
-    public function register(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint;
+    public function register(string $organizationId, string $url, array $eventTypes): RegisteredEndpoint;
+
+    /**
+     * Register an endpoint that receives EVERY organization's events in this environment.
+     *
+     * Its own method rather than `register(null, …)` because the two differ by the entire
+     * tenant boundary, and a null that arrives from a variable is indistinguishable from
+     * an organization the caller failed to resolve — one forgotten lookup and a tenant's
+     * endpoint is subscribed to every other tenant's members joining, sign-ins failing and
+     * roles changing. Spelled out, the platform-wide case cannot be reached by accident,
+     * and every caller of it is one grep away.
+     *
+     * Only an operator/environment-plane caller may use this.
+     *
+     * @param  list<string>  $eventTypes
+     */
+    public function registerForEnvironment(string $url, array $eventTypes): RegisteredEndpoint;
 
     /**
      * Pause an endpoint OWNED by this organization (null = the environment's own).
