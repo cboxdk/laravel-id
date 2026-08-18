@@ -175,8 +175,21 @@ class EnvironmentDomainService implements EnvironmentDomains
             return [];
         }
 
+        // The leading dot is stripped, because operators write it. `.cboxid.com` is how
+        // a cookie domain is spelled and how half the DNS documentation in the world
+        // spells "and everything under it", so it turns up in this config — and the
+        // reservation check below builds `'.'.$base`, which for that value is
+        // `..cboxid.com` and matches nothing. The apex stops being reserved and every
+        // subdomain with it, silently, with the config looking exactly right.
+        //
+        // TrustedHosts and ManageCustomDomain in the host application already strip it.
+        // This was the copy that did not, which is the version of the bug that matters:
+        // the other two decide what to SERVE, this one decides what a tenant may CLAIM.
         return array_values(array_filter(
-            array_map(fn (mixed $base): string => is_string($base) ? strtolower(trim($base)) : '', $bases),
+            array_map(
+                fn (mixed $base): string => is_string($base) ? ltrim(strtolower(trim($base)), '.') : '',
+                $bases,
+            ),
             fn (string $base): bool => $base !== '',
         ));
     }

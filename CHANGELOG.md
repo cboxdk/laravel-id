@@ -19,6 +19,18 @@ more trust than the wording it removes.
 
 ## [1.13.0] - 2026-08-18
 
+### Fixed
+
+- **A configured base domain with a leading dot reserved nothing.** `.cboxid.com` is how a
+  cookie domain is spelled and how most DNS documentation spells "and everything under
+  it", so it turns up in `cbox-id.environments.base_domains` — and the reservation check
+  builds `'.'.$base`, which for that value is `..cboxid.com` and matches no hostname at
+  all. The apex stopped being reserved and every subdomain with it, silently, with the
+  config looking exactly right on screen: a tenant could claim the platform's own
+  hostname as a custom domain. `TrustedHosts` and `ManageCustomDomain` in the host
+  application already stripped the dot; this was the copy that did not, and it is the one
+  that decides what a tenant may CLAIM rather than what gets served.
+
 ### Security
 
 - **Deprovisioning now deprovisions.** `deactivate()` revoked refresh tokens and stopped

@@ -100,3 +100,61 @@ it('clears a custom domain, falling the issuer back to the subdomain', function 
     expect($env->fresh()->domain)->toBeNull()
         ->and(app(IssuerResolver::class)->forEnvironment($env->id))->toBe('https://acme.cboxid.com');
 });
+
+/*
+ * OPERATORS WRITE THE LEADING DOT, and the reservation check could not see past it.
+ *
+ * `.cboxid.com` is how a cookie domain is spelled and how most DNS documentation spells
+ * "and everything under it", so it turns up in this config. The check builds `'.'.$base`,
+ * which for that value is `..cboxid.com` and matches nothing — the apex stopped being
+ * reserved and every subdomain with it, silently, with the config looking exactly right
+ * on screen. A tenant could then claim the platform's own hostname as a custom domain.
+ *
+ * TrustedHosts and ManageCustomDomain in the host application already stripped it; this
+ * was the copy that did not, and it is the one that decides what a tenant may CLAIM
+ * rather than what gets served.
+ */
+it('reserves the platform’s own domains however the operator spelled them', function (string $base): void {
+    config(['cbox-id.environments.base_domains' => [$base]]);
+    app()->forgetInstance(EnvironmentDomains::class);
+
+    // On the REASON, not the class. request() can refuse for several reasons — DNS among
+    // them — so asserting InvalidCustomDomain alone passes whether the reservation fired
+    // or not, which is exactly how the first draft of this test went green against the
+    // unfixed code. Mutation caught it.
+    foreach (['cboxid.com', 'acme.cboxid.com'] as $domain) {
+        $caught = null;
+
+        try {
+            domains()->request('env_1', $domain);
+        } catch (InvalidCustomDomain $e) {
+            $caught = $e;
+        }
+
+        expect($caught?->getMessage() ?? '')->toContain('managed by the platform');
+    }
+})->with([
+    'as written in the docs' => 'cboxid.com',
+    'with the cookie-style leading dot' => '.cboxid.com',
+    'with stray case and spacing' => '  .CBOXID.com ',
+])->group('security');
+
+it('still lets a tenant claim a domain that merely ends in a similar string', function (): void {
+    // The positive control, and a real case: `notcboxid.com` is somebody else's domain
+    // and must stay claimable. A reservation that matched on suffix alone would take it.
+    config(['cbox-id.environments.base_domains' => ['.cboxid.com']]);
+    app()->forgetInstance(EnvironmentDomains::class);
+
+    // Asserted on the REASON, not on request() succeeding: this call does more than the
+    // reservation check (DNS among it), and a test that demanded overall success would be
+    // testing the fixture. What must not happen is a "reserved" refusal.
+    $caught = null;
+
+    try {
+        domains()->request('env_1', 'notcboxid.com');
+    } catch (InvalidCustomDomain $e) {
+        $caught = $e;
+    }
+
+    expect($caught?->getMessage() ?? '')->not->toContain('reserved');
+})->group('security');
