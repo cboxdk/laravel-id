@@ -65,9 +65,9 @@ class RoleService implements Roles
         ]);
     }
 
-    public function updateRole(string $roleId, string $name, ?string $description = null): Role
+    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null): Role
     {
-        $role = $this->requireRole($roleId);
+        $role = $this->requireRole($roleId, $organizationId);
 
         $before = ['name' => $role->name, 'description' => $role->description];
 
@@ -80,9 +80,9 @@ class RoleService implements Roles
         return $role;
     }
 
-    public function attachPermission(string $roleId, string $permissionId): void
+    public function attachPermission(string $roleId, string $permissionId, ?string $organizationId = null): void
     {
-        $role = $this->requireRole($roleId);
+        $role = $this->requireRole($roleId, $organizationId);
 
         $attached = DB::table('role_permission')->insertOrIgnore([
             'role_id' => $role->id,
@@ -95,9 +95,9 @@ class RoleService implements Roles
         }
     }
 
-    public function revokePermission(string $roleId, string $permissionId): void
+    public function revokePermission(string $roleId, string $permissionId, ?string $organizationId = null): void
     {
-        $role = $this->requireRole($roleId);
+        $role = $this->requireRole($roleId, $organizationId);
 
         $detached = DB::table('role_permission')
             ->where('role_id', $role->id)
@@ -109,9 +109,9 @@ class RoleService implements Roles
         }
     }
 
-    public function deleteRole(string $roleId): void
+    public function deleteRole(string $roleId, ?string $organizationId = null): void
     {
-        $role = $this->requireRole($roleId);
+        $role = $this->requireRole($roleId, $organizationId);
 
         // One transaction for the whole removal, and for the events it announces.
         //
@@ -161,11 +161,32 @@ class RoleService implements Roles
     }
 
     /**
-     * @throws UnknownRole
+     * The role, resolved WITHIN the organization the caller says it is acting for.
+     *
+     * `whereKey()` under the environment scope was the whole boundary, which made the
+     * tenant fence a convention rather than a query: a surface that correctly checked
+     * "may this administrator manage organization A" and then passed an id belonging to
+     * organization B mutated B's role, because nothing between the check and the write
+     * ever compared the two. The app's own console resolves through an ownership-scoped
+     * set before it calls, so nothing shipped was exploitable — but the contract invited
+     * the mistake, and this package is consumed by more than one caller.
+     *
+     * `$organizationId` is nullable and defaults to null so existing callers are
+     * unaffected, and null means the environment plane: an operator managing the
+     * environment's own roles, which is what the parameter's absence has always meant.
+     * A caller that passes one gets the fence; a caller that does not is exactly as
+     * scoped as it was. New tenant-facing code should always pass it.
+     *
+     * @throws UnknownRole when no such role exists, or it belongs to another organization
+     *                     — the same refusal for both, because a caller not entitled to
+     *                     the role is not entitled to learn it exists
      */
-    private function requireRole(string $roleId): Role
+    private function requireRole(string $roleId, ?string $organizationId = null): Role
     {
-        $role = Role::query()->whereKey($roleId)->first();
+        $role = Role::query()
+            ->whereKey($roleId)
+            ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
+            ->first();
 
         if ($role === null) {
             throw UnknownRole::make($roleId);

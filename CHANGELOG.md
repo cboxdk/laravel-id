@@ -19,6 +19,24 @@ more trust than the wording it removes.
 
 ## [1.13.0] - 2026-08-18
 
+### Changed
+
+- **The role lifecycle can be fenced on an organization.** `updateRole()`,
+  `attachPermission()`, `revokePermission()` and `deleteRole()` resolved by primary key
+  under the environment scope and nothing else, which made the tenant boundary something
+  every caller had to remember rather than something the query enforced: a surface that
+  correctly checked "may this administrator manage organization A" and then passed an id
+  belonging to organization B mutated B's role. `grantPermission()` has taken the
+  organization and fenced on it since it was written — its own comment reads *"never grant
+  onto another tenant's role"* — and these four simply never got the same treatment.
+
+  All four now take an optional trailing `?string $organizationId`. Null still means the
+  environment plane, which is exactly what its absence has always meant, so existing
+  callers are unaffected; a caller that passes one gets the fence. Nothing shipped was
+  exploitable — cbox-id's console resolves through an ownership-scoped set before it calls
+  — but this package has more than one consumer and a contract that invites the mistake
+  will eventually get it.
+
 ### Fixed
 
 - **A configured base domain with a leading dot reserved nothing.** `.cboxid.com` is how a

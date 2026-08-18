@@ -47,7 +47,7 @@ interface Roles
      *
      * @throws UnknownRole
      */
-    public function updateRole(string $roleId, string $name, ?string $description = null): Role;
+    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null): Role;
 
     /**
      * Attach an ALREADY-DECLARED permission to a role by id, recording the change.
@@ -57,7 +57,7 @@ interface Roles
      *
      * @throws UnknownRole
      */
-    public function attachPermission(string $roleId, string $permissionId): void;
+    public function attachPermission(string $roleId, string $permissionId, ?string $organizationId = null): void;
 
     /**
      * Detach a permission from a role by id, recording the change. A no-op (and
@@ -65,7 +65,7 @@ interface Roles
      *
      * @throws UnknownRole
      */
-    public function revokePermission(string $roleId, string $permissionId): void;
+    public function revokePermission(string $roleId, string $permissionId, ?string $organizationId = null): void;
 
     /**
      * Delete a role: its permission pivot rows, every live assignment of it, and the
@@ -79,7 +79,7 @@ interface Roles
      *
      * @throws UnknownRole
      */
-    public function deleteRole(string $roleId): void;
+    public function deleteRole(string $roleId, ?string $organizationId = null): void;
 
     /**
      * Assert a role may be assigned within this organization — its own, or an

@@ -29,22 +29,22 @@ class UnboundRoles implements Roles
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
-    public function updateRole(string $roleId, string $name, ?string $description = null): Role
+    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null): Role
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
-    public function attachPermission(string $roleId, string $permissionId): void
+    public function attachPermission(string $roleId, string $permissionId, ?string $organizationId = null): void
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
-    public function revokePermission(string $roleId, string $permissionId): void
+    public function revokePermission(string $roleId, string $permissionId, ?string $organizationId = null): void
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
-    public function deleteRole(string $roleId): void
+    public function deleteRole(string $roleId, ?string $organizationId = null): void
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
