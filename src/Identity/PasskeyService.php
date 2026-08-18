@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\Passkeys;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
+use Cbox\Id\Identity\Exceptions\AccountInactive;
 use Cbox\Id\Identity\Exceptions\ClonedAuthenticator;
 use Cbox\Id\Identity\Exceptions\CredentialAlreadyRegistered;
 use Cbox\Id\Identity\Exceptions\UnknownCredential;
@@ -25,6 +27,7 @@ class PasskeyService implements Passkeys
     public function __construct(
         private readonly WebAuthnVerifier $verifier,
         private readonly AuditLog $audit,
+        private readonly Subjects $subjects,
     ) {}
 
     public function register(string $userId, string $challenge, string $clientResponseJson, ?string $name = null): WebAuthnCredential
@@ -72,6 +75,21 @@ class PasskeyService implements Passkeys
             throw UnknownCredential::make($credentialId);
         }
 
+        // AND THE ACCOUNT HAS TO STILL BE ONE. A verified assertion proves possession of
+        // the authenticator and says nothing about whether its owner still works here.
+        // Deprovisioning revokes sessions and grants; it does not delete WebAuthn
+        // credentials, so a leaver's passkey went on producing a fresh session — the one
+        // credential nobody thinks to collect on the last day, because it lives in a
+        // laptop's secure enclave rather than on a piece of paper.
+        //
+        // AccountInactive's own docblock has said this since it was written: revoking
+        // existing sessions is not enough if the login paths do not also refuse.
+        // Federation login applies it; this path did not.
+        //
+        // Before verifyAssertion(), so a disabled account's assertion is refused without
+        // this service updating the credential's signature counter on its way out.
+        $this->assertActive($credential->user_id);
+
         $result = $this->verifier->verifyAssertion($credential, $challenge, $clientResponseJson);
 
         // The clone/replay guard must read and advance the counter ATOMICALLY: two
@@ -104,6 +122,16 @@ class PasskeyService implements Passkeys
         ));
 
         return $credential->user_id;
+    }
+
+    /**
+     * @throws AccountInactive when the credential's owner is disabled, locked or gone
+     */
+    private function assertActive(string $subjectId): void
+    {
+        if (! $this->subjects->isActive($subjectId)) {
+            throw AccountInactive::make($subjectId);
+        }
     }
 
     public function credentialById(string $credentialId): ?WebAuthnCredential

@@ -84,6 +84,19 @@ class SamlIdpSsoController
         // Laravel's generic guard, which knows an id and nothing about HOW they signed in.
         // The assertion therefore says "unspecified" — vague, and true. A host that tracks
         // authentication methods passes them; see the parameter on issueResponse().
+        // AND THE ACCOUNT HAS TO STILL BE ONE. The id above comes from Laravel's generic
+        // guard, which knows an id and nothing else — so a session that outlived the
+        // account behind it, or a host guard holding an id this environment has no
+        // account for, produced a SIGNED assertion anyway. Every service provider that
+        // trusts this IdP would then have accepted a leaver.
+        //
+        // AccountInactive's own docblock has said this since it was written: revoking
+        // existing sessions is not enough if the login paths do not also refuse. This is
+        // a login path — it is the moment an identity is asserted to somebody else.
+        if (! $this->subjects->isActive($subjectId)) {
+            return new Response('That account can no longer sign in.', 403);
+        }
+
         $response = $this->idp->issueResponse($authnRequest, $subjectId, $this->attributesFor($subjectId));
 
         // The binding carries its own policy: a self-submitting form aimed at another

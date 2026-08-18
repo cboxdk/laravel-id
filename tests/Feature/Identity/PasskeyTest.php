@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\Identity\Contracts\Passkeys;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Exceptions\ClonedAuthenticator;
 use Cbox\Id\Identity\Exceptions\CredentialAlreadyRegistered;
@@ -16,6 +17,22 @@ uses(RefreshDatabase::class);
 function fakeWebAuthn(FakeWebAuthnVerifier $fake): void
 {
     app()->instance(WebAuthnVerifier::class, $fake);
+}
+
+/**
+ * A REAL subject, because authentication now asks whether the credential's owner still
+ * has an account.
+ *
+ * The fixtures used an opaque string as the user id, which was fine while the verifier
+ * answered only "does this assertion verify" — and stopped being fine the moment a
+ * deprovisioned owner became a reason to refuse. An id nothing has an account for is a
+ * login that must fail, so a test asserting the happy path has to give it one.
+ *
+ * @return string the subject id
+ */
+function passkeyOwner(string $email = 'owner@passkey.test'): string
+{
+    return app(Subjects::class)->create($email, 'Passkey Owner')->id;
 }
 
 it('registers a passkey credential', function (): void {
@@ -56,17 +73,18 @@ it('allows the same user to re-register (rotate) their own credential', function
 it('authenticates and advances the signature counter', function (): void {
     fakeWebAuthn(new FakeWebAuthnVerifier(credentialId: 'cred_abc', registrationSignCount: 1, assertionSignCount: 2));
 
-    app(Passkeys::class)->register('user_1', 'challenge', '{}');
+    $owner = passkeyOwner();
+    app(Passkeys::class)->register($owner, 'challenge', '{}');
     $userId = app(Passkeys::class)->authenticate('cred_abc', 'challenge', '{}');
 
-    expect($userId)->toBe('user_1')
+    expect($userId)->toBe($owner)
         ->and(WebAuthnCredential::query()->firstOrFail()->sign_count)->toBe(2);
 });
 
 it('rejects a cloned authenticator (counter did not advance)', function (): void {
     fakeWebAuthn(new FakeWebAuthnVerifier(credentialId: 'cred_abc', registrationSignCount: 5, assertionSignCount: 5));
 
-    app(Passkeys::class)->register('user_1', 'challenge', '{}');
+    app(Passkeys::class)->register(passkeyOwner(), 'challenge', '{}');
 
     expect(fn () => app(Passkeys::class)->authenticate('cred_abc', 'challenge', '{}'))
         ->toThrow(ClonedAuthenticator::class);
@@ -78,9 +96,10 @@ it('rejects a replay at the same counter after a successful assertion', function
     // rejected, because the atomic guard reads the already-advanced value.
     fakeWebAuthn(new FakeWebAuthnVerifier(credentialId: 'cred_abc', registrationSignCount: 1, assertionSignCount: 2));
 
-    app(Passkeys::class)->register('user_1', 'challenge', '{}');
+    $owner = passkeyOwner();
+    app(Passkeys::class)->register($owner, 'challenge', '{}');
 
-    expect(app(Passkeys::class)->authenticate('cred_abc', 'challenge', '{}'))->toBe('user_1')
+    expect(app(Passkeys::class)->authenticate('cred_abc', 'challenge', '{}'))->toBe($owner)
         ->and(WebAuthnCredential::query()->firstOrFail()->sign_count)->toBe(2);
 
     expect(fn () => app(Passkeys::class)->authenticate('cred_abc', 'challenge', '{}'))

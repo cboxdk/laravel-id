@@ -15,8 +15,15 @@ namespace Cbox\Id\Identity\Contracts;
 interface SubjectGrantRevoker
 {
     /**
-     * Revoke every outstanding refresh-token grant held by the subject. A no-op when
-     * they hold none.
+     * Revoke every outstanding grant held by the subject — refresh tokens AND the access
+     * tokens already in flight. A no-op when they hold none.
+     *
+     * BOTH HALVES, because for a while it was only the first. Revoking refresh tokens
+     * stops the renewal and leaves every access token already issued alive until it
+     * expires: a leaver kept working at UserInfo and at the frontend session endpoint for
+     * the rest of that token's life. Worse, RFC 8693 token exchange took a live access
+     * token and minted a fresh one, so "the rest of its life" renewed itself for as long
+     * as the holder cared to keep asking.
      */
     public function revokeGrantsForUser(string $userId): void;
 }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
@@ -19,6 +21,7 @@ use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
 class OAuthServerServiceProvider extends ServiceProvider
@@ -40,7 +43,13 @@ class OAuthServerServiceProvider extends ServiceProvider
         $this->app->when(JwtTokenIssuer::class)
             ->needs('$accessTokenTtl')
             ->give(static fn (): int => is_numeric($ttl = config('cbox-id.oauth.access_token_ttl', 900)) ? (int) $ttl : 900);
-        $this->app->singleton(TokenIntrospector::class, JwtTokenIntrospector::class);
+        // The subject resolver is passed as a CLOSURE, not an instance: this is a
+        // singleton and `Subjects` is environment-scoped, so a captured instance would
+        // answer for whichever environment the process saw first. See the constructor.
+        $this->app->singleton(TokenIntrospector::class, fn (Application $app): TokenIntrospector => new JwtTokenIntrospector(
+            $app->make(TokenSigner::class),
+            fn (): Subjects => $app->make(Subjects::class),
+        ));
         $this->app->singleton(TokenExchange::class, TokenExchangeService::class);
         $this->app->singleton(AuthorizationCodes::class, AuthorizationCodeService::class);
         $this->app->singleton(DynamicClientRegistration::class, DynamicClientRegistrar::class);

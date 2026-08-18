@@ -17,6 +17,48 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-08-18
+
+### Security
+
+- **Deprovisioning now deprovisions.** `deactivate()` revoked refresh tokens and stopped
+  there, and no other login path asked whether the person still had an account —
+  `UserStatus` appeared nowhere in the OAuth module, nowhere in the passkey verifier and
+  nowhere in the SAML IdP. The exception that says otherwise has existed the whole time:
+  `AccountInactive`'s docblock reads *"revoking existing sessions is not enough if the
+  login paths don't also refuse"*. Federation login applied it. Nothing else did.
+
+  Four doors are now closed. Deactivation revokes the **access-token rows** as well as the
+  refresh grants, so everything already in flight dies with the account. Introspection
+  refuses a token whose subject is known and no longer Active, which covers UserInfo, the
+  decisions endpoint, `/frontend/v1/session`, the introspection endpoint and token
+  exchange in one place rather than five that can drift. `Passkeys::authenticate()`
+  refuses a credential whose owner is inactive — the credential nobody collects on the
+  last day, because it lives in a laptop's secure enclave. And the SAML IdP refuses to
+  assert an identity for an account that can no longer sign in.
+
+  The compounding case was token exchange: RFC 8693 took a live access token and minted a
+  fresh one, so "valid until it expires" renewed itself for as long as the holder kept
+  asking. A leaver's connected application never lost access at all.
+
+  Introspection asks whether the subject is *known and suspended*, deliberately not
+  `isActive()`, which answers false both for "disabled" and for "no such account". Only
+  the first is a reason to refuse a token; subjects are never hard-deleted here.
+
+### Tests
+
+- **Four guards that could not fail.** Found by mutation, not by reading. Deleting the
+  refresh token's `client_id` binding left all 1805 tests green — so the one check
+  standing between two clients' grants was unconstrained, and any client that came into
+  possession of another's refresh token could rotate it into a grant of its own. Deleting
+  either of token exchange's `resource` checks (RFC 8707) did the same.
+
+  Two of the tests written for this were themselves too loose on the first pass, and
+  mutation caught that too: asserting `toThrow(InvalidTokenExchange::class)` passes
+  whether the liveness guard is present or not, because the exchange falls through to
+  `intendedFor()` and throws the same class for a different reason. They assert the
+  message now. Noted here because the lesson is the finding.
+
 ## [1.12.0] - 2026-08-18
 
 ### Security

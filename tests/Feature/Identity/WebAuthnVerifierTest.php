@@ -9,6 +9,7 @@ use CBOR\TextStringObject;
 use CBOR\UnsignedIntegerObject;
 use Cbox\Id\Identity\Contracts\Passkeys;
 use Cbox\Id\Identity\Contracts\RelyingParties;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\EnvironmentRelyingParties;
 use Cbox\Id\Identity\Exceptions\ClonedAuthenticator;
@@ -247,10 +248,13 @@ it('drives register + authenticate through PasskeyService with the real verifier
     $authenticator = SoftwareAuthenticator::es256();
     $passkeys = app(Passkeys::class);
 
-    $credential = $passkeys->register('user_1', 'reg', $authenticator->registrationResponse('reg', signCount: 1));
+    // A REAL subject: authentication now asks whether the credential's owner still has an
+    // account, so an opaque id is a login that must fail.
+    $owner = app(Subjects::class)->create('verifier@passkey.test', 'Passkey Owner')->id;
+    $credential = $passkeys->register($owner, 'reg', $authenticator->registrationResponse('reg', signCount: 1));
     $userId = $passkeys->authenticate($credential->credential_id, 'login', $authenticator->assertionResponse('login', signCount: 9));
 
-    expect($userId)->toBe('user_1')
+    expect($userId)->toBe($owner)
         ->and($credential->fresh()?->sign_count)->toBe(9);
 });
 
@@ -262,7 +266,8 @@ it('flags a cloned authenticator when the counter does not advance', function ()
     $passkeys = app(Passkeys::class);
 
     // Registered at counter 10; an assertion at 4 signals a clone.
-    $credential = $passkeys->register('user_1', 'reg', $authenticator->registrationResponse('reg', signCount: 10));
+    $owner = app(Subjects::class)->create('cloned@passkey.test', 'Passkey Owner')->id;
+    $credential = $passkeys->register($owner, 'reg', $authenticator->registrationResponse('reg', signCount: 10));
 
     expect(fn () => $passkeys->authenticate($credential->credential_id, 'login', $authenticator->assertionResponse('login', signCount: 4)))
         ->toThrow(ClonedAuthenticator::class);
@@ -327,7 +332,8 @@ describe('the Relying Party is per environment, not per deployment', function ()
         $this->runAsEnvironment($env->id, function () use ($authenticator): void {
             $passkeys = app(Passkeys::class);
 
-            $credential = $passkeys->register('user_1', 'reg', $authenticator->registrationResponse(
+            $owner = app(Subjects::class)->create('matrix-'.bin2hex(random_bytes(6)).'@passkey.test', 'Passkey Owner')->id;
+            $credential = $passkeys->register($owner, 'reg', $authenticator->registrationResponse(
                 'reg', signCount: 1, origin: 'https://acme.cboxid.com', rpId: 'acme.cboxid.com',
             ));
 
@@ -335,7 +341,7 @@ describe('the Relying Party is per environment, not per deployment', function ()
                 'login', signCount: 9, origin: 'https://acme.cboxid.com', rpId: 'acme.cboxid.com',
             ));
 
-            expect($userId)->toBe('user_1');
+            expect($userId)->toBe($owner);
         });
     });
 
