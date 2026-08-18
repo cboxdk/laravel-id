@@ -9,6 +9,7 @@ use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
 use Cbox\Id\OAuthServer\Exceptions\CibaSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Exceptions\UnknownUserHint;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
@@ -39,6 +40,9 @@ interface BackchannelAuthentication
      * @param  list<string>  $scopes
      *
      * @throws UnknownUserHint when the login_hint resolves to no user
+     * @throws ScopeNotGranted when the request names a scope the client is not registered
+     *                         for — refused rather than narrowed, because CIBA is
+     *                         machine-initiated and nobody is stranded by a 400
      */
     public function request(
         Client $client,

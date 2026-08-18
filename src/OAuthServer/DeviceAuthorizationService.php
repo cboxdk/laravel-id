@@ -12,8 +12,10 @@ use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
 use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
+use Cbox\Id\OAuthServer\Support\GrantedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
 use Cbox\Id\OAuthServer\ValueObjects\PendingDeviceAuthorization;
@@ -30,6 +32,26 @@ class DeviceAuthorizationService implements DeviceAuthorization
 
     public function request(Client $client, array $scopes): DeviceAuthorizationResult
     {
+        // THE CEILING, APPLIED ONCE AND HERE. Storing what was asked for meant the token
+        // endpoint later read unfiltered scopes to decide on a refresh token — see
+        // GrantedScopes — so a client registered for `openid` alone asked for
+        // `openid offline_access` and got a correctly downscoped access token AND a
+        // refresh token carrying a scope its registration withheld.
+        //
+        // REFUSED, not silently narrowed. The authorization-code path filters quietly
+        // because a person is standing in front of it and refusing mid-flow strands them.
+        // Nobody is standing in front of THIS: it is a machine asking, before any user
+        // code is shown, so the honest answer is `invalid_scope` (RFC 6749 §4.1.2.1, which
+        // RFC 8628 §3.2 inherits). It also removes the question of what the token response
+        // should echo — granted and requested cannot disagree if a disagreement is a 400.
+        $granted = GrantedScopes::for($client, $scopes);
+
+        if ($granted !== $scopes && $scopes !== []) {
+            throw ScopeNotGranted::forClient($client->client_id, array_values(array_diff($scopes, $granted)));
+        }
+
+        $scopes = $granted;
+
         $deviceCode = 'dvc_'.bin2hex(random_bytes(32));
         $userCode = $this->generateUserCode();
         $verificationUri = $this->verificationUri();

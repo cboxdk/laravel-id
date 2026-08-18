@@ -17,6 +17,31 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-08-18
+
+### Security
+
+- **A client's registered scopes are now a ceiling for every token, not just the access
+  token.** `JwtTokenIssuer` has always filtered a request down to what the client holds —
+  but the device and CIBA grants stored the REQUESTED scopes verbatim, and the token
+  endpoint read those raw scopes to decide whether to mint a refresh token and what to put
+  on it. So a client registered for `openid` alone could ask a device grant for
+  `openid offline_access`, receive a correctly downscoped access token, and a refresh
+  token anyway — carrying a scope its registration explicitly withheld, and rotating
+  indefinitely. The same held for the id_token via `openid`.
+
+  Both grants now apply the ceiling at creation (`GrantedScopes`), so no grant ever exists
+  holding scopes the client cannot have and every reader downstream inherits one answer
+  instead of deriving its own.
+
+  **BREAKING (error paths only):** an over-broad request is now REFUSED with
+  `invalid_scope` (RFC 6749 §4.1.2.1, inherited by RFC 8628 §3.2 and CIBA) rather than
+  quietly narrowed. These grants are machine-initiated — the request arrives before any
+  user code or approval prompt exists — so a 400 costs a developer one clear error at
+  integration time instead of a token that silently does less than they asked for. The
+  authorization-code path deliberately keeps filtering quietly: a person is waiting there,
+  and refusing mid-flow strands them.
+
 ## [1.13.0] - 2026-08-18
 
 ### Changed

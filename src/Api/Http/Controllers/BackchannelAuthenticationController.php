@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Exceptions\UnknownUserHint;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Illuminate\Http\JsonResponse;
@@ -78,6 +79,13 @@ class BackchannelAuthenticationController
                 $nonce !== '' ? $nonce : null,
                 $requestedExpiry,
             );
+        } catch (ScopeNotGranted $e) {
+            // invalid_scope rather than a quietly narrower grant — see
+            // CibaAuthenticationService::request().
+            return new JsonResponse([
+                'error' => 'invalid_scope',
+                'error_description' => $e->getMessage(),
+            ], 400);
         } catch (UnknownUserHint) {
             return new JsonResponse(['error' => 'unknown_user_id'], 400);
         }

@@ -14,9 +14,11 @@ use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
 use Cbox\Id\OAuthServer\Exceptions\CibaSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Exceptions\UnknownUserHint;
 use Cbox\Id\OAuthServer\Models\BackchannelAuthRequest;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\GrantedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\BackchannelAuthenticationResult;
 use Illuminate\Support\Facades\DB;
@@ -55,6 +57,18 @@ class CibaAuthenticationService implements BackchannelAuthentication
         if ($subject === null) {
             throw new UnknownUserHint;
         }
+
+        // The same ceiling the device grant applies, for the same reason and with the same
+        // refusal: CIBA is machine-initiated, so nobody is stranded by a 400, and a grant
+        // that stored unfiltered scopes handed the token endpoint a refresh token the
+        // client's registration withheld. See GrantedScopes.
+        $granted = GrantedScopes::for($client, $scopes);
+
+        if ($granted !== $scopes && $scopes !== []) {
+            throw ScopeNotGranted::forClient($client->client_id, array_values(array_diff($scopes, $granted)));
+        }
+
+        $scopes = $granted;
 
         $authReqId = 'auth_req_'.bin2hex(random_bytes(32));
         $interval = $this->pollInterval();

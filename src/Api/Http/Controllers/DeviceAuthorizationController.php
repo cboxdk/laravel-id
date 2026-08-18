@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
+use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -46,7 +47,17 @@ class DeviceAuthorizationController
         $scope = $request->string('scope')->toString();
         $scopes = $scope === '' ? [] : array_values(array_filter(explode(' ', $scope), fn (string $s): bool => $s !== ''));
 
-        $result = $this->device->request($client, $scopes);
+        // invalid_scope rather than a quietly narrower grant — see
+        // DeviceAuthorizationService::request(). A machine asking before any user code
+        // exists is told plainly, at integration time.
+        try {
+            $result = $this->device->request($client, $scopes);
+        } catch (ScopeNotGranted $e) {
+            return new JsonResponse([
+                'error' => 'invalid_scope',
+                'error_description' => $e->getMessage(),
+            ], 400);
+        }
 
         return new JsonResponse([
             'device_code' => $result->deviceCode,
