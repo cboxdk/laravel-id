@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\AuditStreaming\Testing;
 
 use Cbox\Id\AuditStreaming\Jobs\PumpAuditStream;
+use Cbox\Id\AuditStreaming\Models\AuditStream;
 use Cbox\LaravelSiem\Contracts\LogStreams;
 use Cbox\LaravelSiem\Enums\AuthScheme;
 use Cbox\LaravelSiem\Enums\Destination;
@@ -51,8 +52,22 @@ trait InteractsWithAuditStreaming
         string $endpointUrl = 'https://siem.example.com/services/collector',
         ?string $secret = 'test-token',
         ?AuthScheme $auth = null,
+        /**
+         * The organization that owns the stream, or null for the environment's own.
+         *
+         * Stamped after create() because the underlying package knows nothing about
+         * organizations — the column is this package's, and so is the boundary.
+         */
+        ?string $organizationId = null,
     ): RegisteredStream {
-        return app(LogStreams::class)->create($name, $destination, $endpointUrl, $secret, $auth);
+        $registered = app(LogStreams::class)->create($name, $destination, $endpointUrl, $secret, $auth);
+
+        if ($organizationId !== null) {
+            AuditStream::query()->whereKey($registered->stream->id)
+                ->update(['organization_id' => $organizationId]);
+        }
+
+        return $registered;
     }
 
     /**

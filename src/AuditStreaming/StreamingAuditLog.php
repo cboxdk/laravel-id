@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Cbox\Id\AuditStreaming;
 
 use Cbox\Id\AuditStreaming\Contracts\SiemEventMapper;
+use Cbox\Id\AuditStreaming\Models\AuditStream;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Models\AuditCheckpoint;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Audit\ValueObjects\ChainVerification;
-use Cbox\LaravelSiem\Contracts\LogStreams;
 use Cbox\LaravelSiem\Contracts\StreamDispatcher;
-use Cbox\LaravelSiem\Models\LogStream;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -46,15 +45,34 @@ class StreamingAuditLog implements AuditLog
 {
     public function __construct(
         private readonly AuditLog $inner,
-        private readonly LogStreams $streams,
         private readonly StreamDispatcher $dispatcher,
         private readonly SiemEventMapper $mapper,
     ) {}
 
     public function record(AuditEvent $event): AuditEntry
     {
-        // Env-scoped read: only streams belonging to the current environment.
-        $streams = $this->materialize($this->streams->enabled());
+        // Env-scoped AND organization-scoped. The environment scope is inherited from the
+        // model and bounds this to the current environment; the organization filter is
+        // the one this used to be missing.
+        //
+        // Every enabled stream in the environment received every entry recorded anywhere
+        // in it. That was right while only an operator could configure one — and the
+        // console has since put log streaming on the ORGANIZATION plane, on the fair
+        // argument that shipping an audit trail to a SIEM is a compliance obligation the
+        // organization carries. Together they meant an administrator of organization A
+        // registered an endpoint and received B and C's sign-ins, role changes and member
+        // events: not a leak anyone had to work for, the feature working as built on a
+        // plane that was never in its design.
+        //
+        // A stream with no organization is still the ENVIRONMENT's own and still receives
+        // everything — that is what every stream was, and the operator's own compliance
+        // shipping depends on it.
+        /** @var list<AuditStream> $streams */
+        $streams = AuditStream::query()
+            ->where('enabled', true)
+            ->deliverableFor($event->organizationId)
+            ->get()
+            ->all();
 
         // Deny-by-default: nothing configured for this environment ⇒ no overhead
         // beyond the inner record() (which manages its own transaction).
@@ -86,14 +104,5 @@ class StreamingAuditLog implements AuditLog
     public function checkpoint(?string $organizationId = null): AuditCheckpoint
     {
         return $this->inner->checkpoint($organizationId);
-    }
-
-    /**
-     * @param  iterable<int, LogStream>  $streams
-     * @return list<LogStream>
-     */
-    private function materialize(iterable $streams): array
-    {
-        return is_array($streams) ? array_values($streams) : iterator_to_array($streams, false);
     }
 }

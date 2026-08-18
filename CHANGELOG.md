@@ -17,6 +17,39 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-08-18
+
+### Security
+
+- **An audit stream is owned by an organization, and delivers only that organization's
+  entries.** A stream was environment-owned and nothing more: every entry recorded
+  anywhere in the environment was mirrored to every enabled stream in it. That was right
+  while only an operator could configure one — and the console has since put log streaming
+  on the ORGANIZATION plane, on the fair argument that shipping an audit trail to a SIEM is
+  a compliance obligation the organization carries. Together they meant an administrator of
+  organization A registered their own endpoint and started receiving organizations B and
+  C's sign-ins, role changes and member events: not a leak anyone had to work for, the
+  feature working exactly as built on a plane that was never in its design.
+
+  `log_streams` gains a nullable `organization_id`. Null keeps meaning what it meant — the
+  environment's own stream, receiving everything, configurable from the environment plane
+  alone — so existing rows are left as they are rather than backfilled with an owner none
+  of them has. `AuditStream::scopeDeliverableFor()` decides what an entry reaches;
+  `scopeOwnedByOrganization()` decides what a console may list and manage, and the
+  difference between the two IS the control: an organization is delivered the
+  environment's streams' attention and must never be able to pause them.
+
+  A platform-level entry (no organization) reaches the environment's streams only, because
+  there is no tenant it belongs to.
+
+### Changed
+
+- `StreamingAuditLog` no longer takes a `LogStreams`. It queries `AuditStream` directly,
+  because the organization boundary is this package's column and not the underlying
+  engine's — the `owner_key` seam stays unused, as its docblock always said.
+- `InteractsWithAuditStreaming::registerAuditStream()` takes an optional `$organizationId`,
+  so a test can build the two-tenant case the fix exists for.
+
 ## [1.11.0] - 2026-08-18
 
 ### Security

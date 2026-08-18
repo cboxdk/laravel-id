@@ -11,7 +11,6 @@ use Cbox\Id\AuditStreaming\Models\AuditStream;
 use Cbox\Id\AuditStreaming\Models\AuditStreamDelivery;
 use Cbox\Id\AuditStreaming\Support\DefaultSiemEventMapper;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
-use Cbox\LaravelSiem\Contracts\LogStreams;
 use Cbox\LaravelSiem\Contracts\StreamDispatcher;
 use Cbox\LaravelSiem\LaravelSiemServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
@@ -59,7 +58,6 @@ class AuditStreamingServiceProvider extends ServiceProvider
         $this->app->extend(AuditLog::class, function (AuditLog $inner, Application $app): AuditLog {
             return new StreamingAuditLog(
                 $inner,
-                $app->make(LogStreams::class),
                 $app->make(StreamDispatcher::class),
                 $app->make(SiemEventMapper::class),
             );
