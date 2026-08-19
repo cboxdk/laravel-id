@@ -189,6 +189,8 @@ it('rejects an unknown device_code', function (): void {
 });
 
 it('advertises the device endpoint and grant type in metadata', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize']);
+
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
         ->assertJsonPath('device_authorization_endpoint', fn (string $v): bool => str_ends_with($v, '/oauth/device_authorization'))

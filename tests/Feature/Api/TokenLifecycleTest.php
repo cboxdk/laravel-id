@@ -340,13 +340,14 @@ it('returns the SAME successor for a concurrent double-refresh within the grace 
 });
 
 it('serves RFC 8414 authorization server metadata', function (): void {
-    // No host authorization_endpoint configured → the iss-param flag (a property of
-    // that host-owned endpoint, RFC 9207) is honestly OMITTED, not asserted true.
+    // No host authorization_endpoint configured → nothing that depends on one is
+    // advertised: not the RFC 9207 iss-param flag, and not `authorization_code`, whose
+    // codes are minted only at that endpoint.
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
-        ->assertJsonPath('grant_types_supported', ['authorization_code', 'client_credentials', 'refresh_token', 'urn:ietf:params:oauth:grant-type:device_code', 'urn:openid:params:grant-type:ciba', 'urn:ietf:params:oauth:grant-type:token-exchange'])
+        ->assertJsonPath('grant_types_supported', ['client_credentials', 'refresh_token', 'urn:ietf:params:oauth:grant-type:device_code', 'urn:openid:params:grant-type:ciba', 'urn:ietf:params:oauth:grant-type:token-exchange'])
         ->assertJsonMissingPath('authorization_response_iss_parameter_supported')
-        ->assertJsonStructure(['issuer', 'token_endpoint', 'jwks_uri', 'revocation_endpoint', 'code_challenge_methods_supported']);
+        ->assertJsonStructure(['issuer', 'token_endpoint', 'jwks_uri', 'revocation_endpoint']);
 });
 
 it('advertises RFC 9207 iss-param only when the host authorization_endpoint is set', function (): void {
@@ -354,7 +355,12 @@ it('advertises RFC 9207 iss-param only when the host authorization_endpoint is s
 
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
-        ->assertJsonPath('authorization_response_iss_parameter_supported', true);
+        ->assertJsonPath('authorization_response_iss_parameter_supported', true)
+        // The rest of the code-flow surface arrives with it, as one decision.
+        ->assertJsonPath('response_types_supported', ['code'])
+        ->assertJsonPath('code_challenge_methods_supported', ['S256'])
+        ->assertJsonPath('grant_types_supported.0', 'authorization_code')
+        ->assertJsonPath('pushed_authorization_request_endpoint', fn (string $v): bool => str_ends_with($v, '/oauth/par'));
 });
 
 it('serves RFC 9728 protected resource metadata', function (): void {

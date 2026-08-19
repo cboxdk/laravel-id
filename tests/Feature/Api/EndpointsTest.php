@@ -20,6 +20,8 @@ it('serves the JWK Set', function (): void {
 });
 
 it('serves the OIDC discovery document', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize']);
+
     $this->getJson('/.well-known/openid-configuration')
         ->assertOk()
         ->assertJsonStructure(['issuer', 'jwks_uri', 'token_endpoint', 'introspection_endpoint'])
@@ -91,9 +93,22 @@ it('advertises exactly one id_token alg, whatever else the keystore holds', func
 
 it('omits authorization_endpoint when the host has not configured one', function (): void {
     // The package serves no /authorize route, so it must not advertise one.
-    $this->getJson('/.well-known/openid-configuration')
+    $document = $this->getJson('/.well-known/openid-configuration')
         ->assertOk()
         ->assertJsonMissingPath('authorization_endpoint');
+
+    // NOR ANYTHING THAT ONLY MEANS SOMETHING AT THAT ENDPOINT. Omitting the endpoint
+    // while still advertising `response_types_supported: ["code"]`, S256 challenge
+    // methods and a PAR endpoint described a code-flow server with nowhere to send the
+    // user: a conformant client got all the way through pushing its authorization
+    // request before discovering there was no way to finish it.
+    $document
+        ->assertJsonPath('response_types_supported', [])
+        ->assertJsonMissingPath('response_modes_supported')
+        ->assertJsonMissingPath('code_challenge_methods_supported')
+        ->assertJsonMissingPath('pushed_authorization_request_endpoint')
+        ->assertJsonMissingPath('require_pushed_authorization_requests')
+        ->assertJsonPath('grant_types_supported', fn (array $g): bool => ! in_array('authorization_code', $g, true));
 });
 
 it('advertises the host authorization_endpoint when configured', function (): void {

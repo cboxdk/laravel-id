@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
+use Cbox\Id\SamlIdp\Enums\ServiceProviderStatus;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Models\SamlIdpSession;
 use Cbox\Id\SamlIdp\Models\ServiceProvider;
@@ -95,6 +96,35 @@ it('does not claim IdP-wide signing enforcement one SP does not get', function (
     $request = $this->samlIdp()->parseAuthnRequest($this->makeRedirectAuthnRequest($relaxed->entity_id));
 
     expect($request->spEntityId)->toBe($relaxed->entity_id);
+});
+
+/**
+ * Metadata is cached — an unauthenticated endpoint that SPs poll should not read and
+ * rebuild on every request — and this is the case that cache has to get right.
+ *
+ * Disabling an SP changes neither the row count nor, necessarily, anything a coarse
+ * "has the table changed" stamp would notice within the same second. It changes the
+ * answer: the strict SP stops counting toward IdP-wide signing enforcement, and every
+ * remaining SP is told the truth about what this IdP demands. A stale document here
+ * tells the relaxed SPs their unsigned requests will be refused, which is an outage
+ * on their side and nothing in our logs.
+ */
+it('republishes metadata the moment a registration is disabled', function (): void {
+    $strict = $this->registerSamlServiceProvider(
+        entityId: 'https://strict.example.test/metadata',
+        certificate: $this->samlSigningKeypair()['certificate'],
+        wantAuthnRequestsSigned: true,
+    );
+
+    expect($this->samlIdp()->metadata())->toContain('WantAuthnRequestsSigned="true"');
+
+    // Read twice: the second call is the one served from cache, and it must still be
+    // the document the first call built.
+    expect($this->samlIdp()->metadata())->toContain('WantAuthnRequestsSigned="true"');
+
+    $strict->forceFill(['status' => ServiceProviderStatus::Disabled])->save();
+
+    expect($this->samlIdp()->metadata())->toContain('WantAuthnRequestsSigned="false"');
 });
 
 it('lets an operator pin WantAuthnRequestsSigned regardless of the registrations', function (): void {

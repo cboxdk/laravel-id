@@ -210,6 +210,8 @@ it('rejects an unauthenticated backchannel request', function (): void {
 });
 
 it('advertises the CIBA endpoint, delivery mode and grant type in metadata', function (): void {
+    config(['cbox-id.oauth.authorization_endpoint_path' => '/oauth/authorize']);
+
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
         ->assertJsonPath('backchannel_authentication_endpoint', fn (string $v): bool => str_ends_with($v, '/oauth/backchannel_authentication'))

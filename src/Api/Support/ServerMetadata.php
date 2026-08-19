@@ -49,6 +49,11 @@ class ServerMetadata
     {
         $issuer = self::issuer();
 
+        // Resolved first, because half this document is a claim ABOUT the interactive
+        // endpoint and must not be made when there is no interactive endpoint.
+        $authorizationEndpoint = self::authorizationEndpoint($issuer);
+        $hasAuthorizationEndpoint = $authorizationEndpoint !== null;
+
         $document = [
             'issuer' => $issuer,
             'jwks_uri' => $issuer.'/.well-known/jwks.json',
@@ -58,22 +63,13 @@ class ServerMetadata
             'userinfo_endpoint' => $issuer.'/oauth/userinfo',
             // OpenID Connect RP-Initiated Logout 1.0.
             'end_session_endpoint' => $issuer.'/oauth/logout',
-            // RFC 9126: pushed authorization requests.
-            'pushed_authorization_request_endpoint' => $issuer.'/oauth/par',
-            'require_pushed_authorization_requests' => (bool) config('cbox-id.oauth.require_par', false),
             // RFC 8628: device authorization grant.
             'device_authorization_endpoint' => $issuer.'/oauth/device_authorization',
             // OIDC CIBA: client-initiated backchannel authentication (poll mode).
             'backchannel_authentication_endpoint' => $issuer.'/oauth/backchannel_authentication',
             'backchannel_token_delivery_modes_supported' => ['poll'],
             'backchannel_user_code_parameter_supported' => false,
-            'response_types_supported' => ['code'],
-            // Code flow delivers the response on the redirect QUERY — the only mode the
-            // authorize flow actually produces. We do not advertise `fragment`: a client
-            // that requested it would still receive the code on the query, an interop
-            // break, so we promise only what is served.
-            'response_modes_supported' => ['query'],
-            'grant_types_supported' => self::grantTypes(),
+            'grant_types_supported' => self::grantTypes($hasAuthorizationEndpoint),
             // EXACTLY WHAT ID_TOKENS ARE SIGNED WITH, taken from the endpoint that signs
             // them so the document and the signature cannot diverge.
             //
@@ -91,7 +87,6 @@ class ServerMetadata
             // The JWKS still exposes every key: other credentials do use the other algs.
             // It is only this list that is a promise about id_tokens specifically.
             'id_token_signing_alg_values_supported' => [TokenController::ID_TOKEN_ALG->value],
-            'code_challenge_methods_supported' => ['S256'],
             // RFC 9449: sender-constrained (DPoP) access tokens.
             // From the validator, not restated here — see DpopProofValidator::ALLOWED_ALGS.
             'dpop_signing_alg_values_supported' => DpopProofValidator::ALLOWED_ALGS,
@@ -129,23 +124,32 @@ class ServerMetadata
             'introspection_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'private_key_jwt'],
         ];
 
-        // The interactive `/authorize` endpoint is the host app's responsibility;
-        // advertise it only when the host has told us where it lives. Omitting the
-        // key is valid per RFC 8414 rather than advertising a route we don't serve.
+        // EVERYTHING THE CODE FLOW NEEDS, OR NONE OF IT.
         //
-        // Prefer the PATH form: it is joined to the per-environment issuer, so a tenant
-        // on its own host advertises its OWN authorize endpoint. A single absolute URL
-        // cannot — under multi-tenancy it pins every environment to one host, which is
-        // both wrong and, because RFC 9207 is advertised alongside it, actively breaks
-        // mix-up-hardened clients. The absolute form stays for hosts that serve
-        // /authorize somewhere genuinely fixed.
-        $authorizationPath = config('cbox-id.oauth.authorization_endpoint_path');
-        $authorizationEndpoint = is_string($authorizationPath) && $authorizationPath !== ''
-            ? $issuer.'/'.ltrim($authorizationPath, '/')
-            : config('cbox-id.oauth.authorization_endpoint');
+        // `/authorize` is the host app's responsibility, and this document already
+        // omitted it when the host had not said where it lives. It went on advertising
+        // the rest of the flow anyway: `response_types_supported: ["code"]`, S256
+        // challenge methods, and a PAR endpoint whose entire purpose is to push an
+        // authorization request somewhere. A conformant client discovered a code-flow
+        // server, pushed a request to PAR, and then had nowhere to send the user — a
+        // failure at the last step of the handshake rather than the first.
+        //
+        // RFC 8414 §2 requires `response_types_supported`; an empty list is the honest
+        // value for a server that serves device, CIBA and client_credentials only.
+        $document['response_types_supported'] = $hasAuthorizationEndpoint ? ['code'] : [];
 
-        if (is_string($authorizationEndpoint) && $authorizationEndpoint !== '') {
+        if ($hasAuthorizationEndpoint) {
             $document['authorization_endpoint'] = $authorizationEndpoint;
+            // Code flow delivers the response on the redirect QUERY — the only mode the
+            // authorize flow actually produces. We do not advertise `fragment`: a client
+            // that requested it would still receive the code on the query, an interop
+            // break, so we promise only what is served.
+            $document['response_modes_supported'] = ['query'];
+            $document['code_challenge_methods_supported'] = ['S256'];
+            // RFC 9126: pushed authorization requests — a way to start an authorization
+            // request, so it goes where the authorization request can be finished.
+            $document['pushed_authorization_request_endpoint'] = $issuer.'/oauth/par';
+            $document['require_pushed_authorization_requests'] = (bool) config('cbox-id.oauth.require_par', false);
             // RFC 9207 (`iss` on the authorization response, a mix-up defense) is a
             // property of that host-owned /authorize endpoint — only claim it when the
             // endpoint exists, so a mix-up-hardened client isn't promised an `iss` the
@@ -164,15 +168,47 @@ class ServerMetadata
     /**
      * @return list<string>
      */
-    private static function grantTypes(): array
+    /**
+     * Where the host serves `/authorize`, or null when it serves it nowhere.
+     *
+     * Prefer the PATH form: it is joined to the per-environment issuer, so a tenant on its
+     * own host advertises its OWN authorize endpoint. A single absolute URL cannot — under
+     * multi-tenancy it pins every environment to one host, which is both wrong and,
+     * because RFC 9207 is advertised alongside it, actively breaks mix-up-hardened
+     * clients. The absolute form stays for hosts that serve /authorize somewhere fixed.
+     */
+    private static function authorizationEndpoint(string $issuer): ?string
     {
-        return [
-            'authorization_code',
+        $path = config('cbox-id.oauth.authorization_endpoint_path');
+
+        if (is_string($path) && $path !== '') {
+            return $issuer.'/'.ltrim($path, '/');
+        }
+
+        $absolute = config('cbox-id.oauth.authorization_endpoint');
+
+        return is_string($absolute) && $absolute !== '' ? $absolute : null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function grantTypes(bool $hasAuthorizationEndpoint): array
+    {
+        $grants = [
             'client_credentials',
             'refresh_token',
             'urn:ietf:params:oauth:grant-type:device_code',
             'urn:openid:params:grant-type:ciba',
             'urn:ietf:params:oauth:grant-type:token-exchange',
         ];
+
+        // A code is minted at `/authorize`. Without one there is no way to obtain a
+        // code, so offering to exchange one is an offer that cannot be taken up.
+        if ($hasAuthorizationEndpoint) {
+            array_unshift($grants, 'authorization_code');
+        }
+
+        return $grants;
     }
 }

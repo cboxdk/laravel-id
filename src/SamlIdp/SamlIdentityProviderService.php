@@ -28,6 +28,7 @@ use Cbox\Id\SamlIdp\ValueObjects\ParsedAuthnRequest;
 use Cbox\Id\SamlIdp\ValueObjects\SamlError;
 use Cbox\Id\SamlIdp\ValueObjects\SamlResponse as SamlResponseVo;
 use DOMDocument;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * The SAML 2.0 Identity Provider. Enforces the IdP-side trust policy on top of the
@@ -56,6 +57,13 @@ class SamlIdentityProviderService implements SamlIdentityProvider
 
     private const REQUEST_FRESHNESS_SECONDS = 900;
 
+    /**
+     * An upper bound on the cached document's life, not the invalidation mechanism —
+     * the version stamp is. This only stops entries for retired entity ids and superseded
+     * versions from living in the cache store forever.
+     */
+    private const METADATA_CACHE_TTL_SECONDS = 3600;
+
     public function __construct(
         private readonly ServiceProviders $serviceProviders,
         private readonly IdpKeyMaterial $keyMaterial,
@@ -76,7 +84,58 @@ class SamlIdentityProviderService implements SamlIdentityProvider
      */
     public function metadata(): string
     {
+        // A PUBLIC ENDPOINT THAT READ EVERY SERVICE PROVIDER ROW.
+        //
+        // SPs poll metadata — some hourly, some on every failed verification — and this
+        // is unauthenticated, so the polling rate is not ours to control. Building the
+        // document hydrated every registration in the environment to derive two
+        // attributes from them, then rebuilt and re-serialised the XML, on each poll.
+        //
+        // Cached on a version stamp rather than a TTL: two bounded aggregates decide
+        // whether anything the document depends on has changed, so a newly registered SP
+        // or a rotated key still shows up on the very next poll. Nothing here is a
+        // staleness trade — it is the same document, computed once per change.
         $entityId = IdpDescriptor::entityId();
+
+        return Cache::remember(
+            'cbox-id:saml-idp:metadata:'.hash('xxh128', $entityId).':'.$this->metadataVersion(),
+            self::METADATA_CACHE_TTL_SECONDS,
+            fn (): string => $this->buildMetadata($entityId),
+        );
+    }
+
+    /**
+     * What the published metadata is a function of, and nothing else.
+     *
+     * The three SP columns the document actually derives from, read as a projection — no
+     * model hydration, no relations, three narrow values per registration. Deliberately
+     * NOT `count(*) + max(updated_at)`: two registrations edited within the same second
+     * produce an identical stamp, and the document would then serve the first edit until
+     * the entry aged out. This changes whenever the answer changes and never when it
+     * doesn't.
+     */
+    private function metadataVersion(): string
+    {
+        $registrations = ServiceProvider::query()
+            ->orderBy('entity_id')
+            ->get(['entity_id', 'status', 'want_authn_requests_signed', 'name_id_format'])
+            ->map(static fn (ServiceProvider $sp): string => implode(':', [
+                $sp->entity_id,
+                $sp->status->value,
+                $sp->want_authn_requests_signed ? '1' : '0',
+                $sp->name_id_format->value,
+            ]))
+            ->all();
+
+        return hash('xxh128', implode('|', [
+            ...$registrations,
+            // A rotation changes what SPs must pin to, so it changes the document.
+            ...$this->keyMaterial->published(),
+        ]));
+    }
+
+    private function buildMetadata(string $entityId): string
+    {
         $ssoUrl = IdpDescriptor::ssoUrl();
         $sloUrl = IdpDescriptor::sloUrl();
 
