@@ -46,6 +46,26 @@ use Illuminate\Support\ServiceProvider;
 
 class ApiServiceProvider extends ServiceProvider
 {
+    /**
+     * Laravel's CSRF middleware, under every name it has had.
+     *
+     * ALL THREE NAMES. Laravel 13's `web` group holds `PreventRequestForgery`;
+     * `ValidateCsrfToken` and `VerifyCsrfToken` are deprecated SUBCLASSES of it, and
+     * `Router::resolveMiddleware()` matches an exclusion in one direction only — the group
+     * entry must be a subclass of the excluded name, not the other way round. Excluding
+     * `VerifyCsrfToken` alone removes nothing at all, which is how a route stayed CSRF
+     * protected for a year while the code said it was exempt. The reject loop skips a name
+     * that does not exist, so listing the Laravel 12 classes beside the 13 one is safe
+     * across the whole supported range.
+     *
+     * @var list<class-string>
+     */
+    private const CSRF_MIDDLEWARE = [
+        PreventRequestForgery::class,
+        ValidateCsrfToken::class,
+        VerifyCsrfToken::class,
+    ];
+
     public function boot(): void
     {
         // Liveness probe. Deliberately OUTSIDE both the environment resolution and the
@@ -176,7 +196,12 @@ class ApiServiceProvider extends ServiceProvider
                 // OIDC RP-Initiated Logout (end_session_endpoint) — browser redirect,
                 // so it needs the web session it is about to tear down. Both bindings
                 // (GET query params, POST form) are accepted.
-                Route::match(['get', 'post'], '/oauth/logout', EndSessionController::class);
+                // POST is mandatory here (RP-Initiated Logout §5) and arrives cross-site
+                // from the relying party, so the same reasoning applies. Nothing is
+                // minted; the open-redirect guard is the registered
+                // post_logout_redirect_uri allow-list, compared exactly.
+                Route::match(['get', 'post'], '/oauth/logout', EndSessionController::class)
+                    ->withoutMiddleware(self::CSRF_MIDDLEWARE);
 
                 // IdP-role endpoints (this platform AS the IdP a downstream SP
                 // federates to). Registered before the `{connection}` routes below so
@@ -184,8 +209,24 @@ class ApiServiceProvider extends ServiceProvider
                 // session so it can hand off to the host's login and resume; both
                 // bindings (redirect GET, POST) are accepted. Validation is
                 // deny-by-default in the IdP contract.
-                Route::match(['get', 'post'], '/sso/saml/idp/sso', SamlIdpSsoController::class);
-                Route::match(['get', 'post'], '/sso/saml/idp/slo', SamlIdpLogoutController::class);
+                //
+                // CSRF EXEMPT ON THE POST BINDING, which is the one this platform's own
+                // published metadata advertises: an SP or IdP posting a signed SAML
+                // message cross-site cannot carry a Laravel session token, and there is
+                // no version of SAML in which it could. Every such POST met a 419 in
+                // HTML — a logout the SP reported as a transport failure while the
+                // session here stayed live. The signature over the message is the
+                // authentication, verified before any identity is read.
+                //
+                // The host application should not have to know this. The reference
+                // console carried these exemptions in its own bootstrap for months while
+                // the package shipped routes that answered 419 to anyone else who
+                // installed it, which is the whole class of defect where the only
+                // deployment that works is the one we run.
+                Route::match(['get', 'post'], '/sso/saml/idp/sso', SamlIdpSsoController::class)
+                    ->withoutMiddleware(self::CSRF_MIDDLEWARE);
+                Route::match(['get', 'post'], '/sso/saml/idp/slo', SamlIdpLogoutController::class)
+                    ->withoutMiddleware(self::CSRF_MIDDLEWARE);
 
                 // Dynamic Client Registration (RFC 7591) + management (RFC 7592). The
                 // controller enforces the configured mode (disabled/protected/open).
@@ -194,7 +235,11 @@ class ApiServiceProvider extends ServiceProvider
                 // registration_access_token, which RFC 7591 §5 makes a MUST. These sit
                 // outside the credential group above, which is exactly the "one
                 // forgotten line" the middleware exists to prevent.
-                Route::middleware(NoStore::class)->group(function (): void {
+                //
+                // Also CSRF exempt: this is a back-channel JSON API and no conformant
+                // client sends a Laravel token. The credential is the registration access
+                // token (RFC 7592 §2), presented as a bearer.
+                Route::middleware(NoStore::class)->withoutMiddleware(self::CSRF_MIDDLEWARE)->group(function (): void {
                     Route::post('/oauth/register', RegistrationController::class);
                     Route::get('/oauth/register/{client}', [RegisteredClientController::class, 'show']);
                     Route::put('/oauth/register/{client}', [RegisteredClientController::class, 'update']);
@@ -293,7 +338,11 @@ class ApiServiceProvider extends ServiceProvider
                 // redirect (GET) and, for some IdPs, POST — it belongs with the login it
                 // undoes, or a federated member could sign in but never sign out.
                 Route::get('/sso/saml/{connection}/login', SamlLoginController::class);
-                Route::match(['get', 'post'], '/sso/saml/{connection}/slo', SamlLogoutController::class);
+                // Single Logout in the SP role: the customer's IdP posts a signed
+                // LogoutRequest here, cross-site and tokenless, exactly as it does to the
+                // IdP-role endpoint above. Same exemption, same reason.
+                Route::match(['get', 'post'], '/sso/saml/{connection}/slo', SamlLogoutController::class)
+                    ->withoutMiddleware(self::CSRF_MIDDLEWARE);
             });
         });
     }

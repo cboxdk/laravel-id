@@ -17,6 +17,7 @@ use Cbox\Id\Organization\Exceptions\InvalidInvitation;
 use Cbox\Id\Organization\Models\Invitation;
 use Cbox\Id\Organization\Models\Membership;
 use Cbox\Id\Organization\ValueObjects\PendingInvitation;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -119,13 +120,28 @@ class InvitationService implements Invitations
         return Invitation::query()->where('token_hash', hash('sha256', $token))->first();
     }
 
-    public function pending(string $organizationId): Collection
+    public function pending(string $organizationId, ?int $limit = null): Collection
+    {
+        $query = $this->pendingQuery($organizationId)->orderByDesc('created_at');
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        return $query->get();
+    }
+
+    public function countPending(string $organizationId): int
+    {
+        return $this->pendingQuery($organizationId)->count();
+    }
+
+    /** @return Builder<Invitation> */
+    private function pendingQuery(string $organizationId): Builder
     {
         return Invitation::query()
             ->where('organization_id', $organizationId)
             ->where('status', InvitationStatus::Pending->value)
-            ->where('expires_at', '>', now())
-            ->orderByDesc('created_at')
-            ->get();
+            ->where('expires_at', '>', now());
     }
 }

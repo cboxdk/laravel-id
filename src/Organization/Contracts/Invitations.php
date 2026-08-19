@@ -41,7 +41,13 @@ interface Invitations
     /**
      * The pending (not yet accepted/revoked/expired) invitations for an org.
      *
+     * @param  int|null  $limit  the newest N, or all of them when null. A console listing
+     *                           them wants a bounded read; a caller acting on every one
+     *                           of them wants all — the two must be able to say which.
      * @return Collection<int, Invitation>
      */
-    public function pending(string $organizationId): Collection;
+    public function pending(string $organizationId, ?int $limit = null): Collection;
+
+    /** How many pending invitations the org has, without reading them. */
+    public function countPending(string $organizationId): int;
 }
