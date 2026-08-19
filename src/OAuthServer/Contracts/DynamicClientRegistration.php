@@ -8,6 +8,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
+use Cbox\Id\OAuthServer\ValueObjects\UpdatedRegistration;
 
 /**
  * OAuth 2.0 Dynamic Client Registration (RFC 7591) and client management
@@ -41,7 +42,7 @@ interface DynamicClientRegistration
     /**
      * Replace a client's metadata (RFC 7592 PUT).
      */
-    public function update(Client $client, ClientMetadata $metadata): Client;
+    public function update(Client $client, ClientMetadata $metadata): UpdatedRegistration;
 
     /**
      * Delete a registered client (RFC 7592 DELETE).

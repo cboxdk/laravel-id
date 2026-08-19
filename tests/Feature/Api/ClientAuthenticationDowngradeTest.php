@@ -159,3 +159,58 @@ it('keeps the secret when the client still authenticates with one', function ():
     // client out of its own account on the next metadata edit.
     expect($registered->client->fresh()?->secret_hash)->toBe($before);
 })->group('security');
+
+/**
+ * @group security
+ *
+ * The return journey, which the downgrade fix above created and left unfinished.
+ *
+ * Clearing `secret_hash` when a client moves to `private_key_jwt` is right. But RFC 7592
+ * lets it move back, and the update wrote `usesASharedSecret() ? $client->secret_hash :
+ * null` — for a client whose hash had already been cleared, that is `null`. It arrived at
+ * `client_secret_basic` with no password: every token request 401s, and the registration
+ * response said nothing about why. The docblock on that line had described minting a fresh
+ * one since the day it was written; only the comment did it.
+ *
+ * Asserted end to end, because "a secret came back in the response" and "that secret
+ * authenticates" are separate claims and the second is the one that matters.
+ */
+it('mints a usable secret when a client updates back into a shared-secret method', function (): void {
+    config(['cbox-id.oauth.dynamic_registration.mode' => 'open']);
+
+    $created = $this->postJson('/oauth/register', [
+        'client_name' => 'Assertion first',
+        'token_endpoint_auth_method' => 'private_key_jwt',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+        'jwks' => ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'n' => 'abc', 'e' => 'AQAB']]],
+    ])->assertStatus(201);
+
+    $clientId = $created->json('client_id');
+    $auth = ['Authorization' => 'Bearer '.$created->json('registration_access_token')];
+
+    // A key-set client holds no secret. That is the state the update has to resolve.
+    expect($created->json('client_secret'))->toBeNull()
+        ->and(Client::query()->where('client_id', $clientId)->value('secret_hash'))->toBeNull();
+
+    $updated = $this->putJson('/oauth/register/'.$clientId, [
+        'client_name' => 'Back to a password',
+        'token_endpoint_auth_method' => 'client_secret_basic',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+    ], $auth)->assertOk();
+
+    $secret = $updated->json('client_secret');
+
+    expect($secret)->toBeString()->not->toBeEmpty();
+
+    // It is a real credential, not a value in a response body: the endpoint that verifies
+    // client secrets accepts this one and refuses a wrong one.
+    $this->withHeaders(['Authorization' => 'Basic '.base64_encode($clientId.':'.$secret)])
+        ->postJson('/oauth/revoke', ['token' => 'whatever'])
+        ->assertOk();
+
+    $this->withHeaders(['Authorization' => 'Basic '.base64_encode($clientId.':wrong')])
+        ->postJson('/oauth/revoke', ['token' => 'whatever'])
+        ->assertStatus(401);
+})->group('security');

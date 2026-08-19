@@ -370,3 +370,38 @@ it('refuses jwks_uri instead of silently ignoring it', function (): void {
 
     expect((string) $response->json('error_description'))->toContain('jwks_uri');
 });
+
+/**
+ * What a client registers as is what it reads back as.
+ *
+ * `token_endpoint_auth_method` was never stored. Readback INFERRED it from the client's
+ * type and whether it had a JWK Set, and the inference has only three answers, so a client
+ * that registered `client_secret_post` was told on every read that it was
+ * `client_secret_basic`. RFC 7592 §3 calls the read the client's current registration; a
+ * conformant client that reconciles its config against it either rewrites itself to the
+ * wrong method or reports drift forever.
+ *
+ * The registration test above proves each advertised method is ACCEPTED. That is a
+ * different claim, and it stayed green through the whole time this was wrong.
+ */
+it('reads back the exact auth method a client registered with', function (string $method, array $extra): void {
+    openDcr();
+
+    $created = $this->postJson('/oauth/register', array_merge([
+        'client_name' => 'Readback '.$method,
+        'token_endpoint_auth_method' => $method,
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+    ], $extra))->assertStatus(201);
+
+    expect($created->json('token_endpoint_auth_method'))->toBe($method);
+
+    $this->getJson('/oauth/register/'.$created->json('client_id'), [
+        'Authorization' => 'Bearer '.$created->json('registration_access_token'),
+    ])->assertOk()->assertJsonPath('token_endpoint_auth_method', $method);
+})->with([
+    'basic' => ['client_secret_basic', []],
+    'post' => ['client_secret_post', []],
+    'none' => ['none', []],
+    'private_key_jwt' => ['private_key_jwt', ['jwks' => ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'n' => 'abc', 'e' => 'AQAB']]]]],
+]);

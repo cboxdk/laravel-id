@@ -46,7 +46,16 @@ class RegisteredClientController
 
         $updated = $this->registrar->update($authenticated, $metadata);
 
-        return new JsonResponse(ClientRegistrationDocument::for($updated));
+        $document = ClientRegistrationDocument::for($updated->client);
+
+        // RFC 7592 §2.2: the response states the client's current registration. When the
+        // update moved it into a shared-secret method it had no secret for, the new one is
+        // that registration — and this is the only time it is ever readable.
+        if ($updated->secret !== null) {
+            $document['client_secret'] = $updated->secret;
+        }
+
+        return new JsonResponse($document);
     }
 
     public function destroy(Request $request, string $client): Response|JsonResponse

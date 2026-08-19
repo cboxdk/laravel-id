@@ -13,8 +13,10 @@ use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
+use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
+use Cbox\Id\OAuthServer\ValueObjects\UpdatedRegistration;
 
 /**
  * RFC 7591 / 7592 implementation. Validation is deliberately strict and
@@ -90,6 +92,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         $registrationToken = 'reg_'.bin2hex(random_bytes(32));
 
         $registered->client->forceFill([
+            // THE CHOICE, WRITTEN DOWN. Inferring it back from the row cannot tell
+            // `client_secret_post` from `client_secret_basic` — both are "has a secret" —
+            // so a client that registered the former was handed a management document
+            // telling it to use the latter.
+            'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
             'registration_access_token_hash' => hash('sha256', $registrationToken),
         ])->save();
 
@@ -110,8 +117,22 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         return $matches && $hasToken ? $client : null;
     }
 
-    public function update(Client $client, ClientMetadata $metadata): Client
+    public function update(Client $client, ClientMetadata $metadata): UpdatedRegistration
     {
+        // A CLIENT THAT ARRIVES AT A SECRET METHOD MUST LEAVE WITH A SECRET.
+        //
+        // The comment below has described this since the downgrade fix: "an update back to
+        // `client_secret_basic` should mint a fresh one rather than silently resurrect the
+        // old". It described an intention. A client that had moved to `private_key_jwt`
+        // had its hash cleared, so moving BACK left `usesASharedSecret()` true and
+        // `secret_hash` null — a client registered for Basic with no password, unable to
+        // authenticate, and nothing in the response saying why.
+        $minted = null;
+
+        if ($metadata->usesASharedSecret() && $client->secret_hash === null) {
+            $minted = ClientSecret::mint();
+        }
+
         $client->forceFill([
             'name' => $metadata->clientName,
             'type' => $metadata->isPublic() ? ClientType::Public : ClientType::Confidential,
@@ -134,10 +155,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // should not carry a live credential the client believes it has retired, and
             // an update back to `client_secret_basic` should mint a fresh one rather than
             // silently resurrect the old.
-            'secret_hash' => $metadata->usesASharedSecret() ? $client->secret_hash : null,
+            'secret_hash' => $minted !== null
+                ? $minted->hash
+                : ($metadata->usesASharedSecret() ? $client->secret_hash : null),
+            'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
         ])->save();
 
-        return $client;
+        return new UpdatedRegistration($client, $minted?->plaintext);
     }
 
     public function delete(Client $client): void

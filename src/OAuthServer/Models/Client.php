@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer\Models;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -27,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed>|null $jwks
  * @property string $name
  * @property ClientType $type
+ * @property TokenEndpointAuthMethod|null $token_endpoint_auth_method
  * @property array<int, string> $redirect_uris
  * @property array<int, string>|null $post_logout_redirect_uris
  * @property array<int, string> $grant_types
@@ -58,6 +60,7 @@ class Client extends Model implements EnvironmentOwned
     {
         return [
             'type' => ClientType::class,
+            'token_endpoint_auth_method' => TokenEndpointAuthMethod::class,
             'redirect_uris' => 'array',
             'post_logout_redirect_uris' => 'array',
             'grant_types' => 'array',

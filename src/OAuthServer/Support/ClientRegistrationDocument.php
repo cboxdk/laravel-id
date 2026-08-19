@@ -48,6 +48,16 @@ class ClientRegistrationDocument
      */
     private static function authMethod(Client $client): string
     {
+        // WHAT THE CLIENT REGISTERED, when we know it. Inference is right about what a
+        // client CAN do and wrong about what it asked for: the two shared-secret methods
+        // look identical in the row, so a client that registered `client_secret_post` was
+        // handed a document telling it to use Basic.
+        if ($client->token_endpoint_auth_method !== null) {
+            return $client->token_endpoint_auth_method->value;
+        }
+
+        // A row from before the column existed, or one written by a caller that did not
+        // set it. The old inference, unchanged, so nothing that works today stops.
         if ($client->type === ClientType::Public) {
             return 'none';
         }

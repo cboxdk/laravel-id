@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
 use Cbox\Id\OAuthServer\DynamicClientRegistrar;
+use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 
 /**
  * The validated, normalized client metadata from an RFC 7591 registration
@@ -31,6 +32,20 @@ readonly class ClientMetadata
         public array $scopes,
         public ?array $jwks = null,
     ) {}
+
+    /**
+     * The registered method, as the enum the row stores.
+     *
+     * `tokenEndpointAuthMethod` is validated against the allowed set by
+     * {@see DynamicClientRegistrar} before this object exists, so an unknown value here
+     * would be a bug rather than user input — it falls back to Basic, which is the OAuth
+     * 2.0 default and what the old inference answered.
+     */
+    public function tokenEndpointAuthMethod(): TokenEndpointAuthMethod
+    {
+        return TokenEndpointAuthMethod::tryFrom($this->tokenEndpointAuthMethod)
+            ?? TokenEndpointAuthMethod::ClientSecretBasic;
+    }
 
     /**
      * `none` is the RFC 7591 auth method for public clients (PKCE-only). Anything

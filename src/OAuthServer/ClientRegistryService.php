@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredClient;
 use Illuminate\Support\Str;
@@ -45,8 +46,9 @@ class ClientRegistryService implements ClientRegistry
         // signing assertions with its registered keys (`private_key_jwt`). When it
         // registers a JWK Set it gets no secret — one credential mechanism, not two.
         if ($input->type === ClientType::Confidential && $input->jwks === null) {
-            $secret = 'csec_'.bin2hex(random_bytes(32));
-            $client->secret_hash = hash('sha256', $secret);
+            $minted = ClientSecret::mint();
+            $secret = $minted->plaintext;
+            $client->secret_hash = $minted->hash;
         }
 
         $client->save();
@@ -62,6 +64,6 @@ class ClientRegistryService implements ClientRegistry
     public function verifySecret(Client $client, string $secret): bool
     {
         return $client->secret_hash !== null
-            && hash_equals($client->secret_hash, hash('sha256', $secret));
+            && hash_equals($client->secret_hash, ClientSecret::hash($secret));
     }
 }
