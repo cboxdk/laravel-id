@@ -198,6 +198,13 @@ call — the agent never holds the long-lived secret. See the full recipe:
 to approve a high-risk agent action first, see
 [Approve agent actions with CIBA](approve-agent-actions-with-ciba.md).
 
+## Sign a CLI in (device grant)
+
+A terminal, a CI job or a TV has no browser to be redirected back to. This package serves
+the two machine endpoints; the page the person approves on is yours, and it is about forty
+lines. See the full recipe:
+[Sign a CLI in with the device grant](sign-a-cli-in-with-the-device-grant.md).
+
 ## Review who has access (access certification)
 
 Open a campaign, have reviewers certify or revoke each role/membership, and apply the
