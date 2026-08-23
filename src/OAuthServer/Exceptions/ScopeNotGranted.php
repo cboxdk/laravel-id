@@ -24,8 +24,13 @@ class ScopeNotGranted extends RuntimeException
      */
     public static function forClient(string $clientId, array $scopes): self
     {
+        // NAMES THE REMEDY, not only the fault. This is the first thing a developer
+        // wiring up a CLI sees when the app's scope ceiling is too tight, and "is not
+        // registered for" describes a state without saying who can change it or where.
         return new self(sprintf(
-            'Client [%s] is not registered for the requested scope(s): %s.',
+            'Client [%s] is not registered for the requested scope(s): %s. '
+            .'Either request only the scopes it holds, or add them to the app under '
+            .'Apps & API keys in the console.',
             $clientId,
             implode(' ', $scopes),
         ));
