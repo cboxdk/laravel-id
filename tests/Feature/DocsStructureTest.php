@@ -79,16 +79,77 @@ it('gives every docs page a title, a weight and a description', function (): voi
     expect($incomplete)->toBe([]);
 });
 
+/**
+ * Resolve a repo-relative path the way Linux does, whatever the host filesystem thinks.
+ *
+ * Walks it segment by segment against `scandir`, because the obvious `realpath()` and
+ * `file_exists()` are both case-INSENSITIVE on macOS: a link to `Quickstart.md` resolves
+ * on the laptop that wrote it and 404s on the box that renders the site.
+ */
+function docsPathExists(string $repoRoot, string $relative): bool
+{
+    $current = $repoRoot;
+
+    foreach (explode('/', $relative) as $segment) {
+        $entries = @scandir($current);
+
+        if ($entries === false || ! in_array($segment, $entries, true)) {
+            return false;
+        }
+
+        $current .= '/'.$segment;
+    }
+
+    return true;
+}
+
+/**
+ * A docs link that points at nothing breaks by RENAME, silently, in a directory nothing
+ * else compiles — so it fails here instead.
+ *
+ * Resolved TEXTUALLY and then checked case-sensitively, rather than with `realpath()`.
+ * realpath answers two questions wrongly here, and both make this pass on the machine
+ * that wrote the link and fail on the one that publishes it: the case problem above, and
+ * that it follows a path straight out of the repository. A `../../../other-repo/docs/…`
+ * link resolves for whoever has that repo checked out beside this one and for nobody
+ * else — which is exactly what the sibling sweep in cbox-id caught the first time it ran
+ * in CI. Links that leave `docs/` but stay in the repo (`../UPGRADING.md`) are fine.
+ */
 it('resolves every relative link between docs pages', function (): void {
-    $root = dirname(__DIR__, 2).'/docs';
+    $repoRoot = dirname(__DIR__, 2);
     $broken = [];
 
     foreach (docsFiles() as $path) {
+        $directory = str_replace($repoRoot.'/', '', dirname($path));
+
         preg_match_all('/\]\(([^)#:]+\.md)(#[^)]*)?\)/', (string) file_get_contents($path), $matches);
 
         foreach ($matches[1] as $target) {
-            if (realpath(dirname($path).'/'.$target) === false) {
-                $broken[] = str_replace($root.'/', '', $path).' → '.$target;
+            $segments = [];
+            $escapes = false;
+
+            foreach (explode('/', $directory.'/'.$target) as $segment) {
+                if ($segment === '' || $segment === '.') {
+                    continue;
+                }
+
+                if ($segment === '..') {
+                    if ($segments === []) {
+                        $escapes = true;
+
+                        break;
+                    }
+
+                    array_pop($segments);
+
+                    continue;
+                }
+
+                $segments[] = $segment;
+            }
+
+            if ($escapes || ! docsPathExists($repoRoot, implode('/', $segments))) {
+                $broken[] = str_replace($repoRoot.'/docs/', '', $path).' → '.$target;
             }
         }
     }
