@@ -158,3 +158,34 @@ it('shows an environment-wide grant to the segregation-of-duties read', function
     expect($roles->assignmentsForSubject('org-a', 'user-1'))
         ->toEqualCanonicalizing([$support->id, $editor->id]);
 })->group('security');
+
+/**
+ * A global role with no permissions is a name and nothing else.
+ *
+ * `grantPermission()` took a non-nullable organization and matched the role on it, so the
+ * one kind of role that can be granted across every tenant was the one kind this method
+ * could never reach. The gap was invisible until environment-wide grants existed.
+ */
+it('grants a permission to an environment-wide role from the environment plane', function (): void {
+    $roles = app(Roles::class);
+
+    $support = $roles->define(null, 'Support');
+    $roles->grantPermission(null, $support->id, 'tickets.read');
+    $roles->assignEverywhere('user-1', $support->id);
+
+    expect(app(AccessChecker::class)->forToken('user-1', 'org-anywhere', 'cid_any')->permissions)
+        ->toBe(['tickets.read']);
+});
+
+/**
+ * And naming a tenant still refuses, which is the half that was already right: a tenant
+ * may not attach policy to a role the whole environment holds.
+ */
+it('refuses to grant a permission to an environment-wide role in a tenant’s name', function (): void {
+    $roles = app(Roles::class);
+
+    $support = $roles->define(null, 'Support');
+
+    expect(fn () => $roles->grantPermission('org-a', $support->id, 'tickets.read'))
+        ->toThrow(UnknownRole::class);
+})->group('security');

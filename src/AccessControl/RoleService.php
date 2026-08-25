@@ -37,13 +37,24 @@ class RoleService implements Roles
         );
     }
 
-    public function grantPermission(string $organizationId, string $roleId, string $permission): void
+    public function grantPermission(?string $organizationId, string $roleId, string $permission): void
     {
         // The role must belong to the caller's org — never grant onto another
         // tenant's role.
+        //
+        // NULL NAMES THE ENVIRONMENT PLANE, the same thing it means to requireRole() and
+        // attachPermission(). This took a non-nullable organization and matched on it, so
+        // an environment-wide role — the only kind that can be granted across every
+        // tenant — could never be given a permission through this method at all. The gap
+        // only showed once environment-wide GRANTS existed and a global role with no
+        // permissions turned out to be a name and nothing else.
         $role = Role::query()
             ->whereKey($roleId)
-            ->where('organization_id', $organizationId)
+            ->when(
+                $organizationId === null,
+                fn ($query) => $query->whereNull('organization_id'),
+                fn ($query) => $query->where('organization_id', $organizationId),
+            )
             ->first();
 
         if ($role === null) {

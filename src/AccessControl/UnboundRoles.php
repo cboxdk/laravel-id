@@ -25,7 +25,7 @@ class UnboundRoles implements Roles
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
-    public function grantPermission(string $organizationId, string $roleId, string $permission): void
+    public function grantPermission(?string $organizationId, string $roleId, string $permission): void
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }

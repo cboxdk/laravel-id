@@ -24,8 +24,12 @@ interface Roles
      * created) within the ROLE's own scope — an app-scoped role's permissions live
      * under that app's client_id, an org-wide role's under client_id null — so a
      * permission name is never silently duplicated across scopes.
+     *
+     * `$organizationId` null names the ENVIRONMENT plane, as it does everywhere else in
+     * this contract: an environment-wide role belongs to no tenant, and asking a tenant
+     * to own the grant would be asking them to edit a role they do not own.
      */
-    public function grantPermission(string $organizationId, string $roleId, string $permission): void;
+    public function grantPermission(?string $organizationId, string $roleId, string $permission): void;
 
     /*
      * --------------------------------------------------------------------------
