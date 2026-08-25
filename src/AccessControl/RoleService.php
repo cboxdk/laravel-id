@@ -9,6 +9,7 @@ use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
+use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
 use Cbox\Id\AccessControl\Models\Permission;
 use Cbox\Id\AccessControl\Models\Role;
@@ -301,6 +302,77 @@ class RoleService implements Roles
         }
     }
 
+    /**
+     * Grant a role EVERYWHERE in this environment, rather than inside one organization.
+     *
+     * For the people an org-scoped grant cannot describe: a support agent of the product
+     * who acts across every customer, somebody who has not joined an organization, and
+     * any service provider with no tenancy of its own to hang a grant on.
+     *
+     * ONLY AN ENVIRONMENT-WIDE ROLE MAY BE GRANTED THIS WAY. A role owned by one
+     * organization is that tenant's own policy, named by them and meaning what they say
+     * it means; handing it to somebody across the whole environment would grant every
+     * other tenant a role they did not define and cannot see. That refusal is the one
+     * guard on this path that is not merely tidy.
+     *
+     * @throws UnknownRole when the role does not exist, is orphaned, or belongs to one
+     *                     organization
+     */
+    public function assignEverywhere(
+        string $userId,
+        string $roleId,
+        GrantSource $source = GrantSource::Manual,
+    ): EnvironmentRoleAssignment {
+        $assignable = Role::query()
+            ->whereKey($roleId)
+            ->whereNull('organization_id')
+            ->whereNull('client_id')
+            ->whereNull('orphaned_at')
+            ->exists();
+
+        if (! $assignable) {
+            throw UnknownRole::make($roleId);
+        }
+
+        $assignment = EnvironmentRoleAssignment::query()->firstOrCreate(
+            ['user_id' => $userId, 'role_id' => $roleId],
+            ['source' => $source],
+        );
+
+        // Same rule as assign(): announce a state change, never a call.
+        if ($assignment->wasRecentlyCreated) {
+            $this->emitAndAudit(null, $userId, $roleId, 'role.assigned_everywhere');
+        }
+
+        return $assignment;
+    }
+
+    /** Take back an environment-wide grant. */
+    public function unassignEverywhere(string $userId, string $roleId): void
+    {
+        $deleted = EnvironmentRoleAssignment::query()
+            ->where('user_id', $userId)
+            ->where('role_id', $roleId)
+            ->delete();
+
+        if ($deleted > 0) {
+            $this->emitAndAudit(null, $userId, $roleId, 'role.unassigned_everywhere');
+        }
+    }
+
+    /**
+     * The role ids this user holds everywhere in the environment.
+     *
+     * @return list<string>
+     */
+    public function everywhereFor(string $userId): array
+    {
+        return array_values(array_filter(
+            EnvironmentRoleAssignment::query()->where('user_id', $userId)->pluck('role_id')->all(),
+            'is_string',
+        ));
+    }
+
     public function unassign(string $organizationId, string $userId, string $roleId): void
     {
         $deleted = RoleAssignment::query()
@@ -347,11 +419,23 @@ class RoleService implements Roles
 
     public function assignmentsForSubject(string $organizationId, string $userId): array
     {
-        return array_values(RoleAssignment::query()
-            ->where('organization_id', $organizationId)
-            ->where('user_id', $userId)
-            ->get()
-            ->all());
+        // ENVIRONMENT-WIDE GRANTS COUNT HERE. The question this answers is "what does
+        // this person effectively hold in this organization", and segregation of duties
+        // is its main caller — so leaving them out would let a toxic pair form across the
+        // two kinds of grant, invisibly, which is the one combination nobody would think
+        // to look for.
+        $everywhere = $this->everywhereFor($userId);
+
+        $inOrg = array_filter(
+            RoleAssignment::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->pluck('role_id')
+                ->all(),
+            'is_string',
+        );
+
+        return array_values(array_unique([...$inOrg, ...$everywhere]));
     }
 
     public function assignmentsInOrganization(string $organizationId): array
@@ -363,7 +447,15 @@ class RoleService implements Roles
             ->all());
     }
 
-    private function emitAndAudit(string $organizationId, string $userId, string $roleId, string $action): void
+    /**
+     * @param  string|null  $organizationId  null for an environment-wide grant, which
+     *                                       belongs to no tenant. Both the event and the
+     *                                       audit chain already model that: a null key
+     *                                       files the entry on the ENVIRONMENT's chain
+     *                                       rather than a tenant's, which is where a
+     *                                       grant that spans every tenant belongs.
+     */
+    private function emitAndAudit(?string $organizationId, string $userId, string $roleId, string $action): void
     {
         $this->events->emit(new DomainEvent($action, ['user_id' => $userId, 'role_id' => $roleId], $organizationId));
 

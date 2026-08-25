@@ -25,6 +25,12 @@ interface AccessChecker
      * roles (by client_id), and the union of those roles' permissions. Roles that
      * belong to OTHER apps are excluded, so an app's token never carries access it
      * doesn't own.
+     *
+     * `$organizationId` MAY BE NULL, and then the answer is what the user holds
+     * environment-wide. A service provider with no tenancy of its own has no
+     * organization to name, and a person who has joined none still has whatever they
+     * were granted across the environment — before this, both got a token with no roles
+     * and no permissions at all, and there was no way to give them any.
      */
-    public function forToken(string $userId, string $organizationId, string $clientId): AppAccessClaims;
+    public function forToken(string $userId, ?string $organizationId, string $clientId): AppAccessClaims;
 }

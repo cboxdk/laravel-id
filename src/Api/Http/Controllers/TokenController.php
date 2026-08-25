@@ -477,7 +477,9 @@ class TokenController
         // looks for — Kubernetes, Grafana, Vault — and the claim exists for them.
         // `userId` is non-nullable on the grant; only the organization can be absent,
         // and without one there is no RBAC to read.
-        if (in_array('groups', $grant->scopes, true) && $grant->organizationId !== null) {
+        // Same as the access token: an absent organization means "what they hold
+        // environment-wide", not "nothing".
+        if (in_array('groups', $grant->scopes, true)) {
             $rbac = $this->access->forToken($grant->userId, $grant->organizationId, $clientId);
 
             if ($rbac->roles !== []) {

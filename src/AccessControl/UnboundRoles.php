@@ -7,6 +7,7 @@ namespace Cbox\Id\AccessControl;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\ExternalRbacNotBound;
+use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 
@@ -74,6 +75,21 @@ class UnboundRoles implements Roles
     }
 
     public function assignmentsForSubject(string $organizationId, string $userId): array
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function assignEverywhere(string $userId, string $roleId, GrantSource $source = GrantSource::Manual): EnvironmentRoleAssignment
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function unassignEverywhere(string $userId, string $roleId): void
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function everywhereFor(string $userId): array
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }

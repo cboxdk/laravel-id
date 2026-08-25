@@ -6,6 +6,7 @@ namespace Cbox\Id\AccessControl\Contracts;
 
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
+use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 
@@ -113,14 +114,41 @@ interface Roles
     public function unassignAll(string $organizationId, string $userId): int;
 
     /**
-     * The DIRECT role assignments a subject holds AT this organization (not the
-     * hierarchy-rolled-up effective set — an inherited grant lives on, and is read
-     * from, the ancestor org where it was assigned). Read surface for governance
-     * (certification / SoD).
+     * The role ids a subject effectively holds AT this organization: its DIRECT
+     * assignments (not the hierarchy-rolled-up set — an inherited grant lives on, and is
+     * read from, the ancestor org where it was assigned) PLUS any held environment-wide.
+     * Read surface for governance (certification / SoD).
      *
-     * @return list<RoleAssignment>
+     * IDS, NOT MODELS. Both callers mapped straight to `role_id`, and an environment-wide
+     * grant is a different row in a different table — returning models would have forced
+     * the two kinds into one type, or left the environment-wide ones out of the one
+     * question segregation of duties asks. A toxic pair spanning the two kinds is exactly
+     * the combination nobody thinks to look for.
+     *
+     * @return list<string>
      */
     public function assignmentsForSubject(string $organizationId, string $userId): array;
+
+    /**
+     * Grant a role EVERYWHERE in this environment rather than inside one organization —
+     * for a support agent who acts across every customer, somebody who has joined no
+     * organization, or a service provider with no tenancy of its own.
+     *
+     * Only an environment-wide role (no organization, no declaring app) may be granted
+     * this way: one tenant's role handed out across the environment would give every
+     * other tenant a policy they did not define.
+     */
+    public function assignEverywhere(string $userId, string $roleId, GrantSource $source = GrantSource::Manual): EnvironmentRoleAssignment;
+
+    /** Take back an environment-wide grant. */
+    public function unassignEverywhere(string $userId, string $roleId): void;
+
+    /**
+     * The role ids this user holds everywhere in the environment.
+     *
+     * @return list<string>
+     */
+    public function everywhereFor(string $userId): array;
 
     /**
      * Every DIRECT role assignment made AT this organization, across all subjects —

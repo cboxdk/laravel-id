@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Cbox\Id\Governance;
 
 use Cbox\Id\AccessControl\Contracts\Roles;
-use Cbox\Id\AccessControl\Models\RoleAssignment;
 use Cbox\Id\Governance\Contracts\SegregationOfDuties;
 use Cbox\Id\Governance\Exceptions\UnknownSodPolicy;
 use Cbox\Id\Governance\Models\SodPolicy;
@@ -217,10 +216,10 @@ class DatabaseSegregationOfDuties implements SegregationOfDuties
      */
     private function heldRoleIds(string $organizationId, string $subjectId): array
     {
-        return array_map(
-            static fn (RoleAssignment $a): string => $a->role_id,
-            $this->roles->assignmentsForSubject($organizationId, $subjectId),
-        );
+        // Already ids, and already including anything held environment-wide — so a toxic
+        // pair formed across an org grant and an environment-wide one is caught here
+        // rather than being the one combination the check cannot see.
+        return $this->roles->assignmentsForSubject($organizationId, $subjectId);
     }
 
     /**

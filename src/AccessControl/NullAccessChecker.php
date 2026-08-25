@@ -26,7 +26,7 @@ class NullAccessChecker implements AccessChecker
         return [];
     }
 
-    public function forToken(string $userId, string $organizationId, string $clientId): AppAccessClaims
+    public function forToken(string $userId, ?string $organizationId, string $clientId): AppAccessClaims
     {
         return new AppAccessClaims([], []);
     }

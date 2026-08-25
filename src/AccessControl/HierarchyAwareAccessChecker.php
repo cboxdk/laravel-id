@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
+use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 use Cbox\Id\AccessControl\ValueObjects\AppAccessClaims;
@@ -56,7 +57,7 @@ class HierarchyAwareAccessChecker implements AccessChecker
         return array_values(array_filter($names, 'is_string'));
     }
 
-    public function forToken(string $userId, string $organizationId, string $clientId): AppAccessClaims
+    public function forToken(string $userId, ?string $organizationId, string $clientId): AppAccessClaims
     {
         $roleIds = $this->roleIdsFor($userId, $organizationId);
 
@@ -100,11 +101,30 @@ class HierarchyAwareAccessChecker implements AccessChecker
      *
      * @return list<string>
      */
-    private function roleIdsFor(string $userId, string $organizationId): array
+    /**
+     * @param  string|null  $organizationId  null asks only what is held environment-wide
+     * @return list<string>
+     */
+    private function roleIdsFor(string $userId, ?string $organizationId): array
     {
-        $scopes = array_merge([$organizationId], $this->hierarchy->ancestors($organizationId));
+        $scopes = $organizationId === null
+            ? []
+            : array_merge([$organizationId], $this->hierarchy->ancestors($organizationId));
 
-        return array_values(
+        // ENVIRONMENT-WIDE GRANTS APPLY IN EVERY ORGANIZATION, which is the whole point
+        // of them: a support agent acting across every customer holds the role once, not
+        // once per tenant. They are unioned with the org grants rather than replacing
+        // them, so somebody can hold Support everywhere AND Editor in one place.
+        //
+        // No ownership subquery is needed on this half: assignEverywhere() will only
+        // write a grant for a role that is itself environment-wide and belongs to no app,
+        // and Role is environment-scoped, so the boundary holds by construction.
+        $everywhere = array_values(array_filter(
+            EnvironmentRoleAssignment::query()->where('user_id', $userId)->pluck('role_id')->all(),
+            'is_string',
+        ));
+
+        $inOrg = $scopes === [] ? [] : array_values(
             RoleAssignment::query()
                 ->where('user_id', $userId)
                 ->whereIn('organization_id', $scopes)
@@ -123,5 +143,7 @@ class HierarchyAwareAccessChecker implements AccessChecker
                 ->map(fn (RoleAssignment $assignment): string => $assignment->role_id)
                 ->all()
         );
+
+        return array_values(array_unique([...$inOrg, ...$everywhere]));
     }
 }

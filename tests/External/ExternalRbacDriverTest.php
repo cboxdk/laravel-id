@@ -74,7 +74,7 @@ it('lets a host binding win over the deny-by-default fallback', function (): voi
             return ['billing.read'];
         }
 
-        public function forToken(string $userId, string $organizationId, string $clientId): AppAccessClaims
+        public function forToken(string $userId, ?string $organizationId, string $clientId): AppAccessClaims
         {
             return new AppAccessClaims(['admin'], ['billing.read']);
         }

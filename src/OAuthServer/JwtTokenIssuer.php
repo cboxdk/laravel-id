@@ -207,7 +207,12 @@ class JwtTokenIssuer implements TokenIssuer
         // so the app enforces straight from the token with no extra call. Scoped to
         // the app — its own declared roles plus org-wide roles, never another app's.
         // Client-credentials tokens (no user) carry no roles claim.
-        if ($userId !== null && $organizationId !== null) {
+        // NO ORGANIZATION IS NO LONGER NO ROLES. This required an organization, so a
+        // person who had joined none — and any service provider with no tenancy of its
+        // own to name — got a token carrying nothing, with no way to grant them anything.
+        // An environment-wide grant is exactly the answer for those, and it is read here
+        // by passing the absent organization through rather than skipping the lookup.
+        if ($userId !== null) {
             $rbac = $this->access->forToken($userId, $organizationId, $client->client_id);
             if (! $rbac->isEmpty()) {
                 $claims['roles'] = $rbac->roles;
