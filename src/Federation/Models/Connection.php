@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * @property string $id
  * @property string $environment_id
- * @property string $organization_id
+ * @property string|null $organization_id null = owned by the environment rather than one tenant
  * @property ConnectionType $type
  * @property string|null $provider the catalogue key this came from, or null when hand-configured
  * @property string $name

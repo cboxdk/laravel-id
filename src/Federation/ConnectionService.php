@@ -40,7 +40,7 @@ class ConnectionService implements Connections
     public function __construct(private readonly SecretBox $secretBox) {}
 
     public function create(
-        string $organizationId,
+        ?string $organizationId,
         ConnectionType $type,
         string $name,
         array $config,
@@ -48,8 +48,10 @@ class ConnectionService implements Connections
         ?string $provider = null,
     ): Connection {
         // Same reason as `activate()`: creating a connection changes which one an
-        // organization signs in with.
-        unset($this->memo[$organizationId]);
+        // organization signs in with. The environment's own connection is memoised under
+        // a key of its own — `null` cannot be an array key, and using `''` for it would
+        // collide with nothing today and with the first empty-string caller tomorrow.
+        unset($this->memo[$this->memoKey($organizationId)]);
 
         if ($provider !== null && ProviderCatalog::find($provider) === null) {
             // Refused rather than stored. A connection labelled with a key the catalogue
@@ -83,7 +85,7 @@ class ConnectionService implements Connections
         return Connection::query()->whereKey($id)->first();
     }
 
-    public function forOrganization(string $organizationId): ?Connection
+    public function forOrganization(?string $organizationId): ?Connection
     {
         $lifetime = RequestLifetime::current(app());
 
@@ -92,12 +94,18 @@ class ConnectionService implements Connections
             $this->memoLifetime = $lifetime;
         }
 
-        if (array_key_exists($organizationId, $this->memo)) {
-            return $this->memo[$organizationId];
+        $key = $this->memoKey($organizationId);
+
+        if (array_key_exists($key, $this->memo)) {
+            return $this->memo[$key];
         }
 
-        return $this->memo[$organizationId] = Connection::query()
-            ->where('organization_id', $organizationId)
+        return $this->memo[$key] = Connection::query()
+            ->when(
+                $organizationId === null,
+                fn ($query) => $query->whereNull('organization_id'),
+                fn ($query) => $query->where('organization_id', $organizationId),
+            )
             ->where('status', ConnectionStatus::Active->value)
             // Catalogue providers are offered as buttons, not as the way an organization
             // signs in. Without this clause, enabling Google could become an
@@ -106,11 +114,15 @@ class ConnectionService implements Connections
             ->first();
     }
 
-    public function catalogueProvidersFor(string $organizationId): array
+    public function catalogueProvidersFor(?string $organizationId): array
     {
         return array_values(
             Connection::query()
-                ->where('organization_id', $organizationId)
+                ->when(
+                    $organizationId === null,
+                    fn ($query) => $query->whereNull('organization_id'),
+                    fn ($query) => $query->where('organization_id', $organizationId),
+                )
                 ->where('status', ConnectionStatus::Active->value)
                 ->whereNotNull('provider')
                 // Ordered by the column rather than by insertion, so the buttons do not
@@ -121,18 +133,34 @@ class ConnectionService implements Connections
         );
     }
 
-    public function activate(string $organizationId, string $id): void
+    public function activate(?string $organizationId, string $id): void
     {
         // The memo answers "which connection does this organization sign in with", and
         // this is the method that changes it. A memo that survives its own write is the
         // bug memoising introduces.
-        unset($this->memo[$organizationId]);
+        unset($this->memo[$this->memoKey($organizationId)]);
 
-        // Scope to the owning org so an admin can't flip another tenant's draft.
+        // Scope to the owning org so an admin can't flip another tenant's draft — and
+        // null scopes to the environment's own, which is not a wildcard: a caller naming
+        // no organization must not be able to activate a tenant's draft either.
         Connection::query()
             ->whereKey($id)
-            ->where('organization_id', $organizationId)
+            ->when(
+                $organizationId === null,
+                fn ($query) => $query->whereNull('organization_id'),
+                fn ($query) => $query->where('organization_id', $organizationId),
+            )
             ->first()?->update(['status' => ConnectionStatus::Active]);
+    }
+
+    /**
+     * The memo key for an owner. `null` is not a valid array key and `''` would be
+     * indistinguishable from an empty-string organization id, so the environment's own
+     * connection gets a key no id can collide with.
+     */
+    private function memoKey(?string $organizationId): string
+    {
+        return $organizationId ?? "\0environment";
     }
 
     public function samlConfig(Connection $connection): SamlConnectionConfig

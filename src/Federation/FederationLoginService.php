@@ -55,7 +55,14 @@ class FederationLoginService implements FederationFlow
                 throw AccountInactive::make($subject->id);
             }
 
-            $this->memberships->add($connection->organization_id, $subject->id, MembershipRole::Member);
+            // A MEMBERSHIP ONLY WHERE THERE IS SOMETHING TO BE A MEMBER OF. A connection
+            // owned by the environment rather than by one tenant signs people in without
+            // enrolling them anywhere: an environment that does not use organizations has
+            // none to join, and inventing one here would put a tenancy the product never
+            // asked for into every one of its tokens.
+            if ($connection->organization_id !== null) {
+                $this->memberships->add($connection->organization_id, $subject->id, MembershipRole::Member);
+            }
 
             $session = $this->sessions->start($subject->id, $connection->organization_id, ['sso']);
 

@@ -26,7 +26,7 @@ interface Connections
      *                                 administrator described the provider by hand
      */
     public function create(
-        string $organizationId,
+        ?string $organizationId,
         ConnectionType $type,
         string $name,
         array $config,
@@ -46,7 +46,13 @@ interface Connections
      * returned whichever active row came back first, so enabling Google could silently
      * become an organization's SSO.
      */
-    public function forOrganization(string $organizationId): ?Connection;
+    /**
+     * The active connection an organization signs in with — or, when `$organizationId` is
+     * null, the one the ENVIRONMENT itself owns. An environment that does not use
+     * organizations still has people to sign in, and single sign-on is the capability
+     * they are most likely to want.
+     */
+    public function forOrganization(?string $organizationId): ?Connection;
 
     /**
      * The organization's active catalogue-backed providers, in a stable order.
@@ -57,9 +63,9 @@ interface Connections
      *
      * @return list<Connection>
      */
-    public function catalogueProvidersFor(string $organizationId): array;
+    public function catalogueProvidersFor(?string $organizationId): array;
 
-    public function activate(string $organizationId, string $id): void;
+    public function activate(?string $organizationId, string $id): void;
 
     /**
      * The connection's SAML configuration, unsealed and parsed.
