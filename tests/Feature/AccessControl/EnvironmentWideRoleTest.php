@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\Permission;
+use Cbox\Id\Governance\Contracts\SegregationOfDuties;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
+use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Enums\MembershipRole;
+use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -189,3 +195,59 @@ it('refuses to grant a permission to an environment-wide role in a tenant’s na
     expect(fn () => $roles->grantPermission('org-a', $support->id, 'tickets.read'))
         ->toThrow(UnknownRole::class);
 })->group('security');
+
+/**
+ * @group security
+ *
+ * THE LARGEST GRANT IN THE SYSTEM WAS THE ONLY ONE WITH NO VETO.
+ *
+ * assign() asks the guard before writing; assignEverywhere() did not, and the reasoning
+ * was that a toxic pair forms inside an organization while this grant belongs to none —
+ * so the NEXT org-scoped grant would be refused where the pair actually forms. That
+ * covers one order and not the other: somebody already holding the conflicting role in an
+ * organization could be given this one everywhere, and no later grant ever happens to
+ * trigger the check. The pair simply exists, in that organization's tokens, refused
+ * nowhere. The question is now asked once per organization the person is in.
+ */
+it('refuses an environment-wide grant that conflicts where the person already is', function (): void {
+    $roles = app(Roles::class);
+
+    $approver = $roles->define(null, 'Approver');
+    $payer = $roles->define(null, 'Payer');
+
+    app(SegregationOfDuties::class)
+        ->definePolicy(null, 'Four eyes', [$approver->id, $payer->id]);
+
+    $organization = app(Organizations::class)
+        ->create(new NewOrganization('Acme', 'acme-sod'));
+
+    app(Memberships::class)
+        ->add($organization->id, 'user-1', MembershipRole::Member);
+
+    $roles->assign($organization->id, 'user-1', $payer->id);
+
+    expect(fn () => $roles->assignEverywhere('user-1', $approver->id))
+        ->toThrow(GrantRefused::class);
+
+    expect($roles->everywhereFor('user-1'))->toBe([]);
+})->group('security');
+
+/**
+ * Deleting a role takes its environment-wide grants with it.
+ *
+ * The delete removed the role, its permissions, its group mappings and its ORG
+ * assignments, and left the environment-wide rows naming an id that no longer resolves —
+ * a phantom in everywhereFor(), false conflicts for any policy naming the dead id, and a
+ * downstream mirror that never heard those holders lost it. No token ever carried it,
+ * because the read re-resolves the role row, which is exactly why it could sit unnoticed.
+ */
+it('removes environment-wide grants when the role is deleted', function (): void {
+    $roles = app(Roles::class);
+
+    $support = $roles->define(null, 'Support');
+    $roles->assignEverywhere('user-1', $support->id);
+
+    $roles->deleteRole($support->id);
+
+    expect($roles->everywhereFor('user-1'))->toBe([]);
+});

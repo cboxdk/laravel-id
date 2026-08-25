@@ -90,18 +90,30 @@ class UserInfoController
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
             }
+        }
 
-            // RBAC (federated model): mirror the access token's `roles`/`permissions`
-            // claims here so a relying party that authenticates via id_token + UserInfo
-            // (the standard SDK login flow) receives the same signal a resource server
-            // reads from the JWT. Same scoping as issuance: the token's client's own
-            // declared roles plus org-wide roles, never another app's.
-            if ($token->clientId !== null) {
-                $rbac = $this->access->forToken($token->subject, $orgId, $token->clientId);
-                if (! $rbac->isEmpty()) {
-                    $claims['roles'] = $rbac->roles;
-                    $claims['permissions'] = $rbac->permissions;
-                }
+        // RBAC (federated model): mirror the access token's `roles`/`permissions`
+        // claims here so a relying party that authenticates via id_token + UserInfo
+        // (the standard SDK login flow) receives the same signal a resource server
+        // reads from the JWT. Same scoping as issuance: the token's client's own
+        // declared roles plus org-wide roles, never another app's.
+        //
+        // OUTSIDE THE ORG BRANCH. It was nested inside it, so a subject with only
+        // environment-wide grants got an access token carrying roles and permissions and
+        // a UserInfo response carrying neither — the same person, the same request, two
+        // answers, with nothing to say why. The flow this comment itself names as the
+        // standard SDK login is the one that reads UserInfo, so a host with no tenancy
+        // saw its RBAC in the place it does not look and nothing in the place it does.
+        if ($token->clientId !== null) {
+            $rbac = $this->access->forToken(
+                $token->subject,
+                is_string($orgId) && $orgId !== '' ? $orgId : null,
+                $token->clientId,
+            );
+
+            if (! $rbac->isEmpty()) {
+                $claims['roles'] = $rbac->roles;
+                $claims['permissions'] = $rbac->permissions;
             }
         }
 

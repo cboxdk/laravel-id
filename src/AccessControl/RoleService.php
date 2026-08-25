@@ -19,6 +19,8 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Support\Facades\DB;
 
 class RoleService implements Roles
@@ -138,6 +140,15 @@ class RoleService implements Roles
             // went. Nothing else reports them — there is no FK cascade and no observer.
             $held = RoleAssignment::query()->where('role_id', $role->id)->get();
 
+            // ENVIRONMENT-WIDE GRANTS GO TOO. This deleted the role and its org
+            // assignments and left `environment_role_assignments` rows naming an id that
+            // no longer resolves — so `everywhereFor()` reported a phantom role, a
+            // segregation-of-duties policy naming the dead id produced false conflicts,
+            // and any downstream mirror reconciling off unassignment events never heard
+            // that those holders lost it. No token ever carried it (the read re-resolves
+            // the role row, which is gone), which is exactly why it could sit unnoticed.
+            $heldEverywhere = EnvironmentRoleAssignment::query()->where('role_id', $role->id)->get();
+
             DB::table('role_permission')->where('role_id', $role->id)->delete();
 
             // The directory group→role mappings MUST go with the role. `group_role_mappings`
@@ -152,6 +163,7 @@ class RoleService implements Roles
             GroupRoleMapping::query()->where('role_id', $role->id)->delete();
 
             RoleAssignment::query()->where('role_id', $role->id)->delete();
+            EnvironmentRoleAssignment::query()->where('role_id', $role->id)->delete();
             $role->delete();
 
             // One `role.unassigned` per holder, exactly as unassign() emits, so a consumer
@@ -162,6 +174,13 @@ class RoleService implements Roles
                 $this->emitAndAudit($assignment->organization_id, $assignment->user_id, $role->id, 'role.unassigned');
             }
 
+            foreach ($heldEverywhere as $assignment) {
+                $userIds[] = $assignment->user_id;
+                $this->emitAndAudit(null, $assignment->user_id, $role->id, 'role.unassigned_everywhere');
+            }
+
+            // Folded into the same list, so `role.deleted`'s `user_ids` names everybody
+            // who actually lost the role rather than only the org-scoped holders.
             $userIds = array_values(array_unique($userIds));
 
             $this->recordRoleChange($role, 'role.deleted', [
@@ -345,6 +364,28 @@ class RoleService implements Roles
             throw UnknownRole::make($roleId);
         }
 
+        // THE CONFLICT CHECK, WHICH THIS PATH SKIPPED. assign() asks the guard before
+        // writing; this did not, and the reasoning was that segregation of duties refuses
+        // a toxic PAIR within an organization while this grant belongs to none — so the
+        // NEXT org-scoped grant would be refused where the pair actually forms.
+        //
+        // That covers one order and not the other. Somebody already holding `Approver` in
+        // one organization could be given a conflicting `Support` everywhere, and no
+        // later grant ever happens to trigger the check: the pair simply exists, in that
+        // organization's tokens, having been refused nowhere.
+        //
+        // So the question is asked ONCE PER ORGANIZATION THE PERSON IS IN, because that
+        // is precisely where this grant is about to land. A refusal anywhere refuses the
+        // whole thing — a grant that cannot be made in one tenant is not a grant that can
+        // be made in all of them.
+        foreach ($this->organizationsOf($userId) as $organizationId) {
+            $refusal = $this->grants->refuse($organizationId, $userId, $roleId, $source);
+
+            if ($refusal !== null) {
+                throw new GrantRefused($organizationId, $userId, $roleId, $refusal);
+            }
+        }
+
         $assignment = EnvironmentRoleAssignment::query()->firstOrCreate(
             ['user_id' => $userId, 'role_id' => $roleId],
             ['source' => $source],
@@ -356,6 +397,32 @@ class RoleService implements Roles
         }
 
         return $assignment;
+    }
+
+    /**
+     * The organizations this person is a member of.
+     *
+     * THROUGH THE CONTRACT, and this is the third way of asking that turned out to be
+     * wrong. `DB::table('memberships')` reads every environment's rows. `Membership::query()`
+     * looks right and answers NOTHING: the model carries a tenant scope that denies by
+     * default when no tenant is in context — which is exactly the state an environment-wide
+     * grant is made in — so the guard below would have been asked about zero organizations
+     * and refused nothing, silently, while looking like it worked. That is the same
+     * deny-to-empty trap the devices console documents.
+     *
+     * `forUser()` exists precisely for this: the contract calls it "a legitimate
+     * cross-tenant 'which orgs am I in' lookup".
+     *
+     * @return list<string>
+     */
+    private function organizationsOf(string $userId): array
+    {
+        return array_values(array_filter(
+            app(Memberships::class)->forUser($userId)
+                ->map(static fn (Membership $membership): string => $membership->organization_id)
+                ->all(),
+            'is_string',
+        ));
     }
 
     /** Take back an environment-wide grant. */

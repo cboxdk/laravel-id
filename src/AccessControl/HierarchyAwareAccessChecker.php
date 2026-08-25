@@ -116,11 +116,21 @@ class HierarchyAwareAccessChecker implements AccessChecker
         // once per tenant. They are unioned with the org grants rather than replacing
         // them, so somebody can hold Support everywhere AND Editor in one place.
         //
-        // No ownership subquery is needed on this half: assignEverywhere() will only
-        // write a grant for a role that is itself environment-wide and belongs to no app,
-        // and Role is environment-scoped, so the boundary holds by construction.
+        // THE SAME DEFENSE THE ORG HALF HAS, for the same reason. This half used to
+        // decline it on the grounds that assignEverywhere() only writes eligible roles —
+        // true today, and exactly the reasoning the org half's own comment rejects. One
+        // raw write from host code, a future console action, or the class of bug that
+        // comment describes would put a tenant's role into EVERY organization's tokens,
+        // silently. It costs one subquery to make both halves tell the same story.
         $everywhere = array_values(array_filter(
-            EnvironmentRoleAssignment::query()->where('user_id', $userId)->pluck('role_id')->all(),
+            EnvironmentRoleAssignment::query()
+                ->where('user_id', $userId)
+                ->whereIn('role_id', Role::query()
+                    ->select('id')
+                    ->whereNull('organization_id')
+                    ->whereNull('client_id'))
+                ->pluck('role_id')
+                ->all(),
             'is_string',
         ));
 
