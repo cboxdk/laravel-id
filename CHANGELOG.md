@@ -45,6 +45,14 @@ more trust than the wording it removes.
   gained a second sweep — "never declares an id column too narrow for the id it holds" —
   that reads the prefix off `ClientRegistryService` rather than hard-coding thirty.
 
+- **`sbom.json` did not describe 1.18.0.** The committed dependency set listed
+  `getallheaders` and was missing `polyfill-php82` — an upstream package swapped a
+  transitive dependency and the SBOM was never regenerated. CI said so: the tag-only
+  "SBOM dependency set is up to date" gate is exactly this check, and it failed on the
+  `v1.18.0` tag. Regenerated from a fresh resolve. The published 1.18.0 artifact keeps
+  the SBOM it shipped with, because a release's provenance record is part of what
+  shipped; this corrects the record from the next tag forward.
+
 ## [1.15.0] - 2026-08-18
 
 ### Fixed
