@@ -10,6 +10,7 @@ use Cbox\Id\Migration\ValueObjects\LegacyLoginDeclaration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -17,8 +18,33 @@ beforeEach(function (): void {
     config()->set('cbox-id.migration.verify_url', false);
 });
 
-function declare_(string $url = 'https://legacy.acme.test/verify', string $client = 'client-a'): void
+// Two ids, fixed for the file so an assertion can name the one it expects.
+define('FIRST_CLIENT', 'cid_'.Str::lower((string) Str::ulid()));
+define('SECOND_CLIENT', 'cid_'.Str::lower((string) Str::ulid()));
+
+/**
+ * A CLIENT ID SHAPED LIKE A CLIENT ID.
+ *
+ * This defaulted to `'client-a'` — eight characters, and nothing the registry could ever
+ * mint. `ClientRegistryService` issues `'cid_'.Str::ulid()`, which is thirty, and the
+ * column this row lands in was declared at twenty-six. So the insert that fails on
+ * PostgreSQL and truncates on MySQL was made here with a value four engines were all happy
+ * to store, and the whole engine matrix went green over a feature that could not be used.
+ *
+ * Minted the way the product mints it, so the row under test is the row a deployment
+ * writes. Two ids are needed — the test below re-declares a URL as a different app — and
+ * they have to differ, so they are generated rather than named.
+ */
+function clientId(): string
 {
+    return 'cid_'.Str::lower((string) Str::ulid());
+}
+
+function declare_(?string $url = null, ?string $client = null): void
+{
+    $url ??= 'https://legacy.acme.test/verify';
+    $client ??= FIRST_CLIENT;
+
     app(ManifestSyncService::class)->sync($client, new Manifest(
         version: 'v'.mt_rand(),
         permissions: [],
@@ -103,12 +129,17 @@ it('drops the approval when a different app claims the same url', function (): v
     declare_();
     LegacyLoginDeclarationRecord::query()->update(['approved_at' => now()]);
 
-    declare_('https://legacy.acme.test/verify', 'client-b');
+    declare_('https://legacy.acme.test/verify', SECOND_CLIENT);
 
     $record = LegacyLoginDeclarationRecord::query()->first();
 
     expect($record?->isApproved())->toBeFalse()
-        ->and($record?->client_id)->toBe('client-b');
+        ->and($record?->client_id)->toBe(SECOND_CLIENT)
+        // The id ARRIVED WHOLE. MySQL without strict mode stores a truncated prefix rather
+        // than refusing, and a client id that is four characters short matches no client —
+        // so the console names nobody, which is the state this whole test is about
+        // preventing. `toBe` above would catch it; this says what is being caught.
+        ->and(strlen((string) $record?->client_id))->toBe(strlen(SECOND_CLIENT));
 });
 
 /**

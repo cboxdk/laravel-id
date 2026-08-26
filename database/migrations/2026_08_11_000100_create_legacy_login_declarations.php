@@ -41,9 +41,20 @@ return new class extends Migration
             // event an operator most needs to see.
             $table->string('environment_id', 26)->unique();
 
-            // Which app proposed it. Kept so the console can show "this came from Acme
-            // Web" rather than an anonymous URL somebody has to take on trust.
-            $table->string('client_id', 26)->index();
+            /*
+             * Which app proposed it. Kept so the console can show "this came from Acme
+             * Web" rather than an anonymous URL somebody has to take on trust.
+             *
+             * NO LENGTH, like every other `client_id` column in this package. It was
+             * `string('client_id', 26)` — the ULID width of the three columns above it —
+             * and a client id is not a ULID: `ClientRegistryService` mints
+             * `'cid_'.Str::ulid()`, which is thirty characters. PostgreSQL refused the
+             * insert outright (`22001`), MySQL in strict mode refused it and without
+             * strict mode truncated the id to one that matches no client, and SQLite
+             * ignores declared widths so nothing said anything. The feature was unusable
+             * on both engines anybody deploys on.
+             */
+            $table->string('client_id')->index();
 
             $table->string('url', 512);
             $table->text('secret_encrypted');

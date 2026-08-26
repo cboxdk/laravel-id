@@ -17,6 +17,34 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`legacy_login_declarations.client_id` was four characters too narrow, and the feature
+  did not work on either server engine.** The column was declared `string('client_id', 26)`
+  — the ULID width, taken from the three genuine ULID columns above it in the same table.
+  A client id is not a ULID: `ClientRegistryService` mints `'cid_'.Str::ulid()`, which is
+  thirty characters.
+
+  PostgreSQL refused the insert outright — `SQLSTATE[22001] value too long for type
+  character varying(26)` — so declaring a legacy login through the manifest was impossible.
+  MySQL in strict mode refused it the same way; without strict mode it truncated the id to
+  a prefix matching no client, so the console could never name the app that proposed the
+  URL. SQLite ignores declared widths entirely.
+
+  The create migration is corrected and
+  `2026_08_26_000100_widen_the_legacy_login_client_id` repairs an install that already ran
+  it. Both state a width rather than a delta, so running both is harmless. There is no
+  backfill and none is possible: on the engines where the column was wrong, no row was ever
+  written.
+
+  **Why the engines matrix did not catch it.** The one test that writes this row declared
+  with `'client-a'` — eight characters, and nothing the registry could mint. A fixture
+  shaped unlike the data it stands for takes the engines' opinion out of the run. It now
+  mints ids the way the product does, and asserts the id arrived at full length, which is
+  the half a strict-mode-off MySQL would otherwise lose silently. `SchemaPortabilityTest`
+  gained a second sweep — "never declares an id column too narrow for the id it holds" —
+  that reads the prefix off `ClientRegistryService` rather than hard-coding thirty.
+
 ## [1.15.0] - 2026-08-18
 
 ### Fixed

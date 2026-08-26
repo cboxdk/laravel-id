@@ -65,3 +65,67 @@ it('never declares a blank-padded CHAR column in a migration', function (): void
 
     expect($offenders)->toBe([]);
 });
+
+/**
+ * A COLUMN MUST BE WIDE ENOUGH FOR THE ID IT NAMES.
+ *
+ * `legacy_login_declarations.client_id` was declared `string('client_id', 26)` — the ULID
+ * width, taken from the three columns above it, which are genuinely ULIDs. A client id is
+ * not: `ClientRegistryService` mints `'cid_'.Str::ulid()`, so every value is thirty
+ * characters. PostgreSQL refused the insert (`22001`), MySQL in strict mode refused it and
+ * without strict mode truncated the id to one that matches no client, and SQLite ignores
+ * declared widths so nothing said anything at all.
+ *
+ * The engine matrix did not catch it either, and that is the part worth remembering: the
+ * one test that writes this row passed `'client-a'` as the client id. A fixture shaped
+ * unlike the data it stands for takes the engines' opinion out of the run.
+ *
+ * The floor is DERIVED from the mint rather than written down here, so a change to the
+ * prefix moves this test with it instead of leaving a number behind that used to be right.
+ */
+it('never declares an id column too narrow for the id it holds', function (): void {
+    $registry = (string) File::get(dirname(__DIR__, 2).'/src/OAuthServer/ClientRegistryService.php');
+
+    expect(preg_match("/'client_id' => '([a-z]+_)'/", $registry, $mint))->toBe(
+        1,
+        'could not read the client id prefix off ClientRegistryService — has it moved?',
+    );
+
+    // The prefix plus a ULID. Named rather than inlined, because 26 is the number the
+    // sweep above is about and this is the number it is not.
+    $widths = [
+        'client_id' => strlen($mint[1]) + 26,
+    ];
+
+    $offenders = [];
+
+    $roots = [dirname(__DIR__, 2).'/database', dirname(__DIR__)];
+
+    $files = array_merge(...array_map(fn (string $root): array => File::allFiles($root), $roots));
+
+    foreach ($files as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $source = (string) $file->getContents();
+
+        foreach ($widths as $column => $minimum) {
+            preg_match_all("/->string\\(\\s*'{$column}'\\s*,\\s*(\\d+)\\s*\\)/", $source, $found, PREG_SET_ORDER);
+
+            foreach ($found as $declaration) {
+                if ((int) $declaration[1] < $minimum) {
+                    $offenders[] = sprintf(
+                        '%s declares %s at %d, and an id of that kind is %d characters',
+                        $file->getRelativePathname(),
+                        $column,
+                        (int) $declaration[1],
+                        $minimum,
+                    );
+                }
+            }
+        }
+    }
+
+    expect($offenders)->toBe([], implode("\n", $offenders));
+});
