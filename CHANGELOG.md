@@ -15,7 +15,7 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
-## [Unreleased]
+## [1.18.1] - 2026-08-27
 
 ### Fixed
 
