@@ -15,4 +15,11 @@ enum AccessKind: string
 {
     case Role = 'role';
     case Membership = 'membership';
+
+    /**
+     * A role held EVERYWHERE in the environment (`environment_role_assignments`), not
+     * inside one organization — reviewed only by an environment campaign, and revoked
+     * with `Roles::unassignEverywhere()`.
+     */
+    case EnvironmentRole = 'environment_role';
 }

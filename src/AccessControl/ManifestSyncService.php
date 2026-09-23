@@ -193,6 +193,14 @@ class ManifestSyncService implements AppManifests
                     'organization_id' => null,
                     'name' => $role->name,
                     'description' => $role->description,
+                    // The app owns this flag like it owns the name: a later manifest that
+                    // marks a role staff-only narrows it on the next sync, and one that
+                    // stops marking it widens it again. Existing MANUAL grants of a role
+                    // that becomes staff-only are kept, not revoked — the rule orphaning
+                    // follows, so a bad deploy cannot silently strip access — but no tenant
+                    // can make a new one, and directory-pushed grants are withdrawn on the
+                    // next reconcile, again exactly as for an orphaned role.
+                    'tenant_assignable' => $role->tenantAssignable,
                     'source' => RoleSource::Manifest->value,
                     'orphaned_at' => null,
                 ],

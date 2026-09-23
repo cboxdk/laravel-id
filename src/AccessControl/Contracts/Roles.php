@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl\Contracts;
 
 use Cbox\Id\AccessControl\Enums\GrantSource;
+use Cbox\Id\AccessControl\Exceptions\GrantRefused;
+use Cbox\Id\AccessControl\Exceptions\RoleNotTenantAssignable;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\Role;
@@ -16,8 +18,13 @@ interface Roles
      * Define (or fetch) a role. Org-wide when $clientId is null (its permissions
      * apply in every app's token); scoped to one app when $clientId is that app's
      * client id. Uniqueness is (organization_id, client_id, name).
+     *
+     * `$tenantAssignable` false defines a STAFF role: never offered to, nor accepted
+     * from, the organization plane (see {@see assertTenantAssignable()}). It applies
+     * when the role is created; an existing role is fetched unchanged — use
+     * {@see updateRole()} to change the flag on one.
      */
-    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null): Role;
+    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null, bool $tenantAssignable = true): Role;
 
     /**
      * Attach a permission to a role. The permission is resolved (and, if new,
@@ -50,9 +57,14 @@ interface Roles
     /**
      * Rename a role / edit its description, recording the change.
      *
+     * `$tenantAssignable` null leaves the staff flag as it is; a boolean sets it. The
+     * organization fence applies to it like every other field: a tenant (`$organizationId`
+     * set) resolves only its own roles, so it can never un-mark an environment's staff
+     * role.
+     *
      * @throws UnknownRole
      */
-    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null): Role;
+    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null, ?bool $tenantAssignable = null): Role;
 
     /**
      * Attach an ALREADY-DECLARED permission to a role by id, recording the change.
@@ -98,7 +110,59 @@ interface Roles
      */
     public function assertAssignableIn(string $organizationId, string $roleId): void;
 
+    /**
+     * The ENVIRONMENT plane's grant: any role this organization may hold, including a
+     * staff-only one. An environment administrator granting their support lead the
+     * vendor's "Support" role inside one customer — tenant-specific staff rights — is
+     * this call. A tenant-facing surface must use {@see assignAsTenant()} instead.
+     */
     public function assign(
+        string $organizationId,
+        string $userId,
+        string $roleId,
+        GrantSource $source = GrantSource::Manual,
+    ): RoleAssignment;
+
+    /*
+     * --------------------------------------------------------------------------
+     * The organization (tenant) plane
+     * --------------------------------------------------------------------------
+     * What a TENANT administrator may see and grant. The difference from assign() is
+     * staff roles (`tenant_assignable` false): the app vendor's own support and admin
+     * roles, which usually carry rights across every customer. A customer handing one
+     * to their own member would be a privilege escalation out of their tenancy, so the
+     * tenant plane neither lists them nor accepts their id.
+     */
+
+    /**
+     * The roles a tenant administrator of this organization may offer: its own roles
+     * plus the environment's shared ones, minus staff-only and orphaned roles. With
+     * `$clientId`, narrowed to that app's declared roles plus the app-agnostic ones.
+     * Sorted by name.
+     *
+     * @return list<Role>
+     */
+    public function tenantAssignableRoles(string $organizationId, ?string $clientId = null): array;
+
+    /**
+     * Refuse a role a tenant may not grant in this organization — the guard behind
+     * {@see tenantAssignableRoles()}, sharing its predicate so the list and the write
+     * cannot disagree.
+     *
+     * @throws RoleNotTenantAssignable (an {@see UnknownRole}, so existing "not found"
+     *                                 mappings keep holding)
+     */
+    public function assertTenantAssignable(string $organizationId, string $roleId): void;
+
+    /**
+     * {@see assign()}, from the organization plane: refuses a staff-only role before
+     * anything is written. Every tenant-facing grant path — a tenant console, an
+     * invitation carrying roles, a tenant-configured directory mapping — belongs here.
+     *
+     * @throws RoleNotTenantAssignable
+     * @throws GrantRefused
+     */
+    public function assignAsTenant(
         string $organizationId,
         string $userId,
         string $roleId,
@@ -138,9 +202,16 @@ interface Roles
      * for a support agent who acts across every customer, somebody who has joined no
      * organization, or a service provider with no tenancy of its own.
      *
-     * Only an environment-wide role (no organization, no declaring app) may be granted
-     * this way: one tenant's role handed out across the environment would give every
-     * other tenant a policy they did not define.
+     * Any role with no owning organization may be granted this way, whether it is
+     * app-agnostic (`client_id` null — it then appears in every app's token) or declared
+     * by one app (it then appears in THAT app's tokens only, never another's). One
+     * tenant's role handed out across the environment would give every other tenant a
+     * policy they did not define, so an organization's role is refused, as is an
+     * orphaned one.
+     *
+     * @throws UnknownRole
+     * @throws GrantRefused when segregation of duties refuses it in any organization the
+     *                      person belongs to
      */
     public function assignEverywhere(string $userId, string $roleId, GrantSource $source = GrantSource::Manual): EnvironmentRoleAssignment;
 
@@ -161,4 +232,12 @@ interface Roles
      * @return list<RoleAssignment>
      */
     public function assignmentsInOrganization(string $organizationId): array;
+
+    /**
+     * Every environment-wide grant in the environment, across all subjects — the grants
+     * an ENVIRONMENT access review enumerates. Ordered by subject, then role.
+     *
+     * @return list<EnvironmentRoleAssignment>
+     */
+    public function assignmentsEverywhere(): array;
 }

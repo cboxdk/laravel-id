@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer\Contracts;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 
 interface AuthorizationCodes
@@ -18,6 +19,10 @@ interface AuthorizationCodes
      * and the ID Token carries `sid`, and the session is recorded against the client so
      * ending it notifies the client (OIDC Back-Channel Logout 1.0). Without it the grant
      * works exactly as before and the client is only reachable by `sub`.
+     *
+     * `$actor` is set only for a support session's code ({@see SupportSessions}): the
+     * grant it redeems into is then minted with `act`, no refresh token, and a lifetime
+     * capped at the session's. Every ordinary code leaves it null.
      *
      * @param  list<string>  $scopes
      * @param  list<string>  $amr  authentication methods used at login
@@ -35,6 +40,7 @@ interface AuthorizationCodes
         array $amr = [],
         ?string $resource = null,
         ?string $sessionId = null,
+        ?ActingParty $actor = null,
     ): string;
 
     /**

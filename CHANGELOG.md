@@ -178,6 +178,38 @@ more trust than the wording it removes.
   - `oauth_session_participants` is pruned by `cbox-id:prune` once its session has ended
     (`cbox-id.prune.retention_days.oauth_session_participants`, default 30).
   - Recipe: [Receive back-channel logout](docs/cookbook/receive-back-channel-logout.md).
+- **Staff roles.** Roles gain `tenant_assignable` (default `true`, so no existing role
+  changes). `false` marks a staff role that the organization plane never lists and never
+  accepts: `Roles::tenantAssignableRoles()`, `assertTenantAssignable()` and
+  `assignAsTenant()` are the tenant plane's list and guard, built on one `Role` scope so
+  the two cannot drift. `assign()` stays the environment plane's call — how an environment
+  administrator gives staff rights inside one customer. App manifests declare it per role
+  as `"tenant_assignable": false`; the value must be a JSON boolean. It enters the
+  manifest checksum only when `false`, so every existing manifest hashes to the same bytes
+  in every SDK (new fixture case `staff_role`). `Roles::define()` and `updateRole()` take
+  the flag. `RoleNotTenantAssignable` extends `UnknownRole`.
+- **Environment-wide grants of one app's role.** `Roles::assignEverywhere()` accepts any
+  non-orphaned role no organization owns. An app-declared role granted everywhere is
+  stamped into that app's tokens only; an app-agnostic role into every app's. The two-app
+  leak test fails if the token issuer's client filter is removed.
+  `role.assigned_everywhere` / `role.unassigned_everywhere` carry `client_id`.
+- **Access reviews of environment-wide grants.** `AccessReviews::open(null, …)` reviews
+  every environment-wide grant (`AccessKind::EnvironmentRole`), and revoking one calls
+  `Roles::unassignEverywhere()`. `certify`, `revoke` and `close` take `null` for such a
+  campaign. An organization's campaign never includes them, and null matches only the
+  environment's campaign. New `Roles::assignmentsEverywhere()`.
+- **Support sessions (RFC 8693 `act`).** `SupportSessions::begin()` lets the vendor's
+  staff (the app's own `support:impersonate`, held environment-wide) or an environment
+  administrator (the caller asserts it) sign in to one first-party, environment-owned app
+  as an active member of an active organization, for a required reason and at most an hour
+  (`cbox-id.oauth.support_sessions.max_ttl` can only lower it). The app completes an
+  ordinary code exchange. Its access and ID Tokens carry `act: {sub}`, it gets no refresh
+  token, and nothing outlives the session. `issueCode()` mints further codes for the
+  session's own actor, and `end()` consumes outstanding codes and revokes every token the
+  session minted. Starting and ending are audited on the organization's trail and the
+  environment's. `support_session.started` is emitted to the organization and added to
+  the webhook catalogue. New contract `StaffAccess` (built-in: `DatabaseStaffAccess`;
+  `external` driver: `NullStaffAccess`, which denies).
 
 ### Changed
 
@@ -242,6 +274,17 @@ more trust than the wording it removes.
 - **Dynamic registration can no longer be used to claim a registered scope.** A
   self-registered client counts as a tenant, not as the environment, even though its owner
   column is null, and `allowed_scopes` cannot widen what a registered API allows.
+- **An environment-wide staff role no longer leaks into every app's tokens.** The only role
+  that could be granted everywhere was an app-agnostic one, so one app's "Support" role was
+  stamped into every other app's tokens in the same environment.
+- **Tenants cannot hand out staff roles**, directly or through a directory group mapping
+  (the customer's IdP decides who is in a group). A mapping whose role later becomes
+  staff-only has its pushed grant withdrawn at the next reconcile.
+- **Environment-wide grants were never reviewed.** Access-certification campaigns belonged
+  to one organization, so the largest grants in the system appeared in no campaign.
+- **`act` is a reserved claim** that a token-minting hook can neither forge nor rewrite.
+  Token exchange refuses a subject token carrying `act`, because the exchanged token
+  would drop it and restart the lifetime. Introspection returns `act`.
 
 ## [1.18.1] - 2026-08-27
 

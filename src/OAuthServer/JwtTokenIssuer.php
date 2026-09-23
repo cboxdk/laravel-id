@@ -19,10 +19,12 @@ use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
+use DateTimeInterface;
 use Illuminate\Support\Str;
 
 /**
@@ -49,7 +51,7 @@ class JwtTokenIssuer implements TokenIssuer
      * Enrichment that names any of these is dropped. `org_role` is among them because
      * it is authorization data an app enforces on: a hook must not promote anyone.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act'];
 
     public function __construct(
         private readonly TokenSigner $signer,
@@ -71,6 +73,23 @@ class JwtTokenIssuer implements TokenIssuer
     public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
         return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt);
+    }
+
+    public function issueActing(
+        Client $client,
+        string $userId,
+        ?string $organizationId,
+        array $scopes,
+        ActingParty $actor,
+        DateTimeInterface $notAfter,
+        ?string $resource = null,
+        ?string $dpopJkt = null,
+    ): IssuedToken {
+        // grantScopes() widens an EMPTY request to the client's whole registered set, which
+        // may name offline_access; an acted token must never claim a scope it cannot have.
+        $granted = array_values(array_filter($this->grantScopes($client, $scopes), fn (string $scope): bool => $scope !== 'offline_access'));
+
+        return $this->issue($client, $userId, $userId, $organizationId, $granted, $resource, $dpopJkt, $actor, $notAfter);
     }
 
     /**
@@ -153,9 +172,22 @@ class JwtTokenIssuer implements TokenIssuer
     }
 
     /**
-     * @param  list<string>  $scopes
+     * This token's lifetime: the client's, cut short so an acted token never outlives the
+     * support session behind it. Zero when the session is already over — an expired token
+     * is the fail-closed answer to a race the token endpoint's own check should have won.
      */
-    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null): IssuedToken
+    private function lifetime(Client $client, ?DateTimeInterface $notAfter): int
+    {
+        $ttl = $this->ttlFor($client);
+
+        return $notAfter === null ? $ttl : max(0, min($ttl, $notAfter->getTimestamp() - time()));
+    }
+
+    /**
+     * @param  list<string>  $scopes
+     * @param  ActingParty|null  $actor  set only for a support session's token (see issueActing())
+     */
+    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null): IssuedToken
     {
         // What this token is FOR — scopes, audience, and whose roles it carries — decided
         // once, here, for every grant type. See AudienceResolver.
@@ -164,6 +196,7 @@ class JwtTokenIssuer implements TokenIssuer
 
         $jti = (string) Str::ulid();
         $issuedAt = time();
+        $ttl = $this->lifetime($client, $notAfter);
 
         $claims = [
             'iss' => $this->issuers->issuer(),
@@ -173,7 +206,7 @@ class JwtTokenIssuer implements TokenIssuer
             'scope' => implode(' ', $scopes),
             'org' => $organizationId,
             'iat' => $issuedAt,
-            'exp' => $issuedAt + $this->ttlFor($client),
+            'exp' => $issuedAt + $ttl,
         ];
 
         // Carry the org's human-readable name alongside its id, so a relying party
@@ -245,6 +278,12 @@ class JwtTokenIssuer implements TokenIssuer
             }
         }
 
+        // RFC 8693 §4.1: who is REALLY holding a support session's token. Set before the
+        // hook runs, so a hook sees it, and reserved, so no hook can forge or strip it.
+        if ($actor !== null) {
+            $claims['act'] = $actor->claim();
+        }
+
         // Inline hook: let registered actions enrich the claims or veto issuance,
         // with the fully-assembled base claims in context. Runs before the jti row is
         // written, so a veto leaves nothing behind.
@@ -273,13 +312,15 @@ class JwtTokenIssuer implements TokenIssuer
             'organization_id' => $organizationId,
             'scopes' => $scopes,
             'audience' => $audience->resource,
-            'expires_at' => now()->addSeconds($this->ttlFor($client)),
+            'expires_at' => now()->addSeconds($ttl),
+            // So ending the support session can revoke what it minted.
+            'support_session_id' => $actor?->supportSessionId,
         ]);
 
         // Carry the GRANTED scopes back: grantScopes() may have filtered the request
         // down to the client's registered set, and RFC 6749 §5.1 makes the token
         // endpoint echo `scope` whenever that happened. Without this the caller had no
         // way to know what it actually got.
-        return new IssuedToken($token, $jti, $this->ttlFor($client), $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes, $audience->resource);
+        return new IssuedToken($token, $jti, $ttl, $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes, $audience->resource);
     }
 }

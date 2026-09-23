@@ -34,5 +34,12 @@ readonly class AuthorizedGrant
          * source of the ID Token's `sid` (OIDC Back-Channel Logout 1.0 §2.1).
          */
         public ?string $sessionId = null,
+
+        /**
+         * Who is really acting, when this grant came from a support session's code. The
+         * token endpoint mints such a grant with `act`, no refresh token and the
+         * session's lifetime cap — and only after re-reading the session.
+         */
+        public ?ActingParty $actor = null,
     ) {}
 }

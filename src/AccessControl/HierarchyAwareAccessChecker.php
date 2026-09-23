@@ -67,6 +67,13 @@ class HierarchyAwareAccessChecker implements AccessChecker
 
         // Only roles relevant to THIS app: org-wide roles (client_id null) plus the
         // app's own declared roles. Another app's roles never leak into this token.
+        //
+        // THIS IS THE FILTER FOR BOTH KINDS OF GRANT. roleIdsFor() returns org-scoped and
+        // environment-wide role ids together, and an environment-wide grant may now name
+        // one app's declared role (a staff "Support" role an app ships), so this single
+        // predicate is what keeps cadastre's staff role out of the tax app's token. It
+        // runs on the union deliberately: one filter in one place, rather than a second
+        // copy on the environment half that could drift from the first.
         $roles = Role::query()
             ->whereIn('id', $roleIds)
             ->where(function ($query) use ($clientId): void {
@@ -122,13 +129,16 @@ class HierarchyAwareAccessChecker implements AccessChecker
         // raw write from host code, a future console action, or the class of bug that
         // comment describes would put a tenant's role into EVERY organization's tokens,
         // silently. It costs one subquery to make both halves tell the same story.
+        //
+        // No `client_id` predicate here any more: an app's own declared role may be held
+        // environment-wide (a staff role), and which APP it reaches is forToken()'s
+        // question, answered there for both halves at once.
         $everywhere = array_values(array_filter(
             EnvironmentRoleAssignment::query()
                 ->where('user_id', $userId)
                 ->whereIn('role_id', Role::query()
                     ->select('id')
-                    ->whereNull('organization_id')
-                    ->whereNull('client_id'))
+                    ->whereNull('organization_id'))
                 ->pluck('role_id')
                 ->all(),
             'is_string',

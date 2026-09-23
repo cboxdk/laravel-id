@@ -23,6 +23,13 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
  * Grants are captured at their own organization (a role inherited from an ancestor
  * org is certified at that ancestor, where the assignment physically lives).
  *
+ * A NULL ORGANIZATION NAMES THE ENVIRONMENT PLANE, as it does on the Roles contract:
+ * `open(null, ...)` reviews every environment-wide role grant (a staff role held across
+ * every customer), and certify/revoke/close take null for such a campaign. An
+ * organization's campaign never includes environment-wide grants — a tenant reviewer
+ * must not be able to revoke, or even see, the vendor's staff grants — and an
+ * environment campaign never includes an organization's.
+ *
  * Everything is environment-owned and audited; each decision and application is
  * correlated by the campaign id on the audit trail.
  */
@@ -30,11 +37,12 @@ interface AccessReviews
 {
     /**
      * Open a campaign: snapshot every DIRECT role assignment and membership in the
-     * organization as pending items. `pendingPolicy` decides the fate of items still
+     * organization as pending items — or, with a null organization, every
+     * environment-wide role grant. `pendingPolicy` decides the fate of items still
      * un-reviewed at close (default Revoke — deny-by-default).
      */
     public function open(
-        string $organizationId,
+        ?string $organizationId,
         string $name,
         ?DateTimeInterface $dueAt = null,
         PendingPolicy $pendingPolicy = PendingPolicy::Revoke,
@@ -47,7 +55,7 @@ interface AccessReviews
      * @throws UnknownCertificationItem
      * @throws CampaignClosed
      */
-    public function certify(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem;
+    public function certify(string $itemId, string $reviewerId, ?string $organizationId, ?string $note = null): CertificationItem;
 
     /**
      * Revoke an item (the access should be removed). The actual removal happens when
@@ -56,7 +64,7 @@ interface AccessReviews
      * @throws UnknownCertificationItem
      * @throws CampaignClosed
      */
-    public function revoke(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem;
+    public function revoke(string $itemId, string $reviewerId, ?string $organizationId, ?string $note = null): CertificationItem;
 
     /**
      * Close the campaign: apply every revoked item (and every pending item per the
@@ -67,7 +75,7 @@ interface AccessReviews
      *
      * @throws UnknownCampaign
      */
-    public function close(string $campaignId, string $organizationId): CertificationCampaign;
+    public function close(string $campaignId, ?string $organizationId): CertificationCampaign;
 
     /**
      * The items of a campaign (the review worklist / evidence).

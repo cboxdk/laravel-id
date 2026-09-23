@@ -9,6 +9,7 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AuthorizationCode;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\SessionParticipation;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +33,7 @@ class AuthorizationCodeService implements AuthorizationCodes
         array $amr = [],
         ?string $resource = null,
         ?string $sessionId = null,
+        ?ActingParty $actor = null,
     ): string {
         // S256 ONLY, REFUSED AT ISSUE TIME. Redemption always computes S256, so a code
         // minted with `plain` could never be redeemed — it failed closed, which is the
@@ -70,6 +72,9 @@ class AuthorizationCodeService implements AuthorizationCodes
             // The sign-in session the person approved from: the ID Token's `sid`, and
             // how Back-Channel Logout knows to tell this client when that session ends.
             'session_id' => $sessionId !== null && $sessionId !== '' ? $sessionId : null,
+            // Who is really behind this code, when it is a support session's.
+            'actor_id' => $actor?->subject,
+            'support_session_id' => $actor?->supportSessionId,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
@@ -130,8 +135,27 @@ class AuthorizationCodeService implements AuthorizationCodes
                 is_array($record->amr) ? array_values($record->amr) : [],
                 $record->resource,
                 $record->session_id,
+                $this->actingParty($record),
             );
         });
+    }
+
+    /**
+     * The acting party a support session's code was minted for, or null for an ordinary
+     * code. Both columns or neither: a half-set pair is not a code this service wrote, and
+     * it is refused rather than guessed into either kind of grant.
+     */
+    private function actingParty(AuthorizationCode $record): ?ActingParty
+    {
+        if ($record->actor_id === null && $record->support_session_id === null) {
+            return null;
+        }
+
+        if ($record->actor_id === null || $record->support_session_id === null) {
+            throw InvalidGrant::make('code invalid, expired or already used');
+        }
+
+        return new ActingParty($record->actor_id, $record->support_session_id);
     }
 
     private function locked(string $code): ?AuthorizationCode

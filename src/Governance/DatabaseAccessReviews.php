@@ -28,6 +28,7 @@ use DateTimeInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
+use LogicException;
 
 /**
  * Database-backed {@see AccessReviews}. This class carries the certification
@@ -52,7 +53,7 @@ class DatabaseAccessReviews implements AccessReviews
     ) {}
 
     public function open(
-        string $organizationId,
+        ?string $organizationId,
         string $name,
         ?DateTimeInterface $dueAt = null,
         PendingPolicy $pendingPolicy = PendingPolicy::Revoke,
@@ -92,27 +93,27 @@ class DatabaseAccessReviews implements AccessReviews
         return $campaign;
     }
 
-    public function certify(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem
+    public function certify(string $itemId, string $reviewerId, ?string $organizationId, ?string $note = null): CertificationItem
     {
         return $this->decide($itemId, $reviewerId, $organizationId, ReviewDecision::Certified, 'governance.item_certified', $note);
     }
 
-    public function revoke(string $itemId, string $reviewerId, string $organizationId, ?string $note = null): CertificationItem
+    public function revoke(string $itemId, string $reviewerId, ?string $organizationId, ?string $note = null): CertificationItem
     {
         return $this->decide($itemId, $reviewerId, $organizationId, ReviewDecision::Revoked, 'governance.item_revoked', $note);
     }
 
-    public function close(string $campaignId, string $organizationId): CertificationCampaign
+    public function close(string $campaignId, ?string $organizationId): CertificationCampaign
     {
         $this->environments()->requireEnvironment();
 
         // Scope the lookup to the acting org. Closing APPLIES every revoke against real
         // memberships and roles, so a campaign id from another tenant would strip that
         // tenant's access. Filtering in the query (rather than fetch-then-compare) means
-        // a foreign id is indistinguishable from a missing one.
-        $campaign = CertificationCampaign::query()
-            ->whereKey($campaignId)
-            ->where('organization_id', $organizationId)
+        // a foreign id is indistinguishable from a missing one — and a tenant naming the
+        // environment's campaign is refused the same way, because null only ever matches
+        // a null and a tenant's id never does.
+        $campaign = $this->ownedBy(CertificationCampaign::query()->whereKey($campaignId), $organizationId)
             ->first();
 
         if ($campaign === null) {
@@ -185,23 +186,57 @@ class DatabaseAccessReviews implements AccessReviews
      */
     private function items(string $campaignId): Builder
     {
-        $organizationId = CertificationCampaign::query()->whereKey($campaignId)->value('organization_id');
+        $campaign = CertificationCampaign::query()->whereKey($campaignId)->first(['id', 'organization_id']);
 
-        return CertificationItem::query()
-            ->where('campaign_id', $campaignId)
-            ->when(
-                is_string($organizationId) && $organizationId !== '',
-                fn (Builder $query) => $query->where('organization_id', $organizationId),
-                fn (Builder $query) => $query->whereRaw('1 = 0'),
-            );
+        // An ENVIRONMENT campaign has a null organization, and its items do too; the
+        // fence then pins the items to the environment plane, so an organization's item
+        // can never be read through one. A campaign that does not resolve still matches
+        // nothing — null is a statement about the campaign, never about its absence.
+        if ($campaign === null) {
+            return CertificationItem::query()->whereRaw('1 = 0');
+        }
+
+        return $this->ownedBy(
+            CertificationItem::query()->where('campaign_id', $campaignId),
+            $campaign->organization_id,
+        );
     }
 
     /**
-     * Capture every direct role assignment and membership in the org as pending items.
+     * `organization_id = ?`, where null means the environment plane (`IS NULL`) rather
+     * than a comparison with NULL that matches nothing.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
      */
-    private function snapshot(CertificationCampaign $campaign, string $organizationId): int
+    private function ownedBy(Builder $query, ?string $organizationId): Builder
+    {
+        return $organizationId === null
+            ? $query->whereNull('organization_id')
+            : $query->where('organization_id', $organizationId);
+    }
+
+    /**
+     * Capture every direct role assignment and membership in the org as pending items —
+     * or, for the environment's own campaign, every environment-wide role grant.
+     */
+    private function snapshot(CertificationCampaign $campaign, ?string $organizationId): int
     {
         $count = 0;
+
+        if ($organizationId === null) {
+            // The grants that belong to no organization, and that no organization's
+            // campaign could ever see. A staff role held across every customer is the
+            // largest grant in the system, and until this existed it was never reviewed.
+            foreach ($this->roles->assignmentsEverywhere() as $assignment) {
+                $this->makeItem($campaign, AccessKind::EnvironmentRole, $assignment->user_id, $assignment->role_id, null, $assignment->source->value);
+                $count++;
+            }
+
+            return $count;
+        }
 
         foreach ($this->roles->assignmentsInOrganization($organizationId) as $assignment) {
             $this->makeItem($campaign, AccessKind::Role, $assignment->user_id, $assignment->role_id, $assignment->organization_id, $assignment->source->value);
@@ -221,7 +256,7 @@ class DatabaseAccessReviews implements AccessReviews
         AccessKind $type,
         string $subjectId,
         string $accessRef,
-        string $organizationId,
+        ?string $organizationId,
         ?string $source,
     ): void {
         $item = new CertificationItem;
@@ -239,7 +274,7 @@ class DatabaseAccessReviews implements AccessReviews
         $item->save();
     }
 
-    private function decide(string $itemId, string $reviewerId, string $organizationId, ReviewDecision $decision, string $action, ?string $note): CertificationItem
+    private function decide(string $itemId, string $reviewerId, ?string $organizationId, ReviewDecision $decision, string $action, ?string $note): CertificationItem
     {
         $this->environments()->requireEnvironment();
 
@@ -251,9 +286,7 @@ class DatabaseAccessReviews implements AccessReviews
 
         // The item's campaign must belong to the ACTING org — an item id alone is not
         // authorization to decide it, and a decision here is applied on close.
-        $campaign = CertificationCampaign::query()
-            ->whereKey($item->campaign_id)
-            ->where('organization_id', $organizationId)
+        $campaign = $this->ownedBy(CertificationCampaign::query()->whereKey($item->campaign_id), $organizationId)
             ->first();
 
         if ($campaign === null || $campaign->isClosed()) {
@@ -307,14 +340,30 @@ class DatabaseAccessReviews implements AccessReviews
         $this->applyRevoke($campaign, $item);
     }
 
+    /**
+     * The organization an org-plane item's grant lives in. Such an item always has one —
+     * only an environment item has none — so a null here is a corrupt row, and revoking
+     * "in no organization" must never be guessed at.
+     */
+    private function itemOrganization(CertificationItem $item): string
+    {
+        if ($item->organization_id === null) {
+            throw new LogicException("Certification item [{$item->id}] reviews an organization grant but names no organization.");
+        }
+
+        return $item->organization_id;
+    }
+
     private function applyRevoke(CertificationCampaign $campaign, CertificationItem $item): void
     {
         try {
-            if ($item->access_type === AccessKind::Role) {
-                $this->roles->unassign($item->organization_id, $item->subject_id, $item->access_ref);
-            } else {
-                $this->memberships->remove($item->organization_id, $item->subject_id);
-            }
+            match ($item->access_type) {
+                AccessKind::Role => $this->roles->unassign($this->itemOrganization($item), $item->subject_id, $item->access_ref),
+                AccessKind::Membership => $this->memberships->remove($this->itemOrganization($item), $item->subject_id),
+                // The environment-wide grant itself — every organization at once, which
+                // is what certifying it away means.
+                AccessKind::EnvironmentRole => $this->roles->unassignEverywhere($item->subject_id, $item->access_ref),
+            };
         } catch (LastOwner $e) {
             // A domain guard refused the revoke (removing an org's last owner). Record
             // it as un-applied with the reason and audit it — never silently drop it.

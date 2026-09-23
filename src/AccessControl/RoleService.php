@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\GrantRefused;
+use Cbox\Id\AccessControl\Exceptions\RoleNotTenantAssignable;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
@@ -31,11 +32,11 @@ class RoleService implements Roles
         private readonly GrantGuard $grants,
     ) {}
 
-    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null): Role
+    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null, bool $tenantAssignable = true): Role
     {
         return Role::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'client_id' => $clientId, 'name' => $name],
-            ['description' => $description],
+            ['description' => $description, 'tenant_assignable' => $tenantAssignable],
         );
     }
 
@@ -79,17 +80,28 @@ class RoleService implements Roles
         ]);
     }
 
-    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null): Role
+    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null, ?bool $tenantAssignable = null): Role
     {
         $role = $this->requireRole($roleId, $organizationId);
 
-        $before = ['name' => $role->name, 'description' => $role->description];
+        $before = ['name' => $role->name, 'description' => $role->description, 'tenant_assignable' => $role->tenant_assignable];
 
         $role->name = $name;
         $role->description = $description;
+
+        if ($tenantAssignable !== null) {
+            $role->tenant_assignable = $tenantAssignable;
+        }
+
         $role->save();
 
-        $this->recordRoleChange($role, 'role.updated', ['from' => $before, 'to' => ['name' => $name, 'description' => $description]]);
+        // The staff flag rides the same `role.updated` entry as a rename, with before and
+        // after, because "who may hand this role out" changing is exactly the kind of edit
+        // an auditor looks for and should not have to infer from a later grant.
+        $this->recordRoleChange($role, 'role.updated', [
+            'from' => $before,
+            'to' => ['name' => $name, 'description' => $description, 'tenant_assignable' => $role->tenant_assignable],
+        ]);
 
         return $role;
     }
@@ -176,7 +188,7 @@ class RoleService implements Roles
 
             foreach ($heldEverywhere as $assignment) {
                 $userIds[] = $assignment->user_id;
-                $this->emitAndAudit(null, $assignment->user_id, $role->id, 'role.unassigned_everywhere');
+                $this->emitAndAudit(null, $assignment->user_id, $role->id, 'role.unassigned_everywhere', ['client_id' => $role->client_id]);
             }
 
             // Folded into the same list, so `role.deleted`'s `user_ids` names everybody
@@ -332,6 +344,49 @@ class RoleService implements Roles
         }
     }
 
+    public function tenantAssignableRoles(string $organizationId, ?string $clientId = null): array
+    {
+        return array_values(Role::query()
+            ->tenantAssignable($organizationId, $clientId)
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get()
+            ->all());
+    }
+
+    /**
+     * The organization-plane guard.
+     *
+     * The id is bound INTO the same predicate the tenant's role list uses, rather than
+     * loaded and then inspected: a staff role and another tenant's role are refused by
+     * the one query that decides what the tenant may see, so the list and the write
+     * cannot drift apart, and no caller-side scope can make it pass by accident.
+     *
+     * @throws RoleNotTenantAssignable
+     */
+    public function assertTenantAssignable(string $organizationId, string $roleId): void
+    {
+        $assignable = Role::query()
+            ->whereKey($roleId)
+            ->tenantAssignable($organizationId)
+            ->exists();
+
+        if (! $assignable) {
+            throw RoleNotTenantAssignable::forRole($roleId);
+        }
+    }
+
+    public function assignAsTenant(
+        string $organizationId,
+        string $userId,
+        string $roleId,
+        GrantSource $source = GrantSource::Manual,
+    ): RoleAssignment {
+        $this->assertTenantAssignable($organizationId, $roleId);
+
+        return $this->assign($organizationId, $userId, $roleId, $source);
+    }
+
     /**
      * Grant a role EVERYWHERE in this environment, rather than inside one organization.
      *
@@ -339,11 +394,20 @@ class RoleService implements Roles
      * who acts across every customer, somebody who has not joined an organization, and
      * any service provider with no tenancy of its own to hang a grant on.
      *
-     * ONLY AN ENVIRONMENT-WIDE ROLE MAY BE GRANTED THIS WAY. A role owned by one
+     * ONLY A ROLE NO ORGANIZATION OWNS MAY BE GRANTED THIS WAY. A role owned by one
      * organization is that tenant's own policy, named by them and meaning what they say
      * it means; handing it to somebody across the whole environment would grant every
      * other tenant a role they did not define and cannot see. That refusal is the one
      * guard on this path that is not merely tidy.
+     *
+     * AN APP'S OWN ROLES ARE ACCEPTED. This used to refuse any role with a `client_id`,
+     * on the grounds that an app role granted everywhere would put one app's vocabulary
+     * into every tenant — and the consequence was that the only staff role anybody could
+     * grant was an app-agnostic one, which then appeared in EVERY app's token in the
+     * environment: a cadastre "Support" role riding into the tax app's tokens. An
+     * app-declared role granted everywhere now reaches that app's tokens and no other's;
+     * the read side filters by client exactly as it does for an organization grant
+     * ({@see HierarchyAwareAccessChecker::forToken()}).
      *
      * @throws UnknownRole when the role does not exist, is orphaned, or belongs to one
      *                     organization
@@ -353,14 +417,13 @@ class RoleService implements Roles
         string $roleId,
         GrantSource $source = GrantSource::Manual,
     ): EnvironmentRoleAssignment {
-        $assignable = Role::query()
+        $role = Role::query()
             ->whereKey($roleId)
             ->whereNull('organization_id')
-            ->whereNull('client_id')
             ->whereNull('orphaned_at')
-            ->exists();
+            ->first();
 
-        if (! $assignable) {
+        if ($role === null) {
             throw UnknownRole::make($roleId);
         }
 
@@ -392,8 +455,13 @@ class RoleService implements Roles
         );
 
         // Same rule as assign(): announce a state change, never a call.
+        //
+        // WITH THE ROLE'S APP. A downstream mirror reconciling off this event has to know
+        // which application the grant reaches — an app-agnostic staff role and one app's
+        // "Support" are very different grants — and the role row is the only place it can
+        // learn that from after the fact.
         if ($assignment->wasRecentlyCreated) {
-            $this->emitAndAudit(null, $userId, $roleId, 'role.assigned_everywhere');
+            $this->emitAndAudit(null, $userId, $roleId, 'role.assigned_everywhere', ['client_id' => $role->client_id]);
         }
 
         return $assignment;
@@ -434,7 +502,9 @@ class RoleService implements Roles
             ->delete();
 
         if ($deleted > 0) {
-            $this->emitAndAudit(null, $userId, $roleId, 'role.unassigned_everywhere');
+            $this->emitAndAudit(null, $userId, $roleId, 'role.unassigned_everywhere', [
+                'client_id' => Role::query()->whereKey($roleId)->value('client_id'),
+            ]);
         }
     }
 
@@ -525,6 +595,15 @@ class RoleService implements Roles
             ->all());
     }
 
+    public function assignmentsEverywhere(): array
+    {
+        return array_values(EnvironmentRoleAssignment::query()
+            ->orderBy('user_id')
+            ->orderBy('role_id')
+            ->get()
+            ->all());
+    }
+
     /**
      * @param  string|null  $organizationId  null for an environment-wide grant, which
      *                                       belongs to no tenant. Both the event and the
@@ -532,10 +611,12 @@ class RoleService implements Roles
      *                                       files the entry on the ENVIRONMENT's chain
      *                                       rather than a tenant's, which is where a
      *                                       grant that spans every tenant belongs.
+     * @param  array<string, mixed>  $context  extra facts about the grant, carried on both
+     *                                         the event and the audit entry
      */
-    private function emitAndAudit(?string $organizationId, string $userId, string $roleId, string $action): void
+    private function emitAndAudit(?string $organizationId, string $userId, string $roleId, string $action, array $context = []): void
     {
-        $this->events->emit(new DomainEvent($action, ['user_id' => $userId, 'role_id' => $roleId], $organizationId));
+        $this->events->emit(new DomainEvent($action, ['user_id' => $userId, 'role_id' => $roleId] + $context, $organizationId));
 
         $this->audit->record(new AuditEvent(
             action: $action,
@@ -543,7 +624,7 @@ class RoleService implements Roles
             organizationId: $organizationId,
             targetType: 'user',
             targetId: $userId,
-            context: ['role_id' => $roleId],
+            context: ['role_id' => $roleId] + $context,
         ));
     }
 }

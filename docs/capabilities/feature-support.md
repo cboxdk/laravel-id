@@ -51,6 +51,9 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Bring-your-own RBAC driver | **Contract only** | Switching the driver away from `builtin` binds stubs that refuse every call until you supply an adapter. |
 | Group → role mapping from the directory | **Full** | SCIM group membership changes reconcile role assignments. |
 | App-declared role manifests | **Full** | Apps publish their own roles/permissions over HTTP; fetching is SSRF-guarded and syncs hourly. |
+| Staff roles (not tenant-assignable) | **Full** | `tenant_assignable: false` on a role; the tenant plane neither lists nor accepts it, directory mappings refuse it. |
+| Environment-wide grants of one app's role | **Full** | Stamped only into that app's tokens; app-agnostic roles reach every app. |
+| Support sessions (act as a user) | **Partial** | Code-flow sign-in as a member with `act`, no refresh, ≤ 60 min, audited on both sides. **First-party, environment-owned apps only.** The staff-facing UI and the app's handling of `act` are the host's. |
 | XACML | **No** | |
 
 ## Organizations & tenancy
@@ -83,7 +86,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 |---|---|---|
 | Access-certification campaigns | **Full** | Snapshot, certify/revoke, apply on close. Revocations are genuinely applied, and a refusal (last owner, say) is recorded with its reason rather than dropped. Un-reviewed items default to *revoke*. Overdue campaigns close on a schedule. |
 | Segregation of Duties | **Partial** | Pre-grant gate plus conflict scanning, with reasoned decisions. **Ignores hierarchy-inherited roles.** |
-| Scope of both | **Partial** | RBAC role assignments and organization memberships only. **Entitlements and ReBAC tuples are out of scope** — ReBAC tuples have no enumeration surface to certify against. |
+| Scope of both | **Partial** | RBAC role assignments (organization and environment-wide) and organization memberships only. **Entitlements and ReBAC tuples are out of scope** — ReBAC tuples have no enumeration surface to certify against. |
 
 ## Audit & observability
 

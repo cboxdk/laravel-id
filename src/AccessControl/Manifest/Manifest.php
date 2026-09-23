@@ -50,12 +50,34 @@ readonly class Manifest
                     'name' => $r->name,
                     'description' => $r->description,
                     'permissions' => $this->sortedStrings($r->permissions),
-                ],
+                ] + $this->staffMarker($r),
                 $this->sortedRoles(),
             ),
         ];
 
         return hash('sha256', (string) json_encode($canonical));
+    }
+
+    /**
+     * A staff-only role's marker in the canonical form — present ONLY when the role is
+     * staff-only.
+     *
+     * It has to be in the checksum at all, because an unchanged checksum skips the sync:
+     * an app that marks its "Support" role staff-only in a new deploy would otherwise
+     * keep it assignable by every tenant, silently, for as long as nothing else in the
+     * manifest changed.
+     *
+     * And it is present only when FALSE because the canonical form is a cross-SDK
+     * contract (tests/Fixtures/AccessControl/manifest_hash.json, asserted by id-js,
+     * id-python and id-go too). Every manifest that declares no staff role — every
+     * manifest that exists today — hashes to exactly the bytes it always has, so no
+     * SDK's checksum drifts and no app re-syncs for nothing.
+     *
+     * @return array{tenant_assignable?: false}
+     */
+    private function staffMarker(DeclaredRole $role): array
+    {
+        return $role->tenantAssignable ? [] : ['tenant_assignable' => false];
     }
 
     /**

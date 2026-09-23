@@ -618,6 +618,16 @@ return [
         ],
 
         /*
+         * Support sessions (RFC 8693 `act`): staff acting as a customer's user in one
+         * app. `max_ttl` is the longest a session — and every token minted for it — may
+         * live, in seconds. It can only LOWER the one-hour ceiling, which is fixed in
+         * code; a larger value is treated as 3600, and nothing goes below 60.
+         */
+        'support_sessions' => [
+            'max_ttl' => env('CBOX_ID_SUPPORT_SESSION_MAX_TTL', 3600),
+        ],
+
+        /*
          * `POST /oauth/decisions` — the authorization decision endpoint.
          *
          * `max_batch` caps how many permission checks (and how many entitlement
