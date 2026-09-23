@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\Organization\Contracts\CustomerApiKeys;
 use Cbox\Id\Organization\Contracts\Memberships;
@@ -144,4 +145,40 @@ it('keeps personal-token introspection to personal tokens', function (): void {
     $this->withBasicAuth($this->tax->client->client_id, $this->tax->secret)
         ->postJson('/oauth/api-keys/verify', ['key' => $pat->plaintext])
         ->assertOk()->assertExactJson(['active' => false]);
+});
+
+/*
+ * An app linked to a registered API (FC) verifies its keys exactly as before: the key is
+ * bound to the app's client_id, the API names that same client_id for its roles, and the
+ * permissions are re-capped against that app's roles. Registering the API must neither
+ * break verification nor let a different client — the API's other callers — read the key.
+ */
+it('verifies a key for an app linked to a registered API through that app\'s credentials', function (): void {
+    $this->makeApi('https://tax.example.test', ['returns:read'], clientId: $this->tax->client->client_id);
+    $gateway = $this->makeClient(['returns:read']);
+
+    $this->withBasicAuth($this->tax->client->client_id, $this->tax->secret)
+        ->postJson('/oauth/api-keys/verify', ['key' => $this->key->plaintext])
+        ->assertOk()
+        ->assertJsonPath('active', true)
+        ->assertJsonPath('client_id', $this->tax->client->client_id)
+        ->assertJsonPath('permissions', ['returns:read']);
+
+    // A client holding the API's scope is not the API's app: it cannot read the key.
+    $this->withBasicAuth($gateway->client->client_id, $gateway->secret)
+        ->postJson('/oauth/api-keys/verify', ['key' => $this->key->plaintext])
+        ->assertOk()
+        ->assertExactJson(['active' => false]);
+})->group('security');
+
+it('keeps verifying through the old secret and the new one while a rotation overlaps', function (): void {
+    $this->makeApi('https://tax.example.test', ['returns:read'], clientId: $this->tax->client->client_id);
+    $rotated = app(ClientRegistry::class)->rotateSecret($this->tax->client, 3600);
+
+    foreach ([$this->tax->secret, $rotated->secret] as $secret) {
+        $this->withBasicAuth($this->tax->client->client_id, $secret)
+            ->postJson('/oauth/api-keys/verify', ['key' => $this->key->plaintext])
+            ->assertOk()
+            ->assertJsonPath('active', true);
+    }
 });
