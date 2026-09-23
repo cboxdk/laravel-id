@@ -34,7 +34,13 @@ interface Invitations
      */
     public function accept(string $token, string $subjectId): Membership;
 
-    public function revoke(string $organizationId, string $invitationId): void;
+    /**
+     * Revoke a pending invitation so its token stops working. Bound to the organization:
+     * an invitation id belonging to another organization is not touched. Idempotent — an
+     * invitation that is no longer pending is left as it is. `$revokedBy` attributes the
+     * audit entry; emits `invitation.revoked`.
+     */
+    public function revoke(string $organizationId, string $invitationId, ?string $revokedBy = null): void;
 
     public function byToken(string $token): ?Invitation;
 

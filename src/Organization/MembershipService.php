@@ -20,6 +20,7 @@ use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Enums\MembershipStatus;
 use Cbox\Id\Organization\Exceptions\LastOwner;
+use Cbox\Id\Organization\Exceptions\OwnershipTransferRefused;
 use Cbox\Id\Organization\Models\Environment;
 use Cbox\Id\Organization\Models\Membership;
 use Cbox\Id\Organization\Models\Organization;
@@ -117,6 +118,12 @@ class MembershipService implements Memberships
             // case-variant input made the audit trail disagree with the stored role.
             $this->emitAndAudit($organizationId, $userId, 'organization.member_added', ['role' => $role->value]);
 
+            $this->announce('membership.created', $organizationId, $userId, [
+                'role' => $role->value,
+                'status' => MembershipStatus::Active->value,
+                'invited_by' => $invitedBy,
+            ]);
+
             return $membership;
         }));
     }
@@ -127,13 +134,26 @@ class MembershipService implements Memberships
             $membership = Membership::query()->where('user_id', $userId)->firstOrFail();
 
             // Demoting the sole owner would orphan the org — never allow it.
-            if ($membership->role === MembershipRole::Owner && $role !== MembershipRole::Owner && $this->ownerCount() <= 1) {
+            if ($membership->role === MembershipRole::Owner && $role !== MembershipRole::Owner && $this->ownerCount($organizationId) <= 1) {
                 throw LastOwner::make($organizationId);
             }
+
+            $previous = $membership->role;
 
             $membership->update(['role' => $role]);
 
             $this->emitAndAudit($organizationId, $userId, 'organization.member_role_changed', ['role' => $role->value]);
+
+            // Only for a change that happened. The legacy event above has always fired on
+            // a no-op too, and consumers built on it keep that; the new one says "updated"
+            // and a write that changed nothing is not an update.
+            if ($previous !== $role) {
+                $this->announce('membership.updated', $organizationId, $userId, [
+                    'role' => $role->value,
+                    'previous_role' => $previous->value,
+                    'reason' => 'role_changed',
+                ]);
+            }
 
             return $membership;
         }));
@@ -142,33 +162,206 @@ class MembershipService implements Memberships
     public function remove(string $organizationId, string $userId): void
     {
         $this->tenant()->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $userId): void {
-            $membership = Membership::query()->where('user_id', $userId)->first();
+            $membership = Membership::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->lockForUpdate()
+                ->first();
 
-            if ($membership !== null && $membership->role === MembershipRole::Owner && $this->ownerCount() <= 1) {
+            if ($membership !== null && $membership->role === MembershipRole::Owner && $this->ownerCount($organizationId) <= 1) {
                 throw LastOwner::make($organizationId);
             }
 
-            Membership::query()->where('user_id', $userId)->delete();
-
-            // Drop the RBAC grants with the membership. Assignments are read by
-            // (organization, user) with no membership join, so leaving them behind is not
-            // untidiness: re-adding the person later silently restores privileges nobody
-            // re-granted, and anything reading assignments directly still sees them held.
-            //
-            // A deployment that binds EXTERNAL RBAC owns its own grants and has none here
-            // to revoke — that refusal is the contract working, not a failure to remove a
-            // member, so it does not abort the removal.
-            try {
-                $this->roles->unassignAll($organizationId, $userId);
-            } catch (ExternalRbacNotBound) {
-                // Nothing of ours to revoke.
-            }
-
-            $this->emitAndAudit($organizationId, $userId, 'organization.member_removed', []);
+            $this->detach($organizationId, $userId, $membership, 'removed');
         }));
     }
 
-    /** Owners in the current tenant scope. */
+    public function leave(string $organizationId, string $userId): void
+    {
+        $this->tenant()->runAs(GenericTenant::of($organizationId), fn () => DB::transaction(function () use ($organizationId, $userId): void {
+            $membership = Membership::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->lockForUpdate()
+                ->first();
+
+            // Idempotent. Leaving somewhere you are not is already done, and answering a
+            // retried request with an error would tell the person their leave failed.
+            if ($membership === null) {
+                return;
+            }
+
+            // The same locked count remove() uses, so an owner leaving at the same moment
+            // as the only other owner cannot both succeed. The refusal is the LEAVING one:
+            // it tells the person what to do instead, not just which invariant held.
+            if ($membership->role === MembershipRole::Owner && $this->ownerCount($organizationId) <= 1) {
+                throw LastOwner::leaving($organizationId);
+            }
+
+            $this->detach($organizationId, $userId, $membership, 'left');
+        }));
+    }
+
+    public function transferOwnership(string $organizationId, string $fromUserId, string $toUserId): Membership
+    {
+        if ($fromUserId === $toUserId) {
+            throw OwnershipTransferRefused::sameMember($organizationId);
+        }
+
+        return $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): Membership => DB::transaction(function () use ($organizationId, $fromUserId, $toUserId): Membership {
+            // BOTH rows locked, in one statement ordered by primary key. The lock is what
+            // makes the transfer atomic against the other lifecycle verbs: a concurrent
+            // remove()/leave() of either person, a changeRole() demoting the owner, or a
+            // second transfer out of the same owner all wait here and then re-read the
+            // state this one left. Ordering by id means two transfers crossing between the
+            // same pair take the locks in the same order and cannot deadlock.
+            //
+            // The organization is bound in the WHERE clause as well as by the tenant scope,
+            // so a suspended scope cannot turn a member of ANOTHER organization into a
+            // match — and so into that organization's owner.
+            $rows = Membership::query()
+                ->where('organization_id', $organizationId)
+                ->whereIn('user_id', [$fromUserId, $toUserId])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            $from = $rows->firstWhere('user_id', $fromUserId);
+            $to = $rows->firstWhere('user_id', $toUserId);
+
+            if (! $from instanceof Membership
+                || $from->role !== MembershipRole::Owner
+                || $from->status !== MembershipStatus::Active) {
+                throw OwnershipTransferRefused::notOwner($organizationId, $fromUserId);
+            }
+
+            if (! $to instanceof Membership) {
+                throw OwnershipTransferRefused::targetNotMember($organizationId, $toUserId);
+            }
+
+            if ($to->status !== MembershipStatus::Active) {
+                throw OwnershipTransferRefused::targetNotActive($organizationId, $toUserId);
+            }
+
+            $toPrevious = $to->role;
+
+            // Promote first, then demote: at no point inside the transaction does the
+            // organization have fewer owners than it started with.
+            $to->update(['role' => MembershipRole::Owner]);
+            $from->update(['role' => MembershipRole::Admin]);
+
+            // The legacy per-member event for each side, because provisioning and usage
+            // metering key off it — a transfer IS two role changes to them.
+            $this->emitAndAudit($organizationId, $toUserId, 'organization.member_role_changed', ['role' => MembershipRole::Owner->value]);
+            $this->emitAndAudit($organizationId, $fromUserId, 'organization.member_role_changed', ['role' => MembershipRole::Admin->value]);
+
+            $this->announce('membership.updated', $organizationId, $toUserId, [
+                'role' => MembershipRole::Owner->value,
+                'previous_role' => $toPrevious->value,
+                'reason' => 'ownership_transferred',
+            ]);
+            $this->announce('membership.updated', $organizationId, $fromUserId, [
+                'role' => MembershipRole::Admin->value,
+                'previous_role' => MembershipRole::Owner->value,
+                'reason' => 'ownership_transferred',
+            ]);
+
+            // One entry that names both sides, attributed to the owner who handed it over —
+            // the two role-change entries above say what happened to each row, this one
+            // says why.
+            $this->audit->record(new AuditEvent(
+                action: 'organization.ownership_transferred',
+                actorType: ActorType::User,
+                actorId: $fromUserId,
+                organizationId: $organizationId,
+                targetType: 'user',
+                targetId: $toUserId,
+                context: ['from_user_id' => $fromUserId, 'to_user_id' => $toUserId],
+            ));
+
+            return $to;
+        }));
+    }
+
+    public function owners(string $organizationId): array
+    {
+        /** @var list<string> */
+        return $this->tenant()->runAs(
+            GenericTenant::of($organizationId),
+            fn (): array => Membership::query()
+                ->where('organization_id', $organizationId)
+                ->where('role', MembershipRole::Owner->value)
+                ->where('status', MembershipStatus::Active->value)
+                ->orderBy('id')
+                ->pluck('user_id')
+                ->map(static fn (mixed $id): string => is_scalar($id) ? (string) $id : '')
+                ->filter(static fn (string $id): bool => $id !== '')
+                ->values()
+                ->all(),
+        );
+    }
+
+    public function activeRole(string $organizationId, string $userId): ?MembershipRole
+    {
+        // Everything the answer depends on is in the WHERE clause — organization included,
+        // so a caller running with tenant scoping suspended still gets THIS organization's
+        // tier and never another one's. It becomes a claim a relying party authorizes on.
+        $membership = $this->tenant()->runAs(
+            GenericTenant::of($organizationId),
+            fn (): ?Membership => Membership::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->where('status', MembershipStatus::Active->value)
+                ->first(),
+        );
+
+        return $membership?->role;
+    }
+
+    /**
+     * Delete a membership and everything that hangs off it, inside the caller's
+     * transaction and tenant scope. `$membership` is the row as locked by the caller (or
+     * null when there was none); `$reason` says which verb it was, for the webhook.
+     */
+    private function detach(string $organizationId, string $userId, ?Membership $membership, string $reason): void
+    {
+        // Organization bound here too, not only by the tenant scope: under a suspended
+        // scope a bare `where user_id` deletes the person from every organization.
+        Membership::query()->where('organization_id', $organizationId)->where('user_id', $userId)->delete();
+
+        // Drop the RBAC grants with the membership. Assignments are read by
+        // (organization, user) with no membership join, so leaving them behind is not
+        // untidiness: re-adding the person later silently restores privileges nobody
+        // re-granted, and anything reading assignments directly still sees them held.
+        //
+        // A deployment that binds EXTERNAL RBAC owns its own grants and has none here
+        // to revoke — that refusal is the contract working, not a failure to remove a
+        // member, so it does not abort the removal.
+        try {
+            $this->roles->unassignAll($organizationId, $userId);
+        } catch (ExternalRbacNotBound) {
+            // Nothing of ours to revoke.
+        }
+
+        $this->emitAndAudit(
+            $organizationId,
+            $userId,
+            'organization.member_removed',
+            $reason === 'left' ? ['reason' => 'left'] : [],
+            $reason === 'left' ? ActorType::User : ActorType::System,
+            $reason === 'left' ? $userId : null,
+        );
+
+        // The legacy event above has always fired even when there was no row to delete;
+        // the new one reports a membership that existed, with the role it had.
+        if ($membership !== null) {
+            $this->announce('membership.deleted', $organizationId, $userId, [
+                'role' => $membership->role->value,
+                'reason' => $reason,
+            ]);
+        }
+    }
+
     /**
      * How many owners this organization has, with the owner rows LOCKED for the rest of
      * the transaction.
@@ -182,9 +375,13 @@ class MembershipService implements Memberships
      * The rows are fetched and counted in PHP rather than with `count()`, because
      * PostgreSQL rejects `FOR UPDATE` alongside an aggregate.
      */
-    private function ownerCount(): int
+    private function ownerCount(string $organizationId): int
     {
+        // Organization bound in the WHERE clause, not left to the tenant scope: under a
+        // suspended scope an unbound count is every owner of every organization, and the
+        // last-owner guard could never fire.
         $lockedOwnerIds = Membership::query()
+            ->where('organization_id', $organizationId)
             ->where('role', MembershipRole::Owner->value)
             ->lockForUpdate()
             ->pluck('id')
@@ -424,17 +621,44 @@ class MembershipService implements Memberships
     /**
      * @param  array<string, mixed>  $context
      */
-    private function emitAndAudit(string $organizationId, string $userId, string $action, array $context): void
-    {
+    private function emitAndAudit(
+        string $organizationId,
+        string $userId,
+        string $action,
+        array $context,
+        ActorType $actorType = ActorType::System,
+        ?string $actorId = null,
+    ): void {
         $this->events->emit(new DomainEvent($action, ['user_id' => $userId] + $context, $organizationId));
 
         $this->audit->record(new AuditEvent(
             action: $action,
-            actorType: ActorType::System,
+            actorType: $actorType,
+            actorId: $actorId,
             organizationId: $organizationId,
             targetType: 'user',
             targetId: $userId,
             context: $context,
+        ));
+    }
+
+    /**
+     * Emit one of the `membership.*` webhook events.
+     *
+     * Beside the legacy `organization.member_*` events rather than instead of them:
+     * outbound provisioning and usage metering key off the legacy names, and so may any
+     * webhook endpoint that subscribed to them by name. The new events carry what the old
+     * ones never did — the previous role, and why the change happened — in one shape
+     * across all three.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function announce(string $type, string $organizationId, string $userId, array $payload): void
+    {
+        $this->events->emit(new DomainEvent(
+            $type,
+            ['organization_id' => $organizationId, 'user_id' => $userId] + $payload,
+            $organizationId,
         ));
     }
 }

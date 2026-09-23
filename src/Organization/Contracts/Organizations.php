@@ -5,12 +5,24 @@ declare(strict_types=1);
 namespace Cbox\Id\Organization\Contracts;
 
 use Cbox\Id\Organization\Enums\OrganizationStatus;
+use Cbox\Id\Organization\Exceptions\NotOrganizationOwner;
+use Cbox\Id\Organization\Exceptions\SlugAlreadyTaken;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
+use Cbox\Id\Organization\ValueObjects\OrganizationChanges;
 
 interface Organizations
 {
     public function create(NewOrganization $input): Organization;
+
+    /**
+     * Rename an organization and/or change its slug, and announce it as
+     * `organization.updated`. Fields left null are untouched; a change that alters
+     * nothing writes, audits and emits nothing.
+     *
+     * @throws SlugAlreadyTaken when the new slug belongs to another organization
+     */
+    public function update(string $id, OrganizationChanges $changes, ?string $actorId = null): Organization;
 
     /**
      * Merge and persist organization settings (branding, preferences, …).
@@ -63,4 +75,20 @@ interface Organizations
      * nothing further.
      */
     public function archive(string $id, string $actorId): Organization;
+
+    /**
+     * Archive an organization on its OWNER's say-so — the self-service counterpart to
+     * {@see archive()}, which is the operator's verb.
+     *
+     * Exactly {@see archive()}'s semantics (the same terminal status, idempotence, cache
+     * invalidation and `organization.archived` / `organization.deleted` events), plus one
+     * check the operator path does not need: `$ownerUserId` must hold an ACTIVE owner
+     * membership of the organization. That membership is locked for the duration, so an
+     * ownership transfer racing the archive either completes first (and this is refused)
+     * or waits until the archive is done. The audit entry is attributed to the owner as a
+     * user, not to an operator.
+     *
+     * @throws NotOrganizationOwner
+     */
+    public function archiveAsOwner(string $id, string $ownerUserId): Organization;
 }
