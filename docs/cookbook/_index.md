@@ -205,6 +205,13 @@ the two machine endpoints; the page the person approves on is yours, and it is a
 lines. See the full recipe:
 [Sign a CLI in with the device grant](sign-a-cli-in-with-the-device-grant.md).
 
+## Sign people out of every app (back-channel logout)
+
+When a person signs out or loses access, every application they used is told server to
+server and ends its own session. The host names the session a sign-in came from; each app
+registers an endpoint and validates a signed logout token. See the full recipe:
+[Receive back-channel logout](receive-back-channel-logout.md).
+
 ## Review who has access (access certification)
 
 Open a campaign, have reviewers certify or revoke each role/membership, and apply the

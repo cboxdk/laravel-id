@@ -18,6 +18,41 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased — back-channel logout
+
+**Three migrations.** `oauth_clients` gains `backchannel_logout_uri` and
+`backchannel_logout_session_required`; `oauth_authorization_codes` and
+`oauth_refresh_tokens` gain a nullable `session_id`; `oauth_session_participants` is new.
+All additive, no backfill: existing clients have no URI and are never called, and grants
+issued before the upgrade carry no `sid`.
+
+**Run a queue worker** if you do not already. Logout tokens are delivered by
+`DeliverBackchannelLogout`; without a worker nothing is sent. On the `sync` connection they
+are sent inline, once, without retries.
+
+**Pass the session to `AuthorizationCodes::issue()`** — the new trailing `sessionId`
+argument — or no ID Token carries `sid` and ending one session cannot name it. See the
+[recipe](docs/cookbook/receive-back-channel-logout.md).
+
+*What breaks for implementers of the contracts* (the bundled implementations are updated):
+
+- `ClientRegistry` gains `configureBackchannelLogout(Client, ?string, bool): Client`.
+- `AuthorizationCodes::issue()` gains `?string $sessionId = null`;
+  `RefreshTokens::issue()` gains `?string $sessionId = null`.
+- `AuthorizationCodeService` and `RefreshTokenService` now take a `BackchannelLogout` in
+  their constructors — resolve them from the container rather than with `new`.
+- `EndSessionController` takes a `SignedInSession`.
+
+*Behaviour that changes on its own:*
+
+- `RefreshTokens::revokeForUser()` and `revokeForUserAndClient()` now notify the
+  applications that held the grants. A host calling `revokeForUser()` on every role change
+  will sign people out of that organization's applications on every role change — which is
+  what the method's "forces re-authentication" contract always said, now reaching the
+  application session too.
+- Removing an organization membership revokes that organization's refresh tokens for the
+  person (the new `organization.member_removed` listener).
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old
