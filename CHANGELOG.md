@@ -261,6 +261,13 @@ more trust than the wording it removes.
   and `import()` creates with them; a prefix already declared by another app in the target
   environment is refused, not dropped. `NewClient` gains `apiKeyPrefix`.
   `configureBackchannelLogout()` records `app.updated` when the setting changes.
+- **A permission's `tenant_assignable` now counts toward the manifest checksum**, so a deploy
+  that only opts a permission in to (or out of) tenant self-serve re-syncs; before, the
+  unchanged checksum skipped the sync and the flag never reached the catalogue. Added to the
+  canonical form only when `true` (a permission's non-default), so every manifest that does
+  not opt a permission in hashes exactly as before. A manifest that DOES declare
+  `"tenant_assignable": true` on a permission hashes differently once and re-syncs once; SDKs
+  computing the checksum must add the same marker (new `self_serve_permission` fixture case).
 
 ### Security
 

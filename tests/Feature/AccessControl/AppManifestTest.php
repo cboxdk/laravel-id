@@ -160,6 +160,40 @@ it('honours tenant_assignable opt-in, defaulting to internal (deny-by-default)',
 });
 
 /**
+ * An unchanged checksum skips the sync, so a flag the checksum cannot see never reaches the
+ * catalogue. Opting a permission in to tenant self-serve (or back out) in a new deploy,
+ * with nothing else in the manifest changed, has to re-sync — and a manifest that never
+ * mentions the flag must hash exactly as it did, or every app re-syncs and every SDK's
+ * checksum drifts from ours.
+ */
+it('re-syncs when only a permission\'s tenant_assignable flips, and hashes an unflagged manifest as before', function (): void {
+    $manifest = fn (?bool $flag): array => [
+        'version' => 'v1',
+        'permissions' => [
+            ['key' => 'invoices:read', 'description' => 'View invoices'] + ($flag === null ? [] : ['tenant_assignable' => $flag]),
+        ],
+        'roles' => [],
+    ];
+
+    $unflagged = app(ManifestParser::class)->parse($manifest(null));
+
+    // The internal default, spelled out or not, is the same bytes as before the flag counted.
+    expect(app(ManifestParser::class)->parse($manifest(false))->checksum())->toBe($unflagged->checksum())
+        ->and($unflagged->checksum())->toBe(hash('sha256', '{"permissions":[{"key":"invoices:read","description":"View invoices"}],"roles":[]}'));
+
+    syncManifest('app_billing', $manifest(null));
+    $optedIn = app(AppManifests::class)->sync('app_billing', app(ManifestParser::class)->parse($manifest(true)));
+
+    expect($optedIn->unchanged)->toBeFalse()
+        ->and(Permission::query()->where('name', 'invoices:read')->sole()->tenant_assignable)->toBeTrue();
+
+    $optedOut = app(AppManifests::class)->sync('app_billing', app(ManifestParser::class)->parse($manifest(false)));
+
+    expect($optedOut->unchanged)->toBeFalse()
+        ->and(Permission::query()->where('name', 'invoices:read')->sole()->tenant_assignable)->toBeFalse();
+});
+
+/**
  * A role the declaring app has retired must not be grantable, however the grant arrives.
  *
  * Orphaning keeps the row and its existing assignments — deleting them would revoke

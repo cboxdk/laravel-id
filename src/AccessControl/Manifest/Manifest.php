@@ -41,7 +41,7 @@ readonly class Manifest
     {
         $canonical = [
             'permissions' => array_map(
-                static fn (DeclaredPermission $p): array => ['key' => $p->key, 'description' => $p->description],
+                fn (DeclaredPermission $p): array => ['key' => $p->key, 'description' => $p->description] + $this->selfServeMarker($p),
                 $this->sortedPermissions(),
             ),
             'roles' => array_map(
@@ -78,6 +78,28 @@ readonly class Manifest
     private function staffMarker(DeclaredRole $role): array
     {
         return $role->tenantAssignable ? [] : ['tenant_assignable' => false];
+    }
+
+    /**
+     * A tenant-assignable permission's marker in the canonical form — present ONLY when the
+     * permission is offered to tenants.
+     *
+     * The same reason as {@see staffMarker()}: flipping a permission to self-serve (or
+     * back) in a new deploy changed nothing the checksum saw, so the sync was skipped and
+     * the flag never reached the catalogue.
+     *
+     * The OPPOSITE polarity to the role marker, deliberately. A role is tenant-assignable
+     * unless declared otherwise, so its unmarked state is `true`; a permission is internal
+     * unless the manifest opts it in (see {@see ManifestParser}), so ITS unmarked state is
+     * `false`. Marking the non-default in each case is what keeps every manifest that never
+     * mentions the flag — nearly all of them — hashing to the bytes it always has. Marking
+     * `false` here would have re-hashed every manifest in existence.
+     *
+     * @return array{tenant_assignable?: true}
+     */
+    private function selfServeMarker(DeclaredPermission $permission): array
+    {
+        return $permission->tenantAssignable ? ['tenant_assignable' => true] : [];
     }
 
     /**

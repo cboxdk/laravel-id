@@ -49,6 +49,13 @@ flag too — `Roles::define(null, 'Support', tenantAssignable: false)` — and
 `Roles::updateRole(..., tenantAssignable: false)` changes it, with before and after on the
 `role.updated` audit entry.
 
+Both flags count toward the manifest checksum, so a deploy that flips only a role to
+staff-only, or only a permission's `tenant_assignable`, re-syncs. Each is added to the
+canonical form only in its non-default state — a role's `false`, a permission's `true` (a
+permission is internal unless it opts in) — so a manifest that never mentions either hashes
+exactly as before and no SDK's checksum drifts. The shared fixture
+(`tests/Fixtures/AccessControl/manifest_hash.json`) has a case for each.
+
 ### The two planes
 
 | Plane | Call | Grants a staff role? |

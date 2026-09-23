@@ -124,6 +124,34 @@
             "canonical_json": "{\"permissions\":[{\"key\":\"parcels:read\",\"description\":\"View parcels\"},{\"key\":\"support:impersonate\",\"description\":\"Act as a customer\"}],\"roles\":[{\"key\":\"support\",\"name\":\"Support\",\"description\":\"Vendor staff\",\"permissions\":[\"parcels:read\",\"support:impersonate\"],\"tenant_assignable\":false},{\"key\":\"viewer\",\"name\":\"Viewer\",\"description\":null,\"permissions\":[\"parcels:read\"]}]}",
             "sha256": "44eff5ebd93eb552f1b65c7ce71379f08f835be1ca3ddcaff2a5a45f7915151a",
             "version": "44eff5ebd93eb552"
+        },
+        {
+            "name": "self_serve_permission",
+            "permissions": [
+                {
+                    "key": "reports:read",
+                    "description": "Read reports",
+                    "tenant_assignable": true
+                },
+                {
+                    "key": "reports:purge",
+                    "description": "Purge reports"
+                }
+            ],
+            "roles": [
+                {
+                    "key": "reporter",
+                    "name": "Reporter",
+                    "description": null,
+                    "permissions": [
+                        "reports:read",
+                        "reports:purge"
+                    ]
+                }
+            ],
+            "canonical_json": "{\"permissions\":[{\"key\":\"reports:purge\",\"description\":\"Purge reports\"},{\"key\":\"reports:read\",\"description\":\"Read reports\",\"tenant_assignable\":true}],\"roles\":[{\"key\":\"reporter\",\"name\":\"Reporter\",\"description\":null,\"permissions\":[\"reports:purge\",\"reports:read\"]}]}",
+            "sha256": "1dbb45f12bf0c9905954d129af11542a0026ed46d53f7d869a3cdba95a656fe0",
+            "version": "1dbb45f12bf0c990"
         }
     ]
 }
