@@ -10,6 +10,7 @@ use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
+use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
 use Cbox\Id\Kernel\Events\EventDelivered;
@@ -21,6 +22,10 @@ class AccessControlServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Driver-independent: it asks whichever AccessChecker is bound, so an external
+        // RBAC adapter answers live decisions exactly as it answers token claims.
+        $this->app->singleton(PermissionDecisions::class, AppPermissionDecisions::class);
+
         if (! $this->builtinDriver()) {
             // 'external' — bring-your-own RBAC. Fall back to deny-by-default so a
             // host that has not yet bound an adapter is refused, never trusted, and

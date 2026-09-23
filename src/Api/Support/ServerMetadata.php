@@ -97,7 +97,7 @@ class ServerMetadata
             // roles/permissions/organizations are extensions a client can rely on).
             'claims_supported' => [
                 'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr',
-                'at_hash', 'email', 'email_verified', 'name', 'org', 'org_name',
+                'at_hash', 'email', 'email_verified', 'name', 'org', 'org_name', 'org_role',
                 'roles', 'permissions', 'organizations', 'groups',
             ],
             // The authentication context class references this IdP asserts: aal1 (a

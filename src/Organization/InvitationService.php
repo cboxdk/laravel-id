@@ -35,12 +35,19 @@ class InvitationService implements Invitations
     {
         $token = 'inv_'.bin2hex(random_bytes(32));
 
-        // Supersede any earlier pending invite for the same address.
-        Invitation::query()
+        // Supersede any earlier pending invite for the same address. Read first, so each
+        // superseded one can be announced: a receiver mirroring pending invitations would
+        // otherwise hold a row for a token that no longer works.
+        $superseded = Invitation::query()
             ->where('organization_id', $organizationId)
             ->where('email', $email)
             ->where('status', InvitationStatus::Pending->value)
-            ->update(['status' => InvitationStatus::Revoked->value]);
+            ->get();
+
+        foreach ($superseded as $previous) {
+            $previous->forceFill(['status' => InvitationStatus::Revoked])->save();
+            $this->announceRevoked($previous, 'superseded');
+        }
 
         $invitation = new Invitation;
         $invitation->fill([
@@ -55,6 +62,14 @@ class InvitationService implements Invitations
         $invitation->save();
 
         $this->events->emit(new DomainEvent('organization.invitation_created', ['email' => $email, 'role' => $role->value], $organizationId));
+        $this->events->emit(new DomainEvent('invitation.created', [
+            'invitation_id' => $invitation->id,
+            'organization_id' => $organizationId,
+            'email' => $email,
+            'role' => $role->value,
+            'invited_by' => $invitedBy,
+            'expires_at' => $invitation->expires_at->toIso8601String(),
+        ], $organizationId));
         $this->audit->record(new AuditEvent(
             action: 'organization.invitation_created',
             actorType: ActorType::User,
@@ -93,6 +108,13 @@ class InvitationService implements Invitations
             ])->save();
 
             $this->events->emit(new DomainEvent('organization.invitation_accepted', ['user_id' => $subjectId], $invitation->organization_id));
+            $this->events->emit(new DomainEvent('invitation.accepted', [
+                'invitation_id' => $invitation->id,
+                'organization_id' => $invitation->organization_id,
+                'user_id' => $subjectId,
+                'email' => $invitation->email,
+                'role' => $invitation->role->value,
+            ], $invitation->organization_id));
             $this->audit->record(new AuditEvent(
                 action: 'organization.invitation_accepted',
                 actorType: ActorType::User,
@@ -106,13 +128,53 @@ class InvitationService implements Invitations
         });
     }
 
-    public function revoke(string $organizationId, string $invitationId): void
+    public function revoke(string $organizationId, string $invitationId, ?string $revokedBy = null): void
     {
-        Invitation::query()
-            ->whereKey($invitationId)
-            ->where('organization_id', $organizationId)
-            ->where('status', InvitationStatus::Pending->value)
-            ->update(['status' => InvitationStatus::Revoked->value]);
+        DB::transaction(function () use ($organizationId, $invitationId, $revokedBy): void {
+            // The organization is bound in the WHERE clause, so an invitation id from
+            // another organization matches nothing rather than being revoked across tenants.
+            $invitation = Invitation::query()
+                ->whereKey($invitationId)
+                ->where('organization_id', $organizationId)
+                ->where('status', InvitationStatus::Pending->value)
+                ->lockForUpdate()
+                ->first();
+
+            // Idempotent: revoking an invitation that is already accepted, revoked or not
+            // this organization's changes nothing and announces nothing.
+            if ($invitation === null) {
+                return;
+            }
+
+            $invitation->forceFill(['status' => InvitationStatus::Revoked])->save();
+
+            $this->announceRevoked($invitation, 'revoked');
+
+            $this->audit->record(new AuditEvent(
+                action: 'organization.invitation_revoked',
+                actorType: $revokedBy !== null ? ActorType::User : ActorType::System,
+                actorId: $revokedBy,
+                organizationId: $organizationId,
+                targetType: 'email',
+                targetId: $invitation->email,
+                context: ['invitation_id' => $invitation->id],
+            ));
+        });
+    }
+
+    /**
+     * `invitation.revoked`, for an explicit revoke and for the earlier invitation a new
+     * one to the same address supersedes — the token stops working either way, and
+     * `reason` says which.
+     */
+    private function announceRevoked(Invitation $invitation, string $reason): void
+    {
+        $this->events->emit(new DomainEvent('invitation.revoked', [
+            'invitation_id' => $invitation->id,
+            'organization_id' => $invitation->organization_id,
+            'email' => $invitation->email,
+            'reason' => $reason,
+        ], $invitation->organization_id));
     }
 
     public function byToken(string $token): ?Invitation

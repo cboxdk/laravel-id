@@ -9,16 +9,27 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesTenant;
+use Cbox\Id\Kernel\Tenancy\GenericTenant;
 use Cbox\Id\Organization\Contracts\OrganizationHierarchy;
 use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Enums\MembershipRole;
+use Cbox\Id\Organization\Enums\MembershipStatus;
 use Cbox\Id\Organization\Enums\OrganizationStatus;
+use Cbox\Id\Organization\Exceptions\NotOrganizationOwner;
 use Cbox\Id\Organization\Exceptions\SlugAlreadyTaken;
+use Cbox\Id\Organization\Models\Membership;
 use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
+use Cbox\Id\Organization\ValueObjects\OrganizationChanges;
 use Illuminate\Support\Facades\DB;
 
 class OrganizationService implements Organizations
 {
+    // Per-call resolution of the ambient tenant, for the owner check in archiveAsOwner():
+    // this class is a singleton and TenantContext is scoped (see ResolvesTenant).
+    use ResolvesTenant;
+
     public function __construct(
         private readonly OrganizationHierarchy $hierarchy,
         private readonly EventBus $events,
@@ -65,11 +76,58 @@ class OrganizationService implements Organizations
         });
     }
 
+    public function update(string $id, OrganizationChanges $changes, ?string $actorId = null): Organization
+    {
+        return DB::transaction(function () use ($id, $changes, $actorId): Organization {
+            $organization = Organization::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+
+            if ($changes->slug !== null
+                && $changes->slug !== $organization->slug
+                && Organization::query()->where('slug', $changes->slug)->whereKeyNot($organization->id)->exists()) {
+                throw SlugAlreadyTaken::make($changes->slug);
+            }
+
+            if ($changes->name !== null) {
+                $organization->name = $changes->name;
+            }
+
+            if ($changes->slug !== null) {
+                $organization->slug = $changes->slug;
+            }
+
+            $changed = array_values(array_intersect(['name', 'slug'], array_keys($organization->getDirty())));
+
+            // Nothing moved: no write, no audit entry, no webhook for a change that did
+            // not happen — the same rule transitionStatus() holds to.
+            if ($changed === []) {
+                return $organization;
+            }
+
+            $organization->save();
+
+            $this->announceUpdated($organization, $changed);
+
+            $this->audit->record(new AuditEvent(
+                action: 'organization.updated',
+                actorType: $actorId !== null ? ActorType::User : ActorType::System,
+                actorId: $actorId,
+                organizationId: $organization->id,
+                targetType: 'organization',
+                targetId: $organization->id,
+                context: ['changed' => $changed],
+            ));
+
+            return $organization;
+        });
+    }
+
     public function updateSettings(string $id, array $settings): Organization
     {
         $organization = Organization::query()->whereKey($id)->firstOrFail();
         $organization->settings = array_merge($organization->settings, $settings);
         $organization->save();
+
+        $this->announceUpdated($organization, ['settings'], ['settings_keys' => array_keys($settings)]);
 
         $this->audit->record(new AuditEvent(
             action: 'organization.settings_updated',
@@ -105,6 +163,36 @@ class OrganizationService implements Organizations
         }
 
         return $this->transitionStatus($id, OrganizationStatus::Deleted, 'organization.archived', $actorId);
+    }
+
+    public function archiveAsOwner(string $id, string $ownerUserId): Organization
+    {
+        return DB::transaction(fn (): Organization => $this->tenant()->runAs(GenericTenant::of($id), function () use ($id, $ownerUserId): Organization {
+            // Bound in the query, not checked afterwards — organization included, even
+            // though the tenant scope already pins it, so the check still holds wherever
+            // scoping is suspended. The row lock is held to commit, so a transfer out of
+            // this owner cannot land between the check and the archive.
+            $owner = Membership::query()
+                ->where('organization_id', $id)
+                ->where('user_id', $ownerUserId)
+                ->where('role', MembershipRole::Owner->value)
+                ->where('status', MembershipStatus::Active->value)
+                ->lockForUpdate()
+                ->first();
+
+            if ($owner === null) {
+                throw NotOrganizationOwner::make($id, $ownerUserId);
+            }
+
+            $organization = Organization::query()->whereKey($id)->firstOrFail();
+
+            // Idempotent, exactly as archive() is.
+            if ($organization->status === OrganizationStatus::Deleted) {
+                return $organization;
+            }
+
+            return $this->transitionStatus($id, OrganizationStatus::Deleted, 'organization.archived', $ownerUserId, ActorType::User);
+        }));
     }
 
     public function find(string $id): ?Organization
@@ -146,8 +234,13 @@ class OrganizationService implements Organizations
      * this rule for the account plane; when ownership moved onto the organization only
      * the archive case came with it.
      */
-    private function transitionStatus(string $id, OrganizationStatus $status, string $action, string $actorId): Organization
-    {
+    private function transitionStatus(
+        string $id,
+        OrganizationStatus $status,
+        string $action,
+        string $actorId,
+        ActorType $actorType = ActorType::Operator,
+    ): Organization {
         $organization = Organization::query()->whereKey($id)->firstOrFail();
 
         if ($organization->status === $status) {
@@ -165,9 +258,19 @@ class OrganizationService implements Organizations
             $organization->id,
         ));
 
+        // Archiving is also announced under the lifecycle name the webhook catalogue
+        // offers. `organization.archived` stays for the consumers that already know it.
+        if ($status === OrganizationStatus::Deleted) {
+            $this->events->emit(new DomainEvent(
+                'organization.deleted',
+                ['id' => $organization->id, 'slug' => $organization->slug, 'status' => $status->value],
+                $organization->id,
+            ));
+        }
+
         $this->audit->record(new AuditEvent(
             action: $action,
-            actorType: ActorType::Operator,
+            actorType: $actorType,
             actorId: $actorId,
             organizationId: $organization->id,
             targetType: 'organization',
@@ -176,6 +279,23 @@ class OrganizationService implements Organizations
         ));
 
         return $organization;
+    }
+
+    /**
+     * `organization.updated`, in one shape for every kind of change: which top-level
+     * attributes moved, plus the organization's current name and slug so a receiver can
+     * refresh its copy without a read back.
+     *
+     * @param  list<string>  $changed
+     * @param  array<string, mixed>  $extra
+     */
+    private function announceUpdated(Organization $organization, array $changed, array $extra = []): void
+    {
+        $this->events->emit(new DomainEvent(
+            'organization.updated',
+            ['id' => $organization->id, 'name' => $organization->name, 'slug' => $organization->slug, 'changed' => $changed] + $extra,
+            $organization->id,
+        ));
     }
 
     /**

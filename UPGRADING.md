@@ -18,6 +18,31 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased (1.19.0)
+
+**Contracts gained methods.** A host that implements `Memberships`, `Organizations` or
+`Invitations` itself (rather than extending the shipped services) must add
+`Memberships::leave()`, `transferOwnership()`, `owners()`, `activeRole()`,
+`Organizations::update()`, `archiveAsOwner()`, and the optional `?string $revokedBy`
+parameter on `Invitations::revoke()`. `JwtTokenIssuer`, `TokenController` and
+`OrganizationService` take one more constructor dependency; a host that constructs them by
+hand rather than from the container must pass it.
+
+**Wildcard webhook subscribers receive more events.** Every membership and invitation
+change is now announced twice — under the legacy `organization.member_*` /
+`organization.invitation_*` name and under the new `membership.*` / `invitation.*` one —
+and an archive as both `organization.archived` and `organization.deleted`. An endpoint
+subscribed to `*` that counts or mirrors events should key on one family. Endpoints
+subscribed by name see no change.
+
+**Build subscription pickers and key-scope pickers from the new lists.**
+`WebhookEventType::offered()` excludes legacy names and events the framework never emits;
+`EnvironmentApiScope::offerable()` excludes the reserved `directories:*` scopes. Rendering
+`cases()` keeps offering both.
+
+**Relying parties may now see `org_role`.** It is additive; a consumer that rejects unknown
+claims (rare) must allow it.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old

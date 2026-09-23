@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
 use Cbox\Id\Kernel\Authorization\Contracts\PolicyDecisionPoint;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Kernel\Authorization\ValueObjects\ResourceRef;
 use Cbox\Id\Kernel\Authorization\ValueObjects\Subject;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
+use Cbox\Id\OAuthServer\ValueObjects\Introspection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,6 +30,19 @@ use Illuminate\Http\Request;
  * baked into the token; the token stays a thin identity bearer.
  *
  * Body: `{ "permissions": [{"relation": "...", "resource": "type:id"}], "entitlements": ["plan", ...] }`
+ *
+ * RBAC MODE. A body carrying `permission` (one `feature:action` key, or a list of them)
+ * is instead an app-scoped RBAC question — "may this person do `invoices:approve` in this
+ * organization" — answered by {@see PermissionDecisions} from the same resolver the token's
+ * `permissions` claim is stamped from. Two callers:
+ *
+ * - a USER token asks about its own subject, in its own `org` (or environment-wide when it
+ *   carries none); naming another `subject` or `org` is refused;
+ * - a CLIENT token (client_credentials) asks about any `subject`, in the `org` it names, for
+ *   itself only. It must carry `decisions:read`, and a client owned by an organization may
+ *   only ask about that organization.
+ *
+ * The two modes are not mixed in one request.
  */
 class DecisionController
 {
@@ -38,6 +54,8 @@ class DecisionController
         private readonly PolicyDecisionPoint $pdp,
         private readonly DpopResourceGuard $dpop,
         private readonly IssuerResolver $issuers,
+        private readonly PermissionDecisions $decisions,
+        private readonly ClientRegistry $clients,
     ) {}
 
     /**
@@ -79,6 +97,12 @@ class DecisionController
         // with a docblock explaining why; this one had neither that check nor a scope.
         if (! $introspection->isAudience($this->issuers->issuer())) {
             return $this->refuse('invalid_token', 'the access token was not issued for this endpoint');
+        }
+
+        // RBAC mode has its own caller rules, so it branches before the ReBAC checks below
+        // — its organization may legitimately be absent, which ReBAC refuses.
+        if ($request->has('permission')) {
+            return $this->rbac($request, $introspection);
         }
 
         if (config('cbox-id.oauth.decisions.require_scope') === true
@@ -176,6 +200,115 @@ class DecisionController
         $limit = config('cbox-id.oauth.decisions.max_batch', self::DEFAULT_MAX_BATCH);
 
         return is_numeric($limit) ? max(1, (int) $limit) : self::DEFAULT_MAX_BATCH;
+    }
+
+    /**
+     * An RBAC decision: which subject, which organization and which app are decided HERE,
+     * from the token, never taken on the caller's word beyond what its token allows.
+     */
+    private function rbac(Request $request, Introspection $token): JsonResponse
+    {
+        if ($request->has('permissions') || $request->has('entitlements')) {
+            return $this->invalid('`permission` (RBAC) cannot be combined with `permissions` or `entitlements` in one request');
+        }
+
+        $permissions = $this->permissionKeys($request->input('permission'));
+
+        if ($permissions === null) {
+            return $this->invalid('`permission` must be a non-empty permission key, or a non-empty list of them');
+        }
+
+        $limit = $this->batchLimit();
+
+        if (count($permissions) > $limit) {
+            return new JsonResponse([
+                'error' => 'batch_too_large',
+                'error_description' => "at most {$limit} permissions may be checked in one request",
+            ], 422);
+        }
+
+        $clientId = $token->clientId;
+        $subject = $token->subject;
+
+        // Both are needed to say whose question this is and for which app; a token that
+        // names neither cannot be answered for anyone.
+        if ($clientId === null || $clientId === '' || $subject === null || $subject === '') {
+            return $this->refuse('invalid_token', 'the access token names no subject or client');
+        }
+
+        $tokenOrg = $token->claims['org'] ?? null;
+        $tokenOrg = is_string($tokenOrg) && $tokenOrg !== '' ? $tokenOrg : null;
+        $askedSubject = $this->optionalString($request->input('subject'));
+        $askedOrg = $this->optionalString($request->input('org'));
+
+        if ($subject === $clientId) {
+            // A service asking about somebody else. That is a wider question than a person
+            // asking about themselves, so it needs the scope whether or not the deployment
+            // requires it for the rest of the endpoint.
+            if (! $token->hasScope(self::SCOPE)) {
+                return $this->refuse('insufficient_scope', 'a client token must carry the "'.self::SCOPE.'" scope to ask about a subject', 403);
+            }
+
+            if ($askedSubject === null) {
+                return $this->invalid('`subject` is required when the access token belongs to a client');
+            }
+
+            // A client an organization owns answers for that organization only — it must
+            // not be able to probe the members and grants of every other tenant.
+            $owner = $this->clients->byClientId($clientId)?->organization_id;
+
+            if ($owner !== null && $askedOrg !== $owner) {
+                return $this->refuse('access_denied', 'this client may only ask about its own organization', 403);
+            }
+
+            return new JsonResponse($this->decisions->decide($askedSubject, $askedOrg, $clientId, $permissions)->toArray());
+        }
+
+        // A person's token answers for that person, in the organization it was minted for.
+        if ($askedSubject !== null && $askedSubject !== $subject) {
+            return $this->refuse('access_denied', 'a user token may only ask about its own subject', 403);
+        }
+
+        if ($askedOrg !== null && $askedOrg !== $tokenOrg) {
+            return $this->refuse('access_denied', 'a user token may only ask about the organization it was issued for', 403);
+        }
+
+        if (config('cbox-id.oauth.decisions.require_scope') === true && ! $token->hasScope(self::SCOPE)) {
+            return $this->refuse('insufficient_scope', 'the access token must carry the "'.self::SCOPE.'" scope', 403);
+        }
+
+        return new JsonResponse($this->decisions->decide($subject, $tokenOrg, $clientId, $permissions)->toArray());
+    }
+
+    /**
+     * One key or a list of keys, as a list; null when the value is not usable at all.
+     *
+     * @return list<string>|null
+     */
+    private function permissionKeys(mixed $value): ?array
+    {
+        $values = is_array($value) ? array_values($value) : [$value];
+        $keys = [];
+
+        foreach ($values as $key) {
+            if (! is_string($key) || trim($key) === '' || strlen($key) > 255) {
+                return null;
+            }
+
+            $keys[] = $key;
+        }
+
+        return $keys === [] ? null : array_values(array_unique($keys));
+    }
+
+    private function optionalString(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function invalid(string $description): JsonResponse
+    {
+        return new JsonResponse(['error' => 'invalid_request', 'error_description' => $description], 422);
     }
 
     /**

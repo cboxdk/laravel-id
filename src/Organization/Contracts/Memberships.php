@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Organization\Contracts;
 
 use Cbox\Id\Organization\Enums\MembershipRole;
+use Cbox\Id\Organization\Exceptions\LastOwner;
+use Cbox\Id\Organization\Exceptions\OwnershipTransferRefused;
 use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,7 +27,59 @@ interface Memberships
 
     public function remove(string $organizationId, string $userId): void;
 
+    /**
+     * A member leaves an organization of their own accord.
+     *
+     * The same removal as {@see remove()} — the membership and every RBAC grant in the
+     * organization go together — but attributed to the member themselves, and refused
+     * with {@see LastOwner::leaving()} when they are its only owner: an organization with
+     * no owner has nobody who can invite, transfer or archive, and no way back.
+     *
+     * Idempotent: leaving an organization you are not a member of is a no-op, so a retried
+     * request does not turn into an error.
+     *
+     * @throws LastOwner
+     */
+    public function leave(string $organizationId, string $userId): void;
+
+    /**
+     * Hand an organization from its owner to another existing, active member.
+     *
+     * One transaction, with both membership rows locked, so the organization is never seen
+     * with no owner and a concurrent removal of either person cannot interleave. The new
+     * owner becomes {@see MembershipRole::Owner}; the previous owner stays a member as
+     * {@see MembershipRole::Admin}, so handing the organization over never locks its
+     * previous owner out of administering it. Returns the new owner's membership.
+     *
+     * This is the only supported way to create an owner — {@see MembershipRole::assignable()}
+     * leaves `Owner` out on purpose.
+     *
+     * @throws OwnershipTransferRefused with a machine-readable reason
+     */
+    public function transferOwnership(string $organizationId, string $fromUserId, string $toUserId): Membership;
+
+    /**
+     * The ids of the organization's owners — normally exactly one.
+     *
+     * A list rather than a single id because organizations created before ownership was
+     * transfer-only may still hold several; a caller enforcing the single-owner rule reads
+     * `count(owners()) > 1` as data to reconcile, never as something to add to.
+     *
+     * @return list<string>
+     */
+    public function owners(string $organizationId): array;
+
     public function of(string $organizationId, string $userId): ?Membership;
+
+    /**
+     * The tier a subject holds in an organization, but only while that membership is
+     * ACTIVE — null for no membership, an unaccepted invitation, or a suspension.
+     *
+     * This is the value the `org_role` token/UserInfo claim carries, so it answers the
+     * authorization question ("what may this person do here now") rather than the roster
+     * question ("what row exists"). A suspended owner is not an owner to a relying party.
+     */
+    public function activeRole(string $organizationId, string $userId): ?MembershipRole;
 
     /**
      * Every membership in an organization (the org's member list).

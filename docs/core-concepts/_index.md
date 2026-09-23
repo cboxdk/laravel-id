@@ -22,6 +22,9 @@ How the platform is put together and the ideas you build against:
 - **[Organization access](organization-access.md)** — ordered membership roles,
   groups, resource grants with effective-role resolution, and user API tokens
   capped at the issuer's role.
+- **[Membership lifecycle](membership-lifecycle.md)** — joining, leaving,
+  transferring ownership and archiving an organization; the single-owner rule and the
+  events each step emits.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
 - **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters

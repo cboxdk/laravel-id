@@ -15,6 +15,80 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Added
+
+- **`org_role` claim — the member's tier in the bound organization.** On the access token,
+  the ID token and UserInfo whenever an organization is bound and the subject holds an
+  **active** membership in it (`owner`, `admin`, `developer`, `member`, `viewer`). Absent on
+  `client_credentials` tokens, on tokens without an organization and for invited or
+  suspended memberships. Every user grant carries it — authorization code, refresh (which
+  re-reads it), device, CIBA and token exchange — and UserInfo reads it live. Reserved
+  against token-minting hooks and listed in `claims_supported`. See
+  `docs/reference/token-claims.md`.
+- **RBAC mode on `POST /oauth/decisions`.** A body with `permission` (a key or a list) asks
+  "may X do `feature:action` in org T" for the calling app, answered by the new
+  `PermissionDecisions` contract from the same resolver that stamps the token's
+  `permissions` claim (organization grants, ancestor roll-down, environment-wide grants;
+  never another app's roles). A user token asks about itself in its own organization; a
+  client token may name any `subject` but needs `decisions:read`, and a client an
+  organization owns may ask only about that organization. A suspended or archived
+  organization denies everything. The ReBAC mode is unchanged. See
+  `docs/reference/decisions.md`.
+- **Membership lifecycle verbs.** `Memberships::leave()` (refused for the only owner with
+  `LastOwner::leaving()`), `Memberships::transferOwnership()` (atomic, both rows locked; the
+  previous owner becomes admin; refusals carry an `OwnershipTransferRefusal` reason),
+  `Memberships::owners()`, `Memberships::activeRole()`, `MembershipRole::isAssignable()`,
+  `Organizations::archiveAsOwner()` and `Organizations::update(OrganizationChanges)`. See
+  `docs/core-concepts/membership-lifecycle.md`.
+- **Webhook catalogue.** `WebhookEventType::catalogue()` returns a typed
+  `WebhookEventDescriptor` per event — group, label, a description of the event and its
+  payload, the event that supersedes a legacy name, and whether the framework emits it —
+  and `WebhookEventType::offered()` is what a subscription picker should show.
+  `WebhookCatalogueMarkdown` renders it; `docs/reference/webhook-events.md` is generated
+  from it and a test fails when the two drift.
+- **New webhook events**, emitted by the framework: `membership.created|updated|deleted`,
+  `invitation.created|accepted|revoked` (a re-invite announces the invitation it supersedes),
+  `organization.updated` (rename, slug, settings) and `organization.deleted` (archive).
+  Catalogued for the services that emit them: `api_key.created|revoked`,
+  `support_session.started`. Catalogued because they were already emitted but missing:
+  `user.login`, `user.reactivated`, `identity.linked`, `role.unassigned`,
+  `role.assigned_everywhere`, `role.unassigned_everywhere`, `organization.archived`.
+- **Environment API scopes** `members:read|write`, `invitations:read|write`,
+  `roles:read|write`, `apps:read|write`, `apis:read|write`, `api_keys:read|write` and
+  `support:write`, each with `label()` and `description()`, plus `writes()`,
+  `isReserved()`, `offerable()` and `offerableValues()`.
+
+### Changed
+
+- **The legacy `organization.member_*` / `organization.invitation_*` events are still
+  emitted** beside the new `membership.*` / `invitation.*` ones — provisioning and usage
+  metering key off them — so a `*` subscriber receives both. They are marked legacy in the
+  catalogue and no longer offered to new subscriptions.
+- **`directories:read|write` are reserved**: still honoured on keys that hold them, no longer
+  offered for new keys.
+- **Catalogued events that were never emitted are marked so.** `organization.settings_updated`,
+  `domain.added|removed|verified`, `connection.activated`, `vault.grant.created|revoked`,
+  `vault.secret.revoked` and `governance.access.revoked` are recorded on the audit trail but
+  never put on the event bus, so a webhook subscribed to one receives nothing. They stay
+  subscribable and are no longer offered.
+- `Invitations::revoke()` takes an optional `$revokedBy`, locks the row, records
+  `organization.invitation_revoked` on the audit trail and is idempotent.
+
+### Security
+
+- **Membership reads and writes no longer depend on the tenant scope alone.** `add()`,
+  `of()`, `changeRole()`, `remove()`, `leave()`, the last-owner count and the new transfer,
+  owner-archive and `activeRole()` queries now bind `organization_id` in their `WHERE`
+  clause, and `add()` states the organization on the insert. Under
+  `TenantContext::withoutScope()` — provisioning jobs, backfills — the scope-only versions
+  deleted a person from every organization on `remove()`, counted other organizations'
+  owners (so the last-owner guard could not fire), re-tiered or returned a membership in a
+  different organization, and failed to insert at all in `add()`; a transfer could have
+  promoted a member of another organization. Each binding was removed in turn and a
+  suspended-scope test went red.
+
 ## [1.18.1] - 2026-08-27
 
 ### Fixed
