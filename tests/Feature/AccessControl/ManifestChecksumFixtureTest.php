@@ -35,7 +35,9 @@ it('produces the shared cross-SDK checksum for every fixture manifest', function
         $case['permissions'],
     );
     $roles = array_map(
-        static fn (array $r): DeclaredRole => new DeclaredRole($r['key'], $r['name'], $r['description'], $r['permissions']),
+        // `tenant_assignable` is optional in the fixture: absent and `true` must hash the
+        // same, and only a staff role (`false`) adds the key to the canonical form.
+        static fn (array $r): DeclaredRole => new DeclaredRole($r['key'], $r['name'], $r['description'], $r['permissions'], $r['tenant_assignable'] ?? true),
         $case['roles'],
     );
 

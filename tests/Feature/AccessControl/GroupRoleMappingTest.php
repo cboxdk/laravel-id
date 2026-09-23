@@ -177,3 +177,32 @@ it('reconciles past a role the declaring app has retired', function (): void {
         ->and(hasAssignment($userId, $keep->id))
         ->toBeTrue('the reconcile aborted before granting the roles that are still valid');
 });
+
+/**
+ * @group security
+ *
+ * A role that BECOMES staff-only after its mapping exists stops being fed to the
+ * directory's group.
+ *
+ * The customer's IdP decides who is in the group, so a mapping to a staff role is the
+ * customer handing out the vendor's staff role. map() refuses one outright; this is the
+ * other order — an app marks its role staff-only in a later manifest — and the pushed
+ * grant is withdrawn on the next reconcile, exactly as it is when a role is orphaned.
+ */
+it('withdraws a pushed grant of a role that became staff-only', function (): void {
+    [$org, $group, $keep, $userId] = engineeringGroup();
+    $support = app(Roles::class)->define(null, 'Support');
+
+    $mappings = app(GroupRoleMappings::class);
+    $mappings->map($org->id, $group->id, $keep->id);
+    $mappings->map($org->id, $group->id, $support->id);
+
+    expect(hasAssignment($userId, $support->id, GrantSource::Pushed))->toBeTrue();
+
+    Role::query()->whereKey($support->id)->update(['tenant_assignable' => false]);
+
+    $mappings->reconcileUser($org->id, $userId);
+
+    expect(hasAssignment($userId, $support->id))->toBeFalse()
+        ->and(hasAssignment($userId, $keep->id, GrantSource::Pushed))->toBeTrue();
+})->group('security');

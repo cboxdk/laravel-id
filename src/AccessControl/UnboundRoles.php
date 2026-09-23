@@ -20,7 +20,7 @@ use Cbox\Id\AccessControl\Models\RoleAssignment;
  */
 class UnboundRoles implements Roles
 {
-    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null): Role
+    public function define(?string $organizationId, string $name, ?string $description = null, ?string $clientId = null, bool $tenantAssignable = true): Role
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
@@ -30,7 +30,7 @@ class UnboundRoles implements Roles
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
 
-    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null): Role
+    public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null, ?bool $tenantAssignable = null): Role
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
@@ -56,6 +56,25 @@ class UnboundRoles implements Roles
     }
 
     public function assign(
+        string $organizationId,
+        string $userId,
+        string $roleId,
+        GrantSource $source = GrantSource::Manual,
+    ): RoleAssignment {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function tenantAssignableRoles(string $organizationId, ?string $clientId = null): array
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function assertTenantAssignable(string $organizationId, string $roleId): void
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
+
+    public function assignAsTenant(
         string $organizationId,
         string $userId,
         string $roleId,

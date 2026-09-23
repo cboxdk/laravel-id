@@ -129,10 +129,39 @@ class ManifestParser
 
             $permissions = $this->parseRolePermissions($entry['permissions'] ?? [], $key, $declaredPermissionKeys);
 
-            $roles[] = new DeclaredRole($key, $name, $this->optionalString($entry['description'] ?? null), $permissions);
+            $roles[] = new DeclaredRole(
+                $key,
+                $name,
+                $this->optionalString($entry['description'] ?? null),
+                $permissions,
+                array_key_exists('tenant_assignable', $entry) ? $this->roleTenantAssignable($entry['tenant_assignable'], $key) : true,
+            );
         }
 
         return $roles;
+    }
+
+    /**
+     * Whether tenants may grant this role, when the key is present. Absent means yes;
+     * `false` marks a staff role; an explicit `null` is refused like any other non-boolean
+     * rather than read as absent.
+     *
+     * STRICTLY A BOOLEAN. The permission flag above reads anything but `true` as "no",
+     * which is safe there because its default is the narrow one. Here the default is the
+     * WIDE one, so the same leniency would turn a staff role declared as `"false"` (a
+     * string, from a YAML-to-JSON step or a hand-edited file) into one every tenant
+     * administrator can hand out. A value we cannot read unambiguously refuses the whole
+     * manifest instead.
+     *
+     * @param  mixed  $value
+     */
+    private function roleTenantAssignable($value, string $roleKey): bool
+    {
+        if (! is_bool($value)) {
+            throw InvalidManifest::make("role \"{$roleKey}\" tenant_assignable must be true or false.");
+        }
+
+        return $value;
     }
 
     /**
