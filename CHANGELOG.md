@@ -15,7 +15,12 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
-## [Unreleased]
+## [1.19.0] - 2026-09-24
+
+Six feature sets in one release: tenancy context (`org_role`, RBAC decisions, the membership
+lifecycle, one webhook catalogue), APIs that own their scopes, app secrets and settings,
+customer API keys, OIDC Back-Channel Logout, and staff roles with support sessions. Ten
+additive migrations; read [UPGRADING.md](UPGRADING.md#1190) before deploying.
 
 ### Added
 

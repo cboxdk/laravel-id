@@ -18,15 +18,44 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
-## Unreleased (1.19.0)
+## 1.19.0
+
+Six feature sets land together: tenancy context (`org_role`, RBAC decisions, the membership
+lifecycle, one webhook catalogue), APIs that own their scopes, app secrets and settings,
+customer API keys, OIDC Back-Channel Logout, and staff roles with support sessions. Read the
+migrations first, then the section for each feature you use.
+
+### Migrations
+
+Ten, all additive; run `php artisan migrate` as part of the deploy. No existing row changes
+meaning. In order:
+
+| Migration (`2026_09_24_…`) | What it does |
+| --- | --- |
+| `000100_create_oauth_apis_and_their_scopes` | `oauth_apis`, `oauth_api_scopes` |
+| `000200_create_oauth_client_secrets_table` | `oauth_client_secrets`, backfilled from `oauth_clients.secret_hash` |
+| `000300_bind_user_api_tokens_to_an_app` | `user_api_tokens.client_id`, `permissions`; `scope`/`name` nullable, `prefix` 40 chars |
+| `000400_add_api_key_prefix_to_clients` | `oauth_clients.api_key_prefix`, unique per environment |
+| `000500_add_backchannel_logout_to_oauth_clients` | `oauth_clients.backchannel_logout_uri`, `backchannel_logout_session_required` |
+| `000600_bind_codes_and_refresh_tokens_to_a_session` | nullable `session_id` on codes and refresh tokens |
+| `000700_create_oauth_session_participants_table` | `oauth_session_participants` |
+| `access-control/000800_add_tenant_assignable_to_roles` | `roles.tenant_assignable` (default `true`) |
+| `000900_allow_environment_wide_access_reviews` | campaign/item `organization_id` nullable |
+| `001000_create_support_sessions_table` | `support_sessions`; `actor_id`, `support_session_id` on codes, `support_session_id` on access tokens |
+
+**Run a queue worker** if you do not already: back-channel logout tokens and webhooks are
+delivered by queued jobs.
+
+### Tenancy context and webhooks
 
 **Contracts gained methods.** A host that implements `Memberships`, `Organizations` or
 `Invitations` itself (rather than extending the shipped services) must add
 `Memberships::leave()`, `transferOwnership()`, `owners()`, `activeRole()`,
 `Organizations::update()`, `archiveAsOwner()`, and the optional `?string $revokedBy`
 parameter on `Invitations::revoke()`. `JwtTokenIssuer`, `TokenController` and
-`OrganizationService` take one more constructor dependency; a host that constructs them by
-hand rather than from the container must pass it.
+`OrganizationService` take new constructor dependencies in this release (as do the classes
+named in the sections below); a host that constructs them by hand rather than from the
+container must pass them.
 
 **Wildcard webhook subscribers receive more events.** Every membership and invitation
 change is now announced twice — under the legacy `organization.member_*` /
@@ -51,8 +80,9 @@ them from the container.
 **Relying parties may now see `org_role`.** It is additive; a consumer that rejects unknown
 claims (rare) must allow it.
 
-**APIs (resource servers) own their scopes.** Run the migration
-(`2026_09_24_000100_create_oauth_apis_and_their_scopes`); it only creates two tables.
+### APIs and scope ownership
+
+**APIs (resource servers) own their scopes.**
 
 *What breaks:* nothing until you register an API. An environment with no registered APIs
 mints the same tokens as before. Once you register one:
@@ -81,12 +111,13 @@ exchange echoes the scopes the new token carries. If you construct `JwtTokenIssu
 `DynamicClientRegistrar` by hand rather than from the container, pass the new
 `AudienceResolver` / `Apis` argument.
 
+### App secrets and settings
+
 **Client secrets move to their own table, and `oauth_clients.secret_hash` is deprecated.**
 
-The migration `2026_09_24_000200_create_oauth_client_secrets_table` creates
-`oauth_client_secrets` and moves every existing `secret_hash` into it with no expiry, so
-every client keeps authenticating with the secret it has today. Run `php artisan migrate`
-as part of the deploy; nothing else is needed for clients to keep working.
+The `000200` migration creates `oauth_client_secrets` and moves every existing
+`secret_hash` into it with no expiry, so every client keeps authenticating with the secret
+it has today. Nothing else is needed for clients to keep working.
 
 `oauth_clients.secret_hash` is **kept for 1.19 and dropped in the next minor**. For 1.19 it
 is a mirror of the client's newest live secret. It is never read to authenticate.
@@ -139,36 +170,41 @@ extending `ClientRegistryService`, add `update()`, `delete()`, `hasSecret()`, `s
 framework. A host that recorded its own entries for these will see each twice; drop yours,
 and pass an `AuditActor` so the framework's entry names who asked.
 
-**Two additive migrations for customer API keys. No action is needed beyond `migrate`.**
+**Blueprints carry the logout endpoint and the API-key prefix, and `update()` replaces
+them.** `ClientRegistry::update()` takes the app's whole settings as a `ClientBlueprint`, now
+including `backchannel_logout_uri`, `backchannel_logout_session_required` and
+`api_key_prefix`. Build the blueprint from `blueprint($client)` and change what you mean to;
+a hand-built `new ClientBlueprint(...)` clears those three. `import()` refuses a prefix
+another app in the target environment already declared.
 
-`user_api_tokens` gains `client_id` and `permissions`. `scope` and `name` become
-nullable, and `prefix` widens to 40 characters. `oauth_clients` gains `api_key_prefix`.
-Every existing row keeps its meaning: a token with no `client_id` is a personal
-`cbid_pat_` token, exactly as before.
+### Customer API keys
+
+**Customer API keys share `user_api_tokens`.** It gains `client_id` and `permissions`;
+`scope` and `name` become nullable, and `prefix` widens to 40 characters. `oauth_clients`
+gains `api_key_prefix`. Every existing row keeps its meaning: a token with no `client_id` is
+a personal `cbid_pat_` token, exactly as before.
 
 One thing to check if your host reads the table directly: rows with a `client_id` are
 customer API keys, and they have no `scope`. `UserApiToken` excludes them with a global
 scope, so Eloquent code is unaffected. A raw `DB::table('user_api_tokens')` query, or a
 `withoutGlobalScopes()` one, now sees both kinds.
 
-**Three migrations.** `oauth_clients` gains `backchannel_logout_uri` and
-`backchannel_logout_session_required`; `oauth_authorization_codes` and
-`oauth_refresh_tokens` gain a nullable `session_id`; `oauth_session_participants` is new.
-All additive, no backfill: existing clients have no URI and are never called, and grants
-issued before the upgrade carry no `sid`.
+### Back-channel logout
 
-**Run a queue worker** if you do not already. Logout tokens are delivered by
-`DeliverBackchannelLogout`; without a worker nothing is sent. On the `sync` connection they
-are sent inline, once, without retries.
+Existing clients have no logout URI and are never called, and grants issued before the
+upgrade carry no `sid`.
 
-**Pass the session to `AuthorizationCodes::issue()`** — the new trailing `sessionId`
-argument — or no ID Token carries `sid` and ending one session cannot name it. See the
+Logout tokens are delivered by `DeliverBackchannelLogout`; without a queue worker nothing is
+sent. On the `sync` connection they are sent inline, once, without retries.
+
+**Pass the session to `AuthorizationCodes::issue()`** — the new `sessionId` argument — or no ID Token carries `sid` and ending one session cannot name it. See the
 [recipe](docs/cookbook/receive-back-channel-logout.md).
 
 *What breaks for implementers of the contracts* (the bundled implementations are updated):
 
-- `ClientRegistry` gains `configureBackchannelLogout(Client, ?string, bool): Client`.
-- `AuthorizationCodes::issue()` gains `?string $sessionId = null`;
+- `ClientRegistry` gains `configureBackchannelLogout(Client, ?string, bool, ?AuditActor): Client`.
+- `AuthorizationCodes::issue()` gains `?string $sessionId = null` (before the support
+  session's `?ActingParty $actor`; pass both by name);
   `RefreshTokens::issue()` gains `?string $sessionId = null`.
 - `AuthorizationCodeService` and `RefreshTokenService` now take a `BackchannelLogout` in
   their constructors — resolve them from the container rather than with `new`.
@@ -184,12 +220,7 @@ argument — or no ID Token carries `sid` and ending one session cannot name it.
 - Removing an organization membership revokes that organization's refresh tokens for the
   person (the new `organization.member_removed` listener).
 
-**Three migrations**: `roles.tenant_assignable` (default `true`),
-`governance_campaigns.organization_id` / `governance_certification_items.organization_id`
-become nullable, and `support_sessions` plus two nullable columns on
-`oauth_authorization_codes` (`actor_id`, `support_session_id`) and one on
-`oauth_access_tokens` (`support_session_id`). All are additive; no existing row changes
-meaning.
+### Staff roles and support sessions
 
 *What changes for a running deployment:*
 
@@ -202,6 +233,10 @@ meaning.
   (`InvalidManifest`), including an explicit `null`.
 - **Token exchange refuses a subject token carrying `act`** (`invalid_grant`). Nothing
   minted `act` before this release, so only support-session tokens are affected.
+- **A permission's `tenant_assignable: true` now counts toward the manifest checksum.** A
+  manifest that opts a permission in re-syncs once after the upgrade (harmless). An SDK
+  that computes the checksum itself reports a different version for such a manifest until
+  it adds the same marker; manifests that opt no permission in are unaffected.
 
 *Contracts that gained methods or parameters* — only matters if you implement them yourself
 rather than using the shipped classes:
@@ -211,8 +246,8 @@ rather than using the shipped classes:
   `assignmentsEverywhere()`.
 - `AccessReviews`: `open()`, `certify()`, `revoke()` and `close()` take `?string` for the
   organization (null = the environment's review).
-- `AuthorizationCodes::issue()` takes a trailing `?ActingParty $actor`; `AuthorizedGrant`
-  and `IdTokenGrant` carry an optional actor.
+- `AuthorizationCodes::issue()` takes a trailing `?ActingParty $actor` (after
+  `sessionId`); `AuthorizedGrant` and `IdTokenGrant` carry an optional actor.
 - `TokenIssuer`: new `issueActing()`.
 - New contracts `StaffAccess` and `SupportSessions`, bound by default.
 
