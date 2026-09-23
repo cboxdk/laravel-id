@@ -90,7 +90,11 @@ readonly class ClientBlueprint
         return new self(
             name: $client->name,
             type: $client->type,
-            tokenEndpointAuthMethod: $client->token_endpoint_auth_method,
+            // A client that signs assertions but never had its method written down still
+            // exports as `private_key_jwt`. Left null, the import would read "a confidential
+            // client with no key set" and mint it a bearer secret.
+            tokenEndpointAuthMethod: $client->token_endpoint_auth_method
+                ?? ($client->jwks !== null ? TokenEndpointAuthMethod::PrivateKeyJwt : null),
             grantTypes: array_values($client->grant_types),
             redirectUris: array_values($client->redirect_uris),
             postLogoutRedirectUris: array_values($client->post_logout_redirect_uris ?? []),

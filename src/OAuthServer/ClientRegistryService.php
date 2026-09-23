@@ -52,7 +52,7 @@ class ClientRegistryService implements ClientRegistry
             throw InvalidClientMetadata::metadata('client_type cannot be changed on an existing client; register a new one');
         }
 
-        if ($settings->tokenEndpointAuthMethod !== $client->token_endpoint_auth_method) {
+        if ($settings->tokenEndpointAuthMethod !== ClientBlueprint::fromClient($client)->tokenEndpointAuthMethod) {
             throw InvalidClientMetadata::metadata('token_endpoint_auth_method cannot be changed here; register a new client');
         }
 

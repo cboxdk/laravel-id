@@ -152,6 +152,23 @@ it('needs the target environment\'s keys to import a private_key_jwt client', fu
         ->and($imported->client->jwks)->toBe($jwks);
 });
 
+it('exports a key-signing client as private_key_jwt even when its method was never recorded', function (): void {
+    $jwks = ['keys' => [['kty' => 'RSA', 'n' => 'abc', 'e' => 'AQAB', 'kid' => 'k1']]];
+    $client = app(ClientRegistry::class)->register(new NewClient(name: 'Signer', jwks: $jwks))->client;
+
+    expect($client->token_endpoint_auth_method)->toBeNull();
+
+    $blueprint = app(ClientRegistry::class)->blueprint($client);
+
+    expect($blueprint->tokenEndpointAuthMethod)->toBe(TokenEndpointAuthMethod::PrivateKeyJwt)
+        // So an import without keys is refused rather than handed a bearer secret.
+        ->and(fn () => app(ClientRegistry::class)->import($blueprint))->toThrow(InvalidClientMetadata::class, 'private_key_jwt');
+
+    // And the client can still be edited with its own blueprint.
+    app(ClientRegistry::class)->update($client, $blueprint->withName('Signer v2'));
+    expect($client->fresh()?->name)->toBe('Signer v2');
+});
+
 it('imports under the owning organization it is given', function (): void {
     $org = $this->makeOrganization();
 
