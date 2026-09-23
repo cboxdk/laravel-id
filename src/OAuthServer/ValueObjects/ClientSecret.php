@@ -15,6 +15,8 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
  */
 readonly class ClientSecret
 {
+    public const HINT_LENGTH = 4;
+
     private function __construct(
         public string $plaintext,
         public string $hash,
@@ -30,5 +32,15 @@ readonly class ClientSecret
     public static function hash(string $plaintext): string
     {
         return hash('sha256', $plaintext);
+    }
+
+    /**
+     * The last {@see self::HINT_LENGTH} characters, kept beside the hash so an operator can
+     * tell two live secrets apart. Sixteen bits of a 256-bit secret: enough to recognise
+     * one, nowhere near enough to help guess it.
+     */
+    public function hint(): string
+    {
+        return substr($this->plaintext, -self::HINT_LENGTH);
     }
 }

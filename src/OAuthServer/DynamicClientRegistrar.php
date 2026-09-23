@@ -6,17 +6,22 @@ namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\ClientAudit;
+use Cbox\Id\OAuthServer\Support\ClientSecretStore;
+use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
+use Cbox\Id\OAuthServer\ValueObjects\ClientBlueprint;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
-use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\OAuthServer\ValueObjects\UpdatedRegistration;
+use Illuminate\Support\Facades\DB;
 
 /**
  * RFC 7591 / 7592 implementation. Validation is deliberately strict and
@@ -48,6 +53,8 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
     public function __construct(
         private readonly ClientRegistry $clients,
+        private readonly ClientSecretStore $secrets,
+        private readonly ClientAudit $audit,
     ) {}
 
     public function validate(array $request): ClientMetadata
@@ -62,6 +69,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         if ($authMethod === 'none' && in_array('client_credentials', $grantTypes, true)) {
             throw InvalidClientMetadata::metadata('client_credentials requires a confidential client (token_endpoint_auth_method must not be "none")');
         }
+
+        // The same grant rules the registry applies, checked HERE too because an RFC 7592
+        // update never passes through the registry's register(): token exchange on a
+        // public client would otherwise be refused on registration and accepted on update.
+        ClientSettingsRules::assertGrants($grantTypes, $authMethod === 'none' ? ClientType::Public : ClientType::Confidential);
 
         return new ClientMetadata(
             clientName: $this->clientName($request),
@@ -87,16 +99,16 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // produce a client that can actually authenticate rather than one with
             // neither credential.
             jwks: $metadata->jwks,
+            // THE CHOICE, WRITTEN DOWN. Inferring it back from the row cannot tell
+            // `client_secret_post` from `client_secret_basic` — both are "has a secret" —
+            // so a client that registered the former was handed a management document
+            // telling it to use the latter.
+            tokenEndpointAuthMethod: $metadata->tokenEndpointAuthMethod(),
         ));
 
         $registrationToken = 'reg_'.bin2hex(random_bytes(32));
 
         $registered->client->forceFill([
-            // THE CHOICE, WRITTEN DOWN. Inferring it back from the row cannot tell
-            // `client_secret_post` from `client_secret_basic` — both are "has a secret" —
-            // so a client that registered the former was handed a management document
-            // telling it to use the latter.
-            'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
             'registration_access_token_hash' => hash('sha256', $registrationToken),
         ])->save();
 
@@ -119,54 +131,72 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
     public function update(Client $client, ClientMetadata $metadata): UpdatedRegistration
     {
-        // A CLIENT THAT ARRIVES AT A SECRET METHOD MUST LEAVE WITH A SECRET.
-        //
-        // The comment below has described this since the downgrade fix: "an update back to
-        // `client_secret_basic` should mint a fresh one rather than silently resurrect the
-        // old". It described an intention. A client that had moved to `private_key_jwt`
-        // had its hash cleared, so moving BACK left `usesASharedSecret()` true and
-        // `secret_hash` null — a client registered for Basic with no password, unable to
-        // authenticate, and nothing in the response saying why.
-        $minted = null;
+        return DB::transaction(function () use ($client, $metadata): UpdatedRegistration {
+            $before = ClientBlueprint::fromClient($client)->toArray();
 
-        if ($metadata->usesASharedSecret() && $client->secret_hash === null) {
-            $minted = ClientSecret::mint();
-        }
+            $client->forceFill([
+                'name' => $metadata->clientName,
+                'type' => $metadata->isPublic() ? ClientType::Public : ClientType::Confidential,
+                'redirect_uris' => $metadata->redirectUris,
+                'grant_types' => $metadata->grantTypes,
+                'scopes' => $metadata->scopes,
+                // RFC 7592 §2.2: an update REPLACES the metadata, so keys omitted from the
+                // new document are gone. Leaving the old set in place would mean a client
+                // could never rotate away from a compromised key through the API it was
+                // told to manage itself with.
+                'jwks' => $metadata->jwks,
+                'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
+            ])->save();
 
-        $client->forceFill([
-            'name' => $metadata->clientName,
-            'type' => $metadata->isPublic() ? ClientType::Public : ClientType::Confidential,
-            'redirect_uris' => $metadata->redirectUris,
-            'grant_types' => $metadata->grantTypes,
-            'scopes' => $metadata->scopes,
-            // RFC 7592 §2.2: an update REPLACES the metadata, so keys omitted from the
-            // new document are gone. Leaving the old set in place would mean a client
-            // could never rotate away from a compromised key through the API it was told
-            // to manage itself with.
-            'jwks' => $metadata->jwks,
-            // AND THE SECRET GOES WITH THE METHOD. A client that updates itself to `none`
-            // or to `private_key_jwt` no longer authenticates with a shared secret, and
-            // leaving the hash on the row kept a credential alive that the client's own
-            // registered metadata says is not in use.
+            // A CLIENT THAT ARRIVES AT A SECRET METHOD MUST LEAVE WITH A SECRET.
             //
-            // `ClientAuthenticator` already refuses to LOG IN with it — the disjunction
-            // there treats "secret still on file" as proof the client is confidential,
-            // which is what closes the downgrade bypass. This is the other half: the row
-            // should not carry a live credential the client believes it has retired, and
-            // an update back to `client_secret_basic` should mint a fresh one rather than
-            // silently resurrect the old.
-            'secret_hash' => $minted !== null
-                ? $minted->hash
-                : ($metadata->usesASharedSecret() ? $client->secret_hash : null),
-            'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
-        ])->save();
+            // A client that had moved to `private_key_jwt` had its secrets cleared, so
+            // moving BACK left it registered for Basic with no password, unable to
+            // authenticate, and nothing in the response saying why. It is minted a FRESH
+            // one — the retired secret is never resurrected.
+            $minted = null;
 
-        return new UpdatedRegistration($client, $minted?->plaintext);
+            if ($metadata->usesASharedSecret()) {
+                if (! $this->secrets->hasLive($client)) {
+                    $minted = $this->secrets->issue($client)->secret->plaintext;
+                }
+            } else {
+                // AND THE SECRETS GO WITH THE METHOD. A client that updates itself to
+                // `none` or to `private_key_jwt` no longer authenticates with a shared
+                // secret, and leaving one on file kept a credential alive that the
+                // client's own registered metadata says is not in use.
+                //
+                // `ClientAuthenticator` already refuses to LOG IN with it — the
+                // disjunction there treats "a secret still on file" as proof the client is
+                // confidential, which is what closes the downgrade bypass. This is the
+                // other half: the client should not carry a live credential it believes
+                // it has retired.
+                $this->secrets->revokeAll($client);
+            }
+
+            $after = ClientBlueprint::fromClient($client)->toArray();
+            $changes = [];
+
+            foreach ($after as $key => $value) {
+                if ($before[$key] !== $value) {
+                    $changes[$key] = ['from' => $before[$key], 'to' => $value];
+                }
+            }
+
+            $this->audit->record(ClientAudit::UPDATED, $client, AuditActor::service($client->client_id), [
+                'source' => 'dynamic_registration',
+                'changes' => $changes,
+                'secret_issued' => $minted !== null,
+            ]);
+
+            return new UpdatedRegistration($client, $minted);
+        });
     }
 
     public function delete(Client $client): void
     {
-        $client->delete();
+        // The client deletes itself (RFC 7592 §2.3), so it is the actor on record.
+        $this->clients->delete($client, AuditActor::service($client->client_id));
     }
 
     /**

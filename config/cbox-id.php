@@ -572,6 +572,16 @@ return [
         'max_access_token_ttl' => env('CBOX_ID_MAX_ACCESS_TOKEN_TTL', 86400),
 
         /*
+         * Client secret rotation. `max_rotation_grace` is the longest a replaced
+         * secret may keep working after a rotation, in seconds — the overlap in
+         * which deployments move to the new secret. Bounded so a rotation cannot
+         * leave the old credential alive indefinitely. Default 2592000 (30 days).
+         */
+        'client_secrets' => [
+            'max_rotation_grace' => env('CBOX_ID_CLIENT_SECRET_MAX_ROTATION_GRACE', 2592000),
+        ],
+
+        /*
          * `POST /oauth/decisions` — the authorization decision endpoint.
          *
          * `max_batch` caps how many permission checks (and how many entitlement
