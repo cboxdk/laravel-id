@@ -13,6 +13,7 @@ use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Enums\GrantType;
 use Cbox\Id\OAuthServer\Enums\SupportActorKind;
 use Cbox\Id\OAuthServer\Enums\SupportSessionRefusal;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
@@ -480,6 +481,65 @@ it('refuses to exchange an acted token', function (): void {
         subjectToken: $token,
         subjectTokenType: TokenExchangeRequest::ACCESS_TOKEN_TYPE,
     )))->toThrow(InvalidTokenExchange::class, 'The subject token was issued to somebody acting for its subject (act) and cannot be exchanged.');
+})->group('security');
+
+/**
+ * @group security
+ *
+ * The same refusal at the token endpoint, for a confidential app that HAS enabled the
+ * token-exchange grant (1.19 app settings) and names its own registered API as the
+ * resource (1.19 audience resolver). The grant toggle is checked first — an app without it
+ * is refused before the subject token is read — and with it, the acted subject is refused
+ * before any audience or scope is resolved for the new token.
+ */
+it('refuses an acted token at the token endpoint, whatever grants and APIs the app has', function (): void {
+    $organization = app(Organizations::class)->create(new NewOrganization('Acme', 'acme-'.bin2hex(random_bytes(3))));
+    app(Memberships::class)->add($organization->id, 'customer-1', MembershipRole::Member);
+
+    $register = fn (array $grants): object => app(ClientRegistry::class)->register(new NewClient(
+        'Cadastre',
+        ClientType::Confidential,
+        redirectUris: [SUPPORT_REDIRECT],
+        grantTypes: $grants,
+        scopes: ['openid', 'profile', 'parcels:read'],
+        firstParty: true,
+    ));
+
+    $exchanger = $register(['authorization_code', GrantType::TokenExchange->value]);
+    $plain = $register(['authorization_code']);
+    $this->makeApi('https://parcels.example.test', ['parcels:read'], clientId: $exchanger->client->client_id);
+
+    $actedFor = function (object $registered) use ($organization): string {
+        grantSupport('staff-1', $registered->client->client_id);
+        $started = app(SupportSessions::class)->begin(supportRequest($registered->client, $organization, ['scopes' => ['openid', 'parcels:read']]), supportCode());
+
+        return $this->postJson('/oauth/token', [
+            'grant_type' => 'authorization_code',
+            'client_id' => $registered->client->client_id,
+            'client_secret' => $registered->secret,
+            'code' => $started->code,
+            'redirect_uri' => SUPPORT_REDIRECT,
+            'code_verifier' => SUPPORT_VERIFIER,
+        ])->assertOk()->json('access_token');
+    };
+
+    $exchange = fn (object $registered, string $token) => $this->postJson('/oauth/token', [
+        'grant_type' => GrantType::TokenExchange->value,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'subject_token' => $token,
+        'subject_token_type' => TokenExchangeRequest::ACCESS_TOKEN_TYPE,
+        'resource' => 'https://parcels.example.test',
+    ]);
+
+    $exchange($exchanger, $actedFor($exchanger))
+        ->assertStatus(400)
+        ->assertJsonPath('error', 'invalid_grant')
+        ->assertJsonPath('error_description', 'The subject token was issued to somebody acting for its subject (act) and cannot be exchanged.');
+
+    $exchange($plain, $actedFor($plain))
+        ->assertStatus(400)
+        ->assertExactJson(['error' => 'unauthorized_client']);
 })->group('security');
 
 /**
