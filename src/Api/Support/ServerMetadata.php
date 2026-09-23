@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Support;
 
 use Cbox\Id\Api\Http\Controllers\TokenController;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
+use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
+use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 
 /**
  * The authorization-server metadata document, shared by the OIDC discovery
@@ -31,9 +34,44 @@ class ServerMetadata
      * named victim. `kubectl oidc-login` reads a document, asks for what it says, and is
      * refused by the server that said it. Two lists that must agree is one list.
      *
+     * Spelled out from {@see ProtocolScope}, the enum that also stops an API from
+     * registering one of these, so the advertised set and the reserved set are one set.
+     *
      * @var list<string>
      */
-    public const SCOPES_SUPPORTED = ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'];
+    public const SCOPES_SUPPORTED = [
+        ProtocolScope::OpenId->value,
+        ProtocolScope::Profile->value,
+        ProtocolScope::Email->value,
+        ProtocolScope::OfflineAccess->value,
+        ProtocolScope::Organizations->value,
+        ProtocolScope::Groups->value,
+    ];
+
+    /**
+     * What discovery advertises: the protocol scopes, then the registered API scopes ANY
+     * client here may hold — those of environment-owned APIs marked tenant-requestable,
+     * which is exactly what dynamic registration accepts.
+     *
+     * Not every registered scope. RFC 8414 §2 lets a server leave scopes out, and a scope
+     * an API keeps for the environment's own apps (or a tenant's private API) is nothing a
+     * reader of a public document can obtain; listing it would only map the environment.
+     *
+     * @return list<string>
+     */
+    public static function scopesSupported(): array
+    {
+        $environment = app(EnvironmentContext::class)->current();
+
+        if ($environment === null) {
+            return self::SCOPES_SUPPORTED;
+        }
+
+        return array_values(array_unique([
+            ...self::SCOPES_SUPPORTED,
+            ...app(Apis::class)->publicScopes($environment->environmentKey()),
+        ]));
+    }
 
     public static function issuer(): string
     {
@@ -90,7 +128,7 @@ class ServerMetadata
             // RFC 9449: sender-constrained (DPoP) access tokens.
             // From the validator, not restated here — see DpopProofValidator::ALLOWED_ALGS.
             'dpop_signing_alg_values_supported' => DpopProofValidator::ALLOWED_ALGS,
-            'scopes_supported' => self::SCOPES_SUPPORTED,
+            'scopes_supported' => self::scopesSupported(),
             'subject_types_supported' => ['public'],
             // The claims the id_token / UserInfo actually carry — honest, not aspirational.
             // Includes the non-standard federation claims (email_verified is standard;

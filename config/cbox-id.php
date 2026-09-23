@@ -417,8 +417,11 @@ return [
      *                 deployments that expect unknown clients.
      *
      * allowed_scopes limits what a dynamically registered client may request; a
-     * requested scope outside this list is dropped. grant_types listed here are
-     * the only ones a dynamic client may be granted.
+     * requested scope outside this list is dropped. It governs scopes no API owns:
+     * a scope a registered API owns is accepted when the API is environment-owned
+     * and the scope tenant-requestable, and refused otherwise — listing it here
+     * cannot widen that. grant_types listed here are the only ones a dynamic client
+     * may be granted.
      */
     /*
     |---------------------------------------------------------------------------
