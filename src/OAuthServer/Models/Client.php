@@ -6,8 +6,11 @@ namespace Cbox\Id\OAuthServer\Models;
 
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
+use Cbox\Id\OAuthServer\Exceptions\ScopeNotGrantable;
+use Cbox\Id\OAuthServer\ValueObjects\ScopeHolder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -51,6 +54,57 @@ class Client extends Model implements EnvironmentOwned
     public function allows(string $scope): bool
     {
         return in_array($scope, $this->scopes, true);
+    }
+
+    /**
+     * Registered through RFC 7591 rather than by an operator. Such a client is never
+     * environment-owned for scope purposes, even though its `organization_id` is null
+     * — see {@see ScopeHolder}.
+     */
+    public function isDynamicallyRegistered(): bool
+    {
+        return $this->registration_access_token_hash !== null;
+    }
+
+    /**
+     * REGISTERED API SCOPES ARE CHECKED ON EVERY SAVE, not only in the registry.
+     *
+     * `scopes` is a free-text column, and hosts write it directly — a console that edits
+     * an app's scopes sets the attribute and saves. A check in the registry alone would
+     * guard the one door nobody uses for updates. So the rule runs where every writer
+     * converges: a client may not be saved holding a registered scope its owner may not
+     * hold.
+     *
+     * Only what CHANGES is judged. On an update that touches `scopes` alone, the scopes
+     * being ADDED are checked — a client that legitimately held a free-text key before an
+     * API registered it must still be editable (issuance drops the scope for it). A change
+     * of owner, or becoming dynamically registered, re-judges everything it holds.
+     */
+    protected static function booted(): void
+    {
+        static::saving(static function (self $client): void {
+            $held = $client->getAttribute('scopes');
+            $scopes = is_array($held) ? array_values(array_filter($held, 'is_string')) : [];
+
+            if ($client->exists && ! $client->isDirty(['organization_id', 'registration_access_token_hash'])) {
+                if (! $client->isDirty('scopes')) {
+                    return;
+                }
+
+                $original = $client->getOriginal('scopes');
+                $scopes = array_values(array_diff($scopes, is_array($original) ? array_filter($original, 'is_string') : []));
+            }
+
+            if ($scopes === []) {
+                return;
+            }
+
+            $refused = app(AudienceResolver::class)->ungrantable(ScopeHolder::of($client), $scopes);
+
+            if ($refused !== []) {
+                throw ScopeNotGrantable::forScopes($refused);
+            }
+        });
     }
 
     /**

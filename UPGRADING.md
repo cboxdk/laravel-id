@@ -43,6 +43,36 @@ subscribed by name see no change.
 **Relying parties may now see `org_role`.** It is additive; a consumer that rejects unknown
 claims (rare) must allow it.
 
+**APIs (resource servers) own their scopes.** Run the migration
+(`2026_09_24_000100_create_oauth_apis_and_their_scopes`); it only creates two tables.
+
+*What breaks:* nothing until you register an API. An environment with no registered APIs
+mints the same tokens as before. Once you register one:
+
+- **Tokens that carried its scopes change `aud`.** A token whose scopes belong to one API is
+  audienced to it even without `resource` (and to `[identifier, issuer]` with `openid`). A
+  resource server that insisted on `aud == issuer` for those scopes must accept its own
+  identifier instead — which is what RFC 9068 asks of it anyway.
+- **Mixed requests narrow.** Free-text scopes requested alongside an API's scopes are
+  dropped from that token; request them separately. Scopes of two APIs with no `resource`
+  are refused with `invalid_target`.
+- **Clients may be refused on save.** `Client` throws `ScopeNotGrantable` when saved with a
+  newly added registered scope its owner may not hold. A console that edits `scopes` on the
+  model should catch it and show `$e->getMessage()`. Existing clients that already hold such
+  a scope stay editable; the token endpoint drops the scope for them.
+- **Roles follow the API.** When the API names a `client_id`, tokens for it carry that app's
+  roles/permissions, not the requesting client's.
+
+Before registering an API whose scopes are already in use, check which organization-owned
+and dynamically registered clients hold them: those scopes stop being granted to them unless
+the API is environment-owned and the scope `tenant_requestable`.
+
+Two smaller changes apply everywhere: refresh tokens record the access token's granted
+scopes (only differs if a grant held scopes outside the client's registration), and token
+exchange echoes the scopes the new token carries. If you construct `JwtTokenIssuer` or
+`DynamicClientRegistrar` by hand rather than from the container, pass the new
+`AudienceResolver` / `Apis` argument.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old

@@ -27,6 +27,7 @@ use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
 use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
@@ -101,6 +102,10 @@ class TokenController
         } catch (ActionDenied) {
             // A TokenMinting inline hook vetoed issuance (fires on every grant).
             return $this->error('access_denied', 400);
+        } catch (InvalidAudience $e) {
+            // The requested scopes and `resource` do not fit the registered APIs (fires on
+            // every grant — the issuer resolves the audience for all of them).
+            return $this->error($e->error, 400, $e->getMessage());
         }
     }
 
@@ -210,9 +215,12 @@ class TokenController
         // A refresh token is issued only when the client asked for offline access.
         // If this token exchange was DPoP-bound, bind the refresh token to the same
         // key (RFC 9449 §5) so rotation demands proof of possession.
+        //
+        // It records what the access token was GRANTED — its scopes and resolved audience
+        // — not what was asked for, so a refresh re-mints exactly that and never more.
         $refresh = in_array('offline_access', $grant->scopes, true)
             ? $this->refreshTokens->issue(
-                $client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt,
+                $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 // The login this family descends from, so a refreshed ID Token can
                 // describe THAT authentication rather than the refresh.
                 $grant->authTime, $grant->amr,
@@ -277,7 +285,7 @@ class TokenController
         // captured. Better absent than invented.
         $refresh = in_array('offline_access', $grant->scopes, true)
             ? $this->refreshTokens->issue(
-                $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+                $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
             )
             : null;
 
@@ -343,7 +351,7 @@ class TokenController
         // strictly more honest than one that omits them.
         $refresh = in_array('offline_access', $grant->scopes, true)
             ? $this->refreshTokens->issue(
-                $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+                $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 $grant->authTime, $grant->amr,
             )
             : null;

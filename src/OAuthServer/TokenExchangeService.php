@@ -93,7 +93,9 @@ class TokenExchangeService implements TokenExchange
             $request->dpopJkt,
         );
 
-        return new TokenExchangeResult($issued, $scopes);
+        // The scopes the new token actually carries: the issuer caps them at this client's
+        // registration and at the audience's API, and RFC 8693 §2.2.1 echoes the result.
+        return new TokenExchangeResult($issued, $issued->scopes);
     }
 
     /**

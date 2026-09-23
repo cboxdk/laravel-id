@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
@@ -16,12 +17,15 @@ use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
 use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
+use Cbox\Id\OAuthServer\ValueObjects\ScopeHolder;
 use Cbox\Id\OAuthServer\ValueObjects\UpdatedRegistration;
+use Illuminate\Support\Facades\DB;
 
 /**
  * RFC 7591 / 7592 implementation. Validation is deliberately strict and
  * secure-by-default: unknown grant types are rejected, requested scopes are
- * reduced to the configured allow-list, and redirect URIs must be well-formed
+ * reduced to the configured allow-list plus the registered API scopes a self-registered
+ * client may hold, and redirect URIs must be well-formed
  * and non-fragment (loopback http is permitted for native/CLI clients, which is
  * exactly the MCP case).
  */
@@ -48,6 +52,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
     public function __construct(
         private readonly ClientRegistry $clients,
+        private readonly Apis $apis,
     ) {}
 
     public function validate(array $request): ClientMetadata
@@ -75,6 +80,15 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     }
 
     public function register(ClientMetadata $metadata): DynamicRegistration
+    {
+        // ONE TRANSACTION. The row is written by the registry first and only becomes
+        // "dynamically registered" when the token hash lands below — and it is that second
+        // save which judges its scopes as a self-registered client's. Were it refused, the
+        // first write would otherwise survive as an operator-owned client nobody holds.
+        return DB::transaction(fn (): DynamicRegistration => $this->persist($metadata));
+    }
+
+    private function persist(ClientMetadata $metadata): DynamicRegistration
     {
         $registered = $this->clients->register(new NewClient(
             name: $metadata->clientName,
@@ -372,9 +386,20 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
         $allowed = $this->configList('allowed_scopes');
 
-        // RFC 7591 §2: the server MAY reduce the requested scopes. Silently drop
-        // any outside the allow-list rather than failing the whole registration.
-        return array_values(array_filter($requested, static fn (string $s): bool => in_array($s, $allowed, true)));
+        // A REGISTERED API SCOPE IS JUDGED BY ITS API, NOT BY THE ALLOW-LIST. A
+        // self-registered client holds one only when the API is environment-owned and the
+        // scope tenant-requestable — the same rule the model enforces on save and the
+        // issuer enforces again at the token endpoint. Listing a registered scope in
+        // `allowed_scopes` cannot widen that: the allow-list is for scopes no API owns.
+        $environmentId = $this->environments()->current()?->environmentKey();
+        $registered = $environmentId === null ? [] : $this->apis->registeredScopes($environmentId, $requested);
+        $registrant = new ScopeHolder($environmentId, null, dynamicallyRegistered: true);
+
+        // RFC 7591 §2: the server MAY reduce the requested scopes. Drop the rest rather
+        // than failing the whole registration — the response's `scope` says what was kept.
+        return array_values(array_filter($requested, static fn (string $s): bool => isset($registered[$s])
+            ? $registered[$s]->mayBeHeldBy($registrant)
+            : in_array($s, $allowed, true)));
     }
 
     /**

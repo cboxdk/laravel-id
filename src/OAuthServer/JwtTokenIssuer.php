@@ -14,6 +14,7 @@ use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -57,6 +58,7 @@ class JwtTokenIssuer implements TokenIssuer
         private readonly AccessChecker $access,
         private readonly IssuerResolver $issuers,
         private readonly Memberships $memberships,
+        private readonly AudienceResolver $audiences,
         private readonly int $accessTokenTtl = self::DEFAULT_TTL_SECONDS,
     ) {}
 
@@ -155,6 +157,11 @@ class JwtTokenIssuer implements TokenIssuer
      */
     private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
+        // What this token is FOR — scopes, audience, and whose roles it carries — decided
+        // once, here, for every grant type. See AudienceResolver.
+        $audience = $this->audiences->resolve($client, $scopes, $resource);
+        $scopes = $audience->scopes;
+
         $jti = (string) Str::ulid();
         $issuedAt = time();
 
@@ -196,8 +203,9 @@ class JwtTokenIssuer implements TokenIssuer
         // authorization model depends on). RFC 9068 §2.2 REQUIRES `aud` on an
         // `at+jwt`, so a token minted without an explicit resource still carries the
         // issuer as its audience — a strict resource server won't reject our own API
-        // tokens for a missing `aud`.
-        $claims['aud'] = $resource ?? $this->issuers->issuer();
+        // tokens for a missing `aud`. A registered API's token names the API, and the
+        // issuer too when it carries `openid`, so UserInfo still accepts it.
+        $claims['aud'] = $audience->claim($this->issuers->issuer());
 
         // RFC 9449: sender-constrain the token to the client's DPoP key. A resource
         // server compares this jkt to the thumbprint of the proof presented with the
@@ -228,7 +236,9 @@ class JwtTokenIssuer implements TokenIssuer
         // An environment-wide grant is exactly the answer for those, and it is read here
         // by passing the absent organization through rather than skipping the lookup.
         if ($userId !== null) {
-            $rbac = $this->access->forToken($userId, $organizationId, $client->client_id);
+            // For a registered API with a linked app, the API's app: the token is read by
+            // the API, which enforces its own roles, not the requesting client's.
+            $rbac = $this->access->forToken($userId, $organizationId, $audience->rbacClientId);
             if (! $rbac->isEmpty()) {
                 $claims['roles'] = $rbac->roles;
                 $claims['permissions'] = $rbac->permissions;
@@ -262,7 +272,7 @@ class JwtTokenIssuer implements TokenIssuer
             'user_id' => $userId,
             'organization_id' => $organizationId,
             'scopes' => $scopes,
-            'audience' => $resource,
+            'audience' => $audience->resource,
             'expires_at' => now()->addSeconds($this->ttlFor($client)),
         ]);
 
@@ -270,6 +280,6 @@ class JwtTokenIssuer implements TokenIssuer
         // down to the client's registered set, and RFC 6749 §5.1 makes the token
         // endpoint echo `scope` whenever that happened. Without this the caller had no
         // way to know what it actually got.
-        return new IssuedToken($token, $jti, $this->ttlFor($client), $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes);
+        return new IssuedToken($token, $jti, $this->ttlFor($client), $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes, $audience->resource);
     }
 }

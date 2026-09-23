@@ -8,6 +8,8 @@ use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
+use Cbox\Id\OAuthServer\Contracts\Apis;
+use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
@@ -36,6 +38,12 @@ class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(ClientRegistry::class, ClientRegistryService::class);
         $this->app->singleton(ServiceAccounts::class, ServiceAccountService::class);
         $this->app->singleton(TokenIssuer::class, JwtTokenIssuer::class);
+
+        // APIs (resource servers) and the scopes they own. The resolver is the one place
+        // every grant asks what a token is for — its scopes, `aud`, and whose RBAC it
+        // carries — so the grant types cannot drift apart on it.
+        $this->app->singleton(Apis::class, DatabaseApis::class);
+        $this->app->singleton(AudienceResolver::class, RegisteredApiAudienceResolver::class);
 
         // Access-token lifetime is operator-tunable. A short TTL is the standard way
         // stateless roles/permissions claims stay fresh — the token self-expires
