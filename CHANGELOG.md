@@ -252,6 +252,9 @@ more trust than the wording it removes.
   refresh tokens and notifies nobody — because hosts call it on every role assignment and
   unassignment purely so the next token carries the new claims; propagating logout there
   would sign people out of every application whenever an administrator adjusted a role.
+- A user API token (`cbid_pat_`) now stamps `last_used_at` at most once a minute, like
+  customer API keys: `resolve()` runs on every authenticated request and wrote the row
+  every time.
 
 ### Security
 
