@@ -79,7 +79,11 @@ class JwtTokenIssuer implements TokenIssuer
         ?string $resource = null,
         ?string $dpopJkt = null,
     ): IssuedToken {
-        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt, $actor, $notAfter);
+        // grantScopes() widens an EMPTY request to the client's whole registered set, which
+        // may name offline_access; an acted token must never claim a scope it cannot have.
+        $granted = array_values(array_filter($this->grantScopes($client, $scopes), fn (string $scope): bool => $scope !== 'offline_access'));
+
+        return $this->issue($client, $userId, $userId, $organizationId, $granted, $resource, $dpopJkt, $actor, $notAfter);
     }
 
     /**

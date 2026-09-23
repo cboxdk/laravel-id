@@ -534,3 +534,11 @@ it('never lets a token hook forge or rewrite act', function (): void {
     expect($ordinary)->not->toHaveKey('act')
         ->and((array) $acted['act'])->toBe(['sub' => 'staff-1']);
 })->group('security');
+
+it('never claims offline_access on an acted token, even when the request was empty', function (): void {
+    [$client] = supportWorld();
+
+    $claims = verifiedClaims(app(TokenIssuer::class)->issueActing($client, 'customer-1', null, [], new ActingParty('staff-1', 'session-1'), now()->addMinutes(5))->token);
+
+    expect(explode(' ', $claims['scope']))->toBe(['openid', 'profile']);
+});
