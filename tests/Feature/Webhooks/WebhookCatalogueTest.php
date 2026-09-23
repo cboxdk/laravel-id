@@ -74,10 +74,6 @@ it('does not offer an event the framework never emits', function (): void {
  * no code behind it.
  */
 it('backs every event it calls emitted with a source file that emits events', function (): void {
-    // Emitted by the support session service, which ships in the same release from its
-    // own work package.
-    $emittedElsewhere = ['support_session.started'];
-
     $sources = [];
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__, 3).'/src')) as $file) {
         $path = (string) $file;
@@ -94,7 +90,7 @@ it('backs every event it calls emitted with a source file that emits events', fu
     $unbacked = [];
 
     foreach (WebhookEventType::cases() as $case) {
-        if (! $case->isEmitted() || in_array($case->value, $emittedElsewhere, true)) {
+        if (! $case->isEmitted()) {
             continue;
         }
 
