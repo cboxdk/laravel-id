@@ -24,6 +24,9 @@ use Cbox\Id\OAuthServer\ValueObjects\ClientSecretSummary;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredClient;
 use Cbox\Id\OAuthServer\ValueObjects\RotatedClientSecret;
+use Cbox\Id\Organization\ValueObjects\ApiKeyPrefix;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -58,6 +61,7 @@ class ClientRegistryService implements ClientRegistry
         }
 
         $settings->assertValid();
+        $this->assertApiKeyPrefixFree($settings->apiKeyPrefix, $client);
 
         $before = ClientBlueprint::fromClient($client)->toArray();
         $after = $settings->toArray();
@@ -84,7 +88,12 @@ class ClientRegistryService implements ClientRegistry
                 'first_party' => $settings->firstParty,
                 'manifest_url' => $settings->manifestUrl,
                 'access_token_ttl' => $settings->accessTokenTtl,
-            ])->save();
+                'backchannel_logout_uri' => $settings->backchannelLogoutUri,
+                'backchannel_logout_session_required' => $settings->backchannelLogoutSessionRequired,
+                'api_key_prefix' => $settings->apiKeyPrefix,
+            ]);
+
+            $this->saveClaimingPrefix($client);
 
             $this->audit->record(ClientAudit::UPDATED, $client, $actor, ['changes' => $changes]);
 
@@ -212,6 +221,9 @@ class ClientRegistryService implements ClientRegistry
             accessTokenTtl: $blueprint->accessTokenTtl,
             tokenEndpointAuthMethod: $blueprint->tokenEndpointAuthMethod,
             manifestUrl: $blueprint->manifestUrl,
+            backchannelLogoutUri: $blueprint->backchannelLogoutUri,
+            backchannelLogoutSessionRequired: $blueprint->backchannelLogoutSessionRequired,
+            apiKeyPrefix: $blueprint->apiKeyPrefix,
         ), $actor, ['source' => 'blueprint']);
     }
 
@@ -235,6 +247,12 @@ class ClientRegistryService implements ClientRegistry
             BackchannelLogoutUri::assertValid($input->backchannelLogoutUri);
         }
 
+        if ($input->apiKeyPrefix !== null && ApiKeyPrefix::tryFrom($input->apiKeyPrefix) === null) {
+            throw InvalidClientMetadata::metadata("api_key_prefix [{$input->apiKeyPrefix}] must match ".ApiKeyPrefix::PATTERN.' and not use a reserved root');
+        }
+
+        $this->assertApiKeyPrefixFree($input->apiKeyPrefix, null);
+
         return DB::transaction(function () use ($input, $actor, $context): RegisteredClient {
             $client = new Client;
             $client->fill([
@@ -251,11 +269,12 @@ class ClientRegistryService implements ClientRegistry
                 'access_token_ttl' => $input->accessTokenTtl,
                 'first_party' => $input->firstParty,
                 'backchannel_logout_uri' => $input->backchannelLogoutUri,
-                'backchannel_logout_session_required' => $input->backchannelLogoutSessionRequired,
+                'backchannel_logout_session_required' => $input->backchannelLogoutUri !== null && $input->backchannelLogoutSessionRequired,
+                'api_key_prefix' => $input->apiKeyPrefix,
             ]);
 
             $client->jwks = $input->jwks;
-            $client->save();
+            $this->saveClaimingPrefix($client);
 
             // A confidential client authenticates EITHER by a shared secret OR by
             // signing assertions with its registered keys (`private_key_jwt`). When it
@@ -294,6 +313,53 @@ class ClientRegistryService implements ClientRegistry
         return $client->type === ClientType::Confidential
             && $client->jwks === null
             && $client->token_endpoint_auth_method !== TokenEndpointAuthMethod::PrivateKeyJwt;
+    }
+
+    /**
+     * A customer-API-key prefix is unique per environment (the environment scope on the
+     * query, and the index behind it). Refused with the reason rather than dropped: an app
+     * that silently accepts no keys after a promotion is the failure nobody notices.
+     *
+     * @throws InvalidClientMetadata
+     */
+    private function assertApiKeyPrefixFree(?string $prefix, ?Client $except): void
+    {
+        if ($prefix === null) {
+            return;
+        }
+
+        $taken = Client::query()
+            ->where('api_key_prefix', $prefix)
+            ->when($except !== null, fn (Builder $query) => $query->whereKeyNot($except?->getKey()))
+            ->exists();
+
+        if ($taken) {
+            throw self::prefixTaken($prefix);
+        }
+    }
+
+    /**
+     * Save, turning the unique index's answer to a concurrent claim of the same prefix
+     * into the same refusal the pre-check gives.
+     *
+     * @throws InvalidClientMetadata
+     */
+    private function saveClaimingPrefix(Client $client): void
+    {
+        try {
+            $client->save();
+        } catch (UniqueConstraintViolationException $e) {
+            if ($client->api_key_prefix === null) {
+                throw $e;
+            }
+
+            throw self::prefixTaken($client->api_key_prefix);
+        }
+    }
+
+    private static function prefixTaken(string $prefix): InvalidClientMetadata
+    {
+        return InvalidClientMetadata::metadata("api_key_prefix [{$prefix}] is already declared by another app in this environment; import with another prefix (or none)");
     }
 
     private function lock(Client $client): void

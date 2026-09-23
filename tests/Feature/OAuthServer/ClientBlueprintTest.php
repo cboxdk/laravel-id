@@ -35,6 +35,9 @@ function blueprintSource(): RegisteredClient
         accessTokenTtl: 600,
         tokenEndpointAuthMethod: TokenEndpointAuthMethod::ClientSecretPost,
         manifestUrl: 'https://staging.cortex.test/manifest.json',
+        backchannelLogoutUri: 'https://staging.cortex.test/backchannel-logout',
+        backchannelLogoutSessionRequired: true,
+        apiKeyPrefix: 'cortex_test',
     ));
 }
 
@@ -71,7 +74,10 @@ it('exports a deterministic, versioned document', function (): void {
             ],
             "first_party": true,
             "manifest_url": "https://staging.cortex.test/manifest.json",
-            "access_token_ttl": 600
+            "access_token_ttl": 600,
+            "backchannel_logout_uri": "https://staging.cortex.test/backchannel-logout",
+            "backchannel_logout_session_required": true,
+            "api_key_prefix": "cortex_test"
         }
 
         JSON);
@@ -98,7 +104,9 @@ it('imports into another environment as a new client, with its own id and secret
         $blueprint = ClientBlueprint::fromJson($json)
             ->withRedirectUris(['https://cortex.test/cb'])
             ->withPostLogoutRedirectUris(['https://cortex.test/bye'])
-            ->withManifestUrl('https://cortex.test/manifest.json');
+            ->withManifestUrl('https://cortex.test/manifest.json')
+            ->withBackchannelLogout('https://cortex.test/backchannel-logout', sessionRequired: true)
+            ->withApiKeyPrefix('cortex_live');
 
         return app(ClientRegistry::class)->import($blueprint);
     });
@@ -113,7 +121,10 @@ it('imports into another environment as a new client, with its own id and secret
         ->and($imported->client->first_party)->toBeTrue()
         ->and($imported->client->access_token_ttl)->toBe(600)
         ->and($imported->client->token_endpoint_auth_method)->toBe(TokenEndpointAuthMethod::ClientSecretPost)
-        ->and($imported->client->manifest_url)->toBe('https://cortex.test/manifest.json');
+        ->and($imported->client->manifest_url)->toBe('https://cortex.test/manifest.json')
+        ->and($imported->client->backchannel_logout_uri)->toBe('https://cortex.test/backchannel-logout')
+        ->and($imported->client->backchannel_logout_session_required)->toBeTrue()
+        ->and($imported->client->api_key_prefix)->toBe('cortex_live');
 
     // The environments stay apart: each secret authenticates only its own client.
     $this->runAsEnvironment('env_prod', function () use ($imported, $source): void {
@@ -126,7 +137,8 @@ it('imports into another environment as a new client, with its own id and secret
 });
 
 it('audits an import as a creation from a blueprint', function (): void {
-    $blueprint = app(ClientRegistry::class)->blueprint(blueprintSource()->client);
+    // Into the same environment, so without the source's key prefix, which it holds.
+    $blueprint = app(ClientRegistry::class)->blueprint(blueprintSource()->client)->withApiKeyPrefix(null);
     $audit = $this->fakeAudit();
 
     app(ClientRegistry::class)->import($blueprint);
@@ -201,6 +213,11 @@ it('refuses a document it cannot honour, and says why', function (array $patch, 
     'scopes as a string' => [['scopes' => 'openid profile'], '"scopes" must be a list of strings'],
     'a scope with a space' => [['scopes' => ['openid profile']], 'without whitespace'],
     'a manifest that is no URL' => [['manifest_url' => 'not a url'], '"manifest_url" must be an absolute URL'],
+    'a plain-http logout endpoint' => [['backchannel_logout_uri' => 'http://app.test/logout'], 'backchannel_logout_uri must use https'],
+    'a logout endpoint with a fragment' => [['backchannel_logout_uri' => 'https://app.test/logout#x'], 'backchannel_logout_uri must not contain a fragment'],
+    'session_required as a string' => [['backchannel_logout_session_required' => 'true'], '"backchannel_logout_session_required" must be a boolean'],
+    'a malformed key prefix' => [['api_key_prefix' => 'Acme-Live'], '"api_key_prefix" [Acme-Live] must match'],
+    'the platform\'s own key root' => [['api_key_prefix' => 'cbid_live'], '"api_key_prefix" [cbid_live] must match'],
 ]);
 
 it('refuses JSON that is not a blueprint object', function (string $json): void {
@@ -217,4 +234,82 @@ it('reads a public client back as public', function (): void {
     $public = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code']);
 
     expect(app(ClientRegistry::class)->blueprint($public->client)->toArray()['client_type'])->toBe('public');
+});
+
+it('reads a document exported before the logout and key-prefix settings existed', function (): void {
+    $document = (new ClientBlueprint(name: 'App', grantTypes: ['client_credentials']))->toArray();
+    unset($document['backchannel_logout_uri'], $document['backchannel_logout_session_required'], $document['api_key_prefix']);
+
+    $blueprint = ClientBlueprint::fromArray($document);
+
+    expect($blueprint->backchannelLogoutUri)->toBeNull()
+        ->and($blueprint->backchannelLogoutSessionRequired)->toBeFalse()
+        ->and($blueprint->apiKeyPrefix)->toBeNull();
+});
+
+it('refuses to import a key prefix another app in the environment already declared, and creates nothing', function (): void {
+    $source = blueprintSource();
+    $registry = app(ClientRegistry::class);
+    $blueprint = $registry->blueprint($source->client)->withName('Cortex copy');
+
+    expect(fn () => $registry->import($blueprint))
+        ->toThrow(InvalidClientMetadata::class, 'api_key_prefix [cortex_test] is already declared by another app in this environment');
+
+    expect(Client::query()->where('name', 'Cortex copy')->exists())->toBeFalse();
+
+    // A copy within one environment names another prefix, or none.
+    expect($registry->import($blueprint->withApiKeyPrefix(null))->client->api_key_prefix)->toBeNull()
+        ->and($registry->import($blueprint->withApiKeyPrefix('copy_test'))->client->api_key_prefix)->toBe('copy_test');
+});
+
+it('imports the same key prefix into another environment, where it is free', function (): void {
+    $blueprint = app(ClientRegistry::class)->blueprint(blueprintSource()->client);
+
+    $imported = $this->runAsEnvironment('env_prod', fn (): RegisteredClient => app(ClientRegistry::class)->import($blueprint));
+
+    expect($imported->client->api_key_prefix)->toBe('cortex_test');
+});
+
+it('applies logout and key-prefix changes through update(), and refuses a prefix another app holds', function (): void {
+    $source = blueprintSource();
+    $registry = app(ClientRegistry::class);
+    $other = $registry->register(new NewClient(name: 'Other', grantTypes: ['client_credentials'], apiKeyPrefix: 'other_test'));
+    $audit = $this->fakeAudit();
+
+    $registry->update($source->client, $registry->blueprint($source->client)
+        ->withBackchannelLogout(null)
+        ->withApiKeyPrefix('cortex_live'));
+
+    $fresh = Client::query()->findOrFail($source->client->id);
+
+    expect($fresh->backchannel_logout_uri)->toBeNull()
+        // The requirement goes with the URI: a later URI must not inherit it.
+        ->and($fresh->backchannel_logout_session_required)->toBeFalse()
+        ->and($fresh->api_key_prefix)->toBe('cortex_live')
+        ->and(array_keys($audit->recorded[0]->context['changes']))->toBe([
+            'backchannel_logout_uri', 'backchannel_logout_session_required', 'api_key_prefix',
+        ]);
+
+    expect(fn () => $registry->update($fresh, $registry->blueprint($fresh)->withApiKeyPrefix('other_test')))
+        ->toThrow(InvalidClientMetadata::class, 'api_key_prefix [other_test] is already declared');
+
+    expect(Client::query()->findOrFail($source->client->id)->api_key_prefix)->toBe('cortex_live')
+        ->and(Client::query()->findOrFail($other->client->id)->api_key_prefix)->toBe('other_test');
+});
+
+it('audits a change of the back-channel logout endpoint, and only a change', function (): void {
+    $client = blueprintSource()->client;
+    $audit = $this->fakeAudit();
+    $registry = app(ClientRegistry::class);
+
+    $registry->configureBackchannelLogout($client, 'https://staging.cortex.test/backchannel-logout', true);
+    expect($audit->recorded)->toBe([]);
+
+    $registry->configureBackchannelLogout($client, 'https://staging.cortex.test/logout-v2');
+
+    $audit->assertRecorded('app.updated');
+    expect($audit->recorded[0]->context['changes'])->toBe([
+        'backchannel_logout_uri' => ['from' => 'https://staging.cortex.test/backchannel-logout', 'to' => 'https://staging.cortex.test/logout-v2'],
+        'backchannel_logout_session_required' => ['from' => true, 'to' => false],
+    ]);
 });

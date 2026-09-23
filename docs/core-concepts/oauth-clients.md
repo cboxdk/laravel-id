@@ -114,6 +114,11 @@ The client type and authentication method cannot change here — they decide wha
 the client holds. Register a new client instead. An update that changes nothing records
 nothing.
 
+The blueprint is the WHOLE settings document, so it replaces the back-channel logout
+endpoint and the customer-API-key prefix too: build it from `blueprint($client)`, not from
+`new ClientBlueprint(...)`, or those settings are cleared. A prefix another app in the
+environment holds is refused.
+
 ## Blueprints: promote an app between environments
 
 A blueprint is an app's configuration without its identity or credentials — see

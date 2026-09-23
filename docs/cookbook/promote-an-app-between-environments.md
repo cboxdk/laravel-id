@@ -18,6 +18,8 @@ configuration across — and nothing that belongs to the environment it came fro
 | grants, scopes, first-party flag | secrets and the registration access token — credentials are never copied |
 | redirect URIs, post-logout redirect URIs, manifest URL | the owning organization — an id in the source environment |
 | access-token lifetime | the JWK Set — each environment should hold its own keys |
+| back-channel logout URI and its `sid` requirement | customer API keys — they belong to the environment they were issued in |
+| customer-API-key prefix (`api_key_prefix`) | |
 
 ## Export
 
@@ -49,7 +51,10 @@ $json = app(ClientRegistry::class)->blueprint($stagingClient)->toJson();
     ],
     "first_party": false,
     "manifest_url": "https://billing.staging.example.com/cbox-id.json",
-    "access_token_ttl": 600
+    "access_token_ttl": 600,
+    "backchannel_logout_uri": "https://billing.staging.example.com/oidc/logout",
+    "backchannel_logout_session_required": false,
+    "api_key_prefix": "billing_test"
 }
 ```
 
@@ -67,7 +72,9 @@ use Cbox\Id\OAuthServer\ValueObjects\ClientBlueprint;
 
 $blueprint = ClientBlueprint::fromJson($json)
     ->withRedirectUris(['https://billing.example.com/callback'])
-    ->withManifestUrl('https://billing.example.com/cbox-id.json');
+    ->withManifestUrl('https://billing.example.com/cbox-id.json')
+    ->withBackchannelLogout('https://billing.example.com/oidc/logout')
+    ->withApiKeyPrefix('billing_live');   // mark production keys as live
 
 $registered = app(ClientRegistry::class)->import(
     $blueprint,
@@ -78,6 +85,15 @@ $registered = app(ClientRegistry::class)->import(
 $registered->client->client_id;   // a new cid_…
 $registered->secret;              // a new csec_… — shown once
 ```
+
+**The key prefix is unique per environment.** An import into an environment where another
+app already declared the blueprint's `api_key_prefix` is refused with an
+`InvalidClientMetadata` saying so — never imported with the prefix silently dropped, because
+an app that quietly accepts none of its customers' keys is the failure nobody notices until
+a customer does. Promoting to another environment keeps the prefix (or renames it, as above);
+copying an app within one environment needs `withApiKeyPrefix('other_test')` or
+`withApiKeyPrefix(null)` first. A document exported before 1.19 has none of the three
+logout and key-prefix keys and reads as "not configured".
 
 A `private_key_jwt` app is imported with the target environment's public key set:
 `import($blueprint, jwks: $productionJwks)`. Without it the import is refused.
@@ -96,6 +112,9 @@ cannot honour, with an `InvalidClientMetadata` naming the reason:
 - a redirect URI that is not absolute, carries a fragment, or uses a single-word custom
   scheme (`javascript:`); an `authorization_code` app with no redirect URI;
 - an access-token lifetime outside the configured bounds;
+- a back-channel logout URI that is not https (or http on localhost), or carries a fragment
+  or credentials; an `api_key_prefix` that does not match `^[a-z][a-z0-9]{1,15}_(live|test)$`
+  or uses the platform's reserved `cbid` root;
 - values of the wrong type.
 
 The target environment's own rules still apply on top: a console may hold redirect URIs to a

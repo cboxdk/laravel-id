@@ -255,6 +255,12 @@ more trust than the wording it removes.
 - A user API token (`cbid_pat_`) now stamps `last_used_at` at most once a minute, like
   customer API keys: `resolve()` runs on every authenticated request and wrote the row
   every time.
+- `ClientBlueprint` carries `backchannel_logout_uri`, `backchannel_logout_session_required`
+  and `api_key_prefix` (optional on the way in, so an earlier document still reads), with
+  `withBackchannelLogout()` / `withApiKeyPrefix()`. `ClientRegistry::update()` applies them
+  and `import()` creates with them; a prefix already declared by another app in the target
+  environment is refused, not dropped. `NewClient` gains `apiKeyPrefix`.
+  `configureBackchannelLogout()` records `app.updated` when the setting changes.
 
 ### Security
 

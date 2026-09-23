@@ -10,7 +10,9 @@ use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
+use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
 use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
+use Cbox\Id\Organization\ValueObjects\ApiKeyPrefix;
 use JsonException;
 
 /**
@@ -24,9 +26,17 @@ use JsonException;
  * environment should hold separate keys, so a `private_key_jwt` blueprint is imported with
  * the target's key set passed alongside it.
  *
- * Redirect URIs and the manifest URL ARE carried, because they are the app's
- * configuration — but they usually name the source environment's deployment. Adjust them
- * with {@see withRedirectUris()} and friends before importing.
+ * Redirect URIs, the manifest URL and the back-channel logout URI ARE carried, because
+ * they are the app's configuration — but they usually name the source environment's
+ * deployment. Adjust them with {@see withRedirectUris()} and friends before importing.
+ *
+ * The customer-API-key prefix (`api_key_prefix`) is carried too: an app promoted to
+ * production should accept its customers' keys there. It is unique per environment, so an
+ * import into an environment where another app already declared it is REFUSED rather than
+ * silently dropped — an app that quietly accepts no keys is the worse failure. Copying an
+ * app within one environment therefore means {@see withApiKeyPrefix()} (another prefix, or
+ * null) first. Keys themselves never travel: they belong to the environment they were
+ * issued in.
  *
  * THE SHAPE IS DETERMINISTIC AND VERSIONED. Keys are emitted in one fixed order and every
  * list is de-duplicated and sorted, so exporting the same app twice produces the same
@@ -46,7 +56,8 @@ readonly class ClientBlueprint
     private const KEYS = [
         'kind', 'version', 'name', 'client_type', 'token_endpoint_auth_method', 'grant_types',
         'redirect_uris', 'post_logout_redirect_uris', 'scopes', 'first_party', 'manifest_url',
-        'access_token_ttl',
+        'access_token_ttl', 'backchannel_logout_uri', 'backchannel_logout_session_required',
+        'api_key_prefix',
     ];
 
     /** @var list<string> */
@@ -60,6 +71,9 @@ readonly class ClientBlueprint
 
     /** @var list<string> */
     public array $scopes;
+
+    /** Meaningless without a URI, so it is false whenever {@see $backchannelLogoutUri} is null. */
+    public bool $backchannelLogoutSessionRequired;
 
     /**
      * @param  list<string>  $grantTypes
@@ -78,11 +92,15 @@ readonly class ClientBlueprint
         public bool $firstParty = false,
         public ?string $manifestUrl = null,
         public ?int $accessTokenTtl = null,
+        public ?string $backchannelLogoutUri = null,
+        bool $backchannelLogoutSessionRequired = false,
+        public ?string $apiKeyPrefix = null,
     ) {
         $this->grantTypes = self::normalize($grantTypes);
         $this->redirectUris = self::normalize($redirectUris);
         $this->postLogoutRedirectUris = self::normalize($postLogoutRedirectUris);
         $this->scopes = self::normalize($scopes);
+        $this->backchannelLogoutSessionRequired = $backchannelLogoutUri !== null && $backchannelLogoutSessionRequired;
     }
 
     public static function fromClient(Client $client): self
@@ -102,6 +120,9 @@ readonly class ClientBlueprint
             firstParty: $client->first_party,
             manifestUrl: $client->manifest_url,
             accessTokenTtl: $client->access_token_ttl,
+            backchannelLogoutUri: $client->backchannel_logout_uri,
+            backchannelLogoutSessionRequired: $client->backchannel_logout_session_required,
+            apiKeyPrefix: $client->api_key_prefix,
         );
     }
 
@@ -172,6 +193,26 @@ readonly class ClientBlueprint
             throw self::invalid('"access_token_ttl" must be an integer number of seconds or null');
         }
 
+        // The three 1.19 keys are optional on the way in, so a document exported before
+        // they existed still reads — as "not configured", which is what it described.
+        $backchannelUri = $document['backchannel_logout_uri'] ?? null;
+
+        if ($backchannelUri !== null && ! is_string($backchannelUri)) {
+            throw self::invalid('"backchannel_logout_uri" must be a string or null');
+        }
+
+        $sessionRequired = $document['backchannel_logout_session_required'] ?? false;
+
+        if (! is_bool($sessionRequired)) {
+            throw self::invalid('"backchannel_logout_session_required" must be a boolean');
+        }
+
+        $prefix = $document['api_key_prefix'] ?? null;
+
+        if ($prefix !== null && ! is_string($prefix)) {
+            throw self::invalid('"api_key_prefix" must be a string or null');
+        }
+
         $blueprint = new self(
             name: trim($name),
             type: $type,
@@ -183,6 +224,9 @@ readonly class ClientBlueprint
             firstParty: $firstParty,
             manifestUrl: $manifestUrl,
             accessTokenTtl: $ttl,
+            backchannelLogoutUri: $backchannelUri,
+            backchannelLogoutSessionRequired: $sessionRequired,
+            apiKeyPrefix: $prefix,
         );
 
         $blueprint->assertValid();
@@ -231,12 +275,22 @@ readonly class ClientBlueprint
         if (in_array('authorization_code', $this->grantTypes, true) && $this->redirectUris === []) {
             throw InvalidClientMetadata::redirectUri('redirect_uris is required for the authorization_code grant');
         }
+
+        if ($this->backchannelLogoutUri !== null) {
+            BackchannelLogoutUri::assertValid($this->backchannelLogoutUri);
+        }
+
+        // The format only. Whether the prefix is free is a question about the environment
+        // the blueprint lands in, answered by the registry at import and update.
+        if ($this->apiKeyPrefix !== null && ApiKeyPrefix::tryFrom($this->apiKeyPrefix) === null) {
+            throw self::invalid("\"api_key_prefix\" [{$this->apiKeyPrefix}] must match ".ApiKeyPrefix::PATTERN.' and not use a reserved root');
+        }
     }
 
     /**
      * The document, keys in their fixed order, lists sorted.
      *
-     * @return array{kind: string, version: int, name: string, client_type: string, token_endpoint_auth_method: string|null, grant_types: list<string>, redirect_uris: list<string>, post_logout_redirect_uris: list<string>, scopes: list<string>, first_party: bool, manifest_url: string|null, access_token_ttl: int|null}
+     * @return array{kind: string, version: int, name: string, client_type: string, token_endpoint_auth_method: string|null, grant_types: list<string>, redirect_uris: list<string>, post_logout_redirect_uris: list<string>, scopes: list<string>, first_party: bool, manifest_url: string|null, access_token_ttl: int|null, backchannel_logout_uri: string|null, backchannel_logout_session_required: bool, api_key_prefix: string|null}
      */
     public function toArray(): array
     {
@@ -253,6 +307,9 @@ readonly class ClientBlueprint
             'first_party' => $this->firstParty,
             'manifest_url' => $this->manifestUrl,
             'access_token_ttl' => $this->accessTokenTtl,
+            'backchannel_logout_uri' => $this->backchannelLogoutUri,
+            'backchannel_logout_session_required' => $this->backchannelLogoutSessionRequired,
+            'api_key_prefix' => $this->apiKeyPrefix,
         ];
     }
 
@@ -309,19 +366,25 @@ readonly class ClientBlueprint
 
     public function withManifestUrl(?string $manifestUrl): self
     {
-        return new self(
-            $this->name, $this->type, $this->tokenEndpointAuthMethod, $this->grantTypes, $this->redirectUris,
-            $this->postLogoutRedirectUris, $this->scopes, $this->firstParty, $manifestUrl, $this->accessTokenTtl,
-        );
+        return $this->rebuild(['manifestUrl' => $manifestUrl]);
     }
 
     /** Null returns the client to the deployment default. */
     public function withAccessTokenTtl(?int $accessTokenTtl): self
     {
-        return new self(
-            $this->name, $this->type, $this->tokenEndpointAuthMethod, $this->grantTypes, $this->redirectUris,
-            $this->postLogoutRedirectUris, $this->scopes, $this->firstParty, $this->manifestUrl, $accessTokenTtl,
-        );
+        return $this->rebuild(['accessTokenTtl' => $accessTokenTtl]);
+    }
+
+    /** Null stops the notifications (and the `sid` requirement goes with the URI). */
+    public function withBackchannelLogout(?string $uri, bool $sessionRequired = false): self
+    {
+        return $this->rebuild(['backchannelLogoutUri' => $uri, 'backchannelLogoutSessionRequired' => $sessionRequired]);
+    }
+
+    /** Null imports the app accepting no customer API keys. */
+    public function withApiKeyPrefix(?string $apiKeyPrefix): self
+    {
+        return $this->rebuild(['apiKeyPrefix' => $apiKeyPrefix]);
     }
 
     /**
@@ -338,17 +401,38 @@ readonly class ClientBlueprint
         ?array $scopes = null,
         ?bool $firstParty = null,
     ): self {
+        return $this->rebuild(array_filter([
+            'name' => $name,
+            'grantTypes' => $grantTypes,
+            'redirectUris' => $redirectUris,
+            'postLogoutRedirectUris' => $postLogoutRedirectUris,
+            'scopes' => $scopes,
+            'firstParty' => $firstParty,
+        ], fn (mixed $value): bool => $value !== null));
+    }
+
+    /**
+     * This blueprint with the named settings replaced — nullable ones included, which is
+     * why it takes the changes as a map rather than as null-means-keep arguments.
+     *
+     * @param  array{name?: string, grantTypes?: list<string>, redirectUris?: list<string>, postLogoutRedirectUris?: list<string>, scopes?: list<string>, firstParty?: bool, manifestUrl?: string|null, accessTokenTtl?: int|null, backchannelLogoutUri?: string|null, backchannelLogoutSessionRequired?: bool, apiKeyPrefix?: string|null}  $changes
+     */
+    private function rebuild(array $changes): self
+    {
         return new self(
-            name: $name ?? $this->name,
+            name: array_key_exists('name', $changes) ? $changes['name'] : $this->name,
             type: $this->type,
             tokenEndpointAuthMethod: $this->tokenEndpointAuthMethod,
-            grantTypes: $grantTypes ?? $this->grantTypes,
-            redirectUris: $redirectUris ?? $this->redirectUris,
-            postLogoutRedirectUris: $postLogoutRedirectUris ?? $this->postLogoutRedirectUris,
-            scopes: $scopes ?? $this->scopes,
-            firstParty: $firstParty ?? $this->firstParty,
-            manifestUrl: $this->manifestUrl,
-            accessTokenTtl: $this->accessTokenTtl,
+            grantTypes: array_key_exists('grantTypes', $changes) ? $changes['grantTypes'] : $this->grantTypes,
+            redirectUris: array_key_exists('redirectUris', $changes) ? $changes['redirectUris'] : $this->redirectUris,
+            postLogoutRedirectUris: array_key_exists('postLogoutRedirectUris', $changes) ? $changes['postLogoutRedirectUris'] : $this->postLogoutRedirectUris,
+            scopes: array_key_exists('scopes', $changes) ? $changes['scopes'] : $this->scopes,
+            firstParty: array_key_exists('firstParty', $changes) ? $changes['firstParty'] : $this->firstParty,
+            manifestUrl: array_key_exists('manifestUrl', $changes) ? $changes['manifestUrl'] : $this->manifestUrl,
+            accessTokenTtl: array_key_exists('accessTokenTtl', $changes) ? $changes['accessTokenTtl'] : $this->accessTokenTtl,
+            backchannelLogoutUri: array_key_exists('backchannelLogoutUri', $changes) ? $changes['backchannelLogoutUri'] : $this->backchannelLogoutUri,
+            backchannelLogoutSessionRequired: array_key_exists('backchannelLogoutSessionRequired', $changes) ? $changes['backchannelLogoutSessionRequired'] : $this->backchannelLogoutSessionRequired,
+            apiKeyPrefix: array_key_exists('apiKeyPrefix', $changes) ? $changes['apiKeyPrefix'] : $this->apiKeyPrefix,
         );
     }
 
