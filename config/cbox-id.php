@@ -67,6 +67,19 @@ return [
     ],
 
     /*
+     * Customer API keys — keys an app's end-customers mint for THAT app's API, verified
+     * by the app at `POST /oauth/api-keys/verify` with its own client credentials.
+     *
+     * `verify_per_minute` throttles that endpoint per caller IP. Verification is on the
+     * app's request path, so this is deliberately generous; an app that needs more should
+     * cache a verification for a few seconds rather than raise it without limit — the
+     * cache length is then how long a revoked key keeps working.
+     */
+    'customer_api_keys' => [
+        'verify_per_minute' => env('CBOX_ID_API_KEY_VERIFY_PER_MINUTE', 600),
+    ],
+
+    /*
      * Passkeys / WebAuthn.
      *
      * `rp_id` + `origin` are an OPTIONAL PIN, not a requirement. Left unset (the default)
