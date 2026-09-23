@@ -33,6 +33,11 @@ class ClientRegistrationDocument
             // client rotating keys through RFC 7592 has no other way to confirm which
             // set is live. Public halves only; the private key never came here.
             ...($client->jwks !== null ? ['jwks' => $client->jwks] : []),
+            // OIDC Back-Channel Logout 1.0 §2.2, echoed only when registered.
+            ...($client->backchannel_logout_uri !== null ? [
+                'backchannel_logout_uri' => $client->backchannel_logout_uri,
+                'backchannel_logout_session_required' => $client->backchannel_logout_session_required,
+            ] : []),
         ];
     }
 

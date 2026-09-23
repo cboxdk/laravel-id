@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
 use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredClient;
@@ -24,6 +25,10 @@ class ClientRegistryService implements ClientRegistry
         // environment's `org`.
         OwnerEnvironment::assertLocal($input->organizationId, Client::class);
 
+        if ($input->backchannelLogoutUri !== null) {
+            BackchannelLogoutUri::assertValid($input->backchannelLogoutUri);
+        }
+
         $secret = null;
 
         $client = new Client;
@@ -38,6 +43,8 @@ class ClientRegistryService implements ClientRegistry
             'scopes' => $input->scopes,
             'access_token_ttl' => $input->accessTokenTtl,
             'first_party' => $input->firstParty,
+            'backchannel_logout_uri' => $input->backchannelLogoutUri,
+            'backchannel_logout_session_required' => $input->backchannelLogoutSessionRequired,
         ]);
 
         $client->jwks = $input->jwks;
@@ -65,5 +72,25 @@ class ClientRegistryService implements ClientRegistry
     {
         return $client->secret_hash !== null
             && hash_equals($client->secret_hash, ClientSecret::hash($secret));
+    }
+
+    public function configureBackchannelLogout(Client $client, ?string $uri, bool $sessionRequired = false): Client
+    {
+        // An empty string is "no URI", as a cleared console field sends it — not a
+        // relative URI to refuse.
+        $uri = $uri !== null && trim($uri) !== '' ? trim($uri) : null;
+
+        if ($uri !== null) {
+            BackchannelLogoutUri::assertValid($uri);
+        }
+
+        $client->forceFill([
+            'backchannel_logout_uri' => $uri,
+            // Meaningless without a URI; stored false so a later URI does not inherit a
+            // requirement nobody set alongside it.
+            'backchannel_logout_session_required' => $uri !== null && $sessionRequired,
+        ])->save();
+
+        return $client;
     }
 }

@@ -12,6 +12,7 @@ use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
 use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
@@ -71,6 +72,8 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             responseTypes: $responseTypes,
             scopes: $this->scopes($request),
             jwks: $this->jwks($request, $authMethod),
+            backchannelLogoutUri: $this->backchannelLogoutUri($request),
+            backchannelLogoutSessionRequired: $this->backchannelLogoutSessionRequired($request),
         );
     }
 
@@ -87,6 +90,8 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // produce a client that can actually authenticate rather than one with
             // neither credential.
             jwks: $metadata->jwks,
+            backchannelLogoutUri: $metadata->backchannelLogoutUri,
+            backchannelLogoutSessionRequired: $metadata->backchannelLogoutSessionRequired,
         ));
 
         $registrationToken = 'reg_'.bin2hex(random_bytes(32));
@@ -159,6 +164,10 @@ class DynamicClientRegistrar implements DynamicClientRegistration
                 ? $minted->hash
                 : ($metadata->usesASharedSecret() ? $client->secret_hash : null),
             'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
+            // Replaced like the rest (RFC 7592 §2.2): an update that omits the URI stops
+            // the notifications, which is how a client turns them off through the API.
+            'backchannel_logout_uri' => $metadata->backchannelLogoutUri,
+            'backchannel_logout_session_required' => $metadata->backchannelLogoutSessionRequired,
         ])->save();
 
         return new UpdatedRegistration($client, $minted?->plaintext);
@@ -236,6 +245,50 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
         /** @var array<string, mixed> $jwks */
         return $jwks;
+    }
+
+    /**
+     * OIDC Back-Channel Logout 1.0 §2.2. Refused OUT LOUD when it is not a URI this server
+     * will call — silently dropping it would register a client that believes it will be
+     * told when people sign out, and never is.
+     *
+     * @param  array<string, mixed>  $request
+     */
+    private function backchannelLogoutUri(array $request): ?string
+    {
+        $uri = $request['backchannel_logout_uri'] ?? null;
+
+        if ($uri === null) {
+            return null;
+        }
+
+        if (! is_string($uri) || $uri === '') {
+            throw InvalidClientMetadata::metadata('backchannel_logout_uri must be a non-empty string');
+        }
+
+        BackchannelLogoutUri::assertValid($uri);
+
+        return $uri;
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function backchannelLogoutSessionRequired(array $request): bool
+    {
+        $required = $request['backchannel_logout_session_required'] ?? false;
+
+        if (! is_bool($required)) {
+            throw InvalidClientMetadata::metadata('backchannel_logout_session_required must be a boolean');
+        }
+
+        // Without a URI there is nothing for the requirement to apply to — refused, so a
+        // registrant who meant to send both finds out now rather than at the first logout.
+        if ($required && ! isset($request['backchannel_logout_uri'])) {
+            throw InvalidClientMetadata::metadata('backchannel_logout_session_required needs a backchannel_logout_uri');
+        }
+
+        return $required;
     }
 
     /**

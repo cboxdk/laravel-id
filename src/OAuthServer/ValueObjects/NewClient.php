@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
 
 readonly class NewClient
 {
@@ -33,5 +34,15 @@ readonly class NewClient
          * expiry, so its TTL is its revocation window.
          */
         public ?int $accessTokenTtl = null,
+
+        /**
+         * Where to POST a logout token when a session that signed a person in to this
+         * client ends (OIDC Back-Channel Logout 1.0). Null = the client is never told.
+         * HTTPS, or HTTP on localhost — see {@see BackchannelLogoutUri}.
+         */
+        public ?string $backchannelLogoutUri = null,
+
+        /** Whether every logout token sent to this client must carry `sid` (§2.2). */
+        public bool $backchannelLogoutSessionRequired = false,
     ) {}
 }
