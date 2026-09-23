@@ -44,8 +44,10 @@ the person signs out everywhere or loses access — but no ID Token carries `sid
 one session cannot name it.
 
 Sessions ended through `SessionManager` — `revoke()` and `revokeAllForUser()` — notify the
-applications on their own. So do `RefreshTokens::revokeForUser()` /
-`revokeForUserAndClient()`, `Subjects::deactivate()`, and removing a membership. A host that
+applications on their own. So do `RefreshTokens::withdrawAccess()` /
+`revokeForUserAndClient()`, `Subjects::deactivate()`, and removing a membership.
+`RefreshTokens::revokeForUser()` does not: it is the claims-freshness lever a host pulls on
+every role change, and the person has not lost access, so no application is told. A host that
 ends sessions some other way calls the contract itself:
 
 ```php

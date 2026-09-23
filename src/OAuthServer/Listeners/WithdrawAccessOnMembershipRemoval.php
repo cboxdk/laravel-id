@@ -11,7 +11,7 @@ use Cbox\Id\Organization\MembershipService;
 /**
  * When a person is removed from an organization, withdraw what they were granted in it:
  * the refresh tokens scoped to that organization, and — through
- * {@see RefreshTokens::revokeForUser()} — the application sessions those grants signed
+ * {@see RefreshTokens::withdrawAccess()} — the application sessions those grants signed
  * them in to (Back-Channel Logout).
  *
  * WITHOUT THIS, REMOVAL WAS INVISIBLE TO EVERY APP. The membership row went, the role
@@ -52,6 +52,6 @@ class WithdrawAccessOnMembershipRemoval
             return;
         }
 
-        $this->refreshTokens->revokeForUser($userId, $organizationId);
+        $this->refreshTokens->withdrawAccess($userId, $organizationId);
     }
 }

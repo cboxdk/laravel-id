@@ -581,7 +581,7 @@ it('withdraws only one organization\'s sessions when grants are revoked in that 
     bclSignIn($this, $client, 'user_42', $inA, 'org_a');
     bclSignIn($this, $client, 'user_42', $inB, 'org_b');
 
-    $revoked = app(RefreshTokens::class)->revokeForUser('user_42', 'org_a');
+    $revoked = app(RefreshTokens::class)->withdrawAccess('user_42', 'org_a');
 
     $jobs = bclQueued();
 
@@ -598,13 +598,31 @@ it('reaches a client that holds a grant but was never recorded against a session
     // A refresh token from a code the host minted without naming the session.
     bclSignIn($this, $client, 'user_42', null);
 
-    app(RefreshTokens::class)->revokeForUser('user_42');
+    app(RefreshTokens::class)->withdrawAccess('user_42');
 
     $jobs = bclQueued();
 
     expect($jobs)->toHaveCount(1)
         ->and($jobs[0]->subject)->toBe('user_42')
         ->and($jobs[0]->sid)->toBeNull();
+});
+
+it('signs nobody out when grants are only revoked to refresh claims', function (): void {
+    Queue::fake();
+    $client = bclClient();
+    $session = bclSession('user_42', 'org_a');
+    bclSignIn($this, $client, 'user_42', $session, 'org_a');
+
+    // What a host does on every role assignment and unassignment: revoke the refresh
+    // tokens so the next one carries the new roles. The person has not lost access, so no
+    // application may be told to end their session — that would sign everybody out of
+    // everything whenever an administrator touched a role.
+    $revoked = app(RefreshTokens::class)->revokeForUser('user_42', 'org_a');
+
+    expect($revoked)->toBe(1)
+        ->and(bclQueued())->toBe([])
+        ->and(SessionParticipant::query()->where('session_id', $session)->value('ended_at'))->toBeNull()
+        ->and(RefreshToken::query()->where('user_id', 'user_42')->whereNull('revoked_at')->count())->toBe(0);
 });
 
 it('tells only the one app a person disconnects', function (): void {

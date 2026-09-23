@@ -55,11 +55,26 @@ interface RefreshTokens
      * forces re-authentication and re-mints a token with the new claims, instead of
      * riding a stale grant until it expires. Returns the number revoked.
      *
-     * The applications that held the revoked grants are also told to end the sessions
-     * they keep for the user (OIDC Back-Channel Logout) — a revoked grant behind a live
-     * application session is the half of revocation the person cannot see.
+     * NO APPLICATION IS SIGNED OUT. This is a claims-freshness lever, called on every role
+     * assignment and unassignment: the person is still who they were and still belongs
+     * where they did, so their application sessions stay up and the next refresh (or
+     * sign-in) carries the new roles. Telling every application to end its session here
+     * would sign people out of everything whenever an administrator adjusted a role.
+     * When the person's access is actually OVER, call {@see withdrawAccess()}.
      */
     public function revokeForUser(string $userId, ?string $organizationId = null): int;
+
+    /**
+     * The person's access is over — deactivated, removed from the organization — so revoke
+     * their refresh tokens (optionally only in one organization) AND tell the applications
+     * that held them to end the sessions they keep for the person (OIDC Back-Channel
+     * Logout). A revoked grant behind a live application session is the half of
+     * revocation the person cannot see. Returns the number of refresh tokens revoked.
+     *
+     * The applications are told even when no refresh token was live: a client that never
+     * asked for `offline_access` holds none and still signed the person in.
+     */
+    public function withdrawAccess(string $userId, ?string $organizationId = null): int;
 
     /**
      * Every application this person has a live grant to, one row per client.
@@ -78,7 +93,7 @@ interface RefreshTokens
      * Withdraw one application's access, leaving every other grant alone.
      *
      * The whole point of showing somebody their connected applications is that they can
-     * remove ONE — `revokeForUser()` signs them out of everything, which is the right
+     * remove ONE — `withdrawAccess()` signs them out of everything, which is the right
      * answer to "my account is compromised" and the wrong answer to "I do not use that
      * CLI any more". That one application is told to end its sessions for the user
      * (OIDC Back-Channel Logout); no other is.

@@ -167,8 +167,9 @@ more trust than the wording it removes.
     queued after commit, and every final outcome in the audit trail as
     `oauth.backchannel_logout.delivered` / `.failed` with the reason.
   - Triggers: every `SessionManager::revoke()` / `revokeAllForUser()` (through the new
-    `Identity\Contracts\LogoutPropagator`), `RefreshTokens::revokeForUser()` /
+    `Identity\Contracts\LogoutPropagator`), the new `RefreshTokens::withdrawAccess()`,
     `revokeForUserAndClient()`, `Subjects::deactivate()`, and `organization.member_removed`.
+    `RefreshTokens::revokeForUser()` deliberately does NOT notify anyone — see Changed.
     Hosts that end sessions another way call `BackchannelLogout::sessionEnded()` /
     `subjectSignedOut()`.
   - Discovery advertises `backchannel_logout_supported` and
@@ -243,13 +244,14 @@ more trust than the wording it removes.
 - `Client` no longer serializes `secret_hash` or `registration_access_token_hash`.
 - **Removing a person from an organization now revokes the refresh tokens they held in it.**
   A new framework listener on `organization.member_removed` calls
-  `RefreshTokens::revokeForUser($user, $organization)`. Before, the membership and role
+  `RefreshTokens::withdrawAccess($user, $organization)`. Before, the membership and role
   assignments went and the organization-scoped refresh tokens kept refreshing.
-- **`RefreshTokens::revokeForUser()` now also signs the person out of the applications that
-  held the grants.** A host that calls it on every role change (as the Cbox ID app does, to
-  refresh claims) will see those applications end their sessions for the person in that
-  organization; with a live sign-in session here the person is signed straight back in with
-  fresh claims.
+- **New `RefreshTokens::withdrawAccess()`: revoke AND sign the person out of the
+  applications that held the grants.** It is what deactivation, an administrator's password
+  reset and membership removal now call. `revokeForUser()` is unchanged — it revokes
+  refresh tokens and notifies nobody — because hosts call it on every role assignment and
+  unassignment purely so the next token carries the new claims; propagating logout there
+  would sign people out of every application whenever an administrator adjusted a role.
 
 ### Security
 

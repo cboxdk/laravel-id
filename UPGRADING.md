@@ -168,11 +168,11 @@ argument — or no ID Token carries `sid` and ending one session cannot name it.
 
 *Behaviour that changes on its own:*
 
-- `RefreshTokens::revokeForUser()` and `revokeForUserAndClient()` now notify the
-  applications that held the grants. A host calling `revokeForUser()` on every role change
-  will sign people out of that organization's applications on every role change — which is
-  what the method's "forces re-authentication" contract always said, now reaching the
-  application session too.
+- `RefreshTokens` gains `withdrawAccess(string $userId, ?string $organizationId = null): int`
+  (implementers must add it): revoke the refresh tokens and tell the applications that held
+  them to end their sessions. `revokeForUserAndClient()` now notifies the one application.
+  `revokeForUser()` does NOT notify anyone — keep calling it on role changes to refresh
+  claims; call `withdrawAccess()` where the person's access is actually over.
 - Removing an organization membership revokes that organization's refresh tokens for the
   person (the new `organization.member_removed` listener).
 

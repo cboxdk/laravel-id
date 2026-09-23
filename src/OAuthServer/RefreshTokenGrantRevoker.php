@@ -19,7 +19,10 @@ class RefreshTokenGrantRevoker implements SubjectGrantRevoker
 
     public function revokeGrantsForUser(string $userId): void
     {
-        $this->refreshTokens->revokeForUser($userId);
+        // Withdrawn, not merely revoked: this runs when the person's access is over
+        // (deactivation, an administrator's password reset), so the applications their
+        // grants signed them in to are told to end those sessions too.
+        $this->refreshTokens->withdrawAccess($userId);
 
         // AND THE ACCESS TOKENS ALREADY IN FLIGHT. Cutting the refresh grant stops the
         // renewal and leaves everything already minted valid until it expires — and

@@ -15,6 +15,7 @@ use Cbox\Id\OAuthServer\ValueObjects\AccessWithdrawal;
 use Cbox\Id\OAuthServer\ValueObjects\ConnectedApplication;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
 use Cbox\Id\OAuthServer\ValueObjects\SessionParticipation;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -141,10 +142,13 @@ class RefreshTokenService implements RefreshTokens
 
     public function revokeForUser(string $userId, ?string $organizationId = null): int
     {
-        $live = RefreshToken::query()
-            ->where('user_id', $userId)
-            ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
-            ->whereNull('revoked_at');
+        // Revocation only: see the contract. A role change must not sign anybody out.
+        return $this->liveForUser($userId, $organizationId)->update(['revoked_at' => now()]);
+    }
+
+    public function withdrawAccess(string $userId, ?string $organizationId = null): int
+    {
+        $live = $this->liveForUser($userId, $organizationId);
 
         $held = $this->grantsHeld($userId, (clone $live)->get(['client_id', 'session_id', 'organization_id']));
         $revoked = $live->update(['revoked_at' => now()]);
@@ -246,6 +250,17 @@ class RefreshTokenService implements RefreshTokens
         ));
 
         return $revoked;
+    }
+
+    /**
+     * @return Builder<RefreshToken>
+     */
+    private function liveForUser(string $userId, ?string $organizationId): Builder
+    {
+        return RefreshToken::query()
+            ->where('user_id', $userId)
+            ->when($organizationId !== null, fn (Builder $query) => $query->where('organization_id', $organizationId))
+            ->whereNull('revoked_at');
     }
 
     /**
