@@ -312,7 +312,10 @@ class JwtTokenIssuer implements TokenIssuer
             'organization_id' => $organizationId,
             'scopes' => $scopes,
             'audience' => $audience->resource,
-            'expires_at' => now()->addSeconds($ttl),
+            // The instant the signed `exp` names, not a second reading of the clock: the
+            // TokenMinting hook above can make a network call, and a record that outlives
+            // its token by those seconds is a revocation list that disagrees with the JWT.
+            'expires_at' => now()->setTimestamp($issuedAt + $ttl),
             // So ending the support session can revoke what it minted.
             'support_session_id' => $actor?->supportSessionId,
         ]);

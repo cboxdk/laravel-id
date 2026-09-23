@@ -58,7 +58,9 @@ function ttlOf(TestResponse $response): int
     expect($response->json('expires_in'))->toBe($lifetime);
 
     $record = AccessToken::query()->where('jti', $claims->get('jti'))->firstOrFail();
-    expect(abs($record->expires_at->getTimestamp() - $claims->get('exp')))->toBeLessThanOrEqual(1);
+    // Exactly, not within a second: both come from one reading of the clock, and a slow
+    // TokenMinting hook between signing and persisting used to push the record past `exp`.
+    expect($record->expires_at->getTimestamp())->toBe($claims->get('exp'));
 
     return $lifetime;
 }

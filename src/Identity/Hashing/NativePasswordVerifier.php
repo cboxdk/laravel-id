@@ -67,10 +67,11 @@ class NativePasswordVerifier implements HashVerifier
         }
 
         // Everything else: password_get_info recognizes the families password_hash
-        // emits; an algo of null (0 as a legacy value) means "not a native hash".
+        // emits; an algo of null means "not a native hash". (It was the integer 0
+        // before PHP 7.4; this package requires 8.4, where algo is ?string.)
         $algo = password_get_info($hash)['algo'];
 
-        return $algo !== null && $algo !== 0 && $algo !== '';
+        return $algo !== null && $algo !== '';
     }
 
     public function verify(string $password, string $hash): bool
