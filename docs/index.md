@@ -98,6 +98,14 @@ them, and each SDK's own repository is the authority on what it currently suppor
 - [Authorization & the decision plane](core-concepts/authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
 - [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
 
+- [Membership lifecycle](core-concepts/membership-lifecycle.md) — leave, transfer ownership, owner archive, and the single-owner rule
+
+### Reference
+
+- [Token claims](reference/token-claims.md) — access token, ID token and UserInfo claims, including `org_role`
+- [Decisions endpoint](reference/decisions.md) — `POST /oauth/decisions`: ReBAC, entitlements and app-scoped RBAC checks
+- [Webhook events](reference/webhook-events.md) — the event catalogue, generated from `WebhookEventType`
+
 ### Cookbook
 
 - [Cookbook](cookbook/_index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
