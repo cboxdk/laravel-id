@@ -20,6 +20,7 @@ the threat model and the honest limits.
 | Closed = frozen | no certify/revoke after close; re-close is idempotent (never re-applies) | `DatabaseAccessReviews::decide()` / `close()` |
 | SoD gate | reasoned `Decision` (deny carries the policy id) before a grant completes a toxic combo | `DatabaseSegregationOfDuties::evaluate()` |
 | Environment scope | campaigns, items and policies are `BelongsToEnvironment` — cross-env invisible | all `Governance\Models\*` |
+| Plane separation | an environment campaign (null organization) reviews only environment-wide grants, an organization's never includes them; the organization predicate is in every lookup's WHERE clause, and null matches only null | `DatabaseAccessReviews::ownedBy()` |
 | Audit correlation | every decision + application audited, correlated by `campaign_id` in `context` | hash-chained audit trail |
 
 ## Why pending-defaults-to-revoke
@@ -54,6 +55,10 @@ double-recorded. See [core-concepts/audit-streaming.md](../core-concepts/audit-s
 
 ## Honest limits
 
+- **Environment-wide grants are the environment's to review.** They apply inside every
+  organization, but a tenant's campaign does not list them, so a tenant cannot certify away
+  (or even see) the vendor's staff access. Run an environment campaign (`open(null, …)`) to
+  review them.
 - **Scope: roles + memberships.** Entitlements (billing-fed) and ReBAC tuples are out
   of v1 — see [core-concepts/access-governance.md](../core-concepts/access-governance.md).
 - **Direct grants only.** Inherited (rolled-down) access is governed at the ancestor

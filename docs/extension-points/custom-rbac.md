@@ -119,13 +119,20 @@ provider and the UserInfo endpoint now carry your Spatie roles and permissions.
   access-governance module call the `Roles` and `GroupRoleMappings` contracts. If you
   drive provisioning into your backend, also implement and bind those; otherwise the
   refusing defaults keep those paths failing loud instead of silently.
+- **Staff capabilities.** Support sessions ask `StaffAccess::holdsEverywhere($userId,
+  'support:impersonate', $clientId)` whether a staff member may act as a customer's user.
+  Under `external` the default answers **no** for everybody (`NullStaffAccess`), so only an
+  environment-administrator session can start until you bind an adapter that reads your
+  backend's environment-wide grants.
 
 ## Publishing migrations
 
 The built-in RBAC migrations sit in a subdirectory so the auto-loader can gate them.
 `vendor:publish --tag=cbox-id-migrations` still flattens **every** migration into your
-`database/migrations`, so if you publish under the `external` driver, delete the six
-RBAC files (`*_create_access_control_tables`, `*_add_app_declarations_to_access_control`,
+`database/migrations`, so if you publish under the `external` driver, delete the RBAC
+files — every migration under `database/migrations/access-control/`
+(`*_create_access_control_tables`, `*_add_app_declarations_to_access_control`,
 `*_create_group_role_mappings_table`, `*_add_tenant_assignable_to_permissions`,
-`*_scope_permissions_to_environment`,
-`*_backfill_manual_permission_environments`) before migrating — your backend owns those tables.
+`*_scope_permissions_to_environment`, `*_backfill_manual_permission_environments`,
+`*_own_manual_permissions_by_organization`, `*_create_environment_role_assignments_table`,
+`*_add_tenant_assignable_to_roles`) — before migrating. Your backend owns those tables.

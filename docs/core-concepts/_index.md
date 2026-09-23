@@ -43,6 +43,9 @@ How the platform is put together and the ideas you build against:
   Backchannel Authentication: human-in-the-loop approval for agent actions.
 - **[Access governance](access-governance.md)** — IGA: access-certification
   campaigns and Segregation-of-Duties policies over roles and memberships.
+- **[Staff roles & support access](staff-and-support-access.md)** — roles tenants can
+  never grant, environment-wide grants of one app's role, and support sessions that act
+  as a customer's user with the RFC 8693 `act` claim.
 - **[External actions & inline hooks](external-actions.md)** — synchronous
   extension points that enrich or veto an operation (in-process or external HTTP),
   at token minting, login, registration and password change.

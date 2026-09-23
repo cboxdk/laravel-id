@@ -18,6 +18,44 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased
+
+**Three migrations**: `roles.tenant_assignable` (default `true`),
+`governance_campaigns.organization_id` / `governance_certification_items.organization_id`
+become nullable, and `support_sessions` plus two nullable columns on
+`oauth_authorization_codes` (`actor_id`, `support_session_id`) and one on
+`oauth_access_tokens` (`support_session_id`). All are additive; no existing row changes
+meaning.
+
+*What changes for a running deployment:*
+
+- **`Roles::assignEverywhere()` accepts app-declared roles.** It used to refuse any role with
+  a `client_id`. A console that relied on that refusal to keep app roles out of the
+  environment-wide picker now has to filter them itself if it still wants to.
+- **Directory group mappings refuse staff roles** (`RoleNotTenantAssignable`, an
+  `UnknownRole`). Nothing is staff-only until an app or an administrator marks it so.
+- **A manifest role whose `tenant_assignable` is not a JSON boolean fails the sync**
+  (`InvalidManifest`), including an explicit `null`.
+- **Token exchange refuses a subject token carrying `act`** (`invalid_grant`). Nothing
+  minted `act` before this release, so only support-session tokens are affected.
+
+*Contracts that gained methods or parameters* — only matters if you implement them yourself
+rather than using the shipped classes:
+
+- `Roles`: `define()` and `updateRole()` take a trailing `tenantAssignable`;
+  new `tenantAssignableRoles()`, `assertTenantAssignable()`, `assignAsTenant()`,
+  `assignmentsEverywhere()`.
+- `AccessReviews`: `open()`, `certify()`, `revoke()` and `close()` take `?string` for the
+  organization (null = the environment's review).
+- `AuthorizationCodes::issue()` takes a trailing `?ActingParty $actor`; `AuthorizedGrant`
+  and `IdTokenGrant` carry an optional actor.
+- `TokenIssuer`: new `issueActing()`.
+- New contracts `StaffAccess` and `SupportSessions`, bound by default.
+
+A tenant-facing console should switch its role picker to `Roles::tenantAssignableRoles()`
+and its grant action to `Roles::assignAsTenant()`. Until it does, it keeps offering and
+granting staff roles once any exist.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old
