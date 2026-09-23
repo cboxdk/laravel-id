@@ -36,6 +36,7 @@ use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
 use Cbox\Id\OAuthServer\ValueObjects\TokenExchangeRequest;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -67,6 +68,7 @@ class TokenController
         private readonly Organizations $organizations,
         private readonly TokenExchange $exchange,
         private readonly AccessChecker $access,
+        private readonly Memberships $memberships,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -459,6 +461,15 @@ class TokenController
             $orgName = $this->organizations->find($grant->organizationId)?->name;
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
+            }
+
+            // The same membership tier the access token carries, for a relying party that
+            // authenticates the ID token. Read live here rather than copied from the access
+            // token: both are minted in this request, from the same row.
+            $tier = $this->memberships->activeRole($grant->organizationId, $grant->userId);
+
+            if ($tier !== null) {
+                $claims['org_role'] = $tier->value;
             }
         }
 

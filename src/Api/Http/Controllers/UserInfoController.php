@@ -90,6 +90,14 @@ class UserInfoController
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
             }
+
+            // The subject's CURRENT tier in that organization — live, like `org_name`, so a
+            // relying party that re-reads UserInfo sees a transfer or a suspension without
+            // waiting for a new token. Absent when the membership is gone or not active.
+            $tier = $this->memberships->activeRole($orgId, $token->subject);
+            if ($tier !== null) {
+                $claims['org_role'] = $tier->value;
+            }
         }
 
         // RBAC (federated model): mirror the access token's `roles`/`permissions`

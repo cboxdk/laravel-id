@@ -19,6 +19,7 @@ use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Support\Str;
 
@@ -43,9 +44,10 @@ class JwtTokenIssuer implements TokenIssuer
 
     /**
      * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
-     * Enrichment that names any of these is dropped.
+     * Enrichment that names any of these is dropped. `org_role` is among them because
+     * it is authorization data an app enforces on: a hook must not promote anyone.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role'];
 
     public function __construct(
         private readonly TokenSigner $signer,
@@ -54,6 +56,7 @@ class JwtTokenIssuer implements TokenIssuer
         private readonly Organizations $organizations,
         private readonly AccessChecker $access,
         private readonly IssuerResolver $issuers,
+        private readonly Memberships $memberships,
         private readonly int $accessTokenTtl = self::DEFAULT_TTL_SECONDS,
     ) {}
 
@@ -173,6 +176,18 @@ class JwtTokenIssuer implements TokenIssuer
             $orgName = $this->organizations->find($organizationId)?->name;
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
+            }
+        }
+
+        // The subject's membership tier in the bound organization (owner, admin, …), so an
+        // app can tell an owner from an admin without a second call. Only for a person —
+        // a client_credentials token has no member behind it — and only while the
+        // membership is active: a suspended owner is not an owner to a relying party.
+        if ($userId !== null && $organizationId !== null) {
+            $tier = $this->memberships->activeRole($organizationId, $userId);
+
+            if ($tier !== null) {
+                $claims['org_role'] = $tier->value;
             }
         }
 
