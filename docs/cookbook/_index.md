@@ -205,6 +205,26 @@ the two machine endpoints; the page the person approves on is yours, and it is a
 lines. See the full recipe:
 [Sign a CLI in with the device grant](sign-a-cli-in-with-the-device-grant.md).
 
+## Rotate an app's secret without downtime
+
+A client can hold several live secrets. Rotate with a grace period, roll the new secret
+out, then let the old one expire:
+
+```php
+use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+
+$rotated = app(ClientRegistry::class)->rotateSecret($client, graceSeconds: 86400, actor: $actor);
+$rotated->secret; // shown once
+```
+
+See [OAuth clients (apps)](../core-concepts/oauth-clients.md#secrets-and-overlapping-rotation).
+
+## Promote an app from staging to production
+
+Export the app's configuration as a versioned blueprint and import it as a new client in
+the target environment. See the full recipe:
+[Promote an app between environments](promote-an-app-between-environments.md).
+
 ## Review who has access (access certification)
 
 Open a campaign, have reviewers certify or revoke each role/membership, and apply the

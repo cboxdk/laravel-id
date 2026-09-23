@@ -69,13 +69,17 @@ class ClientAuthenticator
         //
         // Keying on type ALONE re-opened the hole from the other side: RFC 7592 lets a
         // client rewrite its own token_endpoint_auth_method to "none" via
-        // PUT /oauth/register/{client}, which flips type to Public WITHOUT clearing
-        // secret_hash — so anyone holding a registration access token could downgrade a
+        // PUT /oauth/register/{client}, which flipped type to Public WITHOUT clearing
+        // the secret — so anyone holding a registration access token could downgrade a
         // confidential client and then authenticate on client_id alone. The disjunction
         // covers both the private_key_jwt case (type set, no secret) and the downgrade
         // case (secret still set, type cleared).
-        if (($client->type === ClientType::Confidential || $client->secret_hash !== null)
-            && ($client->secret_hash === null || ! $this->clients->verifySecret($client, $secret))) {
+        //
+        // "Still holds a secret" means a LIVE one in the registry's secret store. A
+        // client with none fails `verifySecret()` below by construction, so a
+        // confidential client with no secret (private_key_jwt) is refused here too.
+        if (($client->type === ClientType::Confidential || $this->clients->hasSecret($client))
+            && ! $this->clients->verifySecret($client, $secret)) {
             return null;
         }
 

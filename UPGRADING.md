@@ -73,6 +73,64 @@ exchange echoes the scopes the new token carries. If you construct `JwtTokenIssu
 `DynamicClientRegistrar` by hand rather than from the container, pass the new
 `AudienceResolver` / `Apis` argument.
 
+**Client secrets move to their own table, and `oauth_clients.secret_hash` is deprecated.**
+
+The migration `2026_09_24_000100_create_oauth_client_secrets_table` creates
+`oauth_client_secrets` and moves every existing `secret_hash` into it with no expiry, so
+every client keeps authenticating with the secret it has today. Run `php artisan migrate`
+as part of the deploy; nothing else is needed for clients to keep working.
+
+`oauth_clients.secret_hash` is **kept for 1.19 and dropped in the next minor**. For 1.19 it
+is a mirror of the client's newest live secret. It is never read to authenticate.
+
+*What breaks:* nothing in 1.19, by design. Code that **reads** the column keeps getting the
+newest live secret's hash (or null). Code that **writes** it — assigning a hash and saving
+the model, the only way to rotate before 1.19 — has the write adopted with the meaning it
+had then: the written hash becomes the client's one secret, effective at once, and any
+other live secret stops working. A bulk `Client::query()->update(['secret_hash' => …])`
+bypasses the model and is **not** adopted.
+
+*What to do before the next minor:*
+
+```php
+// Instead of writing secret_hash:
+$rotated = app(ClientRegistry::class)->rotateSecret($client, graceSeconds: 3600, actor: $actor);
+$rotated->secret; // show once
+
+// Instead of `$client->secret_hash !== null`:
+app(ClientRegistry::class)->hasSecret($client);
+```
+
+*Rolling back* the migration drops the table. Each client keeps its newest secret (the
+mirror); an older secret still inside a rotation grace period stops working.
+
+**Registration refuses settings the token endpoint would refuse later.**
+`ClientRegistry::register()` — and so every console and command built on it — now throws
+`InvalidClientMetadata` for a grant the token endpoint does not implement, token exchange on
+a public client, an `access_token_ttl` below 60 seconds or above
+`cbox-id.oauth.max_access_token_ttl`, and a `tokenEndpointAuthMethod` that contradicts the
+client type or key set. RFC 7591 registration and RFC 7592 update refuse token exchange on a
+public client too.
+
+*What breaks:* a caller that registered such a client and never used the setting. Each one
+was unusable — the token endpoint refused the grant on every call, and a TTL of 0 was
+silently the deployment default.
+
+**Per-client access-token lifetimes are capped.** A client whose `access_token_ttl` is
+above `cbox-id.oauth.max_access_token_ttl` (default 86400, one day) is issued tokens at the
+ceiling from the first token after the upgrade. Raise the ceiling if a client needs longer.
+The deployment default (`cbox-id.oauth.access_token_ttl`) is not capped.
+
+**`ClientRegistry` gained methods.** If you implement the contract yourself rather than
+extending `ClientRegistryService`, add `update()`, `delete()`, `hasSecret()`, `secrets()`,
+`rotateSecret()`, `revokeSecret()`, `blueprint()` and `import()`, and the optional
+`?AuditActor $actor` parameter on `register()`. Callers are unaffected.
+
+**The registry now writes the app audit trail.** `app.created`, `app.updated`,
+`app.secret_rotated`, `app.secret_revoked` and `app.deleted` are recorded by the
+framework. A host that recorded its own entries for these will see each twice; drop yours,
+and pass an `AuditActor` so the framework's entry names who asked.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old

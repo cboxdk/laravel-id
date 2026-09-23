@@ -78,6 +78,33 @@ more trust than the wording it removes.
   nothing grantable is `invalid_scope`.
 - Discovery's `scopes_supported` adds the tenant-requestable scopes of environment-owned
   APIs; dynamic registration accepts them.
+- **Overlapping client-secret rotation.** An OAuth client can hold several live secrets
+  (`oauth_client_secrets`: SHA-256, a four-character hint, created/expires/last-used).
+  `ClientRegistry::rotateSecret($client, $graceSeconds)` mints a new `csec_` secret and
+  retires the others after the grace period (0 = at once; bounded by the new
+  `cbox-id.oauth.client_secrets.max_rotation_grace`, 30 days), never extending one due
+  sooner. `revokeSecret()` cuts one off and refuses the last live secret of a
+  shared-secret client; `secrets()` lists them as `ClientSecretSummary` (id, hint,
+  dates — never the secret). Any live secret authenticates; all are compared in constant
+  time on every attempt. `last_used_at` is written at most once a minute.
+- **`ClientRegistry::update()` and `delete()`.** An app's settings are replaced from a
+  `ClientBlueprint` — grants and `access_token_ttl` included — so token exchange can be
+  enabled and disabled through the registry the consoles use. The client type and
+  authentication method cannot change through update.
+- **`ClientBlueprint`**: an app's configuration without its identity or credentials, as a
+  deterministic, versioned JSON document. `ClientRegistry::blueprint()` exports it;
+  `ClientRegistry::import()` creates a new client (new id, new secret) from it in the
+  current environment. See *Promote an app between environments* in the cookbook.
+- **The registry audits the app lifecycle**: `app.created`, `app.updated` (with a
+  from/to of each changed field), `app.secret_rotated`, `app.secret_revoked` and
+  `app.deleted`, on the owning organization's trail, with the new
+  `Kernel\Audit\ValueObjects\AuditActor` a caller passes. RFC 7591/7592
+  self-registration gets the same entries.
+- **`cbox-id.oauth.max_access_token_ttl`** (default 86400): the ceiling on a client's own
+  access-token lifetime — refused above it when set, clamped to it when minted. The floor is
+  60 seconds. The deployment default is not clamped.
+- `NewClient` accepts `tokenEndpointAuthMethod` and `manifestUrl`, persisted at
+  registration. `Enums\GrantType` names the six grants the token endpoint implements.
 
 ### Changed
 
@@ -100,6 +127,15 @@ more trust than the wording it removes.
   echoed the inherited set even when the exchanging client's registration narrowed it.
 - `IssuedToken` gains a trailing `?string $audience`. `JwtTokenIssuer` takes an
   `AudienceResolver` and `DynamicClientRegistrar` an `Apis` (both container-resolved).
+- **Registration refuses incoherent settings** with `InvalidClientMetadata`: a grant the
+  token endpoint does not implement, token exchange on a public client (also on RFC 7591
+  registration and RFC 7592 update), an `access_token_ttl` outside the bounds, and an
+  authentication method that contradicts the client type or key set.
+- `oauth_clients.secret_hash` is deprecated: a mirror of the newest live secret, never read
+  to authenticate. See UPGRADING.md.
+- An RFC 7592 update to `none` or `private_key_jwt` revokes every secret of the client; a
+  move back to a secret method mints a fresh one.
+- `Client` no longer serializes `secret_hash` or `registration_access_token_hash`.
 
 ### Security
 

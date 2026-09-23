@@ -566,6 +566,25 @@ return [
         'access_token_ttl' => env('CBOX_ID_ACCESS_TOKEN_TTL', 900),
 
         /*
+         * The longest access-token lifetime a single CLIENT may ask for, in seconds
+         * (its `access_token_ttl`). A value above this is refused when a client is
+         * registered or updated, and a client already above it is clamped to it at
+         * minting — so lowering the ceiling takes effect on the next token. The
+         * deployment default above is not clamped. Default 86400 (one day).
+         */
+        'max_access_token_ttl' => env('CBOX_ID_MAX_ACCESS_TOKEN_TTL', 86400),
+
+        /*
+         * Client secret rotation. `max_rotation_grace` is the longest a replaced
+         * secret may keep working after a rotation, in seconds — the overlap in
+         * which deployments move to the new secret. Bounded so a rotation cannot
+         * leave the old credential alive indefinitely. Default 2592000 (30 days).
+         */
+        'client_secrets' => [
+            'max_rotation_grace' => env('CBOX_ID_CLIENT_SECRET_MAX_ROTATION_GRACE', 2592000),
+        ],
+
+        /*
          * `POST /oauth/decisions` — the authorization decision endpoint.
          *
          * `max_batch` caps how many permission checks (and how many entitlement

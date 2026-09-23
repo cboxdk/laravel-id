@@ -18,6 +18,7 @@ use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Memberships;
@@ -143,13 +144,12 @@ class JwtTokenIssuer implements TokenIssuer
      * no reason to pay five-minute refreshes for it.
      *
      * Null on the client means the deployment default, so nothing changes for anyone who
-     * has not asked for something else.
+     * has not asked for something else. The rule — including the configured ceiling — is
+     * {@see AccessTokenLifetime}, shared with the ID token.
      */
     private function ttlFor(Client $client): int
     {
-        $ttl = $client->access_token_ttl;
-
-        return $ttl !== null && $ttl > 0 ? $ttl : $this->accessTokenTtl;
+        return AccessTokenLifetime::for($client, $this->accessTokenTtl);
     }
 
     /**
