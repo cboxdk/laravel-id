@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks\Enums;
 
+use Cbox\Id\Webhooks\ValueObjects\WebhookEventDescriptor;
+
 /**
  * A DOCUMENTED catalog of common resource-lifecycle events a webhook endpoint is
  * likely to subscribe to — for the console's subscription picker, discovery, and the
@@ -11,6 +13,12 @@ namespace Cbox\Id\Webhooks\Enums;
  * allow-list: event types are open-ended (the domain and its plugins emit far more,
  * e.g. `auth.*`), so the registry accepts any non-empty type. Use this enum for the
  * known ones you want typed; a type absent from it is still a valid subscription.
+ *
+ * {@see self::catalogue()} is the one rendered form of it — group, label, a human
+ * description, and whether the event is current, legacy or not yet emitted — so a
+ * console picker, an API and the docs all read the same list instead of each keeping
+ * its own. A new case must add an arm to {@see label()}, {@see description()} and
+ * {@see group()}; `match` makes a missing one a hard failure rather than a silent gap.
  */
 enum WebhookEventType: string
 {
@@ -51,6 +59,31 @@ enum WebhookEventType: string
 
     case GovernanceAccessRevoked = 'governance.access.revoked';
 
+    // Tenancy lifecycle (1.19). The `membership.*` / `invitation.*` names supersede the
+    // `organization.member_*` / `organization.invitation_*` ones above; both are emitted.
+    case MembershipCreated = 'membership.created';
+    case MembershipUpdated = 'membership.updated';
+    case MembershipDeleted = 'membership.deleted';
+    case InvitationCreated = 'invitation.created';
+    case InvitationAccepted = 'invitation.accepted';
+    case InvitationRevoked = 'invitation.revoked';
+    case OrganizationUpdated = 'organization.updated';
+    case OrganizationDeleted = 'organization.deleted';
+    case OrganizationArchived = 'organization.archived';
+
+    // Emitted before 1.19 but missing from this catalog.
+    case UserLogin = 'user.login';
+    case UserReactivated = 'user.reactivated';
+    case IdentityLinked = 'identity.linked';
+    case RoleUnassigned = 'role.unassigned';
+    case RoleAssignedEverywhere = 'role.assigned_everywhere';
+    case RoleUnassignedEverywhere = 'role.unassigned_everywhere';
+
+    // Customer API keys and support sessions.
+    case ApiKeyCreated = 'api_key.created';
+    case ApiKeyRevoked = 'api_key.revoked';
+    case SupportSessionStarted = 'support_session.started';
+
     /** A subscription to every catalogued event, present and future. */
     public const WILDCARD = '*';
 
@@ -64,8 +97,8 @@ enum WebhookEventType: string
     }
 
     /**
-     * The full catalog as `value => label`, for discovery/documentation and the
-     * subscription picker in a console.
+     * The full catalog as `value => label`. Kept for existing callers; new code renders
+     * {@see catalogue()}, which also carries the description and the legacy/offered state.
      *
      * @return array<string, string>
      */
@@ -78,6 +111,166 @@ enum WebhookEventType: string
         }
 
         return $catalog;
+    }
+
+    /**
+     * Every catalogued event, grouped in display order, described once.
+     *
+     * @return list<WebhookEventDescriptor>
+     */
+    public static function catalogue(): array
+    {
+        $entries = array_map(static fn (self $case): WebhookEventDescriptor => $case->describe(), self::cases());
+
+        $order = array_flip(array_map(static fn (WebhookEventGroup $g): string => $g->value, WebhookEventGroup::cases()));
+
+        // Stable within a group: declaration order is the order events were catalogued.
+        usort($entries, static fn (WebhookEventDescriptor $a, WebhookEventDescriptor $b): int => $order[$a->group->value] <=> $order[$b->group->value]);
+
+        return $entries;
+    }
+
+    /**
+     * The events a subscription picker should offer: emitted, and not superseded.
+     *
+     * @return list<self>
+     */
+    public static function offered(): array
+    {
+        return array_values(array_filter(self::cases(), static fn (self $case): bool => $case->describe()->isOffered()));
+    }
+
+    public function describe(): WebhookEventDescriptor
+    {
+        return new WebhookEventDescriptor(
+            type: $this,
+            group: $this->group(),
+            label: $this->label(),
+            description: $this->description(),
+            supersededBy: $this->supersededBy(),
+            emitted: $this->isEmitted(),
+        );
+    }
+
+    public function group(): WebhookEventGroup
+    {
+        return match ($this) {
+            self::UserCreated, self::UserUpdated, self::UserDeactivated, self::UserReactivated,
+            self::UserLogin, self::IdentityLinked => WebhookEventGroup::Users,
+            self::OrganizationCreated, self::OrganizationUpdated, self::OrganizationSuspended,
+            self::OrganizationReactivated, self::OrganizationDeleted, self::OrganizationArchived,
+            self::OrganizationSettingsUpdated => WebhookEventGroup::Organizations,
+            self::MembershipCreated, self::MembershipUpdated, self::MembershipDeleted,
+            self::OrganizationMemberAdded, self::OrganizationMemberRemoved,
+            self::OrganizationMemberRoleChanged => WebhookEventGroup::Memberships,
+            self::InvitationCreated, self::InvitationAccepted, self::InvitationRevoked,
+            self::OrganizationInvitationCreated, self::OrganizationInvitationAccepted => WebhookEventGroup::Invitations,
+            self::RoleAssigned, self::RoleUnassigned, self::RoleAssignedEverywhere,
+            self::RoleUnassignedEverywhere => WebhookEventGroup::Roles,
+            self::ApiKeyCreated, self::ApiKeyRevoked => WebhookEventGroup::ApiKeys,
+            self::SupportSessionStarted => WebhookEventGroup::Support,
+            self::DirectoryUserProvisioned, self::DirectoryUserDeprovisioned,
+            self::DirectoryUserDeactivated, self::DirectoryGroupMembershipChanged => WebhookEventGroup::Directory,
+            self::DomainAdded, self::DomainRemoved, self::DomainVerified => WebhookEventGroup::Domains,
+            self::ConnectionActivated => WebhookEventGroup::Connections,
+            self::EntitlementSet, self::EntitlementUpdated, self::EntitlementRevoked => WebhookEventGroup::Entitlements,
+            self::VaultGrantCreated, self::VaultGrantRevoked, self::VaultSecretRevoked => WebhookEventGroup::TokenVault,
+            self::GovernanceAccessRevoked => WebhookEventGroup::Governance,
+        };
+    }
+
+    /**
+     * The newer event that carries the same fact, for a legacy name kept only because
+     * somebody may already subscribe to it.
+     */
+    public function supersededBy(): ?self
+    {
+        return match ($this) {
+            self::OrganizationMemberAdded => self::MembershipCreated,
+            self::OrganizationMemberRemoved => self::MembershipDeleted,
+            self::OrganizationMemberRoleChanged => self::MembershipUpdated,
+            self::OrganizationInvitationCreated => self::InvitationCreated,
+            self::OrganizationInvitationAccepted => self::InvitationAccepted,
+            self::OrganizationSettingsUpdated => self::OrganizationUpdated,
+            self::OrganizationArchived => self::OrganizationDeleted,
+            default => null,
+        };
+    }
+
+    /**
+     * Whether the framework actually emits this event today.
+     *
+     * The catalog grew ahead of the code in a few places: these names are recorded on
+     * the audit trail but never put on the event bus, so a webhook subscribed to one
+     * receives nothing. They stay catalogued (removing a case would break code naming
+     * it) and are marked, so no picker offers a subscription that can never fire.
+     */
+    public function isEmitted(): bool
+    {
+        return match ($this) {
+            self::OrganizationSettingsUpdated,
+            self::DomainAdded, self::DomainRemoved, self::DomainVerified,
+            self::ConnectionActivated,
+            self::VaultGrantCreated, self::VaultGrantRevoked, self::VaultSecretRevoked,
+            self::GovernanceAccessRevoked => false,
+            default => true,
+        };
+    }
+
+    /**
+     * What happened, and what the payload tells a receiver, in a sentence or two. Every
+     * delivery also carries `organization_id` when the event belongs to one.
+     */
+    public function description(): string
+    {
+        return match ($this) {
+            self::UserCreated => 'A user account was created in the environment. Payload: `user_id`, `email`.',
+            self::UserUpdated => 'A user\'s profile changed. Payload: `user_id`, `changed` (the fields that changed).',
+            self::UserDeactivated => 'A user was deactivated and can no longer sign in. Payload: `user_id`.',
+            self::UserReactivated => 'A deactivated user was reactivated. Payload: `user_id`.',
+            self::UserLogin => 'A user signed in through a federated (SSO) connection. Payload: `user_id`, `connection_id`.',
+            self::IdentityLinked => 'An external identity (a social or enterprise login) was linked to a user. Payload: `user_id`, `provider`.',
+            self::OrganizationCreated => 'An organization was created. Payload: `id`, `slug`.',
+            self::OrganizationUpdated => 'An organization\'s name, slug or settings changed. Payload: `id`, `name`, `slug`, `changed` (which of `name`, `slug`, `settings`), and `settings_keys` for a settings change.',
+            self::OrganizationSuspended => 'An organization was suspended; its members are refused until it is reactivated. Payload: `id`, `status`.',
+            self::OrganizationReactivated => 'A suspended organization was reactivated. Payload: `id`, `status`.',
+            self::OrganizationDeleted => 'An organization was archived — by an operator, or by its owner — and no longer grants access. Payload: `id`, `slug`, `status`.',
+            self::OrganizationArchived => 'Legacy name for an archive; emitted alongside organization.deleted. Payload: `id`, `status`.',
+            self::OrganizationSettingsUpdated => 'Legacy name that was catalogued but never emitted. Subscribe to organization.updated, which a settings change emits.',
+            self::MembershipCreated => 'A person joined an organization — added directly or by accepting an invitation. Payload: `user_id`, `role`, `status`, `invited_by`.',
+            self::MembershipUpdated => 'A member\'s tier in an organization changed. Payload: `user_id`, `role`, `previous_role`, `reason` (`role_changed` or `ownership_transferred`).',
+            self::MembershipDeleted => 'A person stopped being a member of an organization, with every role they held there. Payload: `user_id`, `role` (the tier they had), `reason` (`removed` or `left`).',
+            self::OrganizationMemberAdded => 'Legacy name for a new membership; emitted alongside membership.created. Payload: `user_id`, `role`.',
+            self::OrganizationMemberRemoved => 'Legacy name for a removed membership; emitted alongside membership.deleted. Payload: `user_id`.',
+            self::OrganizationMemberRoleChanged => 'Legacy name for a role change; emitted alongside membership.updated. Payload: `user_id`, `role`.',
+            self::InvitationCreated => 'Somebody was invited to join an organization. Payload: `invitation_id`, `email`, `role`, `invited_by`, `expires_at`.',
+            self::InvitationAccepted => 'An invitation was accepted and the membership created. Payload: `invitation_id`, `user_id`, `email`, `role`.',
+            self::InvitationRevoked => 'A pending invitation stopped working — revoked, or superseded by a newer invitation to the same address. Payload: `invitation_id`, `email`, `reason` (`revoked` or `superseded`).',
+            self::OrganizationInvitationCreated => 'Legacy name for a new invitation; emitted alongside invitation.created. Payload: `email`, `role`.',
+            self::OrganizationInvitationAccepted => 'Legacy name for an accepted invitation; emitted alongside invitation.accepted. Payload: `user_id`.',
+            self::RoleAssigned => 'A role was granted to a member in an organization. Payload: `user_id`, `role_id`.',
+            self::RoleUnassigned => 'A role was taken away from a member in an organization — directly, or because the role was deleted. Payload: `user_id`, `role_id`.',
+            self::RoleAssignedEverywhere => 'A role was granted to a user across the whole environment, in every organization. Payload: `user_id`, `role_id`.',
+            self::RoleUnassignedEverywhere => 'An environment-wide role grant was taken away. Payload: `user_id`, `role_id`.',
+            self::ApiKeyCreated => 'A customer API key was created for an app. Payload: the key id, `user_id`, `client_id`, its permissions and expiry — never the secret.',
+            self::ApiKeyRevoked => 'A customer API key was revoked and stops verifying. Payload: the key id, `user_id`, `client_id`.',
+            self::SupportSessionStarted => 'A staff member started a time-boxed support session acting for a user in one app. Payload: the actor, the target user, the app, the reason and the expiry.',
+            self::DirectoryUserProvisioned => 'A user was created or updated by directory sync (SCIM).',
+            self::DirectoryUserDeprovisioned => 'A user was deleted by directory sync (SCIM).',
+            self::DirectoryUserDeactivated => 'A user was deactivated by directory sync (SCIM).',
+            self::DirectoryGroupMembershipChanged => 'A directory group\'s members changed through directory sync (SCIM).',
+            self::DomainAdded => 'A domain was added for verification. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::DomainRemoved => 'A domain was removed. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::DomainVerified => 'A domain passed DNS verification. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::ConnectionActivated => 'An SSO connection was activated. Not yet emitted as a webhook.',
+            self::EntitlementSet => 'An entitlement was set for an organization for the first time. Payload: `key` and its value.',
+            self::EntitlementUpdated => 'An organization\'s entitlement changed. Payload: `key` and its value.',
+            self::EntitlementRevoked => 'An entitlement was removed from an organization. Payload: `key`.',
+            self::VaultGrantCreated => 'A token-vault grant was created. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::VaultGrantRevoked => 'A token-vault grant was revoked. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::VaultSecretRevoked => 'A token-vault secret was revoked. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::GovernanceAccessRevoked => 'An access review revoked a grant. Recorded on the audit trail; not yet emitted as a webhook.',
+        };
     }
 
     public function label(): string
@@ -111,6 +304,24 @@ enum WebhookEventType: string
             self::VaultGrantRevoked => 'A token-vault grant was revoked',
             self::VaultSecretRevoked => 'A token-vault secret was revoked',
             self::GovernanceAccessRevoked => 'A governance review revoked access',
+            self::MembershipCreated => 'A member joined an organization',
+            self::MembershipUpdated => 'A member\'s role changed',
+            self::MembershipDeleted => 'A member left or was removed from an organization',
+            self::InvitationCreated => 'An invitation was sent',
+            self::InvitationAccepted => 'An invitation was accepted',
+            self::InvitationRevoked => 'An invitation was revoked',
+            self::OrganizationUpdated => 'An organization was updated',
+            self::OrganizationDeleted => 'An organization was deleted',
+            self::OrganizationArchived => 'An organization was archived',
+            self::UserLogin => 'A user signed in',
+            self::UserReactivated => 'A user was reactivated',
+            self::IdentityLinked => 'An external identity was linked to a user',
+            self::RoleUnassigned => 'A role was removed from a member',
+            self::RoleAssignedEverywhere => 'A role was granted across the environment',
+            self::RoleUnassignedEverywhere => 'An environment-wide role was removed',
+            self::ApiKeyCreated => 'An API key was created',
+            self::ApiKeyRevoked => 'An API key was revoked',
+            self::SupportSessionStarted => 'A support session started',
         };
     }
 }
