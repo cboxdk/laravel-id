@@ -19,6 +19,11 @@ How the platform is put together and the ideas you build against:
   above organizations (staging/prod, white-label).
 - **[Authorization & the decision plane](authorization.md)** — live permission and
   entitlement decisions, the hot path, and the token hybrid.
+- **[APIs and scopes](apis-and-scopes.md)** — register the resource servers your
+  tokens are for: who owns each scope, which organizations may request it, and how
+  every token's audience, scope and roles are decided.
+- **[Access token reference](access-tokens.md)** — every claim on an access token and
+  when it is present.
 - **[Organization access](organization-access.md)** — ordered membership roles,
   groups, resource grants with effective-role resolution, and user API tokens
   capped at the issuer's role.

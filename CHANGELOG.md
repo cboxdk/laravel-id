@@ -15,6 +15,53 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Added
+
+- **APIs (resource servers) and the scopes they own.** New `oauth_apis` / `oauth_api_scopes`
+  tables, the `Apis` contract (`DatabaseApis`), and `Api` / `ApiScope` models. An API has an
+  identifier (becomes `aud`, unique per environment), an owner (`organization_id`, null =
+  environment), and an optional linked app (`client_id`) whose roles and permissions tokens
+  for it carry. Scope keys are unique per environment and carry `tenant_requestable`
+  (default true). `InteractsWithOAuth::makeApi()` registers one in tests;
+  `makeClient()` takes an `organizationId`. See
+  [APIs and scopes](docs/core-concepts/apis-and-scopes.md) and the new
+  [access token reference](docs/core-concepts/access-tokens.md).
+- **One `AudienceResolver` for every access token.** `JwtTokenIssuer` asks it once per
+  token, so authorization code, refresh, client credentials, device, CIBA and token
+  exchange share one answer: registered scopes the client's owner may not hold are
+  dropped; with no `resource`, `aud` defaults to the one API the scopes belong to (scopes
+  of two APIs is `invalid_target`); a named API narrows the token to its scopes plus the
+  protocol scopes, adds the issuer to `aud` when `openid` is present, and stamps the linked
+  app's `roles`/`permissions`; free-text scopes never ride on a registered API's audience;
+  nothing grantable is `invalid_scope`.
+- Discovery's `scopes_supported` adds the tenant-requestable scopes of environment-owned
+  APIs; dynamic registration accepts them.
+
+### Security
+
+- **A tenant could mint a token for someone else's API.** Custom scopes were unowned free
+  text on each client and `resource` was only checked for being an absolute URI before it
+  became `aud`, so an organization administrator could put `tax:assess` on their own
+  client, request `resource=<the tax API>`, and receive a signed token carrying exactly the
+  `aud` and `scope` that API checks. Once the API is registered, its scopes can only be held
+  by clients its owner allows — enforced when a client is saved (by any writer) and again
+  at issuance for rows written before — and unregistered scopes can never ride on its
+  audience.
+- **Dynamic registration can no longer be used to claim a registered scope.** A
+  self-registered client counts as a tenant, not as the environment, even though its owner
+  column is null, and `allowed_scopes` cannot widen what a registered API allows.
+
+### Changed
+
+- A refresh token now records the access token's **granted** scopes and resolved audience
+  instead of the grant's requested ones, so a refresh can never widen either.
+- Token exchange echoes the scopes the new token actually carries (RFC 8693 §2.2.1); it
+  echoed the inherited set even when the exchanging client's registration narrowed it.
+- `IssuedToken` gains a trailing `?string $audience`. `JwtTokenIssuer` takes an
+  `AudienceResolver` and `DynamicClientRegistrar` an `Apis` (both container-resolved).
+
 ## [1.18.1] - 2026-08-27
 
 ### Fixed
