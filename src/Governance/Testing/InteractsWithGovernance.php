@@ -26,8 +26,12 @@ use DateTimeInterface;
  */
 trait InteractsWithGovernance
 {
+    /**
+     * A null organization opens the environment's own review of its environment-wide
+     * grants.
+     */
     protected function openAccessReview(
-        string $organizationId,
+        ?string $organizationId,
         string $name = 'Access review',
         ?DateTimeInterface $dueAt = null,
         PendingPolicy $pendingPolicy = PendingPolicy::Revoke,

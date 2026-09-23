@@ -232,4 +232,12 @@ interface Roles
      * @return list<RoleAssignment>
      */
     public function assignmentsInOrganization(string $organizationId): array;
+
+    /**
+     * Every environment-wide grant in the environment, across all subjects — the grants
+     * an ENVIRONMENT access review enumerates. Ordered by subject, then role.
+     *
+     * @return list<EnvironmentRoleAssignment>
+     */
+    public function assignmentsEverywhere(): array;
 }

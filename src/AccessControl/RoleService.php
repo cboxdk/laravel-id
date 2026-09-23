@@ -595,6 +595,15 @@ class RoleService implements Roles
             ->all());
     }
 
+    public function assignmentsEverywhere(): array
+    {
+        return array_values(EnvironmentRoleAssignment::query()
+            ->orderBy('user_id')
+            ->orderBy('role_id')
+            ->get()
+            ->all());
+    }
+
     /**
      * @param  string|null  $organizationId  null for an environment-wide grant, which
      *                                       belongs to no tenant. Both the event and the

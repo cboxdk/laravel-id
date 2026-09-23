@@ -117,4 +117,9 @@ class UnboundRoles implements Roles
     {
         throw ExternalRbacNotBound::forContract(Roles::class);
     }
+
+    public function assignmentsEverywhere(): array
+    {
+        throw ExternalRbacNotBound::forContract(Roles::class);
+    }
 }
