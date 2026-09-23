@@ -57,6 +57,10 @@ it('stores a registered secret as a hash with a hint, and nothing else', functio
 });
 
 it('keeps the old secret working through the grace period, and not a second longer', function (): void {
+    // Frozen to a whole second: expiries are stored to the second, so a clock left
+    // running would put the boundary wherever the test happened to be when it crossed it.
+    $this->freezeSecond();
+
     $registered = $this->makeClient();
     $old = (string) $registered->secret;
 
@@ -91,6 +95,10 @@ it('cuts the old secret off at once when the grace period is zero', function ():
 });
 
 it('never extends a secret that was already on its way out', function (): void {
+    // Frozen to a whole second: expiries are stored to the second, so a clock left
+    // running would put the boundary wherever the test happened to be when it crossed it.
+    $this->freezeSecond();
+
     $registered = $this->makeClient();
     $first = (string) $registered->secret;
 
@@ -246,6 +254,10 @@ it('will not revoke another client\'s secret by its id', function (): void {
 });
 
 it('stamps last_used_at on use, at most once a minute', function (): void {
+    // Frozen to a whole second: expiries are stored to the second, so a clock left
+    // running would put the boundary wherever the test happened to be when it crossed it.
+    $this->freezeSecond();
+
     $registered = $this->makeClient();
     $secret = (string) $registered->secret;
     $row = fn (): StoredClientSecret => StoredClientSecret::query()->where('oauth_client_id', $registered->client->id)->firstOrFail();
