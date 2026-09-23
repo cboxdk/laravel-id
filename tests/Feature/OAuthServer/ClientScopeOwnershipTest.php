@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGrantable;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\ClientAudit;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -94,4 +96,51 @@ it('treats a dynamically registered client as a tenant, not as the environment',
     $client->registration_access_token_hash = hash('sha256', 'reg_x');
 
     expect(fn () => $client->save())->toThrow(ScopeNotGrantable::class, 'The scope(s) tax:assess belong to');
+});
+
+/*
+ * The registry's own write paths — register, update and blueprint import — all reach the
+ * model's save, so the ownership rule holds through each of them. Proven per path, because
+ * a registry that ever switches one of them to a query-level write would skip the hook.
+ */
+
+it('refuses a registry update that adds a scope the owner may not hold, and records nothing', function (): void {
+    $org = $this->makeOrganization();
+    $registry = app(ClientRegistry::class);
+    $client = Client::query()->findOrFail($this->makeClient(['tax:read'], organizationId: $org->id)->client->id);
+    $audit = $this->fakeAudit();
+
+    $settings = $registry->blueprint($client)->withScopes(['tax:read', 'tax:assess']);
+
+    expect(fn () => $registry->update($client, $settings))
+        ->toThrow(ScopeNotGrantable::class, 'The scope(s) tax:assess belong to');
+
+    expect(Client::query()->findOrFail($client->id)->scopes)->toBe(['tax:read'])
+        ->and(array_map(fn (AuditEvent $e): string => $e->action, $audit->recorded))->not->toContain(ClientAudit::UPDATED);
+});
+
+it('lets a registry update keep a scope the client already held when its API was registered', function (): void {
+    $org = $this->makeOrganization();
+    $registered = $this->makeClient(['legacy:scope'], organizationId: $org->id);
+    $this->makeApi('https://legacy.example.test', ['legacy:scope' => false]);
+    $registry = app(ClientRegistry::class);
+    $client = Client::query()->findOrFail($registered->client->id);
+
+    $registry->update($client, $registry->blueprint($client)->withName('Renamed'));
+
+    expect(Client::query()->findOrFail($client->id)->name)->toBe('Renamed');
+});
+
+it('refuses to import a blueprint into an organization that may not hold its scopes', function (): void {
+    $org = $this->makeOrganization();
+    $registry = app(ClientRegistry::class);
+    $blueprint = $registry->blueprint($this->makeClient(['tax:assess'])->client);
+
+    expect(fn () => $registry->import($blueprint, $org->id))
+        ->toThrow(ScopeNotGrantable::class, 'The scope(s) tax:assess belong to');
+
+    expect(Client::query()->where('organization_id', $org->id)->exists())->toBeFalse();
+
+    // The same blueprint imports as an environment-owned app, which may hold it.
+    expect($registry->import($blueprint)->client->scopes)->toBe(['tax:assess']);
 });
