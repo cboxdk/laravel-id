@@ -35,8 +35,16 @@ and an archive as both `organization.archived` and `organization.deleted`. An en
 subscribed to `*` that counts or mirrors events should key on one family. Endpoints
 subscribed by name see no change.
 
+**Subscribers to domain, SSO-connection, token-vault and access-review events start
+receiving them.** `domain.*`, `connection.activated`, `vault.grant.*`, `vault.secret.revoked`
+and `governance.access.revoked` were catalogued but never emitted; they are now, and
+`organization.settings_updated` beside `organization.updated`. A `*` subscriber sees them
+for the first time. `ConnectionService`, `DatabaseDomainVerification` and
+`DatabaseSecretVault` take an `EventBus` (and `ConnectionService` an `AuditLog`); construct
+them from the container.
+
 **Build subscription pickers and key-scope pickers from the new lists.**
-`WebhookEventType::offered()` excludes legacy names and events the framework never emits;
+`WebhookEventType::offered()` excludes legacy names;
 `EnvironmentApiScope::offerable()` excludes the reserved `directories:*` scopes. Rendering
 `cases()` keeps offering both.
 

@@ -129,6 +129,15 @@ class OrganizationService implements Organizations
 
         $this->announceUpdated($organization, ['settings'], ['settings_keys' => array_keys($settings)]);
 
+        // The legacy name too, like every other superseded event: it was catalogued — and
+        // subscribable — for releases while nothing put it on the bus, so a subscriber to
+        // it received nothing. It is no longer offered to new subscriptions.
+        $this->events->emit(new DomainEvent(
+            'organization.settings_updated',
+            ['id' => $organization->id, 'keys' => array_keys($settings)],
+            $organization->id,
+        ));
+
         $this->audit->record(new AuditEvent(
             action: 'organization.settings_updated',
             actorType: ActorType::System,

@@ -15,7 +15,7 @@ use Cbox\Id\Webhooks\ValueObjects\WebhookEventDescriptor;
  * known ones you want typed; a type absent from it is still a valid subscription.
  *
  * {@see self::catalogue()} is the one rendered form of it — group, label, a human
- * description, and whether the event is current, legacy or not yet emitted — so a
+ * description, and whether the event is current or legacy — so a
  * console picker, an API and the docs all read the same list instead of each keeping
  * its own. A new case must add an arm to {@see label()}, {@see description()} and
  * {@see group()}; `match` makes a missing one a hard failure rather than a silent gap.
@@ -200,21 +200,16 @@ enum WebhookEventType: string
     /**
      * Whether the framework actually emits this event today.
      *
-     * The catalog grew ahead of the code in a few places: these names are recorded on
-     * the audit trail but never put on the event bus, so a webhook subscribed to one
-     * receives nothing. They stay catalogued (removing a case would break code naming
-     * it) and are marked, so no picker offers a subscription that can never fire.
+     * The catalog once grew ahead of the code: nine names were recorded on the audit
+     * trail and never put on the event bus, so a webhook subscribed to one received
+     * nothing. Since 1.19 every catalogued event is emitted where its change happens, and
+     * a test fails when a case is catalogued with no emitting source behind it. The flag
+     * stays so that the rule — a picker never offers a subscription that cannot fire — has
+     * one place to live if a case is ever catalogued ahead of its code again.
      */
     public function isEmitted(): bool
     {
-        return match ($this) {
-            self::OrganizationSettingsUpdated,
-            self::DomainAdded, self::DomainRemoved, self::DomainVerified,
-            self::ConnectionActivated,
-            self::VaultGrantCreated, self::VaultGrantRevoked, self::VaultSecretRevoked,
-            self::GovernanceAccessRevoked => false,
-            default => true,
-        };
+        return true;
     }
 
     /**
@@ -236,7 +231,7 @@ enum WebhookEventType: string
             self::OrganizationReactivated => 'A suspended organization was reactivated. Payload: `id`, `status`.',
             self::OrganizationDeleted => 'An organization was archived — by an operator, or by its owner — and no longer grants access. Payload: `id`, `slug`, `status`.',
             self::OrganizationArchived => 'Legacy name for an archive; emitted alongside organization.deleted. Payload: `id`, `status`.',
-            self::OrganizationSettingsUpdated => 'Legacy name that was catalogued but never emitted. Subscribe to organization.updated, which a settings change emits.',
+            self::OrganizationSettingsUpdated => 'Legacy name for a settings change; emitted alongside organization.updated. Payload: `id`, `keys` (the settings keys written).',
             self::MembershipCreated => 'A person joined an organization — added directly or by accepting an invitation. Payload: `user_id`, `role`, `status`, `invited_by`.',
             self::MembershipUpdated => 'A member\'s tier in an organization changed. Payload: `user_id`, `role`, `previous_role`, `reason` (`role_changed` or `ownership_transferred`).',
             self::MembershipDeleted => 'A person stopped being a member of an organization, with every role they held there. Payload: `user_id`, `role` (the tier they had), `reason` (`removed` or `left`).',
@@ -259,17 +254,17 @@ enum WebhookEventType: string
             self::DirectoryUserDeprovisioned => 'A user was deleted by directory sync (SCIM).',
             self::DirectoryUserDeactivated => 'A user was deactivated by directory sync (SCIM).',
             self::DirectoryGroupMembershipChanged => 'A directory group\'s members changed through directory sync (SCIM).',
-            self::DomainAdded => 'A domain was added for verification. Recorded on the audit trail; not yet emitted as a webhook.',
-            self::DomainRemoved => 'A domain was removed. Recorded on the audit trail; not yet emitted as a webhook.',
-            self::DomainVerified => 'A domain passed DNS verification. Recorded on the audit trail; not yet emitted as a webhook.',
-            self::ConnectionActivated => 'An SSO connection was activated. Not yet emitted as a webhook.',
+            self::DomainAdded => 'A domain was added to an organization, pending DNS verification. Payload: `id`, `domain`.',
+            self::DomainRemoved => 'A domain was removed from an organization. Payload: `id`, `domain`.',
+            self::DomainVerified => 'A domain passed DNS verification and can route sign-ins to the organization\'s SSO. Payload: `id`, `domain`.',
+            self::ConnectionActivated => 'An SSO connection went live (once, on the change). Payload: `id`, `type`, `provider`, `name`.',
             self::EntitlementSet => 'An entitlement was set for an organization for the first time. Payload: `key` and its value.',
             self::EntitlementUpdated => 'An organization\'s entitlement changed. Payload: `key` and its value.',
             self::EntitlementRevoked => 'An entitlement was removed from an organization. Payload: `key`.',
-            self::VaultGrantCreated => 'A token-vault grant was created. Recorded on the audit trail; not yet emitted as a webhook.',
-            self::VaultGrantRevoked => 'A token-vault grant was revoked. Recorded on the audit trail; not yet emitted as a webhook.',
-            self::VaultSecretRevoked => 'A token-vault secret was revoked. Recorded on the audit trail; not yet emitted as a webhook.',
-            self::GovernanceAccessRevoked => 'An access review revoked a grant. Recorded on the audit trail; not yet emitted as a webhook.',
+            self::VaultGrantCreated => 'An app was granted (or re-granted) leases of a token-vault secret. Payload: `secret_id`, `client_id`, `max_ttl_seconds` — never the credential.',
+            self::VaultGrantRevoked => 'An app\'s grant to a token-vault secret was revoked. Payload: `secret_id`, `client_id`.',
+            self::VaultSecretRevoked => 'A token-vault secret was revoked and can no longer be leased. Payload: `secret_id`, `provider`.',
+            self::GovernanceAccessRevoked => 'An access review took a grant away when its campaign closed. Payload: `campaign_id`, `user_id`, `access_type`, `access_ref`.',
         };
     }
 

@@ -220,11 +220,17 @@ more trust than the wording it removes.
   catalogue and no longer offered to new subscriptions.
 - **`directories:read|write` are reserved**: still honoured on keys that hold them, no longer
   offered for new keys.
-- **Catalogued events that were never emitted are marked so.** `organization.settings_updated`,
+- **Nine catalogued webhook events that were only ever audited are now delivered.**
   `domain.added|removed|verified`, `connection.activated`, `vault.grant.created|revoked`,
-  `vault.secret.revoked` and `governance.access.revoked` are recorded on the audit trail but
-  never put on the event bus, so a webhook subscribed to one receives nothing. They stay
-  subscribable and are no longer offered.
+  `vault.secret.revoked` and `governance.access.revoked` were offered to subscribers and
+  recorded on the audit trail, but nothing put them on the event bus, so a subscriber
+  received nothing. Each is now emitted where its change happens (payloads in
+  `docs/reference/webhook-events.md`; never a credential). `connection.activated` is also
+  audited now, once per actual activation. `organization.settings_updated` is emitted as a
+  legacy name beside `organization.updated` and no longer offered. `domain.verified` also
+  starts counting toward the `DomainVerified` usage metric, which was mapped to it but never
+  fed. `WebhookEventType::isEmitted()` is true for every case; a test fails if a case is
+  catalogued without an emitting source.
 - `Invitations::revoke()` takes an optional `$revokedBy`, locks the row, records
   `organization.invitation_revoked` on the audit trail and is idempotent.
 - A refresh token now records the access token's **granted** scopes and resolved audience

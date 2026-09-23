@@ -39,8 +39,11 @@ foreach (WebhookEventType::catalogue() as $event) {
 - **current** — emitted, and the name to subscribe to.
 - **legacy** — still emitted and delivered, beside the newer event named in its status; kept
   because existing endpoints subscribe to it. Not offered to new subscriptions.
-- **not emitted** — catalogued, but the framework does not put it on the event bus today (it
-  is recorded on the audit trail only), so a subscription to it receives nothing. Not offered.
+- **not emitted** — catalogued, but the framework does not put it on the event bus, so a
+  subscription to it would receive nothing. Not offered. No event has this status since 1.19,
+  when the nine that were audit-only (domains, the SSO connection, the token vault, access
+  reviews, `organization.settings_updated`) started being emitted; a test fails if a case is
+  ever catalogued without an emitting source again.
 
 The registry accepts any event name, catalogued or not, so a host or plugin that emits its
 own events can be subscribed to as well.
@@ -66,7 +69,7 @@ own events can be subscribed to as well.
 | `organization.created` | current | An organization was created. Payload: `id`, `slug`. |
 | `organization.suspended` | current | An organization was suspended; its members are refused until it is reactivated. Payload: `id`, `status`. |
 | `organization.reactivated` | current | A suspended organization was reactivated. Payload: `id`, `status`. |
-| `organization.settings_updated` | not emitted | Legacy name that was catalogued but never emitted. Subscribe to organization.updated, which a settings change emits. |
+| `organization.settings_updated` | legacy → `organization.updated` | Legacy name for a settings change; emitted alongside organization.updated. Payload: `id`, `keys` (the settings keys written). |
 | `organization.updated` | current | An organization's name, slug or settings changed. Payload: `id`, `name`, `slug`, `changed` (which of `name`, `slug`, `settings`), and `settings_keys` for a settings change. |
 | `organization.deleted` | current | An organization was archived — by an operator, or by its owner — and no longer grants access. Payload: `id`, `slug`, `status`. |
 | `organization.archived` | legacy → `organization.deleted` | Legacy name for an archive; emitted alongside organization.deleted. Payload: `id`, `status`. |
@@ -127,15 +130,15 @@ own events can be subscribed to as well.
 
 | Event | Status | Description |
 |---|---|---|
-| `domain.added` | not emitted | A domain was added for verification. Recorded on the audit trail; not yet emitted as a webhook. |
-| `domain.removed` | not emitted | A domain was removed. Recorded on the audit trail; not yet emitted as a webhook. |
-| `domain.verified` | not emitted | A domain passed DNS verification. Recorded on the audit trail; not yet emitted as a webhook. |
+| `domain.added` | current | A domain was added to an organization, pending DNS verification. Payload: `id`, `domain`. |
+| `domain.removed` | current | A domain was removed from an organization. Payload: `id`, `domain`. |
+| `domain.verified` | current | A domain passed DNS verification and can route sign-ins to the organization's SSO. Payload: `id`, `domain`. |
 
 ### SSO connections
 
 | Event | Status | Description |
 |---|---|---|
-| `connection.activated` | not emitted | An SSO connection was activated. Not yet emitted as a webhook. |
+| `connection.activated` | current | An SSO connection went live (once, on the change). Payload: `id`, `type`, `provider`, `name`. |
 
 ### Entitlements
 
@@ -149,13 +152,13 @@ own events can be subscribed to as well.
 
 | Event | Status | Description |
 |---|---|---|
-| `vault.grant.created` | not emitted | A token-vault grant was created. Recorded on the audit trail; not yet emitted as a webhook. |
-| `vault.grant.revoked` | not emitted | A token-vault grant was revoked. Recorded on the audit trail; not yet emitted as a webhook. |
-| `vault.secret.revoked` | not emitted | A token-vault secret was revoked. Recorded on the audit trail; not yet emitted as a webhook. |
+| `vault.grant.created` | current | An app was granted (or re-granted) leases of a token-vault secret. Payload: `secret_id`, `client_id`, `max_ttl_seconds` — never the credential. |
+| `vault.grant.revoked` | current | An app's grant to a token-vault secret was revoked. Payload: `secret_id`, `client_id`. |
+| `vault.secret.revoked` | current | A token-vault secret was revoked and can no longer be leased. Payload: `secret_id`, `provider`. |
 
 ### Access governance
 
 | Event | Status | Description |
 |---|---|---|
-| `governance.access.revoked` | not emitted | An access review revoked a grant. Recorded on the audit trail; not yet emitted as a webhook. |
+| `governance.access.revoked` | current | An access review took a grant away when its campaign closed. Payload: `campaign_id`, `user_id`, `access_type`, `access_ref`. |
 <!-- catalogue:end -->

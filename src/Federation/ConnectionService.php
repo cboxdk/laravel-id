@@ -12,7 +12,12 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\ValueObjects\OAuth2ConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\SamlConnectionConfig;
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Illuminate\Support\Str;
 
@@ -37,7 +42,11 @@ class ConnectionService implements Connections
 
     private ?RequestLifetime $memoLifetime = null;
 
-    public function __construct(private readonly SecretBox $secretBox) {}
+    public function __construct(
+        private readonly SecretBox $secretBox,
+        private readonly EventBus $events,
+        private readonly AuditLog $audit,
+    ) {}
 
     public function create(
         ?string $organizationId,
@@ -143,14 +152,41 @@ class ConnectionService implements Connections
         // Scope to the owning org so an admin can't flip another tenant's draft — and
         // null scopes to the environment's own, which is not a wildcard: a caller naming
         // no organization must not be able to activate a tenant's draft either.
-        Connection::query()
+        $connection = Connection::query()
             ->whereKey($id)
             ->when(
                 $organizationId === null,
                 fn ($query) => $query->whereNull('organization_id'),
                 fn ($query) => $query->where('organization_id', $organizationId),
             )
-            ->first()?->update(['status' => ConnectionStatus::Active]);
+            ->first();
+
+        // Announced once, on the change: activating a live connection again is a no-op,
+        // not a second "your SSO is live" to every subscriber.
+        if ($connection === null || $connection->status === ConnectionStatus::Active) {
+            return;
+        }
+
+        $connection->update(['status' => ConnectionStatus::Active]);
+
+        $payload = [
+            'id' => $connection->id,
+            'type' => $connection->type->value,
+            'provider' => $connection->provider,
+            'name' => $connection->name,
+        ];
+
+        // Catalogued as a webhook event for releases, and neither emitted nor audited.
+        $this->events->emit(new DomainEvent('connection.activated', $payload, $connection->organization_id));
+
+        $this->audit->record(new AuditEvent(
+            action: 'connection.activated',
+            actorType: ActorType::System,
+            organizationId: $connection->organization_id,
+            targetType: 'connection',
+            targetId: $connection->id,
+            context: $payload,
+        ));
     }
 
     /**

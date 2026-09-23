@@ -386,6 +386,16 @@ class DatabaseAccessReviews implements AccessReviews
         $item->applied = true;
         $item->save();
 
+        // A catalogued webhook event that was only ever audited: an app mirroring access
+        // needs to hear that a review took a grant away, not just the role/membership
+        // event underneath it, which does not say WHY.
+        $this->events->emit(new DomainEvent('governance.access.revoked', [
+            'campaign_id' => $campaign->id,
+            'user_id' => $item->subject_id,
+            'access_type' => $item->access_type->value,
+            'access_ref' => $item->access_ref,
+        ], $campaign->organization_id));
+
         $this->audit->record(new AuditEvent(
             action: 'governance.access.revoked',
             actorType: ActorType::System,

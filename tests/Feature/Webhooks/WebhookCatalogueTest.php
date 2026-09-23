@@ -60,10 +60,16 @@ it('points every legacy name at the event that replaced it, and does not offer i
     }
 });
 
-it('does not offer an event the framework never emits', function (): void {
-    expect(WebhookEventType::DomainVerified->isEmitted())->toBeFalse()
-        ->and(WebhookEventType::offered())->not->toContain(WebhookEventType::DomainVerified)
-        ->and(WebhookEventType::DomainVerified->describe()->toArray()['offered'])->toBeFalse();
+it('emits every catalogued event, and offers every one that is not superseded', function (): void {
+    // The nine that were audit-only until 1.19 are emitted where their change happens —
+    // tests/Feature/Webhooks/AuditOnlyEventsEmittedTest.php proves each one reaches the bus.
+    foreach (WebhookEventType::cases() as $case) {
+        expect($case->isEmitted())->toBeTrue()
+            ->and($case->describe()->isOffered())->toBe($case->supersededBy() === null);
+    }
+
+    expect(WebhookEventType::offered())->toContain(WebhookEventType::DomainVerified)
+        ->and(WebhookEventType::offered())->not->toContain(WebhookEventType::OrganizationSettingsUpdated);
 });
 
 /**
