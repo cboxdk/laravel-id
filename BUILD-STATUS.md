@@ -6,8 +6,10 @@ on inspection alone. This file exists so the build is auditable: no hidden gaps.
 
 Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dependency) · ⬜ not started
 
-**Current (2026-07-25): kernels (5/5) and every domain module below are complete and verified** —
-**1257 tests green**, PHPStan level max clean, Pint clean, `composer audit` clean.
+**Current (2026-09-24, 1.19.0): kernels (5/5) and every domain module below are complete and
+verified** — **2234 tests green on SQLite, 2235 on PostgreSQL and MySQL** (the extra one is
+the audit-chain concurrency test, which needs a server engine), the migrations-rollback group
+green on all three, PHPStan level max clean, Pint clean, `composer audit` clean.
 
 Per-module counts below are the tests in that module's own directory under `tests/`, and are
 **derived, not maintained by hand**. Regenerate them rather than editing a number:
