@@ -331,6 +331,55 @@ it('leaves only the named organization when scoping is suspended', function (): 
         ->and($memberships->activeRole($b->id, 'bob'))->toBe(MembershipRole::Member);
 });
 
+it('removes the person from the named organization only when scoping is suspended', function (): void {
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B');
+    $memberships = app(Memberships::class);
+    $memberships->add($a->id, 'bob', MembershipRole::Member);
+    $memberships->add($b->id, 'bob', MembershipRole::Member);
+
+    app(TenantContext::class)->withoutScope(fn () => $memberships->remove($a->id, 'bob'));
+
+    expect($memberships->of($a->id, 'bob'))->toBeNull()
+        ->and($memberships->activeRole($b->id, 'bob'))->toBe(MembershipRole::Member);
+});
+
+it('adds, reads and re-tiers the membership in the named organization only when scoping is suspended', function (): void {
+    // Bob is already a member of B. Unbound, add() found THAT row and returned it without
+    // adding him to A; of() answered with it; changeRole() re-tiered it.
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B');
+    $memberships = app(Memberships::class);
+    $memberships->add($b->id, 'bob', MembershipRole::Viewer);
+
+    $suspended = fn (Closure $call) => app(TenantContext::class)->withoutScope($call);
+
+    $added = $suspended(fn () => $memberships->add($a->id, 'bob', MembershipRole::Member));
+    expect($added->organization_id)->toBe($a->id);
+
+    expect($suspended(fn () => $memberships->of($a->id, 'bob'))?->organization_id)->toBe($a->id);
+
+    $suspended(fn () => $memberships->changeRole($a->id, 'bob', MembershipRole::Admin));
+
+    expect($memberships->activeRole($a->id, 'bob'))->toBe(MembershipRole::Admin)
+        ->and($memberships->activeRole($b->id, 'bob'))->toBe(MembershipRole::Viewer);
+});
+
+it('still refuses demoting the last owner when scoping is suspended', function (): void {
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B');
+    $memberships = app(Memberships::class);
+    $memberships->add($a->id, 'alice', MembershipRole::Owner);
+    $memberships->add($b->id, 'carol', MembershipRole::Owner);
+
+    $refusal = refusalOf(fn () => app(TenantContext::class)->withoutScope(
+        fn () => $memberships->changeRole($a->id, 'alice', MembershipRole::Admin),
+    ));
+
+    expect($refusal)->toBeInstanceOf(LastOwner::class)
+        ->and($memberships->activeRole($a->id, 'alice'))->toBe(MembershipRole::Owner);
+});
+
 it('still refuses the last owner leaving when scoping is suspended', function (): void {
     // Unbound, the owner count would include B's owner and conclude A had two.
     $a = $this->makeOrganization('A');

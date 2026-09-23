@@ -94,7 +94,7 @@ class MembershipService implements Memberships
         }
 
         return $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): Membership => DB::transaction(function () use ($organizationId, $userId, $role, $invitedBy): Membership {
-            $existing = Membership::query()->where('user_id', $userId)->first();
+            $existing = Membership::query()->where('organization_id', $organizationId)->where('user_id', $userId)->first();
 
             if ($existing !== null) {
                 return $existing;
@@ -102,6 +102,9 @@ class MembershipService implements Memberships
 
             $membership = new Membership;
             $membership->fill([
+                // Stated, not left to the tenant hook: that hook stands down while scoping
+                // is suspended, and the insert then had no organization at all.
+                'organization_id' => $organizationId,
                 'user_id' => $userId,
                 'role' => $role,
                 'status' => MembershipStatus::Active,
@@ -131,7 +134,7 @@ class MembershipService implements Memberships
     public function changeRole(string $organizationId, string $userId, MembershipRole $role): Membership
     {
         return $this->tenant()->runAs(GenericTenant::of($organizationId), fn (): Membership => DB::transaction(function () use ($organizationId, $userId, $role): Membership {
-            $membership = Membership::query()->where('user_id', $userId)->firstOrFail();
+            $membership = Membership::query()->where('organization_id', $organizationId)->where('user_id', $userId)->firstOrFail();
 
             // Demoting the sole owner would orphan the org — never allow it.
             if ($membership->role === MembershipRole::Owner && $role !== MembershipRole::Owner && $this->ownerCount($organizationId) <= 1) {
@@ -394,7 +397,7 @@ class MembershipService implements Memberships
     {
         return $this->tenant()->runAs(
             GenericTenant::of($organizationId),
-            fn (): ?Membership => Membership::query()->where('user_id', $userId)->first(),
+            fn (): ?Membership => Membership::query()->where('organization_id', $organizationId)->where('user_id', $userId)->first(),
         );
     }
 
