@@ -563,6 +563,15 @@ return [
         'access_token_ttl' => env('CBOX_ID_ACCESS_TOKEN_TTL', 900),
 
         /*
+         * The longest access-token lifetime a single CLIENT may ask for, in seconds
+         * (its `access_token_ttl`). A value above this is refused when a client is
+         * registered or updated, and a client already above it is clamped to it at
+         * minting — so lowering the ceiling takes effect on the next token. The
+         * deployment default above is not clamped. Default 86400 (one day).
+         */
+        'max_access_token_ttl' => env('CBOX_ID_MAX_ACCESS_TOKEN_TTL', 86400),
+
+        /*
          * `POST /oauth/decisions` — the authorization decision endpoint.
          *
          * `max_batch` caps how many permission checks (and how many entitlement

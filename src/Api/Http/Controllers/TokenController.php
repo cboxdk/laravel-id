@@ -31,6 +31,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
@@ -529,15 +530,7 @@ class TokenController
      */
     private function idTokenTtl(Client $client): int
     {
-        $ttl = $client->access_token_ttl;
-
-        if ($ttl !== null && $ttl > 0) {
-            return $ttl;
-        }
-
-        $default = config('cbox-id.oauth.access_token_ttl', 900);
-
-        return is_numeric($default) ? (int) $default : 900;
+        return AccessTokenLifetime::for($client);
     }
 
     private function atHash(string $accessToken): string
