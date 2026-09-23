@@ -223,8 +223,9 @@ class TokenController
             ? $this->refreshTokens->issue(
                 $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 // The login this family descends from, so a refreshed ID Token can
-                // describe THAT authentication rather than the refresh.
-                $grant->authTime, $grant->amr,
+                // describe THAT authentication rather than the refresh — and the
+                // session, so it carries the same `sid`.
+                $grant->authTime, $grant->amr, $grant->sessionId,
             )
             : null;
 
@@ -511,6 +512,16 @@ class TokenController
         // id_token to its authorization request and detect replay.
         if ($grant->nonce !== null) {
             $claims['nonce'] = $grant->nonce;
+        }
+
+        // OIDC Back-Channel Logout 1.0 §2.1: the sign-in session, so the relying party
+        // can match a later logout token to the session it created. Only when the host
+        // said which session the person approved from; a grant with none carries no `sid`
+        // rather than an invented one no logout could ever match.
+        $sid = $grant->sid();
+
+        if ($sid !== null) {
+            $claims['sid'] = $sid;
         }
 
         // Authentication context, for the client's step-up / re-auth decisions.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\SignedInSession;
 use Cbox\Id\Identity\Contracts\SignedInSubject;
 use Cbox\Id\OAuthServer\Contracts\EndSession;
 use Cbox\Id\OAuthServer\ValueObjects\EndSessionRequest;
@@ -30,6 +31,7 @@ class EndSessionController
         private readonly EndSession $endSession,
         private readonly SessionManager $sessions,
         private readonly SignedInSubject $signedIn,
+        private readonly SignedInSession $signedInSession,
     ) {}
 
     public function __invoke(Request $request): RedirectResponse|Response
@@ -121,6 +123,17 @@ class EndSessionController
 
         if ($subjectId !== null && $verifiedSubject !== null && hash_equals($subjectId, $verifiedSubject)) {
             $this->sessions->revokeAllForUser($subjectId);
+        } else {
+            // Unproven: THIS browser's session only — the same reach as clearing the
+            // Laravel session below, but it ends the session ROW too, which is what tells
+            // the applications it signed the person in to (Back-Channel Logout). Clearing
+            // the cookie alone left the row active until it expired, so those applications
+            // never heard the person had left. Null unless the host binds SignedInSession.
+            $sessionId = $this->signedInSession->id();
+
+            if ($sessionId !== null && $sessionId !== '') {
+                $this->sessions->revoke($sessionId);
+            }
         }
 
         auth()->guard()->logout();

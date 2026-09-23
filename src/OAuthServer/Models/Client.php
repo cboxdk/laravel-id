@@ -10,8 +10,8 @@ use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGrantable;
-use Cbox\Id\OAuthServer\ValueObjects\ScopeHolder;
 use Cbox\Id\OAuthServer\Support\ClientSecretStore;
+use Cbox\Id\OAuthServer\ValueObjects\ScopeHolder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -41,6 +41,8 @@ use Illuminate\Support\Carbon;
  * @property TokenEndpointAuthMethod|null $token_endpoint_auth_method
  * @property array<int, string> $redirect_uris
  * @property array<int, string>|null $post_logout_redirect_uris
+ * @property string|null $backchannel_logout_uri OIDC Back-Channel Logout 1.0 §2.2 — null = never notified
+ * @property bool $backchannel_logout_session_required
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
  * @property string|null $manifest_url
@@ -158,6 +160,7 @@ class Client extends Model implements EnvironmentOwned
             'scopes' => 'array',
             'jwks' => 'array',
             'first_party' => 'boolean',
+            'backchannel_logout_session_required' => 'boolean',
         ];
     }
 }

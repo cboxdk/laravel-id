@@ -561,6 +561,26 @@ return [
         ],
 
         /*
+         * OpenID Connect Back-Channel Logout 1.0: when a session ends, POST a signed
+         * logout token to every application it signed the person in to that registered a
+         * `backchannel_logout_uri`. Delivery is a queued job — run a queue worker.
+         *
+         * `verify_url` is the SSRF guard on the delivery: private, loopback, link-local
+         * and cloud-metadata addresses are refused and the connection is pinned to the
+         * addresses checked. Keep it on anywhere a tenant can register a client; switch it
+         * off only to reach an internal host you own (or `http://localhost` in development).
+         * `timeout` / `connect_timeout` are per attempt, in seconds; `max_attempts` is how
+         * many tries before the failure is recorded in the audit trail and dropped
+         * (backoff: 10s, 1m, 5m, 15m, 15m…).
+         */
+        'backchannel_logout' => [
+            'verify_url' => env('CBOX_ID_BACKCHANNEL_LOGOUT_VERIFY_URL', true),
+            'timeout' => env('CBOX_ID_BACKCHANNEL_LOGOUT_TIMEOUT', 5),
+            'connect_timeout' => env('CBOX_ID_BACKCHANNEL_LOGOUT_CONNECT_TIMEOUT', 3),
+            'max_attempts' => env('CBOX_ID_BACKCHANNEL_LOGOUT_MAX_ATTEMPTS', 5),
+        ],
+
+        /*
          * Hybrid entitlements: embed the coarse, Claims-mode entitlements in the
          * access token (`ent` claim) so resource servers can gate statelessly.
          * Instant-critical entitlements stay DecisionApi (live via /oauth/decisions)
@@ -847,6 +867,7 @@ return [
             'usage_metered_events' => env('CBOX_ID_PRUNE_USAGE_MARKERS', 30),
             'webhook_deliveries' => env('CBOX_ID_PRUNE_WEBHOOK_DELIVERIES', 30),
             'provisioning_operations' => env('CBOX_ID_PRUNE_PROVISIONING_OPERATIONS', 30),
+            'oauth_session_participants' => env('CBOX_ID_PRUNE_SESSION_PARTICIPANTS', 30),
         ],
     ],
 

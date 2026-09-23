@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $nonce
  * @property int|null $auth_time
  * @property array<int, string>|null $amr
+ * @property string|null $session_id the sign-in session the code was approved from
  * @property Carbon $expires_at
  * @property Carbon|null $consumed_at
  */

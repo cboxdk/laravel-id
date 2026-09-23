@@ -4,26 +4,33 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Identity\Contracts\LogoutPropagator;
 use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
+use Cbox\Id\OAuthServer\Contracts\BackchannelLogoutDelivery;
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Contracts\EndSession;
+use Cbox\Id\OAuthServer\Contracts\LogoutTokenIssuer;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\OAuthServer\Listeners\WithdrawAccessOnMembershipRemoval;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class OAuthServerServiceProvider extends ServiceProvider
@@ -68,7 +75,25 @@ class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(EndSession::class, EndSessionService::class);
         $this->app->singleton(ClientAssertion::class, ClientAssertionValidator::class);
 
+        // OIDC Back-Channel Logout. Identity declares LogoutPropagator and its session
+        // manager calls it on every revocation; this module is the one that knows which
+        // applications a session reached, so it supplies it — one instance behind both
+        // names, so a host that rebinds BackchannelLogout rebinds what sign-out calls.
+        $this->app->singleton(BackchannelLogout::class, BackchannelLogoutService::class);
+        $this->app->singleton(LogoutPropagator::class, fn (Application $app): LogoutPropagator => $app->make(BackchannelLogout::class));
+        $this->app->singleton(LogoutTokenIssuer::class, JwtLogoutTokenIssuer::class);
+        $this->app->singleton(BackchannelLogoutDelivery::class, HttpBackchannelLogoutDelivery::class);
+
         // The /oauth/token endpoint (authorization_code + PKCE, client_credentials)
         // lives in the Api layer. The browser consent screen lands with the SaaS app.
+    }
+
+    public function boot(): void
+    {
+        // Removing a person from an organization withdraws what they were granted there,
+        // applications included — see the listener.
+        Event::listen(EventDelivered::class, function (EventDelivered $delivered): void {
+            $this->app->make(WithdrawAccessOnMembershipRemoval::class)->handle($delivered);
+        });
     }
 }

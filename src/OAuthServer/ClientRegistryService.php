@@ -15,6 +15,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\StoredClientSecret;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
+use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
 use Cbox\Id\OAuthServer\Support\ClientAudit;
 use Cbox\Id\OAuthServer\Support\ClientSecretStore;
 use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
@@ -230,6 +231,10 @@ class ClientRegistryService implements ClientRegistry
         ClientSettingsRules::assertAuthMethod($input->tokenEndpointAuthMethod, $input->type, $input->jwks);
         AccessTokenLifetime::assertAcceptable($input->accessTokenTtl);
 
+        if ($input->backchannelLogoutUri !== null) {
+            BackchannelLogoutUri::assertValid($input->backchannelLogoutUri);
+        }
+
         return DB::transaction(function () use ($input, $actor, $context): RegisteredClient {
             $client = new Client;
             $client->fill([
@@ -245,6 +250,8 @@ class ClientRegistryService implements ClientRegistry
                 'manifest_url' => $input->manifestUrl,
                 'access_token_ttl' => $input->accessTokenTtl,
                 'first_party' => $input->firstParty,
+                'backchannel_logout_uri' => $input->backchannelLogoutUri,
+                'backchannel_logout_session_required' => $input->backchannelLogoutSessionRequired,
             ]);
 
             $client->jwks = $input->jwks;
@@ -299,5 +306,47 @@ class ClientRegistryService implements ClientRegistry
         $max = config('cbox-id.oauth.client_secrets.max_rotation_grace', self::DEFAULT_MAX_ROTATION_GRACE);
 
         return is_numeric($max) && (int) $max >= 0 ? (int) $max : self::DEFAULT_MAX_ROTATION_GRACE;
+    }
+
+    public function configureBackchannelLogout(Client $client, ?string $uri, bool $sessionRequired = false, ?AuditActor $actor = null): Client
+    {
+        // An empty string is "no URI", as a cleared console field sends it — not a
+        // relative URI to refuse.
+        $uri = $uri !== null && trim($uri) !== '' ? trim($uri) : null;
+
+        if ($uri !== null) {
+            BackchannelLogoutUri::assertValid($uri);
+        }
+
+        // Meaningless without a URI; stored false so a later URI does not inherit a
+        // requirement nobody set alongside it.
+        $sessionRequired = $uri !== null && $sessionRequired;
+
+        $changes = [];
+
+        if ($client->backchannel_logout_uri !== $uri) {
+            $changes['backchannel_logout_uri'] = ['from' => $client->backchannel_logout_uri, 'to' => $uri];
+        }
+
+        if ($client->backchannel_logout_session_required !== $sessionRequired) {
+            $changes['backchannel_logout_session_required'] = ['from' => $client->backchannel_logout_session_required, 'to' => $sessionRequired];
+        }
+
+        if ($changes === []) {
+            return $client;
+        }
+
+        // Where an app is told that its users signed out is a setting like any other, and
+        // audited like one — the same `app.updated` entry an update() writes.
+        return DB::transaction(function () use ($client, $uri, $sessionRequired, $changes, $actor): Client {
+            $client->forceFill([
+                'backchannel_logout_uri' => $uri,
+                'backchannel_logout_session_required' => $sessionRequired,
+            ])->save();
+
+            $this->audit->record(ClientAudit::UPDATED, $client, $actor, ['changes' => $changes]);
+
+            return $client;
+        });
     }
 }

@@ -145,6 +145,39 @@ more trust than the wording it removes.
   Migrations `2026_09_24_000100_bind_user_api_tokens_to_an_app` and
   `2026_09_24_000200_add_api_key_prefix_to_clients` are additive. Existing tokens stay
   personal tokens.
+- **OpenID Connect Back-Channel Logout 1.0.** When a person signs out, when an administrator
+  ends their sessions, when their account is deactivated, when their grants are revoked or
+  when they are removed from an organization, every application that signed them in is now
+  told — a signed logout token POSTed server to server — and ends its own session. Until
+  now nothing told them: an application kept the person signed in until its own session
+  expired, and consumers re-checked grants on every request to compensate.
+  - Client metadata `backchannel_logout_uri` and `backchannel_logout_session_required`
+    (§2.2) on `NewClient`, on the new `ClientRegistry::configureBackchannelLogout()`, and
+    through Dynamic Client Registration (register, read and RFC 7592 update). HTTPS only;
+    plain HTTP on `localhost`; no fragment, no credentials. Refused out loud, never dropped.
+  - `sid` on the ID Token (and on a refreshed one), when the host passes the new
+    `sessionId` argument to `AuthorizationCodes::issue()`. It is a SHA-256 derivation of the
+    session id, not the id itself, so relying parties never see the host's row key.
+  - Logout tokens per §2.4 — `iss`, `aud`, `iat`, `exp` two minutes out, a fresh `jti` per
+    attempt, the `events` member, `sub` and/or `sid`, no `nonce`, `typ: logout+jwt` — signed
+    with the environment's ID Token key.
+  - Delivery by a queued job (`DeliverBackchannelLogout`) through the SSRF guard (pinned
+    DNS, no redirects, HTTPS only; `cbox-id.oauth.backchannel_logout.verify_url`), with short
+    timeouts, retries by release with backoff (10 s, 1 min, 5 min, 15 min; five attempts),
+    queued after commit, and every final outcome in the audit trail as
+    `oauth.backchannel_logout.delivered` / `.failed` with the reason.
+  - Triggers: every `SessionManager::revoke()` / `revokeAllForUser()` (through the new
+    `Identity\Contracts\LogoutPropagator`), `RefreshTokens::revokeForUser()` /
+    `revokeForUserAndClient()`, `Subjects::deactivate()`, and `organization.member_removed`.
+    Hosts that end sessions another way call `BackchannelLogout::sessionEnded()` /
+    `subjectSignedOut()`.
+  - Discovery advertises `backchannel_logout_supported` and
+    `backchannel_logout_session_supported`, and `sid` in `claims_supported`.
+  - `Identity\Contracts\SignedInSession`: bind it and RP-initiated logout without a verified
+    `id_token_hint` ends this browser's session row too, instead of only clearing the cookie.
+  - `oauth_session_participants` is pruned by `cbox-id:prune` once its session has ended
+    (`cbox-id.prune.retention_days.oauth_session_participants`, default 30).
+  - Recipe: [Receive back-channel logout](docs/cookbook/receive-back-channel-logout.md).
 
 ### Changed
 
@@ -176,6 +209,15 @@ more trust than the wording it removes.
 - An RFC 7592 update to `none` or `private_key_jwt` revokes every secret of the client; a
   move back to a secret method mints a fresh one.
 - `Client` no longer serializes `secret_hash` or `registration_access_token_hash`.
+- **Removing a person from an organization now revokes the refresh tokens they held in it.**
+  A new framework listener on `organization.member_removed` calls
+  `RefreshTokens::revokeForUser($user, $organization)`. Before, the membership and role
+  assignments went and the organization-scoped refresh tokens kept refreshing.
+- **`RefreshTokens::revokeForUser()` now also signs the person out of the applications that
+  held the grants.** A host that calls it on every role change (as the Cbox ID app does, to
+  refresh claims) will see those applications end their sessions for the person in that
+  organization; with a live sign-in session here the person is signed straight back in with
+  fresh claims.
 
 ### Security
 

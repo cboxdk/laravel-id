@@ -31,6 +31,10 @@ readonly class ClientMetadata
         public array $responseTypes,
         public array $scopes,
         public ?array $jwks = null,
+
+        /** OIDC Back-Channel Logout 1.0 §2.2 — already validated by the registrar. */
+        public ?string $backchannelLogoutUri = null,
+        public bool $backchannelLogoutSessionRequired = false,
     ) {}
 
     /**

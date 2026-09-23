@@ -107,6 +107,11 @@ class ServerMetadata
             'backchannel_authentication_endpoint' => $issuer.'/oauth/backchannel_authentication',
             'backchannel_token_delivery_modes_supported' => ['poll'],
             'backchannel_user_code_parameter_supported' => false,
+            // OIDC Back-Channel Logout 1.0 §2.1. `session_supported` because the ID Token
+            // carries `sid` whenever the host names the session, and every logout token
+            // about a known session carries it too.
+            'backchannel_logout_supported' => true,
+            'backchannel_logout_session_supported' => true,
             'grant_types_supported' => self::grantTypes($hasAuthorizationEndpoint),
             // EXACTLY WHAT ID_TOKENS ARE SIGNED WITH, taken from the endpoint that signs
             // them so the document and the signature cannot diverge.
@@ -135,7 +140,7 @@ class ServerMetadata
             // roles/permissions/organizations are extensions a client can rely on).
             'claims_supported' => [
                 'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr',
-                'at_hash', 'email', 'email_verified', 'name', 'org', 'org_name', 'org_role',
+                'at_hash', 'sid', 'email', 'email_verified', 'name', 'org', 'org_name', 'org_role',
                 'roles', 'permissions', 'organizations', 'groups',
             ],
             // The authentication context class references this IdP asserts: aal1 (a

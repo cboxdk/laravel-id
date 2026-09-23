@@ -96,4 +96,13 @@ interface ClientRegistry
      * @throws InvalidClientMetadata
      */
     public function import(ClientBlueprint $blueprint, ?string $organizationId = null, ?array $jwks = null, ?AuditActor $actor = null): RegisteredClient;
+
+    /**
+     * Set — or, with a null URI, clear — where this client is told that a person signed
+     * out (OIDC Back-Channel Logout 1.0 §2.2). Validated exactly as at registration.
+     * Records `app.updated` when the setting actually changed.
+     *
+     * @throws InvalidClientMetadata when the URI is not one this server will call
+     */
+    public function configureBackchannelLogout(Client $client, ?string $uri, bool $sessionRequired = false, ?AuditActor $actor = null): Client;
 }
