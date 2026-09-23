@@ -39,6 +39,9 @@ How the platform is put together and the ideas you build against:
   code safe.
 - **[AI token vault](token-vault.md)** — seal downstream third-party credentials
   and broker short-lived, deny-by-default leased access to autonomous / AI agents.
+- **[OAuth clients (apps)](oauth-clients.md)** — registering apps, overlapping secret
+  rotation, per-app access-token lifetimes, grants, blueprints, and the lifecycle the
+  registry audits for you.
 - **[CIBA backchannel approval](ciba.md)** — OpenID Connect Client-Initiated
   Backchannel Authentication: human-in-the-loop approval for agent actions.
 - **[Access governance](access-governance.md)** — IGA: access-certification

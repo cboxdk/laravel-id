@@ -102,7 +102,9 @@ what the deployable app, an add-on package, or a future release does.
 
 Client secrets are 256-bit and stored as a bare SHA-256 digest, not under a password KDF.
 That is defensible for high-entropy machine credentials, and it is stated here rather than
-left for you to discover.
+left for you to discover. A client may hold several live secrets during a rotation's grace
+period; every live one is compared in constant time on every attempt, and one past its
+expiry never matches — see [OAuth clients](../core-concepts/oauth-clients.md).
 
 ## OpenID Connect
 
