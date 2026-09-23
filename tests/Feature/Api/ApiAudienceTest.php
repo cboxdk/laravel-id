@@ -377,7 +377,7 @@ it('resolves the audience for the CIBA grant', function (): void {
 
 it('resolves the audience for token exchange and echoes what the new token carries', function (): void {
     $this->makeApi(API_TAX, ['tax:read']);
-    $client = $this->makeClient(['tax:read', 'legacy:x'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange']);
+    $client = $this->makeClient(['openid', 'tax:read', 'legacy:x'], grantTypes: ['urn:ietf:params:oauth:grant-type:token-exchange']);
     $subject = app(TokenIssuer::class)->issueForUser($client->client, 'alice', null, ['legacy:x'])->token;
 
     // The subject token holds only the free-text scope; exchanging it onto the tax API's
@@ -390,6 +390,22 @@ it('resolves the audience for token exchange and echoes what the new token carri
         'subject_token_type' => 'urn:ietf:params:oauth:token-type:access_token',
         'resource' => API_TAX,
     ])->assertStatus(400)->assertJsonPath('error', 'invalid_scope');
+
+    // With openid alongside, the exchange succeeds — and the echoed scope is what the new
+    // token carries, not the subject token's set it was asked to inherit.
+    $withOpenId = app(TokenIssuer::class)->issueForUser($client->client, 'alice', null, ['openid', 'legacy:x'])->token;
+
+    $response = $this->postJson('/oauth/token', [
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:token-exchange',
+        'client_id' => $client->client->client_id,
+        'client_secret' => $client->secret,
+        'subject_token' => $withOpenId,
+        'subject_token_type' => 'urn:ietf:params:oauth:token-type:access_token',
+        'resource' => API_TAX,
+    ])->assertOk();
+
+    expect($response->json('scope'))->toBe('openid')
+        ->and(audClaims($response->json('access_token'))['aud'])->toBe([API_TAX, audIssuer()]);
 });
 
 it('never widens scope or audience on refresh, even when the API later opens up', function (): void {
