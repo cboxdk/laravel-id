@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentResolver;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\Kernel\Usage\Contracts\ReconcilableScopes;
 use Cbox\Id\Kernel\Usage\Contracts\SeatCensus;
+use Cbox\Id\Organization\Contracts\CustomerApiKeys;
 use Cbox\Id\Organization\Contracts\EnvironmentDomains;
 use Cbox\Id\Organization\Contracts\Groups;
 use Cbox\Id\Organization\Contracts\Invitations;
@@ -29,6 +30,7 @@ class OrganizationServiceProvider extends ServiceProvider
         $this->app->singleton(Groups::class, GroupService::class);
         $this->app->singleton(ResourceAccess::class, ResourceAccessService::class);
         $this->app->singleton(UserApiTokens::class, UserApiTokenService::class);
+        $this->app->singleton(CustomerApiKeys::class, CustomerApiKeyService::class);
         $this->app->singleton(EnvironmentResolutionCache::class);
 
         // Host → environment resolution is 2–3 uncached queries that EVERY request

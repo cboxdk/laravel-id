@@ -51,6 +51,9 @@ enum WebhookEventType: string
 
     case GovernanceAccessRevoked = 'governance.access.revoked';
 
+    case ApiKeyCreated = 'api_key.created';
+    case ApiKeyRevoked = 'api_key.revoked';
+
     /** A subscription to every catalogued event, present and future. */
     public const WILDCARD = '*';
 
@@ -111,6 +114,8 @@ enum WebhookEventType: string
             self::VaultGrantRevoked => 'A token-vault grant was revoked',
             self::VaultSecretRevoked => 'A token-vault secret was revoked',
             self::GovernanceAccessRevoked => 'A governance review revoked access',
+            self::ApiKeyCreated => 'A customer API key was created',
+            self::ApiKeyRevoked => 'A customer API key was revoked',
         };
     }
 }
