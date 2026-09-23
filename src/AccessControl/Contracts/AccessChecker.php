@@ -12,10 +12,23 @@ use Cbox\Id\AccessControl\ValueObjects\AppAccessClaims;
  */
 interface AccessChecker
 {
+    /**
+     * Whether ANY role the user holds in the org — its own, an ancestor's, or one held
+     * environment-wide — grants a permission of this name, WHATEVER APP DECLARED IT.
+     *
+     * Not an app's authorization question. Since 1.19 an environment-wide grant may name
+     * one app's declared role (a staff role), and this answers across all of them: one
+     * app's `support:impersonate` is a yes here for every other app too. A decision made
+     * for one client must use {@see forToken()} with that client, or
+     * {@see PermissionDecisions}, which does.
+     */
     public function can(string $userId, string $permission, string $organizationId): bool;
 
     /**
-     * @return list<string> the user's effective permission names in the org
+     * The user's effective permission names in the org, across EVERY app's roles — see
+     * {@see can()} for why this is not a per-app answer.
+     *
+     * @return list<string>
      */
     public function permissionsFor(string $userId, string $organizationId): array;
 

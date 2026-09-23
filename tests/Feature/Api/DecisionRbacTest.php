@@ -123,6 +123,37 @@ it('counts an environment-wide grant, with or without an organization', function
         ->assertJsonPath('allowed', true);
 });
 
+/*
+ * An environment-wide grant may now name ONE app's declared role (a staff role). It must
+ * count for that app's decisions and for no other app's — with an organization bound and
+ * without one. AccessChecker::can()/permissionsFor() answer across every app and would say
+ * yes here; the decision must come from forToken() for the calling client.
+ */
+it('keeps an environment-wide grant of one app\'s staff role out of another app\'s decisions', function (): void {
+    $org = $this->makeOrganization();
+    app(Memberships::class)->add($org->id, 'agent', MembershipRole::Member);
+    $cadastre = $this->makeClient(['openid']);
+    $tax = $this->makeClient(['openid']);
+    $roles = app(Roles::class);
+    $staff = $roles->define(null, 'Cadastre support', null, $cadastre->client->client_id);
+    $roles->grantPermission(null, $staff->id, 'parcels:impersonate');
+    $roles->assignEverywhere('agent', $staff->id);
+
+    foreach ([$org->id, null] as $organizationId) {
+        $asTax = app(TokenIssuer::class)->issueForUser($tax->client, 'agent', $organizationId, ['openid'])->token;
+        $asCadastre = app(TokenIssuer::class)->issueForUser($cadastre->client, 'agent', $organizationId, ['openid'])->token;
+
+        rbacAsk($this, $asTax, ['permission' => 'parcels:impersonate'])
+            ->assertOk()
+            ->assertJsonPath('client_id', $tax->client->client_id)
+            ->assertJsonPath('allowed', false);
+
+        rbacAsk($this, $asCadastre, ['permission' => 'parcels:impersonate'])
+            ->assertOk()
+            ->assertJsonPath('allowed', true);
+    }
+})->group('security');
+
 it('reflects a revoked role on the next call, with the same token', function (): void {
     $org = $this->makeOrganization();
     $app = $this->makeClient(['openid']);
