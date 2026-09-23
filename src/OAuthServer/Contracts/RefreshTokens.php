@@ -20,11 +20,13 @@ interface RefreshTokens
      * `$authTime` and `$amr` describe the login this family descends from, and
      * are recorded so a refreshed ID Token can still describe THAT
      * authentication (OIDC Core §12.2) rather than the moment it was refreshed.
+     * `$sessionId` is the sign-in session it came from, for the same reason: a refreshed
+     * ID Token keeps the `sid` of the first.
      *
      * @param  list<string>  $scopes
      * @param  list<string>  $amr
      */
-    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string;
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = [], ?string $sessionId = null): string;
 
     /**
      * Rotate a presented refresh token: validate it, consume it, and mint its
@@ -52,6 +54,10 @@ interface RefreshTokens
      * or permission changes, revoke the user's refresh tokens so their next refresh
      * forces re-authentication and re-mints a token with the new claims, instead of
      * riding a stale grant until it expires. Returns the number revoked.
+     *
+     * The applications that held the revoked grants are also told to end the sessions
+     * they keep for the user (OIDC Back-Channel Logout) — a revoked grant behind a live
+     * application session is the half of revocation the person cannot see.
      */
     public function revokeForUser(string $userId, ?string $organizationId = null): int;
 
@@ -74,7 +80,8 @@ interface RefreshTokens
      * The whole point of showing somebody their connected applications is that they can
      * remove ONE — `revokeForUser()` signs them out of everything, which is the right
      * answer to "my account is compromised" and the wrong answer to "I do not use that
-     * CLI any more".
+     * CLI any more". That one application is told to end its sessions for the user
+     * (OIDC Back-Channel Logout); no other is.
      *
      * @return int how many live grants were withdrawn
      */

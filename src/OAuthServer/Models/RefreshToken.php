@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $audience
  * @property int|null $auth_time
  * @property array<int, string>|null $amr
+ * @property string|null $session_id the sign-in session the family descends from
  * @property string|null $jkt
  * @property string|null $successor_token
  * @property Carbon|null $consumed_at

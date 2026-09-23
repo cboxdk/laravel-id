@@ -6,14 +6,18 @@ namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
+use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AuthorizationCode;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
+use Cbox\Id\OAuthServer\ValueObjects\SessionParticipation;
 use Illuminate\Support\Facades\DB;
 
 class AuthorizationCodeService implements AuthorizationCodes
 {
     private const TTL_SECONDS = 60;
+
+    public function __construct(private readonly BackchannelLogout $logout) {}
 
     public function issue(
         string $clientId,
@@ -27,6 +31,7 @@ class AuthorizationCodeService implements AuthorizationCodes
         ?int $authTime = null,
         array $amr = [],
         ?string $resource = null,
+        ?string $sessionId = null,
     ): string {
         // S256 ONLY, REFUSED AT ISSUE TIME. Redemption always computes S256, so a code
         // minted with `plain` could never be redeemed — it failed closed, which is the
@@ -62,6 +67,9 @@ class AuthorizationCodeService implements AuthorizationCodes
             // What the user authorized this code FOR (RFC 8707 §2). The token endpoint
             // compares any requested resource against this rather than trusting it.
             'resource' => $resource,
+            // The sign-in session the person approved from: the ID Token's `sid`, and
+            // how Back-Channel Logout knows to tell this client when that session ends.
+            'session_id' => $sessionId !== null && $sessionId !== '' ? $sessionId : null,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
@@ -103,6 +111,16 @@ class AuthorizationCodeService implements AuthorizationCodes
 
             $record->forceFill(['consumed_at' => now()])->save();
 
+            // The moment the client actually holds something from this session — so from
+            // here on, ending the session has to reach it. In the same transaction as the
+            // consumption: a redemption that rolls back records nothing.
+            $this->logout->participate(new SessionParticipation(
+                clientId: $record->client_id,
+                userId: $record->user_id,
+                sessionId: $record->session_id,
+                organizationId: $record->organization_id,
+            ));
+
             return new AuthorizedGrant(
                 $record->user_id,
                 $record->organization_id,
@@ -111,6 +129,7 @@ class AuthorizationCodeService implements AuthorizationCodes
                 $record->auth_time,
                 is_array($record->amr) ? array_values($record->amr) : [],
                 $record->resource,
+                $record->session_id,
             );
         });
     }

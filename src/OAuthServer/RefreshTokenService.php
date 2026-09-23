@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer;
 
 use Carbon\CarbonInterface;
+use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\RefreshTokenReuse;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
+use Cbox\Id\OAuthServer\ValueObjects\AccessWithdrawal;
 use Cbox\Id\OAuthServer\ValueObjects\ConnectedApplication;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
+use Cbox\Id\OAuthServer\ValueObjects\SessionParticipation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -36,9 +39,11 @@ class RefreshTokenService implements RefreshTokens
      */
     private const REUSE_GRACE_SECONDS = 10;
 
-    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string
+    public function __construct(private readonly BackchannelLogout $logout) {}
+
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = [], ?string $sessionId = null): string
     {
-        return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt, $authTime, $amr);
+        return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt, $authTime, $amr, $sessionId);
     }
 
     public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null): RefreshGrant
@@ -101,6 +106,7 @@ class RefreshTokenService implements RefreshTokens
                     // describes the one login it descends from.
                     $token->auth_time,
                     array_values($token->amr ?? []),
+                    $token->session_id,
                 );
 
                 // Consume and record the successor atomically, so a racing replay in
@@ -135,11 +141,26 @@ class RefreshTokenService implements RefreshTokens
 
     public function revokeForUser(string $userId, ?string $organizationId = null): int
     {
-        return RefreshToken::query()
+        $live = RefreshToken::query()
             ->where('user_id', $userId)
             ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
-            ->whereNull('revoked_at')
-            ->update(['revoked_at' => now()]);
+            ->whereNull('revoked_at');
+
+        $held = $this->grantsHeld($userId, (clone $live)->get(['client_id', 'session_id', 'organization_id']));
+        $revoked = $live->update(['revoked_at' => now()]);
+
+        // AND THE APPLICATIONS HOLDING THEM. Revoking the refresh token stops the next
+        // refresh; an application that signed the person in keeps its own session, and
+        // that session is the one the person is actually using. Told even when nothing was
+        // revoked here, because a client that never asked for `offline_access` holds no
+        // refresh token at all and still signed the person in.
+        $this->logout->accessWithdrawn(new AccessWithdrawal(
+            userId: $userId,
+            organizationId: $organizationId,
+            grants: $held,
+        ));
+
+        return $revoked;
     }
 
     public function connectedApplications(string $userId): array
@@ -209,11 +230,45 @@ class RefreshTokenService implements RefreshTokens
 
     public function revokeForUserAndClient(string $userId, string $clientId): int
     {
-        return RefreshToken::query()
+        $live = RefreshToken::query()
             ->where('user_id', $userId)
             ->where('client_id', $clientId)
-            ->whereNull('revoked_at')
-            ->update(['revoked_at' => now()]);
+            ->whereNull('revoked_at');
+
+        $held = $this->grantsHeld($userId, (clone $live)->get(['client_id', 'session_id', 'organization_id']));
+        $revoked = $live->update(['revoked_at' => now()]);
+
+        // Only this application is told — the whole point of withdrawing ONE.
+        $this->logout->accessWithdrawn(new AccessWithdrawal(
+            userId: $userId,
+            clientId: $clientId,
+            grants: $held,
+        ));
+
+        return $revoked;
+    }
+
+    /**
+     * The (client, session) pairs a set of live refresh tokens stands for — one per pair,
+     * since rotation leaves a row per use.
+     *
+     * @param  iterable<RefreshToken>  $tokens
+     * @return list<SessionParticipation>
+     */
+    private function grantsHeld(string $userId, iterable $tokens): array
+    {
+        $held = [];
+
+        foreach ($tokens as $token) {
+            $held[$token->client_id.'|'.$token->session_id] = new SessionParticipation(
+                clientId: $token->client_id,
+                userId: $userId,
+                sessionId: $token->session_id,
+                organizationId: $token->organization_id,
+            );
+        }
+
+        return array_values($held);
     }
 
     /**
@@ -232,6 +287,7 @@ class RefreshTokenService implements RefreshTokens
             audience: $token->audience,
             authTime: $token->auth_time,
             amr: array_values($token->amr ?? []),
+            sessionId: $token->session_id,
         );
     }
 
@@ -239,7 +295,7 @@ class RefreshTokenService implements RefreshTokens
      * @param  list<string>  $scopes
      * @param  list<string>  $amr
      */
-    private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string
+    private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience, ?string $dpopJkt = null, ?int $authTime = null, array $amr = [], ?string $sessionId = null): string
     {
         $raw = 'rt_'.bin2hex(random_bytes(32));
 
@@ -254,6 +310,7 @@ class RefreshTokenService implements RefreshTokens
             'auth_time' => $authTime,
             'amr' => $amr === [] ? null : $amr,
             'jkt' => $dpopJkt,
+            'session_id' => $sessionId,
             'expires_at' => now()->addDays(self::TTL_DAYS),
         ]);
 

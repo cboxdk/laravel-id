@@ -28,5 +28,11 @@ readonly class AuthorizedGrant
          * asks for a different audience than the one the user agreed to.
          */
         public ?string $resource = null,
+
+        /**
+         * The sign-in session the person approved from, when the host said which — the
+         * source of the ID Token's `sid` (OIDC Back-Channel Logout 1.0 §2.1).
+         */
+        public ?string $sessionId = null,
     ) {}
 }
