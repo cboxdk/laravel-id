@@ -64,6 +64,10 @@ with the user's effective role; there is no token-specific grant model.
   minter. `admin` scope requires an org-managing role, `write` a writing role,
   and a non-member mints nothing (`TokenScopeExceedsIssuerRole`).
 
+The same credential bound to ONE app, carrying that app's permissions instead of a
+verb, is a [customer API key](customer-api-keys.md): what an app's end-customers use
+to call the app's own API.
+
 ## Testing
 
 `InteractsWithAccess` ships the helpers the package's own suite uses:

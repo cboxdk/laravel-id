@@ -22,6 +22,9 @@ How the platform is put together and the ideas you build against:
 - **[Organization access](organization-access.md)** — ordered membership roles,
   groups, resource grants with effective-role resolution, and user API tokens
   capped at the issuer's role.
+- **[Customer API keys](customer-api-keys.md)** — keys your app's end-customers mint
+  for YOUR API: bound to one app, capped at the holder's current permissions, and
+  verified by the app with its own client credentials.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
 - **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters

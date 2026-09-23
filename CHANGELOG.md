@@ -15,6 +15,51 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Added
+
+- **Customer API keys.** An end-customer of an app built on Cbox ID could not get a key for
+  that app's API. User API tokens (`cbid_pat_`) existed, but they were bound to no app,
+  carried a coarse verb instead of the app's permissions, and only an environment key with
+  `users:read` could check one. The app itself had no way to verify a key with its own
+  credentials, and OAuth introspection answers `active: false` for anything the caller did
+  not issue.
+
+  A customer API key is that same credential, bound to one app (`client_id`), one
+  organization and one holder, and carrying a subset of the app's permissions. It uses the
+  same table, the same SHA-256-at-rest lookup by hash, and the same tenancy and revocation.
+  Two caps keep it honest. At issuance, every permission must be one the holder currently
+  holds for that app (`AccessChecker::forToken()`, the set an access token would carry).
+  At every verification, the key's permissions are intersected with what the holder holds
+  at that moment, so a demoted holder's key loses the permission on the next request. The
+  key also goes inactive when the holder leaves the organization, and stays inactive if
+  they are added back later. A suspended organization or a deactivated account does the
+  same.
+
+  - `CustomerApiKeys` contract (`setPrefix`, `issue`, `verify`, `find`, `revoke`,
+    `forUser`, `forOrganization`). Refusals throw `CustomerApiKeyRefused` with a typed
+    `ApiKeyRefusal` reason.
+  - Per-app key prefix `oauth_clients.api_key_prefix`, validated by `ApiKeyPrefix`
+    (`^[a-z][a-z0-9]{1,15}_(live|test)$`, root `cbid` reserved, unique per environment).
+    Keys are `{prefix}_{48 base62}` and are shown once. Declaring a prefix is how an app
+    opts in.
+  - `POST /oauth/api-keys/verify`: the app authenticates with its own client credentials
+    (the token endpoint's methods) and gets back
+    `{active, key_id, sub, org, org_role, permissions[], client_id, expires_at}` for its own
+    keys. Every other outcome is exactly `{"active": false}`. The endpoint is no-store and
+    throttled at `cbox-id.customer_api_keys.verify_per_minute` (default 600 per IP).
+  - `last_used_at` is written at most once a minute per key, and the throttle is part of
+    the UPDATE's own WHERE clause.
+  - Audit entries and webhook events `api_key.created` / `api_key.revoked`. Both are in
+    `WebhookEventType`.
+
+  Personal tokens are unchanged. Each model now carries a global scope for its half of
+  the shared table, so neither service can resolve, list or revoke the other's rows.
+  Migrations `2026_09_24_000100_bind_user_api_tokens_to_an_app` and
+  `2026_09_24_000200_add_api_key_prefix_to_clients` are additive. Existing tokens stay
+  personal tokens.
+
 ## [1.18.1] - 2026-08-27
 
 ### Fixed

@@ -18,6 +18,20 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased
+
+**Two additive migrations for customer API keys. No action is needed beyond `migrate`.**
+
+`user_api_tokens` gains `client_id` and `permissions`. `scope` and `name` become
+nullable, and `prefix` widens to 40 characters. `oauth_clients` gains `api_key_prefix`.
+Every existing row keeps its meaning: a token with no `client_id` is a personal
+`cbid_pat_` token, exactly as before.
+
+One thing to check if your host reads the table directly: rows with a `client_id` are
+customer API keys, and they have no `scope`. `UserApiToken` excludes them with a global
+scope, so Eloquent code is unaffected. A raw `DB::table('user_api_tokens')` query, or a
+`withoutGlobalScopes()` one, now sees both kinds.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old
