@@ -47,6 +47,11 @@ class InvalidTokenExchange extends RuntimeException
         return new self('invalid_grant', 'The subject token was not issued to (nor names) the requesting client.');
     }
 
+    public static function actedSubject(): self
+    {
+        return new self('invalid_grant', 'The subject token was issued to somebody acting for its subject (act) and cannot be exchanged.');
+    }
+
     public static function unprovenSenderConstraint(): self
     {
         return new self('invalid_grant', 'The subject token is DPoP-bound; the request must present a DPoP proof for the bound key.');

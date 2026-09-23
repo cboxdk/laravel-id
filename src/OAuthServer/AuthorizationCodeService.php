@@ -8,6 +8,7 @@ use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AuthorizationCode;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Illuminate\Support\Facades\DB;
 
@@ -27,6 +28,7 @@ class AuthorizationCodeService implements AuthorizationCodes
         ?int $authTime = null,
         array $amr = [],
         ?string $resource = null,
+        ?ActingParty $actor = null,
     ): string {
         // S256 ONLY, REFUSED AT ISSUE TIME. Redemption always computes S256, so a code
         // minted with `plain` could never be redeemed — it failed closed, which is the
@@ -62,6 +64,9 @@ class AuthorizationCodeService implements AuthorizationCodes
             // What the user authorized this code FOR (RFC 8707 §2). The token endpoint
             // compares any requested resource against this rather than trusting it.
             'resource' => $resource,
+            // Who is really behind this code, when it is a support session's.
+            'actor_id' => $actor?->subject,
+            'support_session_id' => $actor?->supportSessionId,
             'expires_at' => now()->addSeconds(self::TTL_SECONDS),
         ]);
 
@@ -111,8 +116,27 @@ class AuthorizationCodeService implements AuthorizationCodes
                 $record->auth_time,
                 is_array($record->amr) ? array_values($record->amr) : [],
                 $record->resource,
+                $this->actingParty($record),
             );
         });
+    }
+
+    /**
+     * The acting party a support session's code was minted for, or null for an ordinary
+     * code. Both columns or neither: a half-set pair is not a code this service wrote, and
+     * it is refused rather than guessed into either kind of grant.
+     */
+    private function actingParty(AuthorizationCode $record): ?ActingParty
+    {
+        if ($record->actor_id === null && $record->support_session_id === null) {
+            return null;
+        }
+
+        if ($record->actor_id === null || $record->support_session_id === null) {
+            throw InvalidGrant::make('code invalid, expired or already used');
+        }
+
+        return new ActingParty($record->actor_id, $record->support_session_id);
     }
 
     private function locked(string $code): ?AuthorizationCode

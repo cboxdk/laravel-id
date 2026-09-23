@@ -18,6 +18,7 @@ use Cbox\Id\OAuthServer\Contracts\EndSession;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
+use Cbox\Id\OAuthServer\Contracts\SupportSessions;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
@@ -52,6 +53,7 @@ class OAuthServerServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(TokenExchange::class, TokenExchangeService::class);
         $this->app->singleton(AuthorizationCodes::class, AuthorizationCodeService::class);
+        $this->app->singleton(SupportSessions::class, SupportSessionService::class);
         $this->app->singleton(DynamicClientRegistration::class, DynamicClientRegistrar::class);
         $this->app->singleton(RefreshTokens::class, RefreshTokenService::class);
         $this->app->singleton(PushedAuthorizationRequests::class, PushedAuthorizationService::class);

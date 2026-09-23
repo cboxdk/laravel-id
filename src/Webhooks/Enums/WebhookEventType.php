@@ -51,6 +51,8 @@ enum WebhookEventType: string
 
     case GovernanceAccessRevoked = 'governance.access.revoked';
 
+    case SupportSessionStarted = 'support_session.started';
+
     /** A subscription to every catalogued event, present and future. */
     public const WILDCARD = '*';
 
@@ -111,6 +113,7 @@ enum WebhookEventType: string
             self::VaultGrantRevoked => 'A token-vault grant was revoked',
             self::VaultSecretRevoked => 'A token-vault secret was revoked',
             self::GovernanceAccessRevoked => 'A governance review revoked access',
+            self::SupportSessionStarted => 'Somebody started acting as a member (support session)',
         };
     }
 }

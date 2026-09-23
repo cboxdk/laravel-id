@@ -33,9 +33,18 @@ readonly class IdTokenGrant
         public ?string $nonce = null,
         public ?int $authTime = null,
         public array $amr = [],
+
+        /**
+         * Who is really holding the token, for a support session's grant — carried into
+         * the ID Token's `act` so an app that authenticates the ID Token sees it too.
+         */
+        public ?ActingParty $actor = null,
+
+        /** A unix time the ID Token must not outlive (a support session's end). */
+        public ?int $notAfter = null,
     ) {}
 
-    public static function fromAuthorization(AuthorizedGrant $grant): self
+    public static function fromAuthorization(AuthorizedGrant $grant, ?int $notAfter = null): self
     {
         return new self(
             userId: $grant->userId,
@@ -44,6 +53,8 @@ readonly class IdTokenGrant
             nonce: $grant->nonce,
             authTime: $grant->authTime,
             amr: $grant->amr,
+            actor: $grant->actor,
+            notAfter: $notAfter,
         );
     }
 

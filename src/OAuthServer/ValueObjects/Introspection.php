@@ -74,6 +74,23 @@ readonly class Introspection
      * The DPoP confirmation thumbprint (`cnf.jkt`, RFC 9449) this token is
      * sender-constrained to, or null for a plain bearer token.
      */
+    /**
+     * RFC 8693 §4.1: the subject of the party ACTING for this token's subject — set on a
+     * support session's token — or null. Read like `cnf`: a JWT decode yields a stdClass.
+     */
+    public function actorSubject(): ?string
+    {
+        $act = $this->claims['act'] ?? null;
+
+        if (is_object($act)) {
+            $act = (array) $act;
+        }
+
+        $subject = is_array($act) ? ($act['sub'] ?? null) : null;
+
+        return is_string($subject) && $subject !== '' ? $subject : null;
+    }
+
     public function confirmationThumbprint(): ?string
     {
         // `cnf` may arrive as an array or, from a JWT decode, a stdClass — cast so

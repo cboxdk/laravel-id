@@ -11,6 +11,7 @@ use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
 use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\AccessControl\Contracts\StaffAccess;
 use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Illuminate\Console\Scheduling\Schedule;
@@ -27,6 +28,7 @@ class AccessControlServiceProvider extends ServiceProvider
             // never queries the built-in tables (which are not created in this mode).
             // A binding in the host's own provider wins over these.
             $this->app->singleton(AccessChecker::class, NullAccessChecker::class);
+            $this->app->singleton(StaffAccess::class, NullStaffAccess::class);
             $this->app->singleton(Roles::class, UnboundRoles::class);
             $this->app->singleton(GroupRoleMappings::class, UnboundGroupRoleMappings::class);
 
@@ -39,6 +41,7 @@ class AccessControlServiceProvider extends ServiceProvider
         $this->app->singleton(GrantGuard::class, AllowAllGrants::class);
         $this->app->singleton(Roles::class, RoleService::class);
         $this->app->singleton(AccessChecker::class, HierarchyAwareAccessChecker::class);
+        $this->app->singleton(StaffAccess::class, DatabaseStaffAccess::class);
         $this->app->singleton(AppManifests::class, ManifestSyncService::class);
         $this->app->singleton(ManifestFetcher::class, HttpManifestFetcher::class);
         $this->app->singleton(GroupRoleMappings::class, DatabaseGroupRoleMappings::class);

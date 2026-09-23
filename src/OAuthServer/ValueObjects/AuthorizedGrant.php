@@ -28,5 +28,12 @@ readonly class AuthorizedGrant
          * asks for a different audience than the one the user agreed to.
          */
         public ?string $resource = null,
+
+        /**
+         * Who is really acting, when this grant came from a support session's code. The
+         * token endpoint mints such a grant with `act`, no refresh token and the
+         * session's lifetime cap — and only after re-reading the session.
+         */
+        public ?ActingParty $actor = null,
     ) {}
 }

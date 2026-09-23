@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $audience
  * @property Carbon $expires_at
  * @property Carbon|null $revoked_at
+ * @property string|null $support_session_id the support session that minted it, if any
  */
 class AccessToken extends Model implements EnvironmentOwned
 {
