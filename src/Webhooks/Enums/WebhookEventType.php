@@ -319,8 +319,8 @@ enum WebhookEventType: string
             self::RoleUnassigned => 'A role was removed from a member',
             self::RoleAssignedEverywhere => 'A role was granted across the environment',
             self::RoleUnassignedEverywhere => 'An environment-wide role was removed',
-            self::ApiKeyCreated => 'An API key was created',
-            self::ApiKeyRevoked => 'An API key was revoked',
+            self::ApiKeyCreated => 'A customer API key was created',
+            self::ApiKeyRevoked => 'A customer API key was revoked',
             self::SupportSessionStarted => 'A support session started',
         };
     }

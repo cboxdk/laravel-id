@@ -96,6 +96,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 - [Architecture & patterns](core-concepts/architecture.md) — kernels vs domain, contracts-first DI, dogfooding
 - [Environments & the isolation model](core-concepts/environments.md) — the hard identity boundary above organizations; staging/prod and white-label
 - [Authorization & the decision plane](core-concepts/authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
+- [Customer API keys](core-concepts/customer-api-keys.md) — keys your app's customers mint for your API, verified by your app at `/oauth/api-keys/verify`
 - [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
 
 - [Membership lifecycle](core-concepts/membership-lifecycle.md) — leave, transfer ownership, owner archive, and the single-owner rule

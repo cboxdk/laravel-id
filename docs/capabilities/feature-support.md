@@ -64,6 +64,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Custom domains | **Partial** | DNS TXT challenge, verification, and promotion to issuer host. Deliberately TLS-agnostic — certificate issuance is yours. |
 | Home-realm discovery (email domain → SSO connection) | **Partial** | The lookup primitive ships and is environment-scoped, but there is **no endpoint and no caller** — routing a login by email domain is yours to wire. |
 | User API tokens | **Full** | Capped at the issuing member's role. |
+| Customer API keys (`POST /oauth/api-keys/verify`) | **Full** | Bound to one app, org and holder; permissions capped at the holder's current permissions for the app at issuance AND re-capped at every verification; verified by the app with its own client credentials, uniform `active: false` otherwise. |
 | Platform control plane — operators, accounts, projects | **Full** | Accounts sit above the environment boundary; account members are ordinary subjects in the platform-root environment rather than a second credential store. Signed, expiring, purpose-pinned handoff into a tenant environment. |
 
 ## Directory & provisioning

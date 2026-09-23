@@ -131,6 +131,18 @@ extending `ClientRegistryService`, add `update()`, `delete()`, `hasSecret()`, `s
 framework. A host that recorded its own entries for these will see each twice; drop yours,
 and pass an `AuditActor` so the framework's entry names who asked.
 
+**Two additive migrations for customer API keys. No action is needed beyond `migrate`.**
+
+`user_api_tokens` gains `client_id` and `permissions`. `scope` and `name` become
+nullable, and `prefix` widens to 40 characters. `oauth_clients` gains `api_key_prefix`.
+Every existing row keeps its meaning: a token with no `client_id` is a personal
+`cbid_pat_` token, exactly as before.
+
+One thing to check if your host reads the table directly: rows with a `client_id` are
+customer API keys, and they have no `scope`. `UserApiToken` excludes them with a global
+scope, so Eloquent code is unaffected. A raw `DB::table('user_api_tokens')` query, or a
+`withoutGlobalScopes()` one, now sees both kinds.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old

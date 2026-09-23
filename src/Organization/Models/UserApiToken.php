@@ -12,6 +12,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\TenantOwned;
 use Cbox\Id\Organization\Casts\ResourceFamiliesCast;
 use Cbox\Id\Organization\Enums\TokenScope;
 use Cbox\Id\Organization\ValueObjects\ResourceFamilies;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -22,6 +23,10 @@ use Illuminate\Database\Eloquent\Model;
  * token, then resolve the user's effective role; there is no token-specific
  * grant model. The plain token is shown once at issuance; only its SHA-256
  * hash is stored.
+ *
+ * The table also holds customer API keys ({@see CustomerApiKey}) — the same credential
+ * bound to one app. Those rows carry a `client_id`; a global scope keeps them out of
+ * this model, so a customer key can never resolve, list or revoke as a personal token.
  *
  * @property string $id
  * @property string $environment_id
@@ -49,6 +54,16 @@ class UserApiToken extends Model implements EnvironmentOwned, TenantOwned
     protected $guarded = [];
 
     protected $hidden = ['token_hash'];
+
+    /** The global scope that keeps this model to personal (unbound) tokens. */
+    public const SCOPE = 'personal_token';
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope(self::SCOPE, static function (Builder $query): void {
+            $query->whereNull($query->qualifyColumn('client_id'));
+        });
+    }
 
     /**
      * @return array<string, string>

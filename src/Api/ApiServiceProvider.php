@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api;
 
+use Cbox\Id\Api\Http\Controllers\ApiKeyVerificationController;
 use Cbox\Id\Api\Http\Controllers\AuthorizationServerMetadataController;
 use Cbox\Id\Api\Http\Controllers\BackchannelAuthenticationController;
 use Cbox\Id\Api\Http\Controllers\DecisionController;
@@ -169,6 +170,13 @@ class ApiServiceProvider extends ServiceProvider
             // checks resolved live. Generously throttled — resource servers call it per
             // request and it is cache-backed.
             Route::middleware('throttle:600,1')->post('/oauth/decisions', DecisionController::class);
+
+            // Customer API key verification: the app, authenticated with its own client
+            // credentials, asks whether a key presented to ITS API is good. On the app's
+            // request path like the decision endpoint, so generously (and configurably)
+            // throttled; no-store because the answer is a credential's authority.
+            Route::middleware(['throttle:'.$this->apiKeyVerifyLimit().',1', NoStore::class])
+                ->post('/oauth/api-keys/verify', ApiKeyVerificationController::class);
 
             // Credential-bearing endpoints — throttled to blunt secret/token brute
             // force (secrets are 256-bit, so this is a backstop, not the only guard),
@@ -392,6 +400,18 @@ class ApiServiceProvider extends ServiceProvider
         }
 
         return $this->stringList($configured);
+    }
+
+    /**
+     * Requests per minute per caller IP at `/oauth/api-keys/verify`
+     * (`cbox-id.customer_api_keys.verify_per_minute`, default 600). Never below one: a
+     * zero would read as "unlimited" to nobody and "refuse everything" to the limiter.
+     */
+    private function apiKeyVerifyLimit(): int
+    {
+        $configured = config('cbox-id.customer_api_keys.verify_per_minute', 600);
+
+        return max(1, is_numeric($configured) ? (int) $configured : 600);
     }
 
     /**
