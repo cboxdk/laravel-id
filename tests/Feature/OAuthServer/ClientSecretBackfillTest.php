@@ -48,7 +48,7 @@ function legacyClientRow(string $environmentId, string $clientId, ?string $secre
 }
 
 it('moves every pre-existing secret into the secret table, and each still authenticates', function (): void {
-    $migration = require __DIR__.'/../../../database/migrations/2026_09_24_000100_create_oauth_client_secrets_table.php';
+    $migration = require __DIR__.'/../../../database/migrations/2026_09_24_000200_create_oauth_client_secrets_table.php';
 
     // The database as 1.18 left it: no secret table.
     $migration->down();
@@ -114,7 +114,7 @@ it('rolls the table back off, leaving each client its newest secret in the old c
     $registered = $this->makeClient();
     $rotated = app(ClientRegistry::class)->rotateSecret($registered->client, 3600);
 
-    $migration = require __DIR__.'/../../../database/migrations/2026_09_24_000100_create_oauth_client_secrets_table.php';
+    $migration = require __DIR__.'/../../../database/migrations/2026_09_24_000200_create_oauth_client_secrets_table.php';
 
     $migration->down();
 

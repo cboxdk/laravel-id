@@ -75,7 +75,7 @@ exchange echoes the scopes the new token carries. If you construct `JwtTokenIssu
 
 **Client secrets move to their own table, and `oauth_clients.secret_hash` is deprecated.**
 
-The migration `2026_09_24_000100_create_oauth_client_secrets_table` creates
+The migration `2026_09_24_000200_create_oauth_client_secrets_table` creates
 `oauth_client_secrets` and moves every existing `secret_hash` into it with no expiry, so
 every client keeps authenticating with the secret it has today. Run `php artisan migrate`
 as part of the deploy; nothing else is needed for clients to keep working.

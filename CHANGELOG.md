@@ -142,8 +142,8 @@ more trust than the wording it removes.
 
   Personal tokens are unchanged. Each model now carries a global scope for its half of
   the shared table, so neither service can resolve, list or revoke the other's rows.
-  Migrations `2026_09_24_000100_bind_user_api_tokens_to_an_app` and
-  `2026_09_24_000200_add_api_key_prefix_to_clients` are additive. Existing tokens stay
+  Migrations `2026_09_24_000300_bind_user_api_tokens_to_an_app` and
+  `2026_09_24_000400_add_api_key_prefix_to_clients` are additive. Existing tokens stay
   personal tokens.
 - **OpenID Connect Back-Channel Logout 1.0.** When a person signs out, when an administrator
   ends their sessions, when their account is deactivated, when their grants are revoked or

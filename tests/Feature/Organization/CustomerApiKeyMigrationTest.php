@@ -24,7 +24,7 @@ uses(RefreshDatabase::class);
  * a table rebuild on SQLite — still resolvable, with its scope and families intact.
  */
 it('carries a personal token written under the old schema across, still working', function (): void {
-    $migration = require __DIR__.'/../../../database/migrations/2026_09_24_000100_bind_user_api_tokens_to_an_app.php';
+    $migration = require __DIR__.'/../../../database/migrations/2026_09_24_000300_bind_user_api_tokens_to_an_app.php';
 
     $org = app(Organizations::class)->create(new NewOrganization(
         name: 'Acme',
