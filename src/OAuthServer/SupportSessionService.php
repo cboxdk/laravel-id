@@ -10,6 +10,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\SupportSessions;
@@ -55,6 +56,7 @@ class SupportSessionService implements SupportSessions
         private readonly AuthorizationCodes $codes,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly AudienceResolver $audiences,
     ) {}
 
     public function begin(NewSupportSession $request, ?SupportCodeRequest $code = null): StartedSupportSession
@@ -97,17 +99,22 @@ class SupportSessionService implements SupportSessions
 
         $this->authorizeActor($request, $client);
 
+        // Settled before anything is written: a set no token could be audienced to is
+        // refused here, rather than a session announced to the customer and a code
+        // minted that the token endpoint then refuses.
+        $scopes = $this->scopesFor($client, $request->scopes);
+
         // One transaction for the session, its announcement and its first code: a code
         // request that fails (an unregistered redirect URI, a malformed PKCE challenge)
         // leaves no session behind that the customer was told about and nobody used.
-        return DB::transaction(function () use ($request, $client, $reason, $code): StartedSupportSession {
+        return DB::transaction(function () use ($request, $client, $reason, $code, $scopes): StartedSupportSession {
             $session = SupportSession::query()->create([
                 'actor_id' => $request->actorId,
                 'actor_kind' => $request->actorKind,
                 'target_user_id' => $request->targetUserId,
                 'organization_id' => $request->organizationId,
                 'client_id' => $client->client_id,
-                'scopes' => $this->scopesFor($client, $request->scopes),
+                'scopes' => $scopes,
                 'reason' => $reason,
                 'expires_at' => now()->addSeconds($this->ttl($request->ttlSeconds)),
             ]);
@@ -268,7 +275,14 @@ class SupportSessionService implements SupportSessions
             ? array_values($client->scopes)
             : array_values(array_filter($requested, fn (string $scope): bool => $client->allows($scope)));
 
-        return array_values(array_unique(array_filter($scopes, fn (string $scope): bool => $scope !== 'offline_access')));
+        $scopes = array_values(array_unique(array_filter($scopes, fn (string $scope): bool => $scope !== 'offline_access')));
+
+        // Then the audience, asked exactly as the token endpoint asks it — these scopes,
+        // no `resource`, because a session's codes name none. Once the app holds a
+        // registered API's scope the token is for that API, and a scope nobody registered
+        // (`apps.manifest`) cannot ride on its audience: without this the session, its
+        // codes and anything reporting it listed scopes no token ever carried.
+        return $scopes === [] ? [] : $this->audiences->resolve($client, $scopes, null)->scopes;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\Contracts;
 
 use Cbox\Id\OAuthServer\Enums\SupportActorKind;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\SupportSessionRefused;
 use Cbox\Id\OAuthServer\Models\SupportSession;
 use Cbox\Id\OAuthServer\ValueObjects\NewSupportSession;
@@ -43,6 +44,7 @@ interface SupportSessions
      * Start a session. With a `$code` request, also mint its first authorization code.
      *
      * @throws SupportSessionRefused naming which check failed
+     * @throws InvalidAudience when the session's scopes cannot be audienced to one API; nothing is started
      */
     public function begin(NewSupportSession $request, ?SupportCodeRequest $code = null): StartedSupportSession;
 

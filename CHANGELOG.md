@@ -15,6 +15,12 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [1.19.3] - 2026-09-24
+
+### Fixed
+
+- A support session stores exactly the scopes its tokens will carry. It used to store the requested scopes (or the app's whole registration) narrowed only to the app's registration, while every token passed through the audience resolver — so once the app held a registered API's scope, a scope nobody registered (e.g. `apps.manifest`) was listed on the session and its codes but carried by no token. A set that spans two registered APIs is now refused with `InvalidAudience` before the session is created or announced. (`SupportSessionService` gains an `AudienceResolver` constructor dependency; it is container-built.)
+
 ## [1.19.2] - 2026-09-24
 
 ### Fixed
