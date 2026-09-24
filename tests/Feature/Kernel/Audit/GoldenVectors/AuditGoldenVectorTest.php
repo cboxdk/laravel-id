@@ -261,10 +261,47 @@ it('re-records the golden inputs to byte-identical rows, hashes and checkpoints'
             $expect = $operation['expect'];
 
             if (isset($expect['throws'])) {
-                // In a savepoint: on PostgreSQL a failed statement aborts the whole
-                // enclosing transaction, and this refusal is expected.
-                expect(fn () => DB::transaction(fn () => app(AuditLog::class)->checkpoint($organizationId)))
-                    ->toThrow((string) $expect['throws']);
+                // The ONE recorded operation that encoded a bug: the pre-extraction
+                // implementation could not checkpoint the platform chain from outside
+                // any environment (no signing key could be found or generated), and
+                // the fixture recorded that it threw. It now signs as `__platform__`,
+                // so this asserts what it signs instead — the platform chain's head at
+                // this point in the recorded history.
+                //
+                // Inside a savepoint that is rolled back: the recorded history never
+                // contained this checkpoint, and every later operation's golden
+                // expectations (the Checkpointer's "never checkpointed", the final
+                // tables) are held exactly as recorded.
+                expect(is_string($operation['environment']))->toBeFalse($label);
+
+                $head = null;
+
+                foreach ($fixture['operations'] as $earlier => $candidate) {
+                    if ($earlier >= $index) {
+                        break;
+                    }
+
+                    if ($candidate['op'] === 'record' && $candidate['environment'] === null
+                        && ($candidate['event']['organization_id'] ?? null) === $organizationId) {
+                        $head = $candidate['expect'];
+                    }
+                }
+
+                expect($head)->not->toBeNull($label);
+
+                DB::beginTransaction();
+
+                try {
+                    $checkpoint = app(AuditLog::class)->checkpoint($organizationId);
+
+                    expect($checkpoint->environment_id)->toBe(DatabaseAuditLog::PLATFORM_ENVIRONMENT, $label)
+                        ->and($checkpoint->scope)->toBe($organizationId ?? DatabaseAuditLog::SYSTEM_SCOPE, $label)
+                        ->and($checkpoint->up_to_sequence)->toBe($head['sequence'], $label)
+                        ->and($checkpoint->root_hash)->toBe($head['hash'], $label)
+                        ->and(array_keys(goldenCheckpointClaims($checkpoint->signature)))->toBe(['typ', 'scope', 'up_to_sequence', 'root_hash', 'iat'], $label);
+                } finally {
+                    DB::rollBack();
+                }
 
                 continue;
             }

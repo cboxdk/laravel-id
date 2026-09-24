@@ -24,6 +24,8 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Audit\ValueObjects\ChainVerification;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
+use Closure;
 
 /**
  * The platform's audit trail: the {@see AuditLog} contract over cboxdk/laravel-audit-chain.
@@ -146,7 +148,7 @@ class DatabaseAuditLog implements AuditLog
         $key = $this->keyFor($organizationId);
 
         try {
-            $checkpoint = $this->chain->checkpoint($key);
+            $checkpoint = $this->inChainEnvironment(fn () => $this->chain->checkpoint($key));
         } catch (CannotCheckpointEmptyChain) {
             throw CannotCheckpointEmptyScope::make($key->scope);
         }
@@ -156,6 +158,34 @@ class DatabaseAuditLog implements AuditLog
         }
 
         return $checkpoint;
+    }
+
+    /**
+     * Run a signing step as the chain's own environment.
+     *
+     * Signing keys are environment-owned. Inside an environment that is simply the
+     * current one. OUTSIDE any environment — the platform plane, whose chain is the
+     * `__platform__` partition — there is no key to find, and none can be generated
+     * (a key needs an environment to belong to), so signing threw. The platform chain is
+     * therefore signed as the `__platform__` environment: the same environment, and so
+     * the same key, the checkpoint pass has always entered to sign it.
+     *
+     * An environment already in context is left exactly as it is.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $callback
+     * @return TResult
+     */
+    private function inChainEnvironment(Closure $callback): mixed
+    {
+        $context = app(EnvironmentContext::class);
+
+        if ($context->current() !== null) {
+            return $callback();
+        }
+
+        return $context->runAs(GenericEnvironment::of(self::PLATFORM_ENVIRONMENT), $callback);
     }
 
     /**

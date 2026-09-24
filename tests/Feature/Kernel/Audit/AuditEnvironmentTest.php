@@ -7,6 +7,8 @@ use Cbox\Id\Kernel\Audit\DatabaseAuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -175,4 +177,32 @@ it('appends each job\'s entry to its OWN chain across a worker reset', function 
 
     expect($chains)->toContain('env_a')
         ->and($chains)->toContain('env_b');
+});
+
+/**
+ * The platform plane (no environment) appends to the `__platform__` chain — and must be
+ * able to CHECKPOINT that same chain. It used to throw: with no environment in context
+ * the signing-key lookup matched nothing (signing keys are environment-owned) and the
+ * key it then tried to generate had no environment to belong to, so the insert hit
+ * `signing_keys.environment_id NOT NULL`. The platform chain is signed as the
+ * `__platform__` environment instead, exactly as the checkpoint pass signs it.
+ */
+it('checkpoints the platform chain when no environment is in context', function (): void {
+    app(EnvironmentContext::class)->set(null);
+
+    auditEntry('operator.login');
+    $head = auditEntry('operator.logout');
+
+    $checkpoint = app(AuditLog::class)->checkpoint();
+
+    expect($checkpoint->environment_id)->toBe(DatabaseAuditLog::PLATFORM_ENVIRONMENT)
+        ->and($checkpoint->scope)->toBe(DatabaseAuditLog::SYSTEM_SCOPE)
+        ->and($checkpoint->up_to_sequence)->toBe(2)
+        ->and($checkpoint->root_hash)->toBe($head->hash)
+        // ...signed with the platform environment's own key — the one the pass uses.
+        ->and($this->runAsEnvironment(DatabaseAuditLog::PLATFORM_ENVIRONMENT, fn () => app(TokenSigner::class)->verify($checkpoint->signature, [SigningAlg::RS256]))->string('typ'))
+        ->toBe('cbox-id.audit.checkpoint');
+
+    // The context the caller had is the context it gets back.
+    expect(app(EnvironmentContext::class)->current())->toBeNull();
 });
