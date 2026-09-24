@@ -97,10 +97,16 @@ class HierarchyAwareAccessChecker implements AccessChecker
             ->pluck('permissions.name')
             ->all();
 
-        return new AppAccessClaims(
-            $roleKeys,
-            array_values(array_filter($permissions, 'is_string')),
-        );
+        $permissions = array_values(array_filter($permissions, 'is_string'));
+
+        // Sorted, byte-wise, in PHP. Both claims are sets, but they are signed into a
+        // token and compared by apps, SDK caches and tests: an order that depends on the
+        // engine's row order (PostgreSQL and SQLite disagreed) or its collation is an
+        // order nobody can rely on. SORT_STRING is the same everywhere.
+        sort($roleKeys, SORT_STRING);
+        sort($permissions, SORT_STRING);
+
+        return new AppAccessClaims($roleKeys, $permissions);
     }
 
     /**

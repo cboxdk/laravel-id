@@ -242,3 +242,29 @@ it('removes environment-wide grants when the role is deleted', function (): void
 
     expect($roles->everywhereFor('user-1'))->toBe([]);
 });
+
+/**
+ * The claims are sets, but they are signed and compared: the order must not be whatever
+ * the engine happened to return. PostgreSQL and SQLite gave the same grants back in
+ * different orders, and an app's cache key and a test's toBe() both saw two tokens.
+ */
+it('orders roles and permissions the same way on every engine', function (): void {
+    $roles = app(Roles::class);
+
+    // Created in reverse order, so an unsorted read hands them back reversed.
+    $zeta = $roles->define(null, 'Zeta');
+    $alpha = $roles->define(null, 'Alpha');
+
+    foreach (['z:write', 'm:do', 'a:read'] as $name) {
+        $permission = Permission::query()->create(['name' => $name, 'tenant_assignable' => true]);
+        $roles->attachPermission($zeta->id, $permission->id, null);
+    }
+
+    $roles->assignEverywhere('user-1', $zeta->id);
+    $roles->assignEverywhere('user-1', $alpha->id);
+
+    $claims = app(AccessChecker::class)->forToken('user-1', null, 'cid_any');
+
+    expect($claims->roles)->toBe(['Alpha', 'Zeta'])
+        ->and($claims->permissions)->toBe(['a:read', 'm:do', 'z:write']);
+});
