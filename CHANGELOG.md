@@ -15,6 +15,12 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [1.19.2] - 2026-09-24
+
+### Fixed
+
+- The `roles` and `permissions` claims (access token, ID token `groups`, userinfo, decisions) are now sorted byte-wise. They were returned in whatever order the database produced, which differed between PostgreSQL and SQLite, so the same grants could sign two different tokens.
+
 ## [1.19.1] - 2026-09-24
 
 ### Fixed
