@@ -111,7 +111,7 @@ class CustomerApiKeyService implements CustomerApiKeys
         $prefix = $client->api_key_prefix === null ? null : ApiKeyPrefix::tryFrom($client->api_key_prefix);
 
         if ($prefix === null) {
-            throw CustomerApiKeyRefused::because(ApiKeyRefusal::KeysNotEnabled, "App [{$client->client_id}] has not declared an API key prefix, so it accepts no customer API keys.");
+            throw CustomerApiKeyRefused::because(ApiKeyRefusal::KeysNotEnabled, "App [{$client->client_id}] has not declared an API key prefix, so it issues no API keys to its users.");
         }
 
         $name = $this->name($input->name);

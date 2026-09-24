@@ -15,6 +15,12 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [1.19.1] - 2026-09-24
+
+### Fixed
+
+- The `api_keys:read` / `api_keys:write` environment-API scope labels and the "no key prefix" refusal no longer say "customer": the keys belong to an app's users (the members of its organizations), and "customer" already means something else across the console. Labels now read "Read member API keys" / "Revoke member API keys".
+
 ## [1.19.0] - 2026-09-24
 
 Six feature sets in one release: tenancy context (`org_role`, RBAC decisions, the membership
