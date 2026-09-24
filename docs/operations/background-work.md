@@ -361,6 +361,32 @@ No checkpoint has ever been signed, so that window is still open. Enable in this
 **If no re-chain is in your future, turn it on now** — until you do, a truncated trail is
 undetectable. Full detail in [`UPGRADING.md`](../../UPGRADING.md).
 
+### The `audit-chain:*` commands
+
+The chain runs on `cboxdk/laravel-audit-chain`, whose commands operate on the same
+trail:
+
+```bash
+php artisan audit-chain:verify                 # every environment's chains, platform plane included
+php artisan audit-chain:verify --window=1000   # just the newest 1000 entries of each
+php artisan audit-chain:checkpoint             # equivalent to cbox-id:audit:checkpoint
+```
+
+`audit-chain:verify` exits non-zero when any chain is broken, which makes it the thing to
+schedule and alert on. Leave the package's own `audit-chain.checkpoint.schedule` off and
+keep using `cbox-id.audit.checkpoint.schedule`; running both only signs nothing twice.
+
+To export each signed checkpoint off the database, set `AUDIT_CHAIN_ANCHOR=filesystem` and
+`AUDIT_CHAIN_ANCHOR_DISK` to a disk backed by a bucket with a retention lock. A failed
+export rolls the checkpoint back and the pass reports that chain as failed.
+
+**Verify the platform plane from its own environment.** A platform chain's checkpoint is
+signed as the `__platform__` environment (that is how the pass re-enters it), so it
+verifies there — which is what `audit-chain:verify` does. `AuditLog::verifyChain()` called
+with *no* environment in context looks for verification keys outside any environment,
+finds none, and reports `checkpoint signature failed to verify` for a platform chain that
+has been checkpointed. This predates the move to the package and is unchanged by it.
+
 ## Other scheduled work
 
 Registered by their own modules on the same `withoutOverlapping()` pattern, each gated by

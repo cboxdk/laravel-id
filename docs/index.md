@@ -56,7 +56,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 |---|---|---|
 | `Kernel\Tenancy` | `TenantContext` | Deny-by-default org isolation; `runAs`, `scopedTo` (hierarchy roll-up), `withoutScope`. |
 | `Kernel\Crypto` | `KeyManager`, `TokenSigner`, `SecretBox` | Signing keys + JWKS + rotation; alg-allowlisted JWTs; AEAD envelope encryption. |
-| `Kernel\Audit` | `AuditLog` | Append-only, hash-chained trail; signed checkpoints. |
+| `Kernel\Audit` | `AuditLog` | Append-only, hash-chained trail; signed checkpoints. Built on `cboxdk/laravel-audit-chain`. |
 | `Kernel\Events` | `EventBus` | Transactional outbox; at-least-once relay. |
 | `Kernel\Authorization` | `PolicyDecisionPoint`, `RelationshipStore`, `EntitlementReader`/`EntitlementWriter` | Owned ReBAC engine, deny-by-default PDP, billing-fed entitlement projection. |
 | `Organization` | `Organizations`, `OrganizationHierarchy`, `Memberships`, `EnvironmentResolver` | Environments, tenants, closure-tree hierarchy (reseller/parent), memberships. |
