@@ -380,12 +380,12 @@ To export each signed checkpoint off the database, set `AUDIT_CHAIN_ANCHOR=files
 `AUDIT_CHAIN_ANCHOR_DISK` to a disk backed by a bucket with a retention lock. A failed
 export rolls the checkpoint back and the pass reports that chain as failed.
 
-**Verify the platform plane from its own environment.** A platform chain's checkpoint is
-signed as the `__platform__` environment (that is how the pass re-enters it), so it
-verifies there — which is what `audit-chain:verify` does. `AuditLog::verifyChain()` called
-with *no* environment in context looks for verification keys outside any environment,
-finds none, and reports `checkpoint signature failed to verify` for a platform chain that
-has been checkpointed. This predates the move to the package and is unchanged by it.
+**The platform plane signs and verifies as `__platform__`.** Its chain is the
+`__platform__` partition, and signing keys are environment-owned, so
+`AuditLog::checkpoint()` and `verifyChain()` called with no environment in context use the
+`__platform__` environment's keys — the same ones the checkpoint pass uses. (Before the
+unreleased fix, the first threw and the second reported a checkpointed platform chain as
+tampered with; see [`UPGRADING.md`](../../UPGRADING.md).)
 
 ## Other scheduled work
 

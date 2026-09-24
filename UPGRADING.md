@@ -61,6 +61,21 @@ checkpoint signatures.
   checkpoint to that disk (e.g. an R2 or S3 bucket with a retention lock) — see the
   package's `docs/cookbook/anchor-checkpoints-to-r2.md`. An anchor failure rolls the
   checkpoint row back and the pass reports it.
+- **Three fixes to the platform trail's checkpoints** (behaviour changes only where the
+  old behaviour was wrong):
+  - `AuditLog::checkpoint()` with **no environment** in context (the platform plane) used
+    to throw a `QueryException` (`signing_keys.environment_id` NOT NULL). It now signs the
+    `__platform__` chain as the `__platform__` environment — the same key the checkpoint
+    pass uses. The first such call generates that environment's signing key if the pass
+    has never run.
+  - `AuditLog::verifyChain()` with **no environment** used to report a platform chain that
+    the checkpoint pass had signed as `checkpoint signature failed to verify`, although
+    nothing was tampered with. It now verifies with the same `__platform__` keys. If you
+    have alerting on that reason from the platform plane, it was a false positive.
+  - Checkpoint verification now requires the token's `typ` to be
+    `cbox-id.audit.checkpoint`. Every checkpoint laravel-id has signed carries it; a
+    different token signed by the same environment key is now refused
+    (`checkpoint payload does not match its signature`) instead of accepted.
 - **The package's own config does not reach the platform trail.** Its models, tables,
   partition column, codec and Ed25519 signing key (`audit-chain.*`) are for a host's own
   use of the package; laravel-id states its tables, codec and JWT signer explicitly.

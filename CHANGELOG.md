@@ -22,6 +22,15 @@ more trust than the wording it removes.
 - The hash-chained audit log now runs on the new framework package `cboxdk/laravel-audit-chain` (new dependency). The append path (anchor-row serialisation, the duplicate-key / serialisation-failure retry ladder), verification and the checkpoint cross-check moved there unchanged; `DatabaseAuditLog`, `Checkpointer` and `CheckpointCommand` are now thin adapters that keep the platform's addressing (environment, scope), tables (`audit_logs`, `audit_checkpoints`), canonical hash form (`CboxIdEntryCodec`, byte-identical) and JWT checkpoint signatures (`TokenCheckpointSigner`). No migration, no re-chain, no public signature change. Golden vectors written by the previous implementation (`tests/Fixtures/audit/golden-vectors.json`) are verified and reproduced byte for byte by the new one. See [UPGRADING.md](UPGRADING.md).
 - `AuditEntry` / `AuditCheckpoint` extend the package's `ChainEntry` / `ChainCheckpoint`; `CannotAppendToAuditChain` / `CannotCheckpointEmptyScope` extend the package's exceptions (still `RuntimeException`s, same messages).
 
+### Fixed
+
+- `AuditLog::checkpoint()` with no environment in context (the platform plane) threw a `QueryException` on `signing_keys.environment_id`. The platform chain is now signed as the `__platform__` environment, the same key the checkpoint pass uses.
+- `AuditLog::verifyChain()` with no environment reported a platform chain checkpointed by the checkpoint pass as `checkpoint signature failed to verify` (a false tamper report). It now verifies with the `__platform__` environment's keys, the same lookup as signing.
+
+### Security
+
+- Checkpoint verification requires `typ` = `cbox-id.audit.checkpoint`. Previously any token signed by the environment's key that carried `scope`, `up_to_sequence` and `root_hash` was accepted as a checkpoint. All checkpoints laravel-id has signed carry the claim.
+
 ### Added
 
 - The package's `audit-chain:verify` (every environment's chains, or the newest `--window` entries of each) and `audit-chain:checkpoint` operate on the platform trail; `audit-chain:keygen` is available. None is scheduled by default.
