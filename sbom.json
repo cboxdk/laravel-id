@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:0f34a68b-d3b2-4ca0-a548-a48da4e868c3",
+    "serialNumber": "urn:uuid:8fff67a7-2bf4-4369-9f4e-bc06fab3cea3",
     "version": 1,
     "metadata": {
         "tools": [
@@ -43,6 +43,22 @@
             "version": "3.2.1",
             "purl": "pkg:composer/carbonphp/carbon-doctrine-types@3.2.1",
             "description": "Types to use Carbon in Doctrine",
+            "licenses": [
+                {
+                    "license": {
+                        "id": "MIT"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "library",
+            "bom-ref": "pkg:composer/cboxdk/laravel-audit-chain@0.1.0",
+            "group": "cboxdk",
+            "name": "laravel-audit-chain",
+            "version": "0.1.0",
+            "purl": "pkg:composer/cboxdk/laravel-audit-chain@0.1.0",
+            "description": "Cbox Audit Chain: a tamper-evident, hash-chained audit trail for Laravel, with signed checkpoints and external anchoring.",
             "licenses": [
                 {
                     "license": {

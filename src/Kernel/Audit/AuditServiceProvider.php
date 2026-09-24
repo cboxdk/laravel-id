@@ -4,17 +4,53 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Audit;
 
+use Cbox\AuditChain\AuditChainServiceProvider;
+use Cbox\AuditChain\Contracts\AuditChain;
+use Cbox\AuditChain\Contracts\ChainContext;
+use Cbox\AuditChain\Contracts\ChainInventory;
+use Cbox\AuditChain\Storage\DatabaseChainInventory;
+use Cbox\Id\Kernel\Audit\Chain\AuditLogChain;
+use Cbox\Id\Kernel\Audit\Chain\AuditStorage;
+use Cbox\Id\Kernel\Audit\Chain\EnvironmentChainContext;
 use Cbox\Id\Kernel\Audit\Console\CheckpointCommand;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
+/**
+ * The platform's audit trail, built on cboxdk/laravel-audit-chain.
+ *
+ * `AuditLog` stays the platform's contract and entry point. The package's own contracts
+ * are pointed at the same trail, so its `audit-chain:checkpoint` and `audit-chain:verify`
+ * commands (and anything else written against `AuditChain`) sweep `audit_logs` through
+ * the platform's AuditLog stack, each chain inside its own environment:
+ *
+ * - `AuditChain`     → {@see AuditLogChain} (the decorated AuditLog, per environment)
+ * - `ChainInventory` → the `audit_logs` / `audit_checkpoints` tables
+ * - `ChainContext`   → {@see EnvironmentChainContext}
+ *
+ * The package's other bindings (its Ed25519 signer, its v1 codec, its config-driven
+ * models) are left alone: the platform's chain never reads them, so a host can use the
+ * package for its own purposes without touching this trail. `CheckpointAnchor` is the
+ * one package binding the platform DOES use — bind or configure it
+ * (`audit-chain.anchor.*`) to export the platform's checkpoints.
+ */
 class AuditServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Registered here as well as by package discovery, so the package's defaults
+        // (the CheckpointAnchor above all) exist wherever this provider runs — a
+        // Testbench app, or a host with discovery turned off. Registering a provider
+        // twice is a no-op.
+        $this->app->register(AuditChainServiceProvider::class);
+
         $this->app->singleton(AuditLog::class, DatabaseAuditLog::class);
         $this->app->singleton(Checkpointer::class);
+
+        $this->app->singleton(AuditChain::class, static fn (): AuditChain => new AuditLogChain);
+        $this->app->singleton(ChainInventory::class, static fn (): ChainInventory => new DatabaseChainInventory(AuditStorage::models()));
+        $this->app->singleton(ChainContext::class, EnvironmentChainContext::class);
     }
 
     public function boot(): void

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Audit\Chain\CboxIdEntryCodec;
 use Cbox\Id\Kernel\Audit\Checkpointer;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\DatabaseAuditLog;
@@ -24,7 +25,9 @@ uses(RefreshDatabase::class);
  *
  * tests/Fixtures/audit/golden-vectors.json was written by laravel-id's own
  * DatabaseAuditLog before the chain moved into cboxdk/laravel-audit-chain (see its
- * `_provenance`). It holds the rows exactly as stored — including the signed checkpoints
+ * `_provenance`; the generator was removed in the same change as the implementation it
+ * recorded, because regenerating from the new code would only prove it agrees with
+ * itself). It holds the rows exactly as stored — including the signed checkpoints
  * and the signing keys that signed them — and the inputs that produced them.
  *
  * Every deployment's existing `audit_logs` must keep verifying after an upgrade, and every
@@ -124,12 +127,14 @@ function goldenSortedJson(string $json): string
 
 /**
  * The exact bytes hashed for a stored entry.
+ *
+ * Before the extraction this read the private DatabaseAuditLog::canonicalPayload(); the
+ * canonical form now lives in CboxIdEntryCodec, and the fixture's `canonical` values —
+ * written by that private method — are what it is held to.
  */
 function goldenCanonicalBytes(AuditEntry $entry): string
 {
-    // The bound AuditLog is the streaming decorator; the canonical form lives on the
-    // database implementation underneath it, which holds no chain state.
-    return (new ReflectionMethod(DatabaseAuditLog::class, 'canonicalPayload'))->invoke(app()->make(DatabaseAuditLog::class), $entry);
+    return (new CboxIdEntryCodec)->canonicalize($entry);
 }
 
 it('verifies the stored golden rows exactly as the pre-extraction implementation did', function (): void {
@@ -256,7 +261,10 @@ it('re-records the golden inputs to byte-identical rows, hashes and checkpoints'
             $expect = $operation['expect'];
 
             if (isset($expect['throws'])) {
-                expect(fn () => app(AuditLog::class)->checkpoint($organizationId))->toThrow((string) $expect['throws']);
+                // In a savepoint: on PostgreSQL a failed statement aborts the whole
+                // enclosing transaction, and this refusal is expected.
+                expect(fn () => DB::transaction(fn () => app(AuditLog::class)->checkpoint($organizationId)))
+                    ->toThrow((string) $expect['throws']);
 
                 continue;
             }
@@ -296,7 +304,14 @@ it('re-records the golden inputs to byte-identical rows, hashes and checkpoints'
             'failed' => $outcome->failureReason,
         ], app(Checkpointer::class)->checkpointAll());
 
-        expect($outcomes)->toBe($operation['expect'], $label);
+        // The pass walks chains in `ORDER BY environment_id, scope`, which follows the
+        // engine's collation (MySQL sorts `__platform__` first, SQLite last), so the
+        // outcomes are compared as a set.
+        $byChain = static fn (array $rows): array => collect($rows)
+            ->sortBy(static fn (array $row): string => $row['environment_id']."\0".$row['scope'])
+            ->values()->all();
+
+        expect($byChain($outcomes))->toBe($byChain((array) $operation['expect']), $label);
     }
 
     // And the tables as a whole: every stored column but the random row id. On SQLite
