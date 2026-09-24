@@ -16,6 +16,7 @@ use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\GrantType;
 use Cbox\Id\OAuthServer\Enums\SupportActorKind;
 use Cbox\Id\OAuthServer\Enums\SupportSessionRefusal;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Exceptions\SupportSessionRefused;
 use Cbox\Id\OAuthServer\Models\AuthorizationCode;
@@ -601,4 +602,62 @@ it('never claims offline_access on an acted token, even when the request was emp
     $claims = verifiedClaims(app(TokenIssuer::class)->issueActing($client, 'customer-1', null, [], new ActingParty('staff-1', 'session-1'), now()->addMinutes(5))->token);
 
     expect(explode(' ', $claims['scope']))->toBe(['openid', 'profile']);
+});
+
+/*
+ * THE SESSION SAYS WHAT ITS TOKENS CARRY. A session used to store the scopes it was asked
+ * for (or the app's whole registration) narrowed only to that registration; every token
+ * then went through the audience resolver, which drops a scope nobody registered once the
+ * app's scopes include a registered API's. So the session, its codes and whatever reported
+ * it listed `apps.manifest`, and no token carried it.
+ */
+it('stores exactly the scopes its tokens will carry', function (): void {
+    $organization = app(Organizations::class)->create(new NewOrganization('Acme', 'acme-'.bin2hex(random_bytes(3))));
+    app(Memberships::class)->add($organization->id, 'customer-1', MembershipRole::Member);
+
+    $client = app(ClientRegistry::class)->register(new NewClient(
+        'Cadastre',
+        ClientType::Public,
+        redirectUris: [SUPPORT_REDIRECT],
+        grantTypes: ['authorization_code', 'refresh_token'],
+        scopes: ['openid', 'profile', 'parcels:read', 'apps.manifest'],
+        firstParty: true,
+    ))->client;
+    $this->makeApi('https://parcels.example.test', ['parcels:read'], clientId: $client->client_id);
+    grantSupport('staff-1', $client->client_id);
+
+    // Nothing asked for: the app's whole registration, settled to one audience.
+    $started = app(SupportSessions::class)->begin(supportRequest($client, $organization, ['scopes' => []]), supportCode());
+
+    expect($started->session->scopes)->toBe(['openid', 'profile', 'parcels:read']);
+
+    $token = redeemSupportCode($this, $client, (string) $started->code)->assertOk();
+
+    // The signed claim, not the response's `scope`: RFC 6749 §5.1 echoes that only when
+    // the grant was narrowed, and nothing was — which is the point.
+    expect(explode(' ', (string) verifiedClaims((string) $token->json('access_token'))['scope']))
+        ->toBe($started->session->scopes);
+});
+
+it('refuses a session whose scopes span two APIs before anything is started', function (): void {
+    $organization = app(Organizations::class)->create(new NewOrganization('Acme', 'acme-'.bin2hex(random_bytes(3))));
+    app(Memberships::class)->add($organization->id, 'customer-1', MembershipRole::Member);
+
+    $client = app(ClientRegistry::class)->register(new NewClient(
+        'Cadastre',
+        ClientType::Public,
+        redirectUris: [SUPPORT_REDIRECT],
+        grantTypes: ['authorization_code'],
+        scopes: ['openid', 'parcels:read', 'tax:assess'],
+        firstParty: true,
+    ))->client;
+    $this->makeApi('https://parcels.example.test', ['parcels:read']);
+    $this->makeApi('https://tax.example.test', ['tax:assess']);
+    grantSupport('staff-1', $client->client_id);
+
+    expect(fn () => app(SupportSessions::class)->begin(supportRequest($client, $organization, ['scopes' => ['openid', 'parcels:read', 'tax:assess']]), supportCode()))
+        ->toThrow(InvalidAudience::class);
+
+    expect(SupportSession::query()->count())->toBe(0)
+        ->and(AuthorizationCode::query()->count())->toBe(0);
 });
