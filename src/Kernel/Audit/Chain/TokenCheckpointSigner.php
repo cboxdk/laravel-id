@@ -25,10 +25,13 @@ use Throwable;
  * row's word (see CheckpointClaims).
  *
  * Verification: {@see TokenSigner::verify()} pinned to RS256 and ES256, against the
- * active environment's verification keys. Claims are then read exactly as the
- * pre-extraction code read them: `scope` and `root_hash` must be strings and
- * `up_to_sequence` a number (compared as an integer). A payload that fails that is a
- * payload mismatch, not a bad signature — as before. `typ` is not checked, as before.
+ * active environment's verification keys. The token must then BE a checkpoint: `typ`
+ * must be exactly `cbox-id.audit.checkpoint`. The same keys sign access tokens, ID
+ * tokens and whatever a token hook mints, so without this any of those that happened to
+ * carry `scope`, `up_to_sequence` and `root_hash` would pass as one. Every checkpoint
+ * ever signed carries the claim, so none is affected. The claims are then read exactly as
+ * before: `scope` and `root_hash` strings, `up_to_sequence` a number (compared as an
+ * integer). A payload that fails either is a payload mismatch, not a bad signature.
  */
 class TokenCheckpointSigner implements CheckpointSigner
 {
@@ -61,6 +64,10 @@ class TokenCheckpointSigner implements CheckpointSigner
             $claims = $this->signer->verify($token, self::ALLOWED);
         } catch (Throwable $failure) {
             throw CheckpointSignatureInvalid::because($failure->getMessage(), $failure);
+        }
+
+        if ($claims->get('typ') !== self::TYPE) {
+            throw CheckpointClaimsMalformed::because('not a checkpoint token (typ)');
         }
 
         $scope = $claims->get('scope');

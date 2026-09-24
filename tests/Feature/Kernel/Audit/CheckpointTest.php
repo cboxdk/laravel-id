@@ -115,3 +115,48 @@ it('refuses a checkpoint whose signature was replaced with something unverifiabl
     expect($verification->valid)->toBeFalse()
         ->and($verification->reason)->toContain('signature failed to verify');
 });
+
+/**
+ * A checkpoint is a JWT from the same keys that sign everything else the platform issues.
+ * Verification pinned the algorithm and checked scope, sequence and root hash — but not
+ * that the token IS a checkpoint. Any other token the environment's key signs that
+ * happened to carry those three claims (a hook-minted access token, say) would have
+ * passed as one. The `typ` claim every checkpoint has always carried is now required.
+ */
+it('refuses a genuinely signed token that is not a checkpoint', function (?string $typ): void {
+    $log = app(AuditLog::class);
+    $log->record(AuditEvent::forSystem('a'));
+    $checkpoint = $log->checkpoint(null);
+
+    $claims = [
+        'scope' => $checkpoint->scope,
+        'up_to_sequence' => $checkpoint->up_to_sequence,
+        'root_hash' => $checkpoint->root_hash,
+        'iat' => now()->getTimestamp(),
+    ];
+
+    if ($typ !== null) {
+        $claims = ['typ' => $typ] + $claims;
+    }
+
+    // Signed by the real key: only the token's purpose differs.
+    DB::table('audit_checkpoints')->update(['signature' => app(TokenSigner::class)->sign($claims)]);
+
+    $verification = $log->verifyChain(null);
+
+    expect($verification->valid)->toBeFalse()
+        ->and($verification->reason)->toBe('checkpoint payload does not match its signature');
+})->with([
+    'another typ' => ['at+jwt'],
+    'a lookalike typ' => ['cbox-id.audit.checkpoint2'],
+    'no typ' => [null],
+]);
+
+it('still accepts every checkpoint it signs', function (): void {
+    $log = app(AuditLog::class);
+    $log->record(AuditEvent::forSystem('a'));
+    $checkpoint = $log->checkpoint(null);
+
+    expect(app(TokenSigner::class)->verify($checkpoint->signature, [SigningAlg::RS256])->string('typ'))->toBe('cbox-id.audit.checkpoint')
+        ->and($log->verifyChain(null)->valid)->toBeTrue();
+});
