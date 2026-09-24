@@ -134,7 +134,11 @@ class DatabaseAuditLog implements AuditLog
 
     public function verifyChain(?string $organizationId = null, int $fromSequence = 1, ?int $toSequence = null): ChainVerification
     {
-        $result = $this->chain->verify($this->keyFor($organizationId), $fromSequence, $toSequence);
+        $key = $this->keyFor($organizationId);
+
+        // Verified as the chain's own environment, so the checkpoint's signature is
+        // checked against the same key set it was signed with — see inChainEnvironment().
+        $result = $this->inChainEnvironment(fn () => $this->chain->verify($key, $fromSequence, $toSequence));
 
         if ($result->valid) {
             return ChainVerification::valid($result->verifiedCount);
@@ -161,14 +165,17 @@ class DatabaseAuditLog implements AuditLog
     }
 
     /**
-     * Run a signing step as the chain's own environment.
+     * Run a signing or verifying step as the chain's own environment.
      *
      * Signing keys are environment-owned. Inside an environment that is simply the
      * current one. OUTSIDE any environment — the platform plane, whose chain is the
-     * `__platform__` partition — there is no key to find, and none can be generated
-     * (a key needs an environment to belong to), so signing threw. The platform chain is
-     * therefore signed as the `__platform__` environment: the same environment, and so
-     * the same key, the checkpoint pass has always entered to sign it.
+     * `__platform__` partition — there is no key to find: signing threw (none could be
+     * generated without an environment to own it), and verification reported an intact,
+     * checkpointed platform chain as tampered with. The platform chain is therefore
+     * signed AND verified as the `__platform__` environment: the partition its entries
+     * are appended to, and the environment (so the key set) the checkpoint pass has
+     * always entered to sign it. Every path now addresses the same (partition, scope)
+     * with the same key lookup.
      *
      * An environment already in context is left exactly as it is.
      *

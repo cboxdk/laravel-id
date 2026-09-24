@@ -147,7 +147,31 @@ it('verifies the stored golden rows exactly as the pre-extraction implementation
 
     expect($fixture['verifications'])->not->toBeEmpty();
 
+    // What the platform chains answered when verified from INSIDE `__platform__` — see
+    // the no-environment adjustment below.
+    $fromOwnEnvironment = [];
+
+    foreach ($fixture['verifications'] as $recorded) {
+        if ($recorded['verified_as'] === 'own_environment') {
+            $fromOwnEnvironment[$recorded['environment_id'].'|'.$recorded['scope']] = $recorded;
+        }
+    }
+
     foreach ($fixture['verifications'] as $expected) {
+        // The ONE recorded answer that encoded a bug. Verified from NO environment, the
+        // pre-extraction implementation reported the two checkpointed platform chains as
+        // tampered with ("checkpoint signature failed to verify"): the Checkpointer
+        // signed them as `__platform__`, but verification looked for keys outside any
+        // environment and found none. The rows are intact, and verification now uses
+        // the same key lookup as signing — so from no environment the expected answer
+        // is exactly the answer recorded from `__platform__` itself.
+        if ($expected['verified_as'] === 'no_environment') {
+            expect($expected['valid'])->toBeFalse()
+                ->and($expected['reason'])->toBe('checkpoint signature failed to verify');
+
+            $expected = ['verified_as' => 'no_environment'] + $fromOwnEnvironment[$expected['environment_id'].'|'.$expected['scope']];
+        }
+
         $environment = $expected['verified_as'] === 'no_environment' ? null : $expected['environment_id'];
         $organizationId = $expected['scope'] === DatabaseAuditLog::SYSTEM_SCOPE ? null : $expected['scope'];
 
@@ -298,7 +322,9 @@ it('re-records the golden inputs to byte-identical rows, hashes and checkpoints'
                         ->and($checkpoint->scope)->toBe($organizationId ?? DatabaseAuditLog::SYSTEM_SCOPE, $label)
                         ->and($checkpoint->up_to_sequence)->toBe($head['sequence'], $label)
                         ->and($checkpoint->root_hash)->toBe($head['hash'], $label)
-                        ->and(array_keys(goldenCheckpointClaims($checkpoint->signature)))->toBe(['typ', 'scope', 'up_to_sequence', 'root_hash', 'iat'], $label);
+                        ->and(array_keys(goldenCheckpointClaims($checkpoint->signature)))->toBe(['typ', 'scope', 'up_to_sequence', 'root_hash', 'iat'], $label)
+                        // ...and verifies from where it was taken, with no environment.
+                        ->and(app(AuditLog::class)->verifyChain($organizationId)->valid)->toBeTrue($label);
                 } finally {
                     DB::rollBack();
                 }

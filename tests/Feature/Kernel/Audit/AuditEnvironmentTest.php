@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Audit\Checkpointer;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\DatabaseAuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
@@ -205,4 +206,40 @@ it('checkpoints the platform chain when no environment is in context', function 
 
     // The context the caller had is the context it gets back.
     expect(app(EnvironmentContext::class)->current())->toBeNull();
+});
+
+/**
+ * The checkpoint pass signs the platform chain as the `__platform__` environment. The
+ * platform plane then verifies that chain with NO environment in context — and used to
+ * be told it had been tampered with: verification looked for keys outside any
+ * environment, found none, and reported "checkpoint signature failed to verify" on an
+ * intact trail. Signing and verifying must address the same (partition, scope) and look
+ * the key up in the same place.
+ */
+it('verifies a pass-signed platform checkpoint from outside any environment', function (): void {
+    app(EnvironmentContext::class)->set(null);
+
+    auditEntry('operator.login');
+    auditEntry('operator.suspended_account', 'org_platform');
+    auditEntry('operator.logout');
+
+    app(Checkpointer::class)->checkpointAll();
+
+    app(EnvironmentContext::class)->set(null);
+
+    $system = app(AuditLog::class)->verifyChain();
+    $organization = app(AuditLog::class)->verifyChain('org_platform');
+
+    expect(DB::table('audit_checkpoints')->where('environment_id', DatabaseAuditLog::PLATFORM_ENVIRONMENT)->count())->toBe(2)
+        ->and($system->reason)->toBeNull()
+        ->and($system->valid)->toBeTrue()
+        ->and($system->verifiedCount)->toBe(2)
+        ->and($organization->valid)->toBeTrue()
+        ->and(app(EnvironmentContext::class)->current())->toBeNull();
+
+    // ...and still catches what it should: truncation below the checkpoint.
+    DB::table('audit_logs')->where('environment_id', DatabaseAuditLog::PLATFORM_ENVIRONMENT)
+        ->where('scope', DatabaseAuditLog::SYSTEM_SCOPE)->where('sequence', 2)->delete();
+
+    expect(app(AuditLog::class)->verifyChain()->reason)->toBe('entries at or below the last checkpoint were removed or altered');
 });
