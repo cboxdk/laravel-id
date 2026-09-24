@@ -60,8 +60,8 @@ enum EnvironmentApiScope: string
             self::AppsWrite => 'Manage apps',
             self::ApisRead => 'Read APIs',
             self::ApisWrite => 'Manage APIs',
-            self::ApiKeysRead => 'Read customer API keys',
-            self::ApiKeysWrite => 'Revoke customer API keys',
+            self::ApiKeysRead => 'Read member API keys',
+            self::ApiKeysWrite => 'Revoke member API keys',
             self::SupportWrite => 'Start support sessions',
         };
     }
