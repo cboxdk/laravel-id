@@ -142,7 +142,19 @@ access contracts (not paper decisions), items left un-reviewed at close default 
 owner — is recorded and audited (`governance.access.revoke_blocked`), never silently
 dropped. Segregation-of-Duties returns a reasoned `Decision` before a grant completes a
 toxic combination. Everything is environment-isolated and correlated on the audit trail
-by `campaign_id`. See [Security: access governance](governance.md).
+by `campaign_id`. Environment-wide grants (staff roles held across every customer) are
+reviewed by the environment's own campaign, never by a tenant's. See
+[Security: access governance](governance.md).
+
+## Support sessions
+
+Staff acting as a customer's user is bounded, visible and attributable: the app's own
+`support:impersonate`, held environment-wide; an active member of an active organization;
+a required reason; first-party, environment-owned apps only (the member never consents, so
+no token may reach an app that would have asked); `act` on every token; no refresh token and
+no token exchange; nothing outlives the session (≤ 60 minutes); and ending it revokes what it
+issued. Tenant administrators cannot grant staff roles at all. See
+[Security: support sessions](support-sessions.md).
 
 ## External actions & inline hooks
 

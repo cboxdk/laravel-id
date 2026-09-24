@@ -24,9 +24,12 @@ use Illuminate\Support\Carbon;
  * @property string $pkce_challenge
  * @property string $pkce_method
  * @property string|null $resource
+ * @property string|null $actor_id the support-session actor, null for an ordinary code
+ * @property string|null $support_session_id
  * @property string|null $nonce
  * @property int|null $auth_time
  * @property array<int, string>|null $amr
+ * @property string|null $session_id the sign-in session the code was approved from
  * @property Carbon $expires_at
  * @property Carbon|null $consumed_at
  */

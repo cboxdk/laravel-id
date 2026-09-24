@@ -40,7 +40,12 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
         // that group (including ordinary directory syncs for unrelated members) threw
         // again on the same row. Validating here keeps the failure at the point of the
         // mistake instead of turning it into a permanently stuck sync.
-        $this->roles->assertAssignableIn($organizationId, $roleId);
+        //
+        // AND THE TENANT-PLANE GUARD, not merely the organization fence. Whoever writes
+        // the mapping, the customer's own directory decides who is in the group — so a
+        // staff role mapped here would be granted to whomever the CUSTOMER's IdP puts in
+        // it: a customer handing out the vendor's staff role with one more hop.
+        $this->roles->assertTenantAssignable($organizationId, $roleId);
 
         $mapping = GroupRoleMapping::query()->updateOrCreate(
             ['organization_id' => $organizationId, 'group_id' => $groupId, 'role_id' => $roleId],
@@ -189,10 +194,14 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
 
         $assignable = $this->stringIds(Role::query()
             ->whereIn('id', $roleIds)
-            ->where(fn ($query) => $query
-                ->whereNull('organization_id')
-                ->orWhere('organization_id', $organizationId))
-            // Must match assertAssignableIn() EXACTLY. This pre-filter exists so a mapped
+            // The tenant-plane predicate map() refuses with, and the one a tenant's role
+            // list is built from. It is STRICTER than assign()'s own check (it also drops
+            // staff-only roles), which keeps the property below: nothing this lets through
+            // can make assign() throw. A mapping that predates its role becoming
+            // staff-only stops granting it, and the revocation pass withdraws the pushed
+            // grants — the same thing that happens when a role is orphaned.
+            ->tenantAssignable($organizationId)
+            // Must be at least as strict as assertAssignableIn(). This pre-filter exists so a mapped
             // id that no longer resolves is dropped and logged rather than thrown on —
             // and when assign() started refusing orphaned roles, this query did not, so
             // the two predicates diverged and the pre-filter stopped pre-filtering.
@@ -203,7 +212,7 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
             // the first member of that group — so the REVOCATION pass never ran and a
             // user removed upstream kept the role, while every listener registered after
             // this one was skipped on every attempt until the event dead-lettered.
-            ->whereNull('orphaned_at')
+            // (tenantAssignable() carries the orphaned_at predicate.)
             ->pluck('id')
             ->all());
 

@@ -19,5 +19,12 @@ readonly class IssuedToken
         // "Bearer", or "DPoP" when sender-constrained to a client key (RFC 9449).
         public string $tokenType = 'Bearer',
         public array $scopes = [],
+
+        /**
+         * The audience the token was bound to (a registered API's identifier or an RFC 8707
+         * resource), or null for the issuer. A refresh token minted alongside records THIS,
+         * not the request, so a refresh can never re-audience what was granted.
+         */
+        public ?string $audience = null,
     ) {}
 }

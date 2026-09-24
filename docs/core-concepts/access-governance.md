@@ -54,6 +54,29 @@ $reviews->close($campaign->id);
   minute, config-gated) closes any open campaign past its `due_at`, reconstructing each
   campaign's environment first.
 
+## Environment-wide grants
+
+A role held **environment-wide** (`Roles::assignEverywhere()` — typically a staff role
+across every customer) belongs to no organization, so no organization's campaign includes
+it. A null organization opens the **environment's** own review of those grants:
+
+```php
+$campaign = $reviews->open(null, 'Staff access, Q3');        // every environment-wide grant
+
+foreach ($reviews->itemsFor($campaign->id) as $item) {       // AccessKind::EnvironmentRole
+    $reviews->revoke($item->id, reviewerId: $envAdmin->id, organizationId: null);
+}
+
+$reviews->close($campaign->id, null);                        // Roles::unassignEverywhere()
+```
+
+Null means the environment plane on every call — `certify`, `revoke` and `close` take it —
+and it matches only the environment's campaign, never "any". The two kinds never mix: a
+tenant's campaign never lists the vendor's staff grants (its reviewer must not see or
+revoke them), and naming the environment's campaign with an organization id is refused like
+another tenant's campaign. Revoking an item takes the grant back in every organization at
+once.
+
 ## Segregation of Duties
 
 ```php
@@ -83,7 +106,8 @@ violation. Policies can be scoped to one organization or made environment-wide
 
 ## Honest scope
 
-- **v1 governs roles and memberships only.** These are the two subject-centric grants
+- **v1 governs roles and memberships only** — organization role assignments, memberships,
+  and environment-wide role grants. These are the subject-centric grants
   that are cleanly enumerable and immediately revocable. Deliberately out of scope:
   - **Entitlements** are a billing-fed projection — governed at the billing source, not
     re-certified here (and a `Claims`-mode entitlement's revoke isn't immediate anyway).

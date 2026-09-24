@@ -21,6 +21,11 @@ gates: `canManageOrganization()` (Owner/Admin) and `canWrite()` (everyone but
 Viewer). Hosts wanting the four-tier Owner/Admin/Developer/Viewer model simply
 never assign `Member`.
 
+`Owner` is transferred, never assigned — see
+[Membership lifecycle](membership-lifecycle.md) for leaving, ownership transfer and the
+single-owner rule. The tier travels in tokens as the
+[`org_role`](../reference/token-claims.md) claim.
+
 ## Groups
 
 `Groups` (contract) manages organization-local groups. The `user_groups` table
@@ -63,6 +68,10 @@ with the user's effective role; there is no token-specific grant model.
 - **Issuer-role cap, enforced in the service:** a token never out-ranks its
   minter. `admin` scope requires an org-managing role, `write` a writing role,
   and a non-member mints nothing (`TokenScopeExceedsIssuerRole`).
+
+The same credential bound to ONE app, carrying that app's permissions instead of a
+verb, is a [customer API key](customer-api-keys.md): what an app's end-customers use
+to call the app's own API.
 
 ## Testing
 

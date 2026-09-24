@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:54f59a4c-d67b-47bd-8668-0fc689f0680c",
+    "serialNumber": "urn:uuid:0f34a68b-d3b2-4ca0-a548-a48da4e868c3",
     "version": 1,
     "metadata": {
         "tools": [
@@ -21,11 +21,11 @@
     "components": [
         {
             "type": "library",
-            "bom-ref": "pkg:composer/brick/math@0.18.0",
+            "bom-ref": "pkg:composer/brick/math@1.0.0",
             "group": "brick",
             "name": "math",
-            "version": "0.18.0",
-            "purl": "pkg:composer/brick/math@0.18.0",
+            "version": "1.0.0",
+            "purl": "pkg:composer/brick/math@1.0.0",
             "description": "Arbitrary-precision arithmetic library",
             "licenses": [
                 {
@@ -37,11 +37,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/carbonphp/carbon-doctrine-types@3.2.0",
+            "bom-ref": "pkg:composer/carbonphp/carbon-doctrine-types@3.2.1",
             "group": "carbonphp",
             "name": "carbon-doctrine-types",
-            "version": "3.2.0",
-            "purl": "pkg:composer/carbonphp/carbon-doctrine-types@3.2.0",
+            "version": "3.2.1",
+            "purl": "pkg:composer/carbonphp/carbon-doctrine-types@3.2.1",
             "description": "Types to use Carbon in Doctrine",
             "licenses": [
                 {
@@ -133,11 +133,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/doctrine/lexer@3.0.1",
+            "bom-ref": "pkg:composer/doctrine/lexer@3.0.2",
             "group": "doctrine",
             "name": "lexer",
-            "version": "3.0.1",
-            "purl": "pkg:composer/doctrine/lexer@3.0.1",
+            "version": "3.0.2",
+            "purl": "pkg:composer/doctrine/lexer@3.0.2",
             "description": "PHP Doctrine Lexer parser library that can be used in Top-Down, Recursive Descent Parsers.",
             "licenses": [
                 {
@@ -181,11 +181,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/firebase/php-jwt@v7.1.0",
+            "bom-ref": "pkg:composer/firebase/php-jwt@v7.2.0",
             "group": "firebase",
             "name": "php-jwt",
-            "version": "v7.1.0",
-            "purl": "pkg:composer/firebase/php-jwt@v7.1.0",
+            "version": "v7.2.0",
+            "purl": "pkg:composer/firebase/php-jwt@v7.2.0",
             "description": "A simple library to encode and decode JSON Web Tokens (JWT) in PHP. Should conform to the current spec.",
             "licenses": [
                 {
@@ -229,11 +229,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/guzzlehttp/guzzle@8.1.0",
+            "bom-ref": "pkg:composer/guzzlehttp/guzzle@8.2.0",
             "group": "guzzlehttp",
             "name": "guzzle",
-            "version": "8.1.0",
-            "purl": "pkg:composer/guzzlehttp/guzzle@8.1.0",
+            "version": "8.2.0",
+            "purl": "pkg:composer/guzzlehttp/guzzle@8.2.0",
             "description": "Guzzle is a PHP HTTP client library",
             "licenses": [
                 {
@@ -293,11 +293,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/framework@v13.29.0",
+            "bom-ref": "pkg:composer/laravel/framework@v13.33.0",
             "group": "laravel",
             "name": "framework",
-            "version": "v13.29.0",
-            "purl": "pkg:composer/laravel/framework@v13.29.0",
+            "version": "v13.33.0",
+            "purl": "pkg:composer/laravel/framework@v13.33.0",
             "description": "The Laravel Framework.",
             "licenses": [
                 {
@@ -325,11 +325,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/serializable-closure@v2.0.16",
+            "bom-ref": "pkg:composer/laravel/serializable-closure@v2.1.0",
             "group": "laravel",
             "name": "serializable-closure",
-            "version": "v2.0.16",
-            "purl": "pkg:composer/laravel/serializable-closure@v2.0.16",
+            "version": "v2.1.0",
+            "purl": "pkg:composer/laravel/serializable-closure@v2.1.0",
             "description": "Laravel Serializable Closure provides an easy and secure way to serialize closures in PHP.",
             "licenses": [
                 {
@@ -341,11 +341,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/league/commonmark@2.10.0",
+            "bom-ref": "pkg:composer/league/commonmark@2.10.3",
             "group": "league",
             "name": "commonmark",
-            "version": "2.10.0",
-            "purl": "pkg:composer/league/commonmark@2.10.0",
+            "version": "2.10.3",
+            "purl": "pkg:composer/league/commonmark@2.10.3",
             "description": "Highly-extensible PHP Markdown parser which fully supports the CommonMark spec and GitHub-Flavored Markdown (GFM)",
             "licenses": [
                 {
@@ -373,11 +373,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/league/flysystem@3.35.3",
+            "bom-ref": "pkg:composer/league/flysystem@3.36.0",
             "group": "league",
             "name": "flysystem",
-            "version": "3.35.3",
-            "purl": "pkg:composer/league/flysystem@3.35.3",
+            "version": "3.36.0",
+            "purl": "pkg:composer/league/flysystem@3.36.0",
             "description": "File storage abstraction for PHP",
             "licenses": [
                 {
@@ -453,11 +453,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/monolog/monolog@3.10.0",
+            "bom-ref": "pkg:composer/monolog/monolog@3.12.0",
             "group": "monolog",
             "name": "monolog",
-            "version": "3.10.0",
-            "purl": "pkg:composer/monolog/monolog@3.10.0",
+            "version": "3.12.0",
+            "purl": "pkg:composer/monolog/monolog@3.12.0",
             "description": "Sends your logs to files, sockets, inboxes, databases and various web services",
             "licenses": [
                 {
@@ -469,11 +469,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/nesbot/carbon@3.13.2",
+            "bom-ref": "pkg:composer/nesbot/carbon@3.14.0",
             "group": "nesbot",
             "name": "carbon",
-            "version": "3.13.2",
-            "purl": "pkg:composer/nesbot/carbon@3.13.2",
+            "version": "3.14.0",
+            "purl": "pkg:composer/nesbot/carbon@3.14.0",
             "description": "An API extension for DateTime that supports 281 different languages.",
             "licenses": [
                 {
@@ -705,11 +705,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/ramsey/uuid@4.9.3",
+            "bom-ref": "pkg:composer/ramsey/uuid@4.9.4",
             "group": "ramsey",
             "name": "uuid",
-            "version": "4.9.3",
-            "purl": "pkg:composer/ramsey/uuid@4.9.3",
+            "version": "4.9.4",
+            "purl": "pkg:composer/ramsey/uuid@4.9.4",
             "description": "A PHP library for generating and working with universally unique identifiers (UUIDs).",
             "licenses": [
                 {
@@ -737,11 +737,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/spomky-labs/cbor-php@3.3.0",
+            "bom-ref": "pkg:composer/spomky-labs/cbor-php@3.4.2",
             "group": "spomky-labs",
             "name": "cbor-php",
-            "version": "3.3.0",
-            "purl": "pkg:composer/spomky-labs/cbor-php@3.3.0",
+            "version": "3.4.2",
+            "purl": "pkg:composer/spomky-labs/cbor-php@3.4.2",
             "description": "CBOR Encoder/Decoder for PHP",
             "licenses": [
                 {
@@ -769,11 +769,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/console@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/console@v8.1.7",
             "group": "symfony",
             "name": "console",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/console@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/console@v8.1.7",
             "description": "Eases the creation of beautiful and testable command line interfaces",
             "licenses": [
                 {
@@ -785,11 +785,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/css-selector@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/css-selector@v8.1.6",
             "group": "symfony",
             "name": "css-selector",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/css-selector@v8.1.5",
+            "version": "v8.1.6",
+            "purl": "pkg:composer/symfony/css-selector@v8.1.6",
             "description": "Converts CSS selectors to XPath expressions",
             "licenses": [
                 {
@@ -865,11 +865,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/finder@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/finder@v8.1.7",
             "group": "symfony",
             "name": "finder",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/finder@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/finder@v8.1.7",
             "description": "Finds files and directories via an intuitive fluent interface",
             "licenses": [
                 {
@@ -881,11 +881,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/http-foundation@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/http-foundation@v8.1.7",
             "group": "symfony",
             "name": "http-foundation",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/http-foundation@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/http-foundation@v8.1.7",
             "description": "Defines an object-oriented layer for the HTTP specification",
             "licenses": [
                 {
@@ -897,11 +897,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/http-kernel@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/http-kernel@v8.1.7",
             "group": "symfony",
             "name": "http-kernel",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/http-kernel@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/http-kernel@v8.1.7",
             "description": "Provides a structured process for converting a Request into a Response",
             "licenses": [
                 {
@@ -913,11 +913,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/mailer@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/mailer@v8.1.7",
             "group": "symfony",
             "name": "mailer",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/mailer@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/mailer@v8.1.7",
             "description": "Helps sending emails",
             "licenses": [
                 {
@@ -929,11 +929,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/mime@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/mime@v8.1.7",
             "group": "symfony",
             "name": "mime",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/mime@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/mime@v8.1.7",
             "description": "Allows manipulating MIME messages",
             "licenses": [
                 {
@@ -1041,6 +1041,22 @@
         },
         {
             "type": "library",
+            "bom-ref": "pkg:composer/symfony/polyfill-php81@v1.38.1",
+            "group": "symfony",
+            "name": "polyfill-php81",
+            "version": "v1.38.1",
+            "purl": "pkg:composer/symfony/polyfill-php81@v1.38.1",
+            "description": "Symfony polyfill backporting some PHP 8.1+ features to lower PHP versions",
+            "licenses": [
+                {
+                    "license": {
+                        "id": "MIT"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "library",
             "bom-ref": "pkg:composer/symfony/polyfill-php82@v1.38.1",
             "group": "symfony",
             "name": "polyfill-php82",
@@ -1121,11 +1137,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/process@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/process@v8.1.7",
             "group": "symfony",
             "name": "process",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/process@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/process@v8.1.7",
             "description": "Executes commands in sub-processes",
             "licenses": [
                 {
@@ -1137,11 +1153,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/routing@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/routing@v8.1.6",
             "group": "symfony",
             "name": "routing",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/routing@v8.1.5",
+            "version": "v8.1.6",
+            "purl": "pkg:composer/symfony/routing@v8.1.6",
             "description": "Maps an HTTP request to a set of configuration variables",
             "licenses": [
                 {
@@ -1153,11 +1169,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/service-contracts@v3.7.1",
+            "bom-ref": "pkg:composer/symfony/service-contracts@v3.7.3",
             "group": "symfony",
             "name": "service-contracts",
-            "version": "v3.7.1",
-            "purl": "pkg:composer/symfony/service-contracts@v3.7.1",
+            "version": "v3.7.3",
+            "purl": "pkg:composer/symfony/service-contracts@v3.7.3",
             "description": "Generic abstractions related to writing services",
             "licenses": [
                 {
@@ -1169,11 +1185,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/string@v8.1.2",
+            "bom-ref": "pkg:composer/symfony/string@v8.1.7",
             "group": "symfony",
             "name": "string",
-            "version": "v8.1.2",
-            "purl": "pkg:composer/symfony/string@v8.1.2",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/string@v8.1.7",
             "description": "Provides an object-oriented API to strings and deals with bytes, UTF-8 code points and grapheme clusters in a unified way",
             "licenses": [
                 {
@@ -1233,11 +1249,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/var-dumper@v8.1.5",
+            "bom-ref": "pkg:composer/symfony/var-dumper@v8.1.7",
             "group": "symfony",
             "name": "var-dumper",
-            "version": "v8.1.5",
-            "purl": "pkg:composer/symfony/var-dumper@v8.1.5",
+            "version": "v8.1.7",
+            "purl": "pkg:composer/symfony/var-dumper@v8.1.7",
             "description": "Provides mechanisms for walking through any arbitrary PHP variable",
             "licenses": [
                 {

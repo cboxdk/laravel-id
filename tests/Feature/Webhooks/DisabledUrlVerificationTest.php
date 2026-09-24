@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\AccessControl\Manifest\SafeManifestUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Migration\Support\SafeLegacyLoginUrl;
+use Cbox\Id\OAuthServer\Support\SafeBackchannelLogoutUrl;
 use Cbox\Id\Provisioning\Support\SafeScimUrl;
 use Cbox\Id\Webhooks\Exceptions\UnsafeWebhookUrl;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
@@ -41,6 +42,8 @@ it('refuses redirects even with verification disabled', function (string $key, c
     // outbound request in the package whose body is a live plaintext password, and it was
     // the one still deciding the toggle inline instead of through a `Safe*Url`.
     'legacy login' => ['cbox-id.migration.verify_url', fn (string $u) => SafeLegacyLoginUrl::pinnedOptions($u)],
+    // Back-channel logout: a URI any open-DCR registrant chooses, POSTed to server-side.
+    'backchannel logout' => ['cbox-id.oauth.backchannel_logout.verify_url', fn (string $u) => SafeBackchannelLogoutUrl::pinnedOptions($u)],
 ])->group('security');
 
 /**

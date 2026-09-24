@@ -6,22 +6,31 @@ namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
+use Cbox\Id\OAuthServer\Support\ClientAudit;
+use Cbox\Id\OAuthServer\Support\ClientSecretStore;
+use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
+use Cbox\Id\OAuthServer\ValueObjects\ClientBlueprint;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
-use Cbox\Id\OAuthServer\ValueObjects\ClientSecret;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
 use Cbox\Id\OAuthServer\ValueObjects\NewClient;
+use Cbox\Id\OAuthServer\ValueObjects\ScopeHolder;
 use Cbox\Id\OAuthServer\ValueObjects\UpdatedRegistration;
+use Illuminate\Support\Facades\DB;
 
 /**
  * RFC 7591 / 7592 implementation. Validation is deliberately strict and
  * secure-by-default: unknown grant types are rejected, requested scopes are
- * reduced to the configured allow-list, and redirect URIs must be well-formed
+ * reduced to the configured allow-list plus the registered API scopes a self-registered
+ * client may hold, and redirect URIs must be well-formed
  * and non-fragment (loopback http is permitted for native/CLI clients, which is
  * exactly the MCP case).
  */
@@ -48,6 +57,9 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
     public function __construct(
         private readonly ClientRegistry $clients,
+        private readonly Apis $apis,
+        private readonly ClientSecretStore $secrets,
+        private readonly ClientAudit $audit,
     ) {}
 
     public function validate(array $request): ClientMetadata
@@ -63,6 +75,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             throw InvalidClientMetadata::metadata('client_credentials requires a confidential client (token_endpoint_auth_method must not be "none")');
         }
 
+        // The same grant rules the registry applies, checked HERE too because an RFC 7592
+        // update never passes through the registry's register(): token exchange on a
+        // public client would otherwise be refused on registration and accepted on update.
+        ClientSettingsRules::assertGrants($grantTypes, $authMethod === 'none' ? ClientType::Public : ClientType::Confidential);
+
         return new ClientMetadata(
             clientName: $this->clientName($request),
             tokenEndpointAuthMethod: $authMethod,
@@ -71,10 +88,21 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             responseTypes: $responseTypes,
             scopes: $this->scopes($request),
             jwks: $this->jwks($request, $authMethod),
+            backchannelLogoutUri: $this->backchannelLogoutUri($request),
+            backchannelLogoutSessionRequired: $this->backchannelLogoutSessionRequired($request),
         );
     }
 
     public function register(ClientMetadata $metadata): DynamicRegistration
+    {
+        // ONE TRANSACTION. The row is written by the registry first and only becomes
+        // "dynamically registered" when the token hash lands below — and it is that second
+        // save which judges its scopes as a self-registered client's. Were it refused, the
+        // first write would otherwise survive as an operator-owned client nobody holds.
+        return DB::transaction(fn (): DynamicRegistration => $this->persist($metadata));
+    }
+
+    private function persist(ClientMetadata $metadata): DynamicRegistration
     {
         $registered = $this->clients->register(new NewClient(
             name: $metadata->clientName,
@@ -87,16 +115,18 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // produce a client that can actually authenticate rather than one with
             // neither credential.
             jwks: $metadata->jwks,
+            // THE CHOICE, WRITTEN DOWN. Inferring it back from the row cannot tell
+            // `client_secret_post` from `client_secret_basic` — both are "has a secret" —
+            // so a client that registered the former was handed a management document
+            // telling it to use the latter.
+            tokenEndpointAuthMethod: $metadata->tokenEndpointAuthMethod(),
+            backchannelLogoutUri: $metadata->backchannelLogoutUri,
+            backchannelLogoutSessionRequired: $metadata->backchannelLogoutSessionRequired,
         ));
 
         $registrationToken = 'reg_'.bin2hex(random_bytes(32));
 
         $registered->client->forceFill([
-            // THE CHOICE, WRITTEN DOWN. Inferring it back from the row cannot tell
-            // `client_secret_post` from `client_secret_basic` — both are "has a secret" —
-            // so a client that registered the former was handed a management document
-            // telling it to use the latter.
-            'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
             'registration_access_token_hash' => hash('sha256', $registrationToken),
         ])->save();
 
@@ -119,54 +149,77 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
     public function update(Client $client, ClientMetadata $metadata): UpdatedRegistration
     {
-        // A CLIENT THAT ARRIVES AT A SECRET METHOD MUST LEAVE WITH A SECRET.
-        //
-        // The comment below has described this since the downgrade fix: "an update back to
-        // `client_secret_basic` should mint a fresh one rather than silently resurrect the
-        // old". It described an intention. A client that had moved to `private_key_jwt`
-        // had its hash cleared, so moving BACK left `usesASharedSecret()` true and
-        // `secret_hash` null — a client registered for Basic with no password, unable to
-        // authenticate, and nothing in the response saying why.
-        $minted = null;
+        return DB::transaction(function () use ($client, $metadata): UpdatedRegistration {
+            $before = ClientBlueprint::fromClient($client)->toArray();
 
-        if ($metadata->usesASharedSecret() && $client->secret_hash === null) {
-            $minted = ClientSecret::mint();
-        }
+            $client->forceFill([
+                'name' => $metadata->clientName,
+                'type' => $metadata->isPublic() ? ClientType::Public : ClientType::Confidential,
+                'redirect_uris' => $metadata->redirectUris,
+                'grant_types' => $metadata->grantTypes,
+                'scopes' => $metadata->scopes,
+                // RFC 7592 §2.2: an update REPLACES the metadata, so keys omitted from the
+                // new document are gone. Leaving the old set in place would mean a client
+                // could never rotate away from a compromised key through the API it was
+                // told to manage itself with.
+                'jwks' => $metadata->jwks,
+                'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
+                // Replaced like the rest (RFC 7592 §2.2): an update that omits the URI
+                // stops the notifications, which is how a client turns them off through
+                // the API.
+                'backchannel_logout_uri' => $metadata->backchannelLogoutUri,
+                'backchannel_logout_session_required' => $metadata->backchannelLogoutSessionRequired,
+            ])->save();
 
-        $client->forceFill([
-            'name' => $metadata->clientName,
-            'type' => $metadata->isPublic() ? ClientType::Public : ClientType::Confidential,
-            'redirect_uris' => $metadata->redirectUris,
-            'grant_types' => $metadata->grantTypes,
-            'scopes' => $metadata->scopes,
-            // RFC 7592 §2.2: an update REPLACES the metadata, so keys omitted from the
-            // new document are gone. Leaving the old set in place would mean a client
-            // could never rotate away from a compromised key through the API it was told
-            // to manage itself with.
-            'jwks' => $metadata->jwks,
-            // AND THE SECRET GOES WITH THE METHOD. A client that updates itself to `none`
-            // or to `private_key_jwt` no longer authenticates with a shared secret, and
-            // leaving the hash on the row kept a credential alive that the client's own
-            // registered metadata says is not in use.
+            // A CLIENT THAT ARRIVES AT A SECRET METHOD MUST LEAVE WITH A SECRET.
             //
-            // `ClientAuthenticator` already refuses to LOG IN with it — the disjunction
-            // there treats "secret still on file" as proof the client is confidential,
-            // which is what closes the downgrade bypass. This is the other half: the row
-            // should not carry a live credential the client believes it has retired, and
-            // an update back to `client_secret_basic` should mint a fresh one rather than
-            // silently resurrect the old.
-            'secret_hash' => $minted !== null
-                ? $minted->hash
-                : ($metadata->usesASharedSecret() ? $client->secret_hash : null),
-            'token_endpoint_auth_method' => $metadata->tokenEndpointAuthMethod(),
-        ])->save();
+            // A client that had moved to `private_key_jwt` had its secrets cleared, so
+            // moving BACK left it registered for Basic with no password, unable to
+            // authenticate, and nothing in the response saying why. It is minted a FRESH
+            // one — the retired secret is never resurrected.
+            $minted = null;
 
-        return new UpdatedRegistration($client, $minted?->plaintext);
+            if ($metadata->usesASharedSecret()) {
+                if (! $this->secrets->hasLive($client)) {
+                    $minted = $this->secrets->issue($client)->secret->plaintext;
+                }
+            } else {
+                // AND THE SECRETS GO WITH THE METHOD. A client that updates itself to
+                // `none` or to `private_key_jwt` no longer authenticates with a shared
+                // secret, and leaving one on file kept a credential alive that the
+                // client's own registered metadata says is not in use.
+                //
+                // `ClientAuthenticator` already refuses to LOG IN with it — the
+                // disjunction there treats "a secret still on file" as proof the client is
+                // confidential, which is what closes the downgrade bypass. This is the
+                // other half: the client should not carry a live credential it believes
+                // it has retired.
+                $this->secrets->revokeAll($client);
+            }
+
+            $after = ClientBlueprint::fromClient($client)->toArray();
+            $changes = [];
+
+            foreach ($after as $key => $value) {
+                if ($before[$key] !== $value) {
+                    $changes[$key] = ['from' => $before[$key], 'to' => $value];
+                }
+            }
+
+            $this->audit->record(ClientAudit::UPDATED, $client, AuditActor::service($client->client_id), [
+                'source' => 'dynamic_registration',
+                'changes' => $changes,
+                'secret_issued' => $minted !== null,
+            ]);
+
+            return new UpdatedRegistration($client, $minted);
+        });
     }
 
     public function delete(Client $client): void
     {
-        $client->delete();
+        // The client deletes itself (RFC 7592 §2.3), so it is the actor on record.
+        $this->clients->delete($client, AuditActor::service($client->client_id));
     }
 
     /**
@@ -236,6 +289,50 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
         /** @var array<string, mixed> $jwks */
         return $jwks;
+    }
+
+    /**
+     * OIDC Back-Channel Logout 1.0 §2.2. Refused OUT LOUD when it is not a URI this server
+     * will call — silently dropping it would register a client that believes it will be
+     * told when people sign out, and never is.
+     *
+     * @param  array<string, mixed>  $request
+     */
+    private function backchannelLogoutUri(array $request): ?string
+    {
+        $uri = $request['backchannel_logout_uri'] ?? null;
+
+        if ($uri === null) {
+            return null;
+        }
+
+        if (! is_string($uri) || $uri === '') {
+            throw InvalidClientMetadata::metadata('backchannel_logout_uri must be a non-empty string');
+        }
+
+        BackchannelLogoutUri::assertValid($uri);
+
+        return $uri;
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function backchannelLogoutSessionRequired(array $request): bool
+    {
+        $required = $request['backchannel_logout_session_required'] ?? false;
+
+        if (! is_bool($required)) {
+            throw InvalidClientMetadata::metadata('backchannel_logout_session_required must be a boolean');
+        }
+
+        // Without a URI there is nothing for the requirement to apply to — refused, so a
+        // registrant who meant to send both finds out now rather than at the first logout.
+        if ($required && ! isset($request['backchannel_logout_uri'])) {
+            throw InvalidClientMetadata::metadata('backchannel_logout_session_required needs a backchannel_logout_uri');
+        }
+
+        return $required;
     }
 
     /**
@@ -372,9 +469,20 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
         $allowed = $this->configList('allowed_scopes');
 
-        // RFC 7591 §2: the server MAY reduce the requested scopes. Silently drop
-        // any outside the allow-list rather than failing the whole registration.
-        return array_values(array_filter($requested, static fn (string $s): bool => in_array($s, $allowed, true)));
+        // A REGISTERED API SCOPE IS JUDGED BY ITS API, NOT BY THE ALLOW-LIST. A
+        // self-registered client holds one only when the API is environment-owned and the
+        // scope tenant-requestable — the same rule the model enforces on save and the
+        // issuer enforces again at the token endpoint. Listing a registered scope in
+        // `allowed_scopes` cannot widen that: the allow-list is for scopes no API owns.
+        $environmentId = $this->environments()->current()?->environmentKey();
+        $registered = $environmentId === null ? [] : $this->apis->registeredScopes($environmentId, $requested);
+        $registrant = new ScopeHolder($environmentId, null, dynamicallyRegistered: true);
+
+        // RFC 7591 §2: the server MAY reduce the requested scopes. Drop the rest rather
+        // than failing the whole registration — the response's `scope` says what was kept.
+        return array_values(array_filter($requested, static fn (string $s): bool => isset($registered[$s])
+            ? $registered[$s]->mayBeHeldBy($registrant)
+            : in_array($s, $allowed, true)));
     }
 
     /**

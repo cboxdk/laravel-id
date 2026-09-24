@@ -14,12 +14,17 @@ use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
+use DateTimeInterface;
 use Illuminate\Support\Str;
 
 /**
@@ -43,9 +48,10 @@ class JwtTokenIssuer implements TokenIssuer
 
     /**
      * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
-     * Enrichment that names any of these is dropped.
+     * Enrichment that names any of these is dropped. `org_role` is among them because
+     * it is authorization data an app enforces on: a hook must not promote anyone.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act'];
 
     public function __construct(
         private readonly TokenSigner $signer,
@@ -54,6 +60,8 @@ class JwtTokenIssuer implements TokenIssuer
         private readonly Organizations $organizations,
         private readonly AccessChecker $access,
         private readonly IssuerResolver $issuers,
+        private readonly Memberships $memberships,
+        private readonly AudienceResolver $audiences,
         private readonly int $accessTokenTtl = self::DEFAULT_TTL_SECONDS,
     ) {}
 
@@ -65,6 +73,23 @@ class JwtTokenIssuer implements TokenIssuer
     public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
         return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt);
+    }
+
+    public function issueActing(
+        Client $client,
+        string $userId,
+        ?string $organizationId,
+        array $scopes,
+        ActingParty $actor,
+        DateTimeInterface $notAfter,
+        ?string $resource = null,
+        ?string $dpopJkt = null,
+    ): IssuedToken {
+        // grantScopes() widens an EMPTY request to the client's whole registered set, which
+        // may name offline_access; an acted token must never claim a scope it cannot have.
+        $granted = array_values(array_filter($this->grantScopes($client, $scopes), fn (string $scope): bool => $scope !== 'offline_access'));
+
+        return $this->issue($client, $userId, $userId, $organizationId, $granted, $resource, $dpopJkt, $actor, $notAfter);
     }
 
     /**
@@ -138,22 +163,40 @@ class JwtTokenIssuer implements TokenIssuer
      * no reason to pay five-minute refreshes for it.
      *
      * Null on the client means the deployment default, so nothing changes for anyone who
-     * has not asked for something else.
+     * has not asked for something else. The rule — including the configured ceiling — is
+     * {@see AccessTokenLifetime}, shared with the ID token.
      */
     private function ttlFor(Client $client): int
     {
-        $ttl = $client->access_token_ttl;
+        return AccessTokenLifetime::for($client, $this->accessTokenTtl);
+    }
 
-        return $ttl !== null && $ttl > 0 ? $ttl : $this->accessTokenTtl;
+    /**
+     * This token's lifetime: the client's, cut short so an acted token never outlives the
+     * support session behind it. Zero when the session is already over — an expired token
+     * is the fail-closed answer to a race the token endpoint's own check should have won.
+     */
+    private function lifetime(Client $client, ?DateTimeInterface $notAfter): int
+    {
+        $ttl = $this->ttlFor($client);
+
+        return $notAfter === null ? $ttl : max(0, min($ttl, $notAfter->getTimestamp() - time()));
     }
 
     /**
      * @param  list<string>  $scopes
+     * @param  ActingParty|null  $actor  set only for a support session's token (see issueActing())
      */
-    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null): IssuedToken
+    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null): IssuedToken
     {
+        // What this token is FOR — scopes, audience, and whose roles it carries — decided
+        // once, here, for every grant type. See AudienceResolver.
+        $audience = $this->audiences->resolve($client, $scopes, $resource);
+        $scopes = $audience->scopes;
+
         $jti = (string) Str::ulid();
         $issuedAt = time();
+        $ttl = $this->lifetime($client, $notAfter);
 
         $claims = [
             'iss' => $this->issuers->issuer(),
@@ -163,7 +206,7 @@ class JwtTokenIssuer implements TokenIssuer
             'scope' => implode(' ', $scopes),
             'org' => $organizationId,
             'iat' => $issuedAt,
-            'exp' => $issuedAt + $this->ttlFor($client),
+            'exp' => $issuedAt + $ttl,
         ];
 
         // Carry the org's human-readable name alongside its id, so a relying party
@@ -176,13 +219,26 @@ class JwtTokenIssuer implements TokenIssuer
             }
         }
 
+        // The subject's membership tier in the bound organization (owner, admin, …), so an
+        // app can tell an owner from an admin without a second call. Only for a person —
+        // a client_credentials token has no member behind it — and only while the
+        // membership is active: a suspended owner is not an owner to a relying party.
+        if ($userId !== null && $organizationId !== null) {
+            $tier = $this->memberships->activeRole($organizationId, $userId);
+
+            if ($tier !== null) {
+                $claims['org_role'] = $tier->value;
+            }
+        }
+
         // RFC 8707 / 9068: bind the token to the requested resource server so it can
         // verify the token was minted for it (confused-deputy defense, which the MCP
         // authorization model depends on). RFC 9068 §2.2 REQUIRES `aud` on an
         // `at+jwt`, so a token minted without an explicit resource still carries the
         // issuer as its audience — a strict resource server won't reject our own API
-        // tokens for a missing `aud`.
-        $claims['aud'] = $resource ?? $this->issuers->issuer();
+        // tokens for a missing `aud`. A registered API's token names the API, and the
+        // issuer too when it carries `openid`, so UserInfo still accepts it.
+        $claims['aud'] = $audience->claim($this->issuers->issuer());
 
         // RFC 9449: sender-constrain the token to the client's DPoP key. A resource
         // server compares this jkt to the thumbprint of the proof presented with the
@@ -213,11 +269,19 @@ class JwtTokenIssuer implements TokenIssuer
         // An environment-wide grant is exactly the answer for those, and it is read here
         // by passing the absent organization through rather than skipping the lookup.
         if ($userId !== null) {
-            $rbac = $this->access->forToken($userId, $organizationId, $client->client_id);
+            // For a registered API with a linked app, the API's app: the token is read by
+            // the API, which enforces its own roles, not the requesting client's.
+            $rbac = $this->access->forToken($userId, $organizationId, $audience->rbacClientId);
             if (! $rbac->isEmpty()) {
                 $claims['roles'] = $rbac->roles;
                 $claims['permissions'] = $rbac->permissions;
             }
+        }
+
+        // RFC 8693 §4.1: who is REALLY holding a support session's token. Set before the
+        // hook runs, so a hook sees it, and reserved, so no hook can forge or strip it.
+        if ($actor !== null) {
+            $claims['act'] = $actor->claim();
         }
 
         // Inline hook: let registered actions enrich the claims or veto issuance,
@@ -247,14 +311,19 @@ class JwtTokenIssuer implements TokenIssuer
             'user_id' => $userId,
             'organization_id' => $organizationId,
             'scopes' => $scopes,
-            'audience' => $resource,
-            'expires_at' => now()->addSeconds($this->ttlFor($client)),
+            'audience' => $audience->resource,
+            // The instant the signed `exp` names, not a second reading of the clock: the
+            // TokenMinting hook above can make a network call, and a record that outlives
+            // its token by those seconds is a revocation list that disagrees with the JWT.
+            'expires_at' => now()->setTimestamp($issuedAt + $ttl),
+            // So ending the support session can revoke what it minted.
+            'support_session_id' => $actor?->supportSessionId,
         ]);
 
         // Carry the GRANTED scopes back: grantScopes() may have filtered the request
         // down to the client's registered set, and RFC 6749 §5.1 makes the token
         // endpoint echo `scope` whenever that happened. Without this the caller had no
         // way to know what it actually got.
-        return new IssuedToken($token, $jti, $this->ttlFor($client), $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes);
+        return new IssuedToken($token, $jti, $ttl, $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes, $audience->resource);
     }
 }

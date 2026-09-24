@@ -13,6 +13,7 @@ use Cbox\Id\Organization\Enums\MembershipStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Carbon;
 
 /**
  * A user's membership of an organization (org ↔ user, with a coarse role).
@@ -25,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property MembershipStatus $status
  * @property string|null $invited_by
  * @property bool $all_environments
+ * @property Carbon|null $created_at
  */
 class Membership extends Model implements EnvironmentOwned, TenantOwned
 {

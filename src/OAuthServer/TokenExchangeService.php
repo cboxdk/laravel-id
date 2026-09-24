@@ -48,6 +48,18 @@ class TokenExchangeService implements TokenExchange
             throw InvalidTokenExchange::inactiveSubject();
         }
 
+        // AN ACTED TOKEN IS NEVER EXCHANGED. A support session's token is capped at the
+        // session's end and gets no refresh token, and an exchange would undo both: the
+        // new token is minted through issueForUser(), so it would carry no `act` — the
+        // app would believe the customer themselves was signed in — and a fresh lifetime,
+        // exchangeable again before it expired, which is a refresh token by another name.
+        // Carrying `act` forward is what RFC 8693 delegation chains do; nothing here needs
+        // one, so the answer is no rather than a second place the session's limits have to
+        // be re-derived.
+        if (array_key_exists('act', $subject->claims)) {
+            throw InvalidTokenExchange::actedSubject();
+        }
+
         // The subject token must have been meant for THIS client — issued to it
         // (client_id) or naming it in its audience. Otherwise any client that got hold
         // of an unrelated user's token could launder it into a token of its own. Full
@@ -93,7 +105,9 @@ class TokenExchangeService implements TokenExchange
             $request->dpopJkt,
         );
 
-        return new TokenExchangeResult($issued, $scopes);
+        // The scopes the new token actually carries: the issuer caps them at this client's
+        // registration and at the audience's API, and RFC 8693 §2.2.1 echoes the result.
+        return new TokenExchangeResult($issued, $issued->scopes);
     }
 
     /**

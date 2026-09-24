@@ -32,5 +32,8 @@ readonly class RefreshGrant
          */
         public ?int $authTime = null,
         public array $amr = [],
+
+        /** The sign-in session the family descends from, so a refreshed ID Token keeps its `sid`. */
+        public ?string $sessionId = null,
     ) {}
 }

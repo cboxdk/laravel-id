@@ -164,4 +164,17 @@ enum MembershipRole: string
     {
         return [self::Admin, self::Developer, self::Member, self::Viewer];
     }
+
+    /**
+     * Whether a console or API may hand this role out directly — the per-value form of
+     * {@see assignable()}, for validating one incoming role.
+     *
+     * An app enforcing the single-owner rule refuses `Owner` here and routes the request
+     * to {@see Contracts\Memberships::transferOwnership()} instead, which moves ownership
+     * atomically rather than adding a second owner.
+     */
+    public function isAssignable(): bool
+    {
+        return in_array($this, self::assignable(), true);
+    }
 }

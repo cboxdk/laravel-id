@@ -9,6 +9,7 @@ use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\ExternalActions\Payloads\LoginPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
+use Cbox\Id\Identity\Contracts\LogoutPropagator;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -151,6 +152,8 @@ class DatabaseSessionManager implements SessionManager
             targetType: 'session',
             targetId: $session->id,
         ));
+
+        $this->propagate()->sessionEnded($session->id);
     }
 
     public function revokeAllForUser(string $userId): void
@@ -167,5 +170,27 @@ class DatabaseSessionManager implements SessionManager
             targetType: 'user',
             targetId: $userId,
         ));
+
+        $this->propagate()->subjectSignedOut($userId);
+    }
+
+    /**
+     * Tell the applications the ended session(s) signed the person in to.
+     *
+     * HERE, on the primitive, rather than at each caller — for the same reason the
+     * post-login hook sits in {@see start()}. Sign-out, "sign out everywhere", an
+     * administrator revoking a session, a password reset and a deprovisioned account all
+     * end sessions through this class, and a caller that has to remember to notify the
+     * relying parties is a caller that one day does not: the person believes they have
+     * left, and every application they used keeps them signed in until its own session
+     * expires.
+     *
+     * Resolved per call rather than injected: OAuthServer supplies the binding and
+     * registers after Identity, and the implementation only queues work — see the
+     * contract — so a relying party that is down cannot slow a sign-out.
+     */
+    private function propagate(): LogoutPropagator
+    {
+        return app(LogoutPropagator::class);
     }
 }

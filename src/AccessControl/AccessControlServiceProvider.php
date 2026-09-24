@@ -10,7 +10,9 @@ use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
+use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
 use Cbox\Id\AccessControl\Contracts\Roles;
+use Cbox\Id\AccessControl\Contracts\StaffAccess;
 use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Illuminate\Console\Scheduling\Schedule;
@@ -21,12 +23,17 @@ class AccessControlServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Driver-independent: it asks whichever AccessChecker is bound, so an external
+        // RBAC adapter answers live decisions exactly as it answers token claims.
+        $this->app->singleton(PermissionDecisions::class, AppPermissionDecisions::class);
+
         if (! $this->builtinDriver()) {
             // 'external' — bring-your-own RBAC. Fall back to deny-by-default so a
             // host that has not yet bound an adapter is refused, never trusted, and
             // never queries the built-in tables (which are not created in this mode).
             // A binding in the host's own provider wins over these.
             $this->app->singleton(AccessChecker::class, NullAccessChecker::class);
+            $this->app->singleton(StaffAccess::class, NullStaffAccess::class);
             $this->app->singleton(Roles::class, UnboundRoles::class);
             $this->app->singleton(GroupRoleMappings::class, UnboundGroupRoleMappings::class);
 
@@ -39,6 +46,7 @@ class AccessControlServiceProvider extends ServiceProvider
         $this->app->singleton(GrantGuard::class, AllowAllGrants::class);
         $this->app->singleton(Roles::class, RoleService::class);
         $this->app->singleton(AccessChecker::class, HierarchyAwareAccessChecker::class);
+        $this->app->singleton(StaffAccess::class, DatabaseStaffAccess::class);
         $this->app->singleton(AppManifests::class, ManifestSyncService::class);
         $this->app->singleton(ManifestFetcher::class, HttpManifestFetcher::class);
         $this->app->singleton(GroupRoleMappings::class, DatabaseGroupRoleMappings::class);

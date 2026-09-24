@@ -28,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property AccessKind $access_type
  * @property string $subject_id
  * @property string $access_ref
- * @property string $organization_id
+ * @property string|null $organization_id null = an environment-wide grant
  * @property string|null $source
  * @property string|null $reviewer_id
  * @property ReviewDecision $decision

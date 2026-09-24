@@ -8,9 +8,6 @@ use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\Permission;
 use Cbox\Id\Governance\Contracts\SegregationOfDuties;
-use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
-use Cbox\Id\OAuthServer\Enums\ClientType;
-use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\MembershipRole;
@@ -82,20 +79,14 @@ it('refuses to grant one organization’s role across the environment', function
     expect(app(AccessChecker::class)->forToken('user-1', 'org-b', 'cid_any')->roles)->toBe([]);
 })->group('security');
 
-/**
- * And an app-declared role is refused for the same reason one step along: it belongs to
- * an application, and granting it everywhere would put another app's vocabulary into
- * every tenant.
+/*
+ * An app-declared role USED to be refused here too, on the grounds that granting it
+ * everywhere would put one app's vocabulary into every tenant. The consequence was that
+ * the only staff role anybody could grant was an app-agnostic one — which then rode into
+ * EVERY app's token. App roles are now accepted and reach only their own app's tokens;
+ * StaffRoleTest proves that with two clients, which is the property that refusal was
+ * standing in for.
  */
-it('refuses to grant an app-declared role across the environment', function (): void {
-    $roles = app(Roles::class);
-
-    $client = app(ClientRegistry::class)->register(new NewClient('Reports', ClientType::Confidential))->client;
-    $declared = $roles->define(null, 'Report viewer', null, $client->client_id);
-
-    expect(fn () => $roles->assignEverywhere('user-1', $declared->id))
-        ->toThrow(UnknownRole::class);
-})->group('security');
 
 /**
  * Both kinds of grant hold at once — an environment-wide role does not replace what

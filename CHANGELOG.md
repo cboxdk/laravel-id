@@ -15,6 +15,306 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [1.19.0] - 2026-09-24
+
+Six feature sets in one release: tenancy context (`org_role`, RBAC decisions, the membership
+lifecycle, one webhook catalogue), APIs that own their scopes, app secrets and settings,
+customer API keys, OIDC Back-Channel Logout, and staff roles with support sessions. Ten
+additive migrations; read [UPGRADING.md](UPGRADING.md#1190) before deploying.
+
+### Added
+
+- **`org_role` claim — the member's tier in the bound organization.** On the access token,
+  the ID token and UserInfo whenever an organization is bound and the subject holds an
+  **active** membership in it (`owner`, `admin`, `developer`, `member`, `viewer`). Absent on
+  `client_credentials` tokens, on tokens without an organization and for invited or
+  suspended memberships. Every user grant carries it — authorization code, refresh (which
+  re-reads it), device, CIBA and token exchange — and UserInfo reads it live. Reserved
+  against token-minting hooks and listed in `claims_supported`. See
+  `docs/reference/token-claims.md`.
+- **RBAC mode on `POST /oauth/decisions`.** A body with `permission` (a key or a list) asks
+  "may X do `feature:action` in org T" for the calling app, answered by the new
+  `PermissionDecisions` contract from the same resolver that stamps the token's
+  `permissions` claim (organization grants, ancestor roll-down, environment-wide grants;
+  never another app's roles). A user token asks about itself in its own organization; a
+  client token may name any `subject` but needs `decisions:read`, and a client an
+  organization owns may ask only about that organization. A suspended or archived
+  organization denies everything. The ReBAC mode is unchanged. See
+  `docs/reference/decisions.md`.
+- **Membership lifecycle verbs.** `Memberships::leave()` (refused for the only owner with
+  `LastOwner::leaving()`), `Memberships::transferOwnership()` (atomic, both rows locked; the
+  previous owner becomes admin; refusals carry an `OwnershipTransferRefusal` reason),
+  `Memberships::owners()`, `Memberships::activeRole()`, `MembershipRole::isAssignable()`,
+  `Organizations::archiveAsOwner()` and `Organizations::update(OrganizationChanges)`. See
+  `docs/core-concepts/membership-lifecycle.md`.
+- **Webhook catalogue.** `WebhookEventType::catalogue()` returns a typed
+  `WebhookEventDescriptor` per event — group, label, a description of the event and its
+  payload, the event that supersedes a legacy name, and whether the framework emits it —
+  and `WebhookEventType::offered()` is what a subscription picker should show.
+  `WebhookCatalogueMarkdown` renders it; `docs/reference/webhook-events.md` is generated
+  from it and a test fails when the two drift.
+- **New webhook events**, emitted by the framework: `membership.created|updated|deleted`,
+  `invitation.created|accepted|revoked` (a re-invite announces the invitation it supersedes),
+  `organization.updated` (rename, slug, settings) and `organization.deleted` (archive).
+  Catalogued for the services that emit them: `api_key.created|revoked`,
+  `support_session.started`. Catalogued because they were already emitted but missing:
+  `user.login`, `user.reactivated`, `identity.linked`, `role.unassigned`,
+  `role.assigned_everywhere`, `role.unassigned_everywhere`, `organization.archived`.
+- **Environment API scopes** `members:read|write`, `invitations:read|write`,
+  `roles:read|write`, `apps:read|write`, `apis:read|write`, `api_keys:read|write` and
+  `support:write`, each with `label()` and `description()`, plus `writes()`,
+  `isReserved()`, `offerable()` and `offerableValues()`.
+- **APIs (resource servers) and the scopes they own.** New `oauth_apis` / `oauth_api_scopes`
+  tables, the `Apis` contract (`DatabaseApis`), and `Api` / `ApiScope` models. An API has an
+  identifier (becomes `aud`, unique per environment), an owner (`organization_id`, null =
+  environment), and an optional linked app (`client_id`) whose roles and permissions tokens
+  for it carry. Scope keys are unique per environment and carry `tenant_requestable`
+  (default true). `InteractsWithOAuth::makeApi()` registers one in tests;
+  `makeClient()` takes an `organizationId`. See
+  [APIs and scopes](docs/core-concepts/apis-and-scopes.md) and the new
+  [access token reference](docs/core-concepts/access-tokens.md).
+- **One `AudienceResolver` for every access token.** `JwtTokenIssuer` asks it once per
+  token, so authorization code, refresh, client credentials, device, CIBA and token
+  exchange share one answer: registered scopes the client's owner may not hold are
+  dropped; with no `resource`, `aud` defaults to the one API the scopes belong to (scopes
+  of two APIs is `invalid_target`); a named API narrows the token to its scopes plus the
+  protocol scopes, adds the issuer to `aud` when `openid` is present, and stamps the linked
+  app's `roles`/`permissions`; free-text scopes never ride on a registered API's audience;
+  nothing grantable is `invalid_scope`.
+- Discovery's `scopes_supported` adds the tenant-requestable scopes of environment-owned
+  APIs; dynamic registration accepts them.
+- **Overlapping client-secret rotation.** An OAuth client can hold several live secrets
+  (`oauth_client_secrets`: SHA-256, a four-character hint, created/expires/last-used).
+  `ClientRegistry::rotateSecret($client, $graceSeconds)` mints a new `csec_` secret and
+  retires the others after the grace period (0 = at once; bounded by the new
+  `cbox-id.oauth.client_secrets.max_rotation_grace`, 30 days), never extending one due
+  sooner. `revokeSecret()` cuts one off and refuses the last live secret of a
+  shared-secret client; `secrets()` lists them as `ClientSecretSummary` (id, hint,
+  dates — never the secret). Any live secret authenticates; all are compared in constant
+  time on every attempt. `last_used_at` is written at most once a minute.
+- **`ClientRegistry::update()` and `delete()`.** An app's settings are replaced from a
+  `ClientBlueprint` — grants and `access_token_ttl` included — so token exchange can be
+  enabled and disabled through the registry the consoles use. The client type and
+  authentication method cannot change through update.
+- **`ClientBlueprint`**: an app's configuration without its identity or credentials, as a
+  deterministic, versioned JSON document. `ClientRegistry::blueprint()` exports it;
+  `ClientRegistry::import()` creates a new client (new id, new secret) from it in the
+  current environment. See *Promote an app between environments* in the cookbook.
+- **The registry audits the app lifecycle**: `app.created`, `app.updated` (with a
+  from/to of each changed field), `app.secret_rotated`, `app.secret_revoked` and
+  `app.deleted`, on the owning organization's trail, with the new
+  `Kernel\Audit\ValueObjects\AuditActor` a caller passes. RFC 7591/7592
+  self-registration gets the same entries.
+- **`cbox-id.oauth.max_access_token_ttl`** (default 86400): the ceiling on a client's own
+  access-token lifetime — refused above it when set, clamped to it when minted. The floor is
+  60 seconds. The deployment default is not clamped.
+- `NewClient` accepts `tokenEndpointAuthMethod` and `manifestUrl`, persisted at
+  registration. `Enums\GrantType` names the six grants the token endpoint implements.
+- **Customer API keys.** An end-customer of an app built on Cbox ID could not get a key for
+  that app's API. User API tokens (`cbid_pat_`) existed, but they were bound to no app,
+  carried a coarse verb instead of the app's permissions, and only an environment key with
+  `users:read` could check one. The app itself had no way to verify a key with its own
+  credentials, and OAuth introspection answers `active: false` for anything the caller did
+  not issue.
+
+  A customer API key is that same credential, bound to one app (`client_id`), one
+  organization and one holder, and carrying a subset of the app's permissions. It uses the
+  same table, the same SHA-256-at-rest lookup by hash, and the same tenancy and revocation.
+  Two caps keep it honest. At issuance, every permission must be one the holder currently
+  holds for that app (`AccessChecker::forToken()`, the set an access token would carry).
+  At every verification, the key's permissions are intersected with what the holder holds
+  at that moment, so a demoted holder's key loses the permission on the next request. The
+  key also goes inactive when the holder leaves the organization, and stays inactive if
+  they are added back later. A suspended organization or a deactivated account does the
+  same.
+
+  - `CustomerApiKeys` contract (`setPrefix`, `issue`, `verify`, `find`, `revoke`,
+    `forUser`, `forOrganization`). Refusals throw `CustomerApiKeyRefused` with a typed
+    `ApiKeyRefusal` reason.
+  - Per-app key prefix `oauth_clients.api_key_prefix`, validated by `ApiKeyPrefix`
+    (`^[a-z][a-z0-9]{1,15}_(live|test)$`, root `cbid` reserved, unique per environment).
+    Keys are `{prefix}_{48 base62}` and are shown once. Declaring a prefix is how an app
+    opts in.
+  - `POST /oauth/api-keys/verify`: the app authenticates with its own client credentials
+    (the token endpoint's methods) and gets back
+    `{active, key_id, sub, org, org_role, permissions[], client_id, expires_at}` for its own
+    keys. Every other outcome is exactly `{"active": false}`. The endpoint is no-store and
+    throttled at `cbox-id.customer_api_keys.verify_per_minute` (default 600 per IP).
+  - `last_used_at` is written at most once a minute per key, and the throttle is part of
+    the UPDATE's own WHERE clause.
+  - Audit entries and webhook events `api_key.created` / `api_key.revoked`. Both are in
+    `WebhookEventType`.
+
+  Personal tokens are unchanged. Each model now carries a global scope for its half of
+  the shared table, so neither service can resolve, list or revoke the other's rows.
+  Migrations `2026_09_24_000300_bind_user_api_tokens_to_an_app` and
+  `2026_09_24_000400_add_api_key_prefix_to_clients` are additive. Existing tokens stay
+  personal tokens.
+- **OpenID Connect Back-Channel Logout 1.0.** When a person signs out, when an administrator
+  ends their sessions, when their account is deactivated, when their grants are revoked or
+  when they are removed from an organization, every application that signed them in is now
+  told — a signed logout token POSTed server to server — and ends its own session. Until
+  now nothing told them: an application kept the person signed in until its own session
+  expired, and consumers re-checked grants on every request to compensate.
+  - Client metadata `backchannel_logout_uri` and `backchannel_logout_session_required`
+    (§2.2) on `NewClient`, on the new `ClientRegistry::configureBackchannelLogout()`, and
+    through Dynamic Client Registration (register, read and RFC 7592 update). HTTPS only;
+    plain HTTP on `localhost`; no fragment, no credentials. Refused out loud, never dropped.
+  - `sid` on the ID Token (and on a refreshed one), when the host passes the new
+    `sessionId` argument to `AuthorizationCodes::issue()`. It is a SHA-256 derivation of the
+    session id, not the id itself, so relying parties never see the host's row key.
+  - Logout tokens per §2.4 — `iss`, `aud`, `iat`, `exp` two minutes out, a fresh `jti` per
+    attempt, the `events` member, `sub` and/or `sid`, no `nonce`, `typ: logout+jwt` — signed
+    with the environment's ID Token key.
+  - Delivery by a queued job (`DeliverBackchannelLogout`) through the SSRF guard (pinned
+    DNS, no redirects, HTTPS only; `cbox-id.oauth.backchannel_logout.verify_url`), with short
+    timeouts, retries by release with backoff (10 s, 1 min, 5 min, 15 min; five attempts),
+    queued after commit, and every final outcome in the audit trail as
+    `oauth.backchannel_logout.delivered` / `.failed` with the reason.
+  - Triggers: every `SessionManager::revoke()` / `revokeAllForUser()` (through the new
+    `Identity\Contracts\LogoutPropagator`), the new `RefreshTokens::withdrawAccess()`,
+    `revokeForUserAndClient()`, `Subjects::deactivate()`, and `organization.member_removed`.
+    `RefreshTokens::revokeForUser()` deliberately does NOT notify anyone — see Changed.
+    Hosts that end sessions another way call `BackchannelLogout::sessionEnded()` /
+    `subjectSignedOut()`.
+  - Discovery advertises `backchannel_logout_supported` and
+    `backchannel_logout_session_supported`, and `sid` in `claims_supported`.
+  - `Identity\Contracts\SignedInSession`: bind it and RP-initiated logout without a verified
+    `id_token_hint` ends this browser's session row too, instead of only clearing the cookie.
+  - `oauth_session_participants` is pruned by `cbox-id:prune` once its session has ended
+    (`cbox-id.prune.retention_days.oauth_session_participants`, default 30).
+  - Recipe: [Receive back-channel logout](docs/cookbook/receive-back-channel-logout.md).
+- **Staff roles.** Roles gain `tenant_assignable` (default `true`, so no existing role
+  changes). `false` marks a staff role that the organization plane never lists and never
+  accepts: `Roles::tenantAssignableRoles()`, `assertTenantAssignable()` and
+  `assignAsTenant()` are the tenant plane's list and guard, built on one `Role` scope so
+  the two cannot drift. `assign()` stays the environment plane's call — how an environment
+  administrator gives staff rights inside one customer. App manifests declare it per role
+  as `"tenant_assignable": false`; the value must be a JSON boolean. It enters the
+  manifest checksum only when `false`, so every existing manifest hashes to the same bytes
+  in every SDK (new fixture case `staff_role`). `Roles::define()` and `updateRole()` take
+  the flag. `RoleNotTenantAssignable` extends `UnknownRole`.
+- **Environment-wide grants of one app's role.** `Roles::assignEverywhere()` accepts any
+  non-orphaned role no organization owns. An app-declared role granted everywhere is
+  stamped into that app's tokens only; an app-agnostic role into every app's. The two-app
+  leak test fails if the token issuer's client filter is removed.
+  `role.assigned_everywhere` / `role.unassigned_everywhere` carry `client_id`.
+- **Access reviews of environment-wide grants.** `AccessReviews::open(null, …)` reviews
+  every environment-wide grant (`AccessKind::EnvironmentRole`), and revoking one calls
+  `Roles::unassignEverywhere()`. `certify`, `revoke` and `close` take `null` for such a
+  campaign. An organization's campaign never includes them, and null matches only the
+  environment's campaign. New `Roles::assignmentsEverywhere()`.
+- **Support sessions (RFC 8693 `act`).** `SupportSessions::begin()` lets the vendor's
+  staff (the app's own `support:impersonate`, held environment-wide) or an environment
+  administrator (the caller asserts it) sign in to one first-party, environment-owned app
+  as an active member of an active organization, for a required reason and at most an hour
+  (`cbox-id.oauth.support_sessions.max_ttl` can only lower it). The app completes an
+  ordinary code exchange. Its access and ID Tokens carry `act: {sub}`, it gets no refresh
+  token, and nothing outlives the session. `issueCode()` mints further codes for the
+  session's own actor, and `end()` consumes outstanding codes and revokes every token the
+  session minted. Starting and ending are audited on the organization's trail and the
+  environment's. `support_session.started` is emitted to the organization and added to
+  the webhook catalogue. New contract `StaffAccess` (built-in: `DatabaseStaffAccess`;
+  `external` driver: `NullStaffAccess`, which denies).
+
+### Changed
+
+- **The legacy `organization.member_*` / `organization.invitation_*` events are still
+  emitted** beside the new `membership.*` / `invitation.*` ones — provisioning and usage
+  metering key off them — so a `*` subscriber receives both. They are marked legacy in the
+  catalogue and no longer offered to new subscriptions.
+- **`directories:read|write` are reserved**: still honoured on keys that hold them, no longer
+  offered for new keys.
+- **Nine catalogued webhook events that were only ever audited are now delivered.**
+  `domain.added|removed|verified`, `connection.activated`, `vault.grant.created|revoked`,
+  `vault.secret.revoked` and `governance.access.revoked` were offered to subscribers and
+  recorded on the audit trail, but nothing put them on the event bus, so a subscriber
+  received nothing. Each is now emitted where its change happens (payloads in
+  `docs/reference/webhook-events.md`; never a credential). `connection.activated` is also
+  audited now, once per actual activation. `organization.settings_updated` is emitted as a
+  legacy name beside `organization.updated` and no longer offered. `domain.verified` also
+  starts counting toward the `DomainVerified` usage metric, which was mapped to it but never
+  fed. `WebhookEventType::isEmitted()` is true for every case; a test fails if a case is
+  catalogued without an emitting source.
+- `Invitations::revoke()` takes an optional `$revokedBy`, locks the row, records
+  `organization.invitation_revoked` on the audit trail and is idempotent.
+- A refresh token now records the access token's **granted** scopes and resolved audience
+  instead of the grant's requested ones, so a refresh can never widen either.
+- Token exchange echoes the scopes the new token actually carries (RFC 8693 §2.2.1); it
+  echoed the inherited set even when the exchanging client's registration narrowed it.
+- `IssuedToken` gains a trailing `?string $audience`. `JwtTokenIssuer` takes an
+  `AudienceResolver` and `DynamicClientRegistrar` an `Apis` (both container-resolved).
+- **Registration refuses incoherent settings** with `InvalidClientMetadata`: a grant the
+  token endpoint does not implement, token exchange on a public client (also on RFC 7591
+  registration and RFC 7592 update), an `access_token_ttl` outside the bounds, and an
+  authentication method that contradicts the client type or key set.
+- `oauth_clients.secret_hash` is deprecated: a mirror of the newest live secret, never read
+  to authenticate. See UPGRADING.md.
+- An RFC 7592 update to `none` or `private_key_jwt` revokes every secret of the client; a
+  move back to a secret method mints a fresh one.
+- `Client` no longer serializes `secret_hash` or `registration_access_token_hash`.
+- **Removing a person from an organization now revokes the refresh tokens they held in it.**
+  A new framework listener on `organization.member_removed` calls
+  `RefreshTokens::withdrawAccess($user, $organization)`. Before, the membership and role
+  assignments went and the organization-scoped refresh tokens kept refreshing.
+- **New `RefreshTokens::withdrawAccess()`: revoke AND sign the person out of the
+  applications that held the grants.** It is what deactivation, an administrator's password
+  reset and membership removal now call. `revokeForUser()` is unchanged — it revokes
+  refresh tokens and notifies nobody — because hosts call it on every role assignment and
+  unassignment purely so the next token carries the new claims; propagating logout there
+  would sign people out of every application whenever an administrator adjusted a role.
+- A user API token (`cbid_pat_`) now stamps `last_used_at` at most once a minute, like
+  customer API keys: `resolve()` runs on every authenticated request and wrote the row
+  every time.
+- `ClientBlueprint` carries `backchannel_logout_uri`, `backchannel_logout_session_required`
+  and `api_key_prefix` (optional on the way in, so an earlier document still reads), with
+  `withBackchannelLogout()` / `withApiKeyPrefix()`. `ClientRegistry::update()` applies them
+  and `import()` creates with them; a prefix already declared by another app in the target
+  environment is refused, not dropped. `NewClient` gains `apiKeyPrefix`.
+  `configureBackchannelLogout()` records `app.updated` when the setting changes.
+- **A permission's `tenant_assignable` now counts toward the manifest checksum**, so a deploy
+  that only opts a permission in to (or out of) tenant self-serve re-syncs; before, the
+  unchanged checksum skipped the sync and the flag never reached the catalogue. Added to the
+  canonical form only when `true` (a permission's non-default), so every manifest that does
+  not opt a permission in hashes exactly as before. A manifest that DOES declare
+  `"tenant_assignable": true` on a permission hashes differently once and re-syncs once; SDKs
+  computing the checksum must add the same marker (new `self_serve_permission` fixture case).
+
+### Security
+
+- **Membership reads and writes no longer depend on the tenant scope alone.** `add()`,
+  `of()`, `changeRole()`, `remove()`, `leave()`, the last-owner count and the new transfer,
+  owner-archive and `activeRole()` queries now bind `organization_id` in their `WHERE`
+  clause, and `add()` states the organization on the insert. Under
+  `TenantContext::withoutScope()` — provisioning jobs, backfills — the scope-only versions
+  deleted a person from every organization on `remove()`, counted other organizations'
+  owners (so the last-owner guard could not fire), re-tiered or returned a membership in a
+  different organization, and failed to insert at all in `add()`; a transfer could have
+  promoted a member of another organization. Each binding was removed in turn and a
+  suspended-scope test went red.
+- **A tenant could mint a token for someone else's API.** Custom scopes were unowned free
+  text on each client and `resource` was only checked for being an absolute URI before it
+  became `aud`, so an organization administrator could put `tax:assess` on their own
+  client, request `resource=<the tax API>`, and receive a signed token carrying exactly the
+  `aud` and `scope` that API checks. Once the API is registered, its scopes can only be held
+  by clients its owner allows — enforced when a client is saved (by any writer) and again
+  at issuance for rows written before — and unregistered scopes can never ride on its
+  audience.
+- **Dynamic registration can no longer be used to claim a registered scope.** A
+  self-registered client counts as a tenant, not as the environment, even though its owner
+  column is null, and `allowed_scopes` cannot widen what a registered API allows.
+- **An environment-wide staff role no longer leaks into every app's tokens.** The only role
+  that could be granted everywhere was an app-agnostic one, so one app's "Support" role was
+  stamped into every other app's tokens in the same environment.
+- **Tenants cannot hand out staff roles**, directly or through a directory group mapping
+  (the customer's IdP decides who is in a group). A mapping whose role later becomes
+  staff-only has its pushed grant withdrawn at the next reconcile.
+- **Environment-wide grants were never reviewed.** Access-certification campaigns belonged
+  to one organization, so the largest grants in the system appeared in no campaign.
+- **`act` is a reserved claim** that a token-minting hook can neither forge nor rewrite.
+  Token exchange refuses a subject token carrying `act`, because the exchanged token
+  would drop it and restart the lifetime. Introspection returns `act`.
+
 ## [1.18.1] - 2026-08-27
 
 ### Fixed
@@ -1678,7 +1978,6 @@ The account plane is gone. A customer **is** an organization.
 > already exists*. Use 0.77.1. Appended per the immutability note above — nothing in the
 > entry itself has been altered.
 
-
 ### Security
 
 - **An ID Token is minted only for a grant that asked for `openid`.** Every user-present
@@ -2086,7 +2385,6 @@ claim to protect and watching the suite stay green.
 > removed, how, and what now proves it cannot happen unnoticed again. The entry below is
 > left as written, because a changelog that quietly loses a version is worse than one that
 > records a withdrawn one.
-
 
 ### Changed
 

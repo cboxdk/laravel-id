@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
  *
  * @property string $id
  * @property string $environment_id
- * @property string $organization_id
+ * @property string|null $organization_id null = the environment's own review
  * @property string $name
  * @property CampaignStatus $status
  * @property PendingPolicy $pending_policy

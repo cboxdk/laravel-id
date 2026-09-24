@@ -18,6 +18,243 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.19.0
+
+Six feature sets land together: tenancy context (`org_role`, RBAC decisions, the membership
+lifecycle, one webhook catalogue), APIs that own their scopes, app secrets and settings,
+customer API keys, OIDC Back-Channel Logout, and staff roles with support sessions. Read the
+migrations first, then the section for each feature you use.
+
+### Migrations
+
+Ten, all additive; run `php artisan migrate` as part of the deploy. No existing row changes
+meaning. In order:
+
+| Migration (`2026_09_24_…`) | What it does |
+| --- | --- |
+| `000100_create_oauth_apis_and_their_scopes` | `oauth_apis`, `oauth_api_scopes` |
+| `000200_create_oauth_client_secrets_table` | `oauth_client_secrets`, backfilled from `oauth_clients.secret_hash` |
+| `000300_bind_user_api_tokens_to_an_app` | `user_api_tokens.client_id`, `permissions`; `scope`/`name` nullable, `prefix` 40 chars |
+| `000400_add_api_key_prefix_to_clients` | `oauth_clients.api_key_prefix`, unique per environment |
+| `000500_add_backchannel_logout_to_oauth_clients` | `oauth_clients.backchannel_logout_uri`, `backchannel_logout_session_required` |
+| `000600_bind_codes_and_refresh_tokens_to_a_session` | nullable `session_id` on codes and refresh tokens |
+| `000700_create_oauth_session_participants_table` | `oauth_session_participants` |
+| `access-control/000800_add_tenant_assignable_to_roles` | `roles.tenant_assignable` (default `true`) |
+| `000900_allow_environment_wide_access_reviews` | campaign/item `organization_id` nullable |
+| `001000_create_support_sessions_table` | `support_sessions`; `actor_id`, `support_session_id` on codes, `support_session_id` on access tokens |
+
+**Run a queue worker** if you do not already: back-channel logout tokens and webhooks are
+delivered by queued jobs.
+
+### Tenancy context and webhooks
+
+**Contracts gained methods.** A host that implements `Memberships`, `Organizations` or
+`Invitations` itself (rather than extending the shipped services) must add
+`Memberships::leave()`, `transferOwnership()`, `owners()`, `activeRole()`,
+`Organizations::update()`, `archiveAsOwner()`, and the optional `?string $revokedBy`
+parameter on `Invitations::revoke()`. `JwtTokenIssuer`, `TokenController` and
+`OrganizationService` take new constructor dependencies in this release (as do the classes
+named in the sections below); a host that constructs them by hand rather than from the
+container must pass them.
+
+**Wildcard webhook subscribers receive more events.** Every membership and invitation
+change is now announced twice — under the legacy `organization.member_*` /
+`organization.invitation_*` name and under the new `membership.*` / `invitation.*` one —
+and an archive as both `organization.archived` and `organization.deleted`. An endpoint
+subscribed to `*` that counts or mirrors events should key on one family. Endpoints
+subscribed by name see no change.
+
+**Subscribers to domain, SSO-connection, token-vault and access-review events start
+receiving them.** `domain.*`, `connection.activated`, `vault.grant.*`, `vault.secret.revoked`
+and `governance.access.revoked` were catalogued but never emitted; they are now, and
+`organization.settings_updated` beside `organization.updated`. A `*` subscriber sees them
+for the first time. `ConnectionService`, `DatabaseDomainVerification` and
+`DatabaseSecretVault` take an `EventBus` (and `ConnectionService` an `AuditLog`); construct
+them from the container.
+
+**Build subscription pickers and key-scope pickers from the new lists.**
+`WebhookEventType::offered()` excludes legacy names;
+`EnvironmentApiScope::offerable()` excludes the reserved `directories:*` scopes. Rendering
+`cases()` keeps offering both.
+
+**Relying parties may now see `org_role`.** It is additive; a consumer that rejects unknown
+claims (rare) must allow it.
+
+### APIs and scope ownership
+
+**APIs (resource servers) own their scopes.**
+
+*What breaks:* nothing until you register an API. An environment with no registered APIs
+mints the same tokens as before. Once you register one:
+
+- **Tokens that carried its scopes change `aud`.** A token whose scopes belong to one API is
+  audienced to it even without `resource` (and to `[identifier, issuer]` with `openid`). A
+  resource server that insisted on `aud == issuer` for those scopes must accept its own
+  identifier instead — which is what RFC 9068 asks of it anyway.
+- **Mixed requests narrow.** Free-text scopes requested alongside an API's scopes are
+  dropped from that token; request them separately. Scopes of two APIs with no `resource`
+  are refused with `invalid_target`.
+- **Clients may be refused on save.** `Client` throws `ScopeNotGrantable` when saved with a
+  newly added registered scope its owner may not hold. A console that edits `scopes` on the
+  model should catch it and show `$e->getMessage()`. Existing clients that already hold such
+  a scope stay editable; the token endpoint drops the scope for them.
+- **Roles follow the API.** When the API names a `client_id`, tokens for it carry that app's
+  roles/permissions, not the requesting client's.
+
+Before registering an API whose scopes are already in use, check which organization-owned
+and dynamically registered clients hold them: those scopes stop being granted to them unless
+the API is environment-owned and the scope `tenant_requestable`.
+
+Two smaller changes apply everywhere: refresh tokens record the access token's granted
+scopes (only differs if a grant held scopes outside the client's registration), and token
+exchange echoes the scopes the new token carries. If you construct `JwtTokenIssuer` or
+`DynamicClientRegistrar` by hand rather than from the container, pass the new
+`AudienceResolver` / `Apis` argument.
+
+### App secrets and settings
+
+**Client secrets move to their own table, and `oauth_clients.secret_hash` is deprecated.**
+
+The `000200` migration creates `oauth_client_secrets` and moves every existing
+`secret_hash` into it with no expiry, so every client keeps authenticating with the secret
+it has today. Nothing else is needed for clients to keep working.
+
+`oauth_clients.secret_hash` is **kept for 1.19 and dropped in the next minor**. For 1.19 it
+is a mirror of the client's newest live secret. It is never read to authenticate.
+
+*What breaks:* nothing in 1.19, by design. Code that **reads** the column keeps getting the
+newest live secret's hash (or null). Code that **writes** it — assigning a hash and saving
+the model, the only way to rotate before 1.19 — has the write adopted with the meaning it
+had then: the written hash becomes the client's one secret, effective at once, and any
+other live secret stops working. A bulk `Client::query()->update(['secret_hash' => …])`
+bypasses the model and is **not** adopted.
+
+*What to do before the next minor:*
+
+```php
+// Instead of writing secret_hash:
+$rotated = app(ClientRegistry::class)->rotateSecret($client, graceSeconds: 3600, actor: $actor);
+$rotated->secret; // show once
+
+// Instead of `$client->secret_hash !== null`:
+app(ClientRegistry::class)->hasSecret($client);
+```
+
+*Rolling back* the migration drops the table. Each client keeps its newest secret (the
+mirror); an older secret still inside a rotation grace period stops working.
+
+**Registration refuses settings the token endpoint would refuse later.**
+`ClientRegistry::register()` — and so every console and command built on it — now throws
+`InvalidClientMetadata` for a grant the token endpoint does not implement, token exchange on
+a public client, an `access_token_ttl` below 60 seconds or above
+`cbox-id.oauth.max_access_token_ttl`, and a `tokenEndpointAuthMethod` that contradicts the
+client type or key set. RFC 7591 registration and RFC 7592 update refuse token exchange on a
+public client too.
+
+*What breaks:* a caller that registered such a client and never used the setting. Each one
+was unusable — the token endpoint refused the grant on every call, and a TTL of 0 was
+silently the deployment default.
+
+**Per-client access-token lifetimes are capped.** A client whose `access_token_ttl` is
+above `cbox-id.oauth.max_access_token_ttl` (default 86400, one day) is issued tokens at the
+ceiling from the first token after the upgrade. Raise the ceiling if a client needs longer.
+The deployment default (`cbox-id.oauth.access_token_ttl`) is not capped.
+
+**`ClientRegistry` gained methods.** If you implement the contract yourself rather than
+extending `ClientRegistryService`, add `update()`, `delete()`, `hasSecret()`, `secrets()`,
+`rotateSecret()`, `revokeSecret()`, `blueprint()` and `import()`, and the optional
+`?AuditActor $actor` parameter on `register()`. Callers are unaffected.
+
+**The registry now writes the app audit trail.** `app.created`, `app.updated`,
+`app.secret_rotated`, `app.secret_revoked` and `app.deleted` are recorded by the
+framework. A host that recorded its own entries for these will see each twice; drop yours,
+and pass an `AuditActor` so the framework's entry names who asked.
+
+**Blueprints carry the logout endpoint and the API-key prefix, and `update()` replaces
+them.** `ClientRegistry::update()` takes the app's whole settings as a `ClientBlueprint`, now
+including `backchannel_logout_uri`, `backchannel_logout_session_required` and
+`api_key_prefix`. Build the blueprint from `blueprint($client)` and change what you mean to;
+a hand-built `new ClientBlueprint(...)` clears those three. `import()` refuses a prefix
+another app in the target environment already declared.
+
+### Customer API keys
+
+**Customer API keys share `user_api_tokens`.** It gains `client_id` and `permissions`;
+`scope` and `name` become nullable, and `prefix` widens to 40 characters. `oauth_clients`
+gains `api_key_prefix`. Every existing row keeps its meaning: a token with no `client_id` is
+a personal `cbid_pat_` token, exactly as before.
+
+One thing to check if your host reads the table directly: rows with a `client_id` are
+customer API keys, and they have no `scope`. `UserApiToken` excludes them with a global
+scope, so Eloquent code is unaffected. A raw `DB::table('user_api_tokens')` query, or a
+`withoutGlobalScopes()` one, now sees both kinds.
+
+### Back-channel logout
+
+Existing clients have no logout URI and are never called, and grants issued before the
+upgrade carry no `sid`.
+
+Logout tokens are delivered by `DeliverBackchannelLogout`; without a queue worker nothing is
+sent. On the `sync` connection they are sent inline, once, without retries.
+
+**Pass the session to `AuthorizationCodes::issue()`** — the new `sessionId` argument — or no ID Token carries `sid` and ending one session cannot name it. See the
+[recipe](docs/cookbook/receive-back-channel-logout.md).
+
+*What breaks for implementers of the contracts* (the bundled implementations are updated):
+
+- `ClientRegistry` gains `configureBackchannelLogout(Client, ?string, bool, ?AuditActor): Client`.
+- `AuthorizationCodes::issue()` gains `?string $sessionId = null` (before the support
+  session's `?ActingParty $actor`; pass both by name);
+  `RefreshTokens::issue()` gains `?string $sessionId = null`.
+- `AuthorizationCodeService` and `RefreshTokenService` now take a `BackchannelLogout` in
+  their constructors — resolve them from the container rather than with `new`.
+- `EndSessionController` takes a `SignedInSession`.
+
+*Behaviour that changes on its own:*
+
+- `RefreshTokens` gains `withdrawAccess(string $userId, ?string $organizationId = null): int`
+  (implementers must add it): revoke the refresh tokens and tell the applications that held
+  them to end their sessions. `revokeForUserAndClient()` now notifies the one application.
+  `revokeForUser()` does NOT notify anyone — keep calling it on role changes to refresh
+  claims; call `withdrawAccess()` where the person's access is actually over.
+- Removing an organization membership revokes that organization's refresh tokens for the
+  person (the new `organization.member_removed` listener).
+
+### Staff roles and support sessions
+
+*What changes for a running deployment:*
+
+- **`Roles::assignEverywhere()` accepts app-declared roles.** It used to refuse any role with
+  a `client_id`. A console that relied on that refusal to keep app roles out of the
+  environment-wide picker now has to filter them itself if it still wants to.
+- **Directory group mappings refuse staff roles** (`RoleNotTenantAssignable`, an
+  `UnknownRole`). Nothing is staff-only until an app or an administrator marks it so.
+- **A manifest role whose `tenant_assignable` is not a JSON boolean fails the sync**
+  (`InvalidManifest`), including an explicit `null`.
+- **Token exchange refuses a subject token carrying `act`** (`invalid_grant`). Nothing
+  minted `act` before this release, so only support-session tokens are affected.
+- **A permission's `tenant_assignable: true` now counts toward the manifest checksum.** A
+  manifest that opts a permission in re-syncs once after the upgrade (harmless). An SDK
+  that computes the checksum itself reports a different version for such a manifest until
+  it adds the same marker; manifests that opt no permission in are unaffected.
+
+*Contracts that gained methods or parameters* — only matters if you implement them yourself
+rather than using the shipped classes:
+
+- `Roles`: `define()` and `updateRole()` take a trailing `tenantAssignable`;
+  new `tenantAssignableRoles()`, `assertTenantAssignable()`, `assignAsTenant()`,
+  `assignmentsEverywhere()`.
+- `AccessReviews`: `open()`, `certify()`, `revoke()` and `close()` take `?string` for the
+  organization (null = the environment's review).
+- `AuthorizationCodes::issue()` takes a trailing `?ActingParty $actor` (after
+  `sessionId`); `AuthorizedGrant` and `IdTokenGrant` carry an optional actor.
+- `TokenIssuer`: new `issueActing()`.
+- New contracts `StaffAccess` and `SupportSessions`, bound by default.
+
+A tenant-facing console should switch its role picker to `Roles::tenantAssignableRoles()`
+and its grant action to `Roles::assignAsTenant()`. Until it does, it keeps offering and
+granting staff roles once any exist.
+
 ## 1.9.0
 
 **Manual permissions can now have an owning organization, and existing rows keep their old

@@ -23,7 +23,7 @@ started by the package, and neither is optional.
 | Process | Command | What it drives | What breaks without it |
 |---|---|---|---|
 | Scheduler | `php artisan schedule:run` every minute (or `schedule:work` in dev) | the outbox relay, the webhook retry sweep, the provisioning drain, the SIEM pump, campaign auto-close, the nightly prune | Nothing is delivered at all. Domain events accumulate in `events`, so no webhook fires, no usage is metered, outbound SCIM never runs and no host listener is ever called. |
-| Queue worker | `php artisan queue:work` | `DeliverWebhook`, `DrainProvisioningConnection`, `PumpAuditStream`, `SyncAppManifestJob` | The scheduler still records and enqueues, but nothing performs the outbound HTTP. Webhooks sit `pending`, SCIM operations sit `pending`, SIEM batches are never shipped. |
+| Queue worker | `php artisan queue:work` | `DeliverWebhook`, `DrainProvisioningConnection`, `PumpAuditStream`, `SyncAppManifestJob`, `DeliverBackchannelLogout` | The scheduler still records and enqueues, but nothing performs the outbound HTTP. Webhooks sit `pending`, SCIM operations sit `pending`, SIEM batches are never shipped, and applications are never told a person signed out. |
 
 ```bash
 # production: one cron entry, plus a supervised worker
@@ -33,6 +33,15 @@ php artisan queue:work --tries=1
 
 `DeliverWebhook` manages its own retries through the delivery row (see below), so it does
 not need queue-level retries to be correct.
+
+`DeliverBackchannelLogout` (OIDC Back-Channel Logout) is queued straight from a sign-out,
+not from the relay, and manages its retries by **releasing itself** with a backoff of 10 s,
+1 min, 5 min, then 15 min. It declares its own `$tries`
+(`cbox-id.oauth.backchannel_logout.max_attempts`, default 5), which Laravel honours over the
+worker's `--tries`. The final outcome of every delivery is written to the audit trail as
+`oauth.backchannel_logout.delivered` or `oauth.backchannel_logout.failed` with the reason;
+each failed attempt is also logged at `warning`. On the `sync` connection a failed attempt
+is not retried — and never turns the sign-out itself into an error.
 
 Both failures are silent by construction, and they fail in different ways: without the
 scheduler the outbox depth climbs and `cbox-id:events:backlog` says so; without a worker
@@ -238,6 +247,7 @@ token lives.
 | `usage_metered_events` | 30 days | `created_at` is past the cutoff |
 | `webhook_deliveries` | 30 days | status is `delivered` or `exhausted` **and** `updated_at` is past the cutoff — a `failed` row is still owed a retry |
 | `provisioning_operations` | 30 days | status is `delivered` or `exhausted` **and** `updated_at` is past the cutoff |
+| `oauth_session_participants` | 30 days | `ended_at` is past the cutoff, **or** the row is older than the cutoff and its session in `auth_sessions` is gone or expired past it |
 
 `dpop_proofs` is the one to watch: one INSERT per DPoP-protected request, with a unique
 index that grows with total request volume.
@@ -395,6 +405,10 @@ it yourself, disable `webhooks.schedule_retries` and call
 | `cbox-id.webhooks.queue` | `CBOX_ID_WEBHOOKS_QUEUE` | unset | Queue name for `DeliverWebhook`, to isolate egress. |
 | `cbox-id.webhooks.circuit_breaker.failure_threshold` | `CBOX_ID_WEBHOOKS_CB_FAILURE_THRESHOLD` | `5` | Consecutive failures before an endpoint's breaker opens. |
 | `cbox-id.webhooks.circuit_breaker.cooldown_seconds` | `CBOX_ID_WEBHOOKS_CB_COOLDOWN_SECONDS` | `300` | How long an open breaker skips the endpoint before admitting a probe. |
+| `cbox-id.oauth.backchannel_logout.max_attempts` | `CBOX_ID_BACKCHANNEL_LOGOUT_MAX_ATTEMPTS` | `5` | Delivery attempts per logout token before the failure is audited and dropped. |
+| `cbox-id.oauth.backchannel_logout.timeout` | `CBOX_ID_BACKCHANNEL_LOGOUT_TIMEOUT` | `5` | Seconds per delivery attempt. |
+| `cbox-id.oauth.backchannel_logout.connect_timeout` | `CBOX_ID_BACKCHANNEL_LOGOUT_CONNECT_TIMEOUT` | `3` | Seconds to establish the connection. |
+| `cbox-id.oauth.backchannel_logout.verify_url` | `CBOX_ID_BACKCHANNEL_LOGOUT_VERIFY_URL` | `true` | The SSRF guard on delivery. Off only to reach an internal host you own. |
 | `cbox-id.prune.schedule` | `CBOX_ID_PRUNE_SCHEDULE` | `true` | Register the daily sweep. |
 | `cbox-id.prune.time` | `CBOX_ID_PRUNE_TIME` | `03:10` | Time of day for the sweep (`HH:MM`; a malformed value falls back to `03:10`). |
 | `cbox-id.prune.chunk` | `CBOX_ID_PRUNE_CHUNK` | `1000` | Rows deleted per statement. `--chunk` overrides per run. |
@@ -408,6 +422,7 @@ it yourself, disable `webhooks.schedule_retries` and call
 | `cbox-id.prune.retention_days.usage_metered_events` | `CBOX_ID_PRUNE_USAGE_MARKERS` | `30` | Days a metering dedup marker is kept. |
 | `cbox-id.prune.retention_days.webhook_deliveries` | `CBOX_ID_PRUNE_WEBHOOK_DELIVERIES` | `30` | Days a terminal delivery row is kept. |
 | `cbox-id.prune.retention_days.provisioning_operations` | `CBOX_ID_PRUNE_PROVISIONING_OPERATIONS` | `30` | Days a terminal provisioning operation is kept. |
+| `cbox-id.prune.retention_days.oauth_session_participants` | `CBOX_ID_PRUNE_SESSION_PARTICIPANTS` | `30` | Days a back-channel logout participation is kept once its session has ended. |
 | `cbox-id.audit.checkpoint.schedule` | `CBOX_ID_AUDIT_CHECKPOINT_SCHEDULE` | **`false`** | Register the daily audit-checkpoint pass. Off by default because the first signature is a one-way door — see [above](#why-the-schedule-ships-disabled). |
 | `cbox-id.audit.checkpoint.time` | `CBOX_ID_AUDIT_CHECKPOINT_TIME` | `02:40` | Time of day for the checkpoint pass (`HH:MM`; a malformed value falls back to `02:40`). |
 | `cbox-id.provisioning.schedule` | `CBOX_ID_PROVISIONING_SCHEDULE` | `true` | Register the per-minute outbound-SCIM drain. |

@@ -67,6 +67,34 @@ it('resolves a live token and stamps last_used_at', function (): void {
         ->and($resolved?->last_used_at)->not->toBeNull();
 });
 
+it('stamps last_used_at at most once a minute, however often the token is resolved', function (): void {
+    $org = memberOrg();
+    $tokens = app(UserApiTokens::class);
+    $issued = $tokens->issue($org->id, 'user_1', 'CI token', TokenScope::Read);
+    $lastUsed = fn (): mixed => DB::table('user_api_tokens')->where('id', $issued->token->id)->value('last_used_at');
+
+    $this->freezeSecond();
+    $tokens->resolve($issued->plaintext);
+    $first = $lastUsed();
+
+    $this->travel(30)->seconds();
+    $writes = 0;
+    DB::listen(function ($query) use (&$writes): void {
+        $writes += str_starts_with(strtolower($query->sql), 'update') ? 1 : 0;
+    });
+    $tokens->resolve($issued->plaintext);
+
+    expect($first)->not->toBeNull()
+        ->and($lastUsed())->toBe($first)
+        ->and($writes)->toBe(0);
+
+    $this->travel(31)->seconds();
+    $tokens->resolve($issued->plaintext);
+
+    expect($lastUsed())->not->toBe($first)
+        ->and($writes)->toBe(1);
+});
+
 it('resolves nothing for a wrong prefix, an unknown token, a revoked token, or an expired token', function (): void {
     $org = memberOrg();
     $tokens = app(UserApiTokens::class);

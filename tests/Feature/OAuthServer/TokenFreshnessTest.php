@@ -107,7 +107,7 @@ it('shows nothing for an application whose access was withdrawn', function (): v
 
 /**
  * THE WHOLE POINT OF SHOWING SOMEBODY THEIR APPLICATIONS is that they can remove ONE.
- * `revokeForUser()` signs them out of everything, which is the right answer to "my account
+ * `withdrawAccess()` signs them out of everything, which is the right answer to "my account
  * is compromised" and the wrong answer to "I do not use that CLI any more".
  */
 it('withdraws one application without touching the others', function (): void {

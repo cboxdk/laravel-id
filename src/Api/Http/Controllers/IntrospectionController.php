@@ -87,6 +87,14 @@ class IntrospectionController
             $body['aud'] = $aud;
         }
 
+        // RFC 8693 §4.1: a support session's token is held by somebody acting for its
+        // subject, and a resource server that introspects rather than decoding the JWT must
+        // learn that as surely as one that reads the claim.
+        $actor = $result->actorSubject();
+        if ($actor !== null) {
+            $body['act'] = ['sub' => $actor];
+        }
+
         return $body;
     }
 }

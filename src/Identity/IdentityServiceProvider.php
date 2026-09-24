@@ -20,6 +20,7 @@ use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\PasswordReset;
 use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\SignedInSession;
 use Cbox\Id\Identity\Contracts\SignedInSubject;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\UserImport;
@@ -96,6 +97,9 @@ class IdentityServiceProvider extends ServiceProvider
         // Laravel's guard, which is right for a host that uses it and wrong in silence
         // for one that does not — see SignedInSubject on what that silence cost.
         $this->app->singleton(SignedInSubject::class, GuardSignedInSubject::class);
+        // Silent by default — the package cannot know where a host keeps the session id.
+        // See SignedInSession on what binding it buys RP-initiated logout.
+        $this->app->singleton(SignedInSession::class, UnknownSignedInSession::class);
 
         $this->app->singleton(TotpAuthenticator::class);
         $this->app->singleton(Mfa::class, MfaService::class);

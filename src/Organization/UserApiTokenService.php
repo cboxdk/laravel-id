@@ -20,6 +20,7 @@ use Cbox\Id\Organization\Models\UserApiToken;
 use Cbox\Id\Organization\ValueObjects\IssuedUserApiToken;
 use Cbox\Id\Organization\ValueObjects\ResourceFamilies;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -46,6 +47,14 @@ class UserApiTokenService implements UserApiTokens
 
     /** A token issued without an explicit expiry is never open-ended. */
     private const DEFAULT_TTL_DAYS = 90;
+
+    /**
+     * How long a `last_used_at` write is skipped after the last one, in seconds — the same
+     * window as customer API keys. resolve() runs on every authenticated request; the
+     * column tells a holder whether a token is still wired into something, and a write per
+     * request turned a read path into a write path on the busiest row in the table.
+     */
+    private const TOUCH_THROTTLE_SECONDS = 60;
 
     public function __construct(
         private readonly ResourceAccess $access,
@@ -122,10 +131,7 @@ class UserApiTokenService implements UserApiTokens
             return null;
         }
 
-        $this->tenant()->runAs(
-            GenericTenant::of($token->organization_id),
-            fn () => $token->forceFill(['last_used_at' => now()])->save(),
-        );
+        $this->touch($token);
 
         return $token;
     }
@@ -158,6 +164,33 @@ class UserApiTokenService implements UserApiTokens
                 ->orderByDesc('id')
                 ->get(),
         );
+    }
+
+    /**
+     * Stamp `last_used_at`, at most once per throttle window. The window is part of the
+     * UPDATE's own WHERE clause, so a burst of concurrent requests writes the row once
+     * rather than racing to write it many times; the returned model reflects the stamp
+     * only when this call made it.
+     */
+    private function touch(UserApiToken $token): void
+    {
+        if ($token->last_used_at !== null && $token->last_used_at->diffInSeconds(now()) < self::TOUCH_THROTTLE_SECONDS) {
+            return;
+        }
+
+        $now = now();
+
+        $written = $this->tenant()->runAs(GenericTenant::of($token->organization_id), fn (): int => UserApiToken::query()
+            ->whereKey($token->id)
+            ->where(fn (Builder $query) => $query
+                ->whereNull('last_used_at')
+                ->orWhere('last_used_at', '<=', $now->copy()->subSeconds(self::TOUCH_THROTTLE_SECONDS)))
+            ->update(['last_used_at' => $now]));
+
+        if ($written > 0) {
+            $token->last_used_at = $now;
+            $token->syncOriginalAttribute('last_used_at');
+        }
     }
 
     private function hash(string $plaintext): string

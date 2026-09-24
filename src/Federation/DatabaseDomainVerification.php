@@ -14,6 +14,8 @@ use Cbox\Id\Federation\Models\VerifiedDomain;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 
 /**
  * Database + DNS-backed domain verification. Lookups run under the environment
@@ -22,10 +24,14 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
  */
 class DatabaseDomainVerification implements DomainVerification
 {
+    /** The actions that are also webhook events (see the catalogue). */
+    private const ANNOUNCED = ['domain.added', 'domain.verified', 'domain.removed'];
+
     public function __construct(
         private readonly DnsResolver $dns,
         private readonly Connections $connections,
         private readonly AuditLog $audit,
+        private readonly EventBus $events,
     ) {}
 
     public function add(string $organizationId, string $domain): VerifiedDomain
@@ -178,6 +184,15 @@ class DatabaseDomainVerification implements DomainVerification
      */
     private function record(string $action, VerifiedDomain $domain, array $context): void
     {
+        // The three catalogued changes are webhook events too. They were recorded here
+        // and never put on the bus, so a subscriber to `domain.verified` — the one that
+        // tells an app a customer's SSO domain is live — received nothing, and neither did
+        // the usage meter that counts it. Capture toggles stay audit-only: they are not
+        // in the catalogue.
+        if (in_array($action, self::ANNOUNCED, true)) {
+            $this->events->emit(new DomainEvent($action, ['id' => $domain->id] + $context, $domain->organization_id));
+        }
+
         $this->audit->record(new AuditEvent(
             action: $action,
             actorType: ActorType::User,

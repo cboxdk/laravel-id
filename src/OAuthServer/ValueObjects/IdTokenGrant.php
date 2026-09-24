@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
+use Cbox\Id\OAuthServer\Support\SessionIdentifier;
+
 /**
  * Everything an ID Token is minted from, independent of which grant produced it.
  *
@@ -33,9 +35,34 @@ readonly class IdTokenGrant
         public ?string $nonce = null,
         public ?int $authTime = null,
         public array $amr = [],
+
+        /**
+         * The sign-in session behind this identity, or null when none was recorded. The
+         * ID Token carries it as `sid` — derived, never the raw id; see {@see sid()}.
+         */
+        public ?string $sessionId = null,
+
+        /**
+         * Who is really holding the token, for a support session's grant — carried into
+         * the ID Token's `act` so an app that authenticates the ID Token sees it too.
+         */
+        public ?ActingParty $actor = null,
+
+        /** A unix time the ID Token must not outlive (a support session's end). */
+        public ?int $notAfter = null,
     ) {}
 
-    public static function fromAuthorization(AuthorizedGrant $grant): self
+    /**
+     * The OIDC `sid` for this grant's session (Back-Channel Logout 1.0 §2.1), or null.
+     */
+    public function sid(): ?string
+    {
+        return $this->sessionId !== null && $this->sessionId !== ''
+            ? SessionIdentifier::sid($this->sessionId)
+            : null;
+    }
+
+    public static function fromAuthorization(AuthorizedGrant $grant, ?int $notAfter = null): self
     {
         return new self(
             userId: $grant->userId,
@@ -44,6 +71,9 @@ readonly class IdTokenGrant
             nonce: $grant->nonce,
             authTime: $grant->authTime,
             amr: $grant->amr,
+            sessionId: $grant->sessionId,
+            actor: $grant->actor,
+            notAfter: $notAfter,
         );
     }
 
@@ -78,6 +108,10 @@ readonly class IdTokenGrant
             nonce: null,
             authTime: $grant->authTime,
             amr: $grant->amr,
+            // `sid` DOES carry over: the refreshed token describes the same sign-in
+            // session, and a relying party that matched the first one's `sid` to its own
+            // session must find the same value on the next.
+            sessionId: $grant->sessionId,
         );
     }
 }

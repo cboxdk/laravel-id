@@ -67,6 +67,19 @@ return [
     ],
 
     /*
+     * Customer API keys — keys an app's end-customers mint for THAT app's API, verified
+     * by the app at `POST /oauth/api-keys/verify` with its own client credentials.
+     *
+     * `verify_per_minute` throttles that endpoint per caller IP. Verification is on the
+     * app's request path, so this is deliberately generous; an app that needs more should
+     * cache a verification for a few seconds rather than raise it without limit — the
+     * cache length is then how long a revoked key keeps working.
+     */
+    'customer_api_keys' => [
+        'verify_per_minute' => env('CBOX_ID_API_KEY_VERIFY_PER_MINUTE', 600),
+    ],
+
+    /*
      * Passkeys / WebAuthn.
      *
      * `rp_id` + `origin` are an OPTIONAL PIN, not a requirement. Left unset (the default)
@@ -417,8 +430,11 @@ return [
      *                 deployments that expect unknown clients.
      *
      * allowed_scopes limits what a dynamically registered client may request; a
-     * requested scope outside this list is dropped. grant_types listed here are
-     * the only ones a dynamic client may be granted.
+     * requested scope outside this list is dropped. It governs scopes no API owns:
+     * a scope a registered API owns is accepted when the API is environment-owned
+     * and the scope tenant-requestable, and refused otherwise — listing it here
+     * cannot widen that. grant_types listed here are the only ones a dynamic client
+     * may be granted.
      */
     /*
     |---------------------------------------------------------------------------
@@ -545,6 +561,26 @@ return [
         ],
 
         /*
+         * OpenID Connect Back-Channel Logout 1.0: when a session ends, POST a signed
+         * logout token to every application it signed the person in to that registered a
+         * `backchannel_logout_uri`. Delivery is a queued job — run a queue worker.
+         *
+         * `verify_url` is the SSRF guard on the delivery: private, loopback, link-local
+         * and cloud-metadata addresses are refused and the connection is pinned to the
+         * addresses checked. Keep it on anywhere a tenant can register a client; switch it
+         * off only to reach an internal host you own (or `http://localhost` in development).
+         * `timeout` / `connect_timeout` are per attempt, in seconds; `max_attempts` is how
+         * many tries before the failure is recorded in the audit trail and dropped
+         * (backoff: 10s, 1m, 5m, 15m, 15m…).
+         */
+        'backchannel_logout' => [
+            'verify_url' => env('CBOX_ID_BACKCHANNEL_LOGOUT_VERIFY_URL', true),
+            'timeout' => env('CBOX_ID_BACKCHANNEL_LOGOUT_TIMEOUT', 5),
+            'connect_timeout' => env('CBOX_ID_BACKCHANNEL_LOGOUT_CONNECT_TIMEOUT', 3),
+            'max_attempts' => env('CBOX_ID_BACKCHANNEL_LOGOUT_MAX_ATTEMPTS', 5),
+        ],
+
+        /*
          * Hybrid entitlements: embed the coarse, Claims-mode entitlements in the
          * access token (`ent` claim) so resource servers can gate statelessly.
          * Instant-critical entitlements stay DecisionApi (live via /oauth/decisions)
@@ -561,6 +597,35 @@ return [
          * Default 900s (15 min).
          */
         'access_token_ttl' => env('CBOX_ID_ACCESS_TOKEN_TTL', 900),
+
+        /*
+         * The longest access-token lifetime a single CLIENT may ask for, in seconds
+         * (its `access_token_ttl`). A value above this is refused when a client is
+         * registered or updated, and a client already above it is clamped to it at
+         * minting — so lowering the ceiling takes effect on the next token. The
+         * deployment default above is not clamped. Default 86400 (one day).
+         */
+        'max_access_token_ttl' => env('CBOX_ID_MAX_ACCESS_TOKEN_TTL', 86400),
+
+        /*
+         * Client secret rotation. `max_rotation_grace` is the longest a replaced
+         * secret may keep working after a rotation, in seconds — the overlap in
+         * which deployments move to the new secret. Bounded so a rotation cannot
+         * leave the old credential alive indefinitely. Default 2592000 (30 days).
+         */
+        'client_secrets' => [
+            'max_rotation_grace' => env('CBOX_ID_CLIENT_SECRET_MAX_ROTATION_GRACE', 2592000),
+        ],
+
+        /*
+         * Support sessions (RFC 8693 `act`): staff acting as a customer's user in one
+         * app. `max_ttl` is the longest a session — and every token minted for it — may
+         * live, in seconds. It can only LOWER the one-hour ceiling, which is fixed in
+         * code; a larger value is treated as 3600, and nothing goes below 60.
+         */
+        'support_sessions' => [
+            'max_ttl' => env('CBOX_ID_SUPPORT_SESSION_MAX_TTL', 3600),
+        ],
 
         /*
          * `POST /oauth/decisions` — the authorization decision endpoint.
@@ -812,6 +877,7 @@ return [
             'usage_metered_events' => env('CBOX_ID_PRUNE_USAGE_MARKERS', 30),
             'webhook_deliveries' => env('CBOX_ID_PRUNE_WEBHOOK_DELIVERIES', 30),
             'provisioning_operations' => env('CBOX_ID_PRUNE_PROVISIONING_OPERATIONS', 30),
+            'oauth_session_participants' => env('CBOX_ID_PRUNE_SESSION_PARTICIPANTS', 30),
         ],
     ],
 

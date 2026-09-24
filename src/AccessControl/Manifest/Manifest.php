@@ -41,7 +41,7 @@ readonly class Manifest
     {
         $canonical = [
             'permissions' => array_map(
-                static fn (DeclaredPermission $p): array => ['key' => $p->key, 'description' => $p->description],
+                fn (DeclaredPermission $p): array => ['key' => $p->key, 'description' => $p->description] + $this->selfServeMarker($p),
                 $this->sortedPermissions(),
             ),
             'roles' => array_map(
@@ -50,12 +50,56 @@ readonly class Manifest
                     'name' => $r->name,
                     'description' => $r->description,
                     'permissions' => $this->sortedStrings($r->permissions),
-                ],
+                ] + $this->staffMarker($r),
                 $this->sortedRoles(),
             ),
         ];
 
         return hash('sha256', (string) json_encode($canonical));
+    }
+
+    /**
+     * A staff-only role's marker in the canonical form — present ONLY when the role is
+     * staff-only.
+     *
+     * It has to be in the checksum at all, because an unchanged checksum skips the sync:
+     * an app that marks its "Support" role staff-only in a new deploy would otherwise
+     * keep it assignable by every tenant, silently, for as long as nothing else in the
+     * manifest changed.
+     *
+     * And it is present only when FALSE because the canonical form is a cross-SDK
+     * contract (tests/Fixtures/AccessControl/manifest_hash.json, asserted by id-js,
+     * id-python and id-go too). Every manifest that declares no staff role — every
+     * manifest that exists today — hashes to exactly the bytes it always has, so no
+     * SDK's checksum drifts and no app re-syncs for nothing.
+     *
+     * @return array{tenant_assignable?: false}
+     */
+    private function staffMarker(DeclaredRole $role): array
+    {
+        return $role->tenantAssignable ? [] : ['tenant_assignable' => false];
+    }
+
+    /**
+     * A tenant-assignable permission's marker in the canonical form — present ONLY when the
+     * permission is offered to tenants.
+     *
+     * The same reason as {@see staffMarker()}: flipping a permission to self-serve (or
+     * back) in a new deploy changed nothing the checksum saw, so the sync was skipped and
+     * the flag never reached the catalogue.
+     *
+     * The OPPOSITE polarity to the role marker, deliberately. A role is tenant-assignable
+     * unless declared otherwise, so its unmarked state is `true`; a permission is internal
+     * unless the manifest opts it in (see {@see ManifestParser}), so ITS unmarked state is
+     * `false`. Marking the non-default in each case is what keeps every manifest that never
+     * mentions the flag — nearly all of them — hashing to the bytes it always has. Marking
+     * `false` here would have re-hashed every manifest in existence.
+     *
+     * @return array{tenant_assignable?: true}
+     */
+    private function selfServeMarker(DeclaredPermission $permission): array
+    {
+        return $permission->tenantAssignable ? ['tenant_assignable' => true] : [];
     }
 
     /**

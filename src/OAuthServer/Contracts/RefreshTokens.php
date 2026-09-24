@@ -20,11 +20,13 @@ interface RefreshTokens
      * `$authTime` and `$amr` describe the login this family descends from, and
      * are recorded so a refreshed ID Token can still describe THAT
      * authentication (OIDC Core §12.2) rather than the moment it was refreshed.
+     * `$sessionId` is the sign-in session it came from, for the same reason: a refreshed
+     * ID Token keeps the `sid` of the first.
      *
      * @param  list<string>  $scopes
      * @param  list<string>  $amr
      */
-    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = []): string;
+    public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = [], ?string $sessionId = null): string;
 
     /**
      * Rotate a presented refresh token: validate it, consume it, and mint its
@@ -52,8 +54,27 @@ interface RefreshTokens
      * or permission changes, revoke the user's refresh tokens so their next refresh
      * forces re-authentication and re-mints a token with the new claims, instead of
      * riding a stale grant until it expires. Returns the number revoked.
+     *
+     * NO APPLICATION IS SIGNED OUT. This is a claims-freshness lever, called on every role
+     * assignment and unassignment: the person is still who they were and still belongs
+     * where they did, so their application sessions stay up and the next refresh (or
+     * sign-in) carries the new roles. Telling every application to end its session here
+     * would sign people out of everything whenever an administrator adjusted a role.
+     * When the person's access is actually OVER, call {@see withdrawAccess()}.
      */
     public function revokeForUser(string $userId, ?string $organizationId = null): int;
+
+    /**
+     * The person's access is over — deactivated, removed from the organization — so revoke
+     * their refresh tokens (optionally only in one organization) AND tell the applications
+     * that held them to end the sessions they keep for the person (OIDC Back-Channel
+     * Logout). A revoked grant behind a live application session is the half of
+     * revocation the person cannot see. Returns the number of refresh tokens revoked.
+     *
+     * The applications are told even when no refresh token was live: a client that never
+     * asked for `offline_access` holds none and still signed the person in.
+     */
+    public function withdrawAccess(string $userId, ?string $organizationId = null): int;
 
     /**
      * Every application this person has a live grant to, one row per client.
@@ -72,9 +93,10 @@ interface RefreshTokens
      * Withdraw one application's access, leaving every other grant alone.
      *
      * The whole point of showing somebody their connected applications is that they can
-     * remove ONE — `revokeForUser()` signs them out of everything, which is the right
+     * remove ONE — `withdrawAccess()` signs them out of everything, which is the right
      * answer to "my account is compromised" and the wrong answer to "I do not use that
-     * CLI any more".
+     * CLI any more". That one application is told to end its sessions for the user
+     * (OIDC Back-Channel Logout); no other is.
      *
      * @return int how many live grants were withdrawn
      */

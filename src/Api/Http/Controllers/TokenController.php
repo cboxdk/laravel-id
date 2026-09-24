@@ -15,6 +15,7 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
+use Cbox\Id\OAuthServer\Contracts\SupportSessions;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
@@ -27,15 +28,20 @@ use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\DeviceExpired;
 use Cbox\Id\OAuthServer\Exceptions\DeviceSlowDown;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
+use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
 use Cbox\Id\OAuthServer\ValueObjects\TokenExchangeRequest;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -67,6 +73,8 @@ class TokenController
         private readonly Organizations $organizations,
         private readonly TokenExchange $exchange,
         private readonly AccessChecker $access,
+        private readonly Memberships $memberships,
+        private readonly SupportSessions $supportSessions,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -99,6 +107,10 @@ class TokenController
         } catch (ActionDenied) {
             // A TokenMinting inline hook vetoed issuance (fires on every grant).
             return $this->error('access_denied', 400);
+        } catch (InvalidAudience $e) {
+            // The requested scopes and `resource` do not fit the registered APIs (fires on
+            // every grant — the issuer resolves the audience for all of them).
+            return $this->error($e->error, 400, $e->getMessage());
         }
     }
 
@@ -203,17 +215,26 @@ class TokenController
         }
 
         $resource = $grant->resource ?? $requested;
+
+        if ($grant->actor !== null) {
+            return $this->actedAuthorizationCode($client, $grant, $grant->actor, $resource, $dpopJkt);
+        }
+
         $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt);
 
         // A refresh token is issued only when the client asked for offline access.
         // If this token exchange was DPoP-bound, bind the refresh token to the same
         // key (RFC 9449 §5) so rotation demands proof of possession.
+        //
+        // It records what the access token was GRANTED — its scopes and resolved audience
+        // — not what was asked for, so a refresh re-mints exactly that and never more.
         $refresh = in_array('offline_access', $grant->scopes, true)
             ? $this->refreshTokens->issue(
-                $client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt,
+                $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 // The login this family descends from, so a refreshed ID Token can
-                // describe THAT authentication rather than the refresh.
-                $grant->authTime, $grant->amr,
+                // describe THAT authentication rather than the refresh — and the
+                // session, so it carries the same `sid`.
+                $grant->authTime, $grant->amr, $grant->sessionId,
             )
             : null;
 
@@ -221,6 +242,44 @@ class TokenController
             $access,
             $this->idTokenIfOpenId($client, IdTokenGrant::fromAuthorization($grant), $access),
             $refresh,
+            $grant->scopes,
+        );
+    }
+
+    /**
+     * A support session's code (RFC 8693 `act`): somebody else is holding this person's
+     * tokens. Kept apart from the ordinary branch above so its three differences are in
+     * one place and none of them can be lost in an edit to the common path.
+     *
+     * 1. The SESSION IS RE-READ, not trusted from the code. A code minted a minute ago
+     *    names a session that may have ended since, and the session must still match the
+     *    code's actor, subject and client — a code is a pointer to the authority, never
+     *    the authority itself.
+     * 2. NO REFRESH TOKEN, whatever the scopes say. A refresh token is how access outlives
+     *    the moment it was granted in, which is exactly what a support session must not.
+     * 3. NOTHING OUTLIVES THE SESSION: the access token and the ID Token both expire no
+     *    later than it does, and both carry `act`.
+     */
+    private function actedAuthorizationCode(Client $client, AuthorizedGrant $grant, ActingParty $actor, ?string $resource, ?string $dpopJkt): JsonResponse
+    {
+        $session = $this->supportSessions->active($actor->supportSessionId);
+
+        if ($session === null
+            || ! hash_equals($session->actor_id, $actor->subject)
+            || ! hash_equals($session->target_user_id, $grant->userId)
+            || ! hash_equals($session->client_id, $client->client_id)
+            || $session->organization_id !== $grant->organizationId) {
+            return $this->error('invalid_grant', 400, 'the support session this code was issued for has ended');
+        }
+
+        $scopes = array_values(array_filter($grant->scopes, fn (string $scope): bool => $scope !== 'offline_access'));
+
+        $access = $this->issuer->issueActing($client, $grant->userId, $grant->organizationId, $scopes, $actor, $session->expires_at, $resource, $dpopJkt);
+
+        return $this->tokenResponse(
+            $access,
+            $this->idTokenIfOpenId($client, IdTokenGrant::fromAuthorization($grant, $session->expires_at->getTimestamp()), $access),
+            null,
             $grant->scopes,
         );
     }
@@ -275,7 +334,7 @@ class TokenController
         // captured. Better absent than invented.
         $refresh = in_array('offline_access', $grant->scopes, true)
             ? $this->refreshTokens->issue(
-                $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+                $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
             )
             : null;
 
@@ -341,7 +400,7 @@ class TokenController
         // strictly more honest than one that omits them.
         $refresh = in_array('offline_access', $grant->scopes, true)
             ? $this->refreshTokens->issue(
-                $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+                $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 $grant->authTime, $grant->amr,
             )
             : null;
@@ -448,7 +507,7 @@ class TokenController
             //
             // Deployments that set nothing keep the same 900 they had, because
             // that is what the deployment default already is.
-            'exp' => $now + $this->idTokenTtl($client),
+            'exp' => $this->idTokenExpiry($now, $client, $grant),
             // OIDC Core 3.1.3.6: binds the id_token to the issued access token.
             'at_hash' => $this->atHash($access->token),
         ];
@@ -459,6 +518,15 @@ class TokenController
             $orgName = $this->organizations->find($grant->organizationId)?->name;
             if (is_string($orgName) && $orgName !== '') {
                 $claims['org_name'] = $orgName;
+            }
+
+            // The same membership tier the access token carries, for a relying party that
+            // authenticates the ID token. Read live here rather than copied from the access
+            // token: both are minted in this request, from the same row.
+            $tier = $this->memberships->activeRole($grant->organizationId, $grant->userId);
+
+            if ($tier !== null) {
+                $claims['org_role'] = $tier->value;
             }
         }
 
@@ -487,10 +555,27 @@ class TokenController
             }
         }
 
+        // RFC 8693 §4.1: a support session's ID Token names who is really holding it, the
+        // same `act` the access token carries — an app that authenticates the ID Token
+        // must be able to see it too.
+        if ($grant->actor !== null) {
+            $claims['act'] = $grant->actor->claim();
+        }
+
         // OIDC Core 3.1.3.6: echo the request nonce so the client can bind the
         // id_token to its authorization request and detect replay.
         if ($grant->nonce !== null) {
             $claims['nonce'] = $grant->nonce;
+        }
+
+        // OIDC Back-Channel Logout 1.0 §2.1: the sign-in session, so the relying party
+        // can match a later logout token to the session it created. Only when the host
+        // said which session the person approved from; a grant with none carries no `sid`
+        // rather than an invented one no logout could ever match.
+        $sid = $grant->sid();
+
+        if ($sid !== null) {
+            $claims['sid'] = $sid;
         }
 
         // Authentication context, for the client's step-up / re-auth decisions.
@@ -529,15 +614,17 @@ class TokenController
      */
     private function idTokenTtl(Client $client): int
     {
-        $ttl = $client->access_token_ttl;
+        return AccessTokenLifetime::for($client);
+    }
 
-        if ($ttl !== null && $ttl > 0) {
-            return $ttl;
-        }
+    /**
+     * The ID Token's `exp`: the client's lifetime, cut short at a support session's end.
+     */
+    private function idTokenExpiry(int $now, Client $client, IdTokenGrant $grant): int
+    {
+        $expiry = $now + $this->idTokenTtl($client);
 
-        $default = config('cbox-id.oauth.access_token_ttl', 900);
-
-        return is_numeric($default) ? (int) $default : 900;
+        return $grant->notAfter === null ? $expiry : min($expiry, $grant->notAfter);
     }
 
     private function atHash(string $accessToken): string

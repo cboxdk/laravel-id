@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\Contracts;
 
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
+use DateTimeInterface;
 
 interface TokenIssuer
 {
@@ -28,4 +30,24 @@ interface TokenIssuer
      * @param  string|null  $dpopJkt  RFC 9449 DPoP binding (see above)
      */
     public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken;
+
+    /**
+     * A token for a user that somebody ELSE is holding — a support session (RFC 8693).
+     *
+     * The same token {@see issueForUser()} mints, plus the `act` claim naming the actor,
+     * with a lifetime that never runs past `$notAfter` (the session's end), and recorded
+     * against the session so ending it revokes the token.
+     *
+     * @param  list<string>  $scopes
+     */
+    public function issueActing(
+        Client $client,
+        string $userId,
+        ?string $organizationId,
+        array $scopes,
+        ActingParty $actor,
+        DateTimeInterface $notAfter,
+        ?string $resource = null,
+        ?string $dpopJkt = null,
+    ): IssuedToken;
 }

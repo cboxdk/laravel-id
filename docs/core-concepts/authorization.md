@@ -76,6 +76,13 @@ The subject and org come from introspecting the presented token (deny-by-default
 it is inactive or carries no org). A `client_credentials` token resolves to a
 `service` subject; a user token to a `user` subject.
 
+The same endpoint answers **app-scoped RBAC** questions — "may this person do
+`invoices:approve` in this organization?" — from the roles and permissions an app declared
+in its manifest, with the same resolver that stamps the token's `permissions` claim
+(organization grants, ancestor roll-down and environment-wide grants). An app's backend can
+ask about any member with its own `client_credentials` token and the `decisions:read`
+scope. Request, response and every refusal: [Decisions endpoint](../reference/decisions.md).
+
 ## Freshness — why it's instant
 
 Entitlement reads sit behind a version-tagged cache: the read key embeds the org's

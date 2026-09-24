@@ -42,6 +42,7 @@ enum PrunableTable: string
     case UsageMeteredEvents = 'usage_metered_events';
     case WebhookDeliveries = 'webhook_deliveries';
     case ProvisioningOperations = 'provisioning_operations';
+    case OauthSessionParticipants = 'oauth_session_participants';
 
     /**
      * How long a dead row is kept by default, in days.
@@ -60,7 +61,8 @@ enum PrunableTable: string
             self::DpopProofs, self::ConsumedAssertions, self::OauthAuthorizationCodes => 1,
             self::OauthAccessTokens => 7,
             self::OauthRefreshTokens, self::Events, self::AuthSessions,
-            self::UsageMeteredEvents, self::WebhookDeliveries, self::ProvisioningOperations => 30,
+            self::UsageMeteredEvents, self::WebhookDeliveries, self::ProvisioningOperations,
+            self::OauthSessionParticipants => 30,
         };
     }
 
@@ -140,6 +142,21 @@ enum PrunableTable: string
             self::ProvisioningOperations => $query
                 ->whereIn('status', [OperationStatus::Delivered->value, OperationStatus::Exhausted->value])
                 ->where('updated_at', '<', $cutoff),
+
+            // Dead once the logout it exists for has been sent (`ended_at`), or once the
+            // session it points at can no longer end — expired past the cutoff, or pruned
+            // itself. The `created_at` guard keeps a host that stores sessions somewhere
+            // other than `auth_sessions` from losing every live row on the first sweep.
+            self::OauthSessionParticipants => $query->where(fn (Builder $dead) => $dead
+                ->where(fn (Builder $ended) => $ended
+                    ->whereNotNull('ended_at')
+                    ->where('ended_at', '<', $cutoff))
+                ->orWhere(fn (Builder $orphaned) => $orphaned
+                    ->where('created_at', '<', $cutoff)
+                    ->whereNotExists(fn (Builder $session) => $session
+                        ->from('auth_sessions')
+                        ->whereColumn('auth_sessions.id', 'oauth_session_participants.session_id')
+                        ->where('auth_sessions.expires_at', '>=', $cutoff)))),
         };
     }
 }

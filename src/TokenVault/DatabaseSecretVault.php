@@ -8,9 +8,12 @@ use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\TokenVault\Contracts\SecretVault;
+use Cbox\Id\TokenVault\Enums\VaultOwnerType;
 use Cbox\Id\TokenVault\Exceptions\LeaseDenied;
 use Cbox\Id\TokenVault\Exceptions\SecretNotFound;
 use Cbox\Id\TokenVault\Models\VaultGrant;
@@ -48,6 +51,7 @@ class DatabaseSecretVault implements SecretVault
         private readonly SecretBox $secretBox,
         private readonly AuditLog $audit,
         private readonly int $defaultLeaseTtlSeconds,
+        private readonly EventBus $events,
     ) {}
 
     public function store(
@@ -129,6 +133,8 @@ class DatabaseSecretVault implements SecretVault
         $secret->revoked_at = now();
         $secret->save();
 
+        $this->announce('vault.secret.revoked', $secret, ['secret_id' => $secret->id, 'provider' => $secret->provider]);
+
         $this->audit->record(new AuditEvent(
             action: 'vault.secret.revoked',
             actorType: ActorType::System,
@@ -165,6 +171,8 @@ class DatabaseSecretVault implements SecretVault
         $grant->revoked_at = null;
         $grant->save();
 
+        $this->announce('vault.grant.created', $secret, ['secret_id' => $secretId, 'client_id' => $clientId, 'max_ttl_seconds' => $maxTtlSeconds]);
+
         $this->audit->record(new AuditEvent(
             action: 'vault.grant.created',
             actorType: ActorType::System,
@@ -182,7 +190,9 @@ class DatabaseSecretVault implements SecretVault
 
         // Resolve the secret under the caller's own ownership first: revoking a grant on
         // a secret you do not own is another tenant's business.
-        if ($this->ownedSecret($secretId, $owner) === null) {
+        $secret = $this->ownedSecret($secretId, $owner);
+
+        if ($secret === null) {
             return;
         }
 
@@ -198,6 +208,8 @@ class DatabaseSecretVault implements SecretVault
 
         $grant->revoked_at = now();
         $grant->save();
+
+        $this->announce('vault.grant.revoked', $secret, ['secret_id' => $secretId, 'client_id' => $clientId]);
 
         $this->audit->record(new AuditEvent(
             action: 'vault.grant.revoked',
@@ -278,6 +290,21 @@ class DatabaseSecretVault implements SecretVault
      * indistinguishable from a missing one: callers learn nothing about what exists
      * outside their own scope. A null owner addresses only unowned (platform) secrets.
      */
+    /**
+     * Put a vault change on the event bus, for the webhooks catalogued for it — which were
+     * recorded on the audit trail and never emitted, so a subscriber received nothing. The
+     * payload names the secret and the client, never the credential. A secret an
+     * organization owns is announced to that organization's subscribers.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function announce(string $type, VaultSecret $secret, array $payload): void
+    {
+        $organizationId = $secret->owner_type === VaultOwnerType::Organization->value ? $secret->owner_id : null;
+
+        $this->events->emit(new DomainEvent($type, $payload, $organizationId));
+    }
+
     private function ownedSecret(string $secretId, ?VaultOwner $owner): ?VaultSecret
     {
         return VaultSecret::query()

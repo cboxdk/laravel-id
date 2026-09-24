@@ -19,9 +19,20 @@ How the platform is put together and the ideas you build against:
   above organizations (staging/prod, white-label).
 - **[Authorization & the decision plane](authorization.md)** — live permission and
   entitlement decisions, the hot path, and the token hybrid.
+- **[APIs and scopes](apis-and-scopes.md)** — register the resource servers your
+  tokens are for: who owns each scope, which organizations may request it, and how
+  every token's audience, scope and roles are decided.
+- **[Access token reference](access-tokens.md)** — every claim on an access token and
+  when it is present.
 - **[Organization access](organization-access.md)** — ordered membership roles,
   groups, resource grants with effective-role resolution, and user API tokens
   capped at the issuer's role.
+- **[Membership lifecycle](membership-lifecycle.md)** — joining, leaving,
+  transferring ownership and archiving an organization; the single-owner rule and the
+  events each step emits.
+- **[Customer API keys](customer-api-keys.md)** — keys your app's end-customers mint
+  for YOUR API: bound to one app, capped at the holder's current permissions, and
+  verified by the app with its own client credentials.
 - **[Entitlements & billing](entitlements-and-billing.md)** — capability gates fed by
   your billing engine, never billing state.
 - **[Usage metering](usage-metering.md)** — environment- and org-scoped usage counters
@@ -39,10 +50,16 @@ How the platform is put together and the ideas you build against:
   code safe.
 - **[AI token vault](token-vault.md)** — seal downstream third-party credentials
   and broker short-lived, deny-by-default leased access to autonomous / AI agents.
+- **[OAuth clients (apps)](oauth-clients.md)** — registering apps, overlapping secret
+  rotation, per-app access-token lifetimes, grants, blueprints, and the lifecycle the
+  registry audits for you.
 - **[CIBA backchannel approval](ciba.md)** — OpenID Connect Client-Initiated
   Backchannel Authentication: human-in-the-loop approval for agent actions.
 - **[Access governance](access-governance.md)** — IGA: access-certification
   campaigns and Segregation-of-Duties policies over roles and memberships.
+- **[Staff roles & support access](staff-and-support-access.md)** — roles tenants can
+  never grant, environment-wide grants of one app's role, and support sessions that act
+  as a customer's user with the RFC 8693 `act` claim.
 - **[External actions & inline hooks](external-actions.md)** — synchronous
   extension points that enrich or veto an operation (in-process or external HTTP),
   at token minting, login, registration and password change.
