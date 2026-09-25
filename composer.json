@@ -20,6 +20,7 @@
         "php": "^8.4",
         "ext-openssl": "*",
         "ext-sodium": "*",
+        "cboxdk/laravel-audit-chain": "^0.1",
         "cboxdk/laravel-siem": "^0.1",
         "cboxdk/laravel-ssrf": "^1.1.1",
         "cboxdk/siem": "^0.1",

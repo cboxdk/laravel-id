@@ -32,10 +32,16 @@ not an audited or certified conformance claim.
 ## Tamper-evident audit
 
 - The trail is append-only and hash-chained: `hash = SHA256(canonical(entry) ‖ prev_hash)`.
+  The chain mechanics (append under concurrency, verification, checkpoints, anchoring) come
+  from [`cboxdk/laravel-audit-chain`](https://github.com/cboxdk/laravel-audit-chain); this
+  package supplies the addressing (environment, organization), the tables, the canonical
+  form and the JWT checkpoint signatures.
 - `verifyChain()` detects content tampering, reordering and deletion.
 - Honest scope: this is tamper-**evident**, not tamper-**proof**. `checkpoint()` signs the
   chain head so you can anchor it to an external, append-only store — that's what makes it
-  tamper-resistant against someone who can rewrite the database.
+  tamper-resistant against someone who can rewrite the database. Setting
+  `AUDIT_CHAIN_ANCHOR=filesystem` exports each signed checkpoint to a Laravel disk (such as
+  a locked S3 or R2 bucket); nothing is exported by default.
 - The chain proves *integrity*, not *completeness*. Logging coverage of security-relevant
   actions is a separate obligation.
 - **Streaming the trail to a customer's SIEM** is environment-isolated and carries the

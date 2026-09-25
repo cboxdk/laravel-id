@@ -38,6 +38,7 @@ Pulled in automatically by `composer require cboxdk/laravel-id`:
 | `spomky-labs/cbor-php` | `^3.0` | CBOR decoding for WebAuthn/passkey attestation. |
 | `cboxdk/laravel-siem` | `^0.1` | Delivery engine for SIEM audit streaming. |
 | `cboxdk/siem` | `^0.1` | SIEM payload formats (Splunk HEC, ECS, GELF, CEF). |
+| `cboxdk/laravel-audit-chain` | `^0.1` | The hash-chained audit trail: append, verify, checkpoint, anchoring. |
 | `robrichards/xmlseclibs` | `^3.1.5` | XML-DSig signing for SAML IdP assertions and metadata. |
 
 ## Storage
@@ -110,8 +111,9 @@ add a migration or a concurrent write path.
 to a chain with no rows yet had no anchor to serialise on, so the `FOR UPDATE` looking
 for it matched nothing — which InnoDB answers with a **gap lock** on the
 `(environment_id, scope, sequence)` unique key. MariaDB resolved the pile-up as
-SQLSTATE 40001 (error 1213, deadlock) rather than the duplicate-key error
-`DatabaseAuditLog::record()` is written to absorb, and three attempts is not enough for
+SQLSTATE 40001 (error 1213, deadlock) rather than the duplicate-key error the append
+path (then `DatabaseAuditLog::record()`, now `cboxdk/laravel-audit-chain`'s
+`DatabaseAuditChain::record()`) is written to absorb, and three attempts is not enough for
 eight contenders on one gap: **6 of 800 appends failed**, loudly rather than silently.
 
 Fixed by finding the anchor with a plain read and locking it by **primary key** — an

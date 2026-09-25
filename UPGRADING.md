@@ -18,6 +18,68 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased — the audit chain moves into `cboxdk/laravel-audit-chain`
+
+**No action is required, and nothing about the trail changes.** The hash-chained audit log
+(`src/Kernel/Audit/`) now runs on the new framework package
+[`cboxdk/laravel-audit-chain`](https://github.com/cboxdk/laravel-audit-chain), which
+Composer installs as a dependency. The append path, verification and checkpointing are the
+same code, moved; laravel-id keeps its tables, its columns, its canonical hash form and its
+checkpoint signatures.
+
+- **No migration, no re-chain.** `audit_logs` and `audit_checkpoints` keep every table and
+  column name. Existing rows verify exactly as before and new entries extend them with the
+  hashes the previous release would have computed; existing checkpoints keep verifying.
+  This is pinned by `tests/Feature/Kernel/Audit/GoldenVectors/`, which holds the new code
+  to rows (and signed checkpoints) written by the previous implementation.
+- **No API change.** `AuditLog`, `DatabaseAuditLog` (including `SYSTEM_SCOPE` and
+  `PLATFORM_ENVIRONMENT`), `Checkpointer`, `CheckpointCommand`, the models, value objects,
+  enums, exceptions, `FakeAuditLog` and `InteractsWithAudit` keep their names and
+  signatures. Additive only:
+  - `AuditEntry` and `AuditCheckpoint` now extend the package's `ChainEntry` /
+    `ChainCheckpoint` (still Eloquent models over the same tables).
+  - `CannotAppendToAuditChain` and `CannotCheckpointEmptyScope` now extend the package's
+    `CannotAppendToChain` / `CannotCheckpointEmptyChain`. Both are still
+    `RuntimeException`s, with the same messages; they can now also be caught as the
+    package's `AuditChainException`.
+  - `DatabaseAuditLog`'s constructor gained an optional second parameter
+    (`?CheckpointAnchor $anchor`). It is container-built; a host that constructs it by hand
+    with only the signer keeps working.
+  - `ChainCheckpoint::fromOutcome()`.
+- **New commands, nothing scheduled.** The package registers `audit-chain:checkpoint`,
+  `audit-chain:verify` and `audit-chain:keygen`. laravel-id points the package's contracts
+  at the platform trail, so `audit-chain:verify` verifies every environment's chains
+  (platform plane included) and `audit-chain:checkpoint` is equivalent to
+  `cbox-id:audit:checkpoint`. Neither package schedule is on by default
+  (`audit-chain.checkpoint.schedule`, `audit-chain.verify.schedule`). **Keep using
+  `cbox-id.audit.checkpoint.schedule`** for the checkpoint pass, and do not turn on both:
+  the pass is idempotent, so a double run is harmless but pointless. The one-way-door
+  ordering for the first checkpoint (below, and in docs/operations) is unchanged.
+- **Optional: anchor checkpoints externally.** Platform checkpoints now pass through the
+  package's `CheckpointAnchor`. The default exports nothing (as before). Setting
+  `AUDIT_CHAIN_ANCHOR=filesystem` and `AUDIT_CHAIN_ANCHOR_DISK=<disk>` writes each signed
+  checkpoint to that disk (e.g. an R2 or S3 bucket with a retention lock) — see the
+  package's `docs/cookbook/anchor-checkpoints-to-r2.md`. An anchor failure rolls the
+  checkpoint row back and the pass reports it.
+- **Three fixes to the platform trail's checkpoints** (behaviour changes only where the
+  old behaviour was wrong):
+  - `AuditLog::checkpoint()` with **no environment** in context (the platform plane) used
+    to throw a `QueryException` (`signing_keys.environment_id` NOT NULL). It now signs the
+    `__platform__` chain as the `__platform__` environment — the same key the checkpoint
+    pass uses. The first such call generates that environment's signing key if the pass
+    has never run.
+  - `AuditLog::verifyChain()` with **no environment** used to report a platform chain that
+    the checkpoint pass had signed as `checkpoint signature failed to verify`, although
+    nothing was tampered with. It now verifies with the same `__platform__` keys. If you
+    have alerting on that reason from the platform plane, it was a false positive.
+  - Checkpoint verification now requires the token's `typ` to be
+    `cbox-id.audit.checkpoint`. Every checkpoint laravel-id has signed carries it; a
+    different token signed by the same environment key is now refused
+    (`checkpoint payload does not match its signature`) instead of accepted.
+- **The package's own config does not reach the platform trail.** Its models, tables,
+  partition column, codec and Ed25519 signing key (`audit-chain.*`) are for a host's own
+  use of the package; laravel-id states its tables, codec and JWT signer explicitly.
+
 ## 1.19.0
 
 Six feature sets land together: tenancy context (`org_role`, RBAC decisions, the membership

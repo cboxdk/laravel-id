@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Audit\ValueObjects;
 
+use Cbox\AuditChain\ValueObjects\CheckpointOutcome;
 use Cbox\Id\Kernel\Audit\Checkpointer;
 
 /**
@@ -56,6 +57,23 @@ final readonly class ChainCheckpoint
     public static function failed(string $environmentId, string $scope, int $headSequence, ?int $checkpointedSequence, string $reason): self
     {
         return new self($environmentId, $scope, $headSequence, $checkpointedSequence, null, null, $reason);
+    }
+
+    /**
+     * The platform's reading of one outcome of the audit-chain package's checkpoint
+     * pass: the partition is the environment.
+     */
+    public static function fromOutcome(CheckpointOutcome $outcome): self
+    {
+        return new self(
+            $outcome->key->partition,
+            $outcome->key->scope,
+            $outcome->headSequence,
+            $outcome->checkpointedSequence,
+            $outcome->checkpointId,
+            $outcome->skippedReason,
+            $outcome->failureReason,
+        );
     }
 
     public function wasSkipped(): bool

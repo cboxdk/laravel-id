@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Audit;
 
+use Cbox\AuditChain\Checkpointer as PackageCheckpointer;
+use Cbox\AuditChain\Storage\DatabaseChainInventory;
+use Cbox\AuditChain\ValueObjects\ChainFilter;
+use Cbox\AuditChain\ValueObjects\CheckpointOutcome;
+use Cbox\Id\Kernel\Audit\Chain\AuditLogChain;
+use Cbox\Id\Kernel\Audit\Chain\AuditStorage;
+use Cbox\Id\Kernel\Audit\Chain\EnvironmentChainContext;
 use Cbox\Id\Kernel\Audit\Console\CheckpointCommand;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\ValueObjects\ChainCheckpoint;
-use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
-use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
-use Illuminate\Support\Facades\DB;
-use Throwable;
 
 /**
  * Signs a checkpoint over every audit chain that has advanced since its last one.
@@ -62,17 +65,23 @@ use Throwable;
  * exactly the set of chains that exist, and it includes the platform plane, which
  * has no environment row at all.
  *
+ * ## Where the pass lives
+ *
+ * The pass itself is cboxdk/laravel-audit-chain's {@see PackageCheckpointer}, which
+ * this class drives over the platform's pieces: the {@see AuditLog} it was given (so a
+ * decorated or failing log behaves exactly as before), the `audit_logs` inventory, and
+ * a chain context that re-enters each chain's environment. The outcomes are the same
+ * {@see ChainCheckpoint}s as ever.
+ *
  * @see CheckpointCommand
  */
 class Checkpointer
 {
     /**
-     * Resolves the environment context per call rather than holding it: this is a
-     * singleton, that binding is `scoped`, and a captured one would keep the first
-     * queue job's environment for the life of the process.
+     * The environment context is resolved per call inside {@see EnvironmentChainContext}
+     * rather than held: this is a singleton, that binding is `scoped`, and a captured one
+     * would keep the first queue job's environment for the life of the process.
      */
-    use ResolvesEnvironment;
-
     public function __construct(
         private readonly AuditLog $log,
     ) {}
@@ -86,134 +95,17 @@ class Checkpointer
      */
     public function checkpointAll(bool $dryRun = false, bool $force = false, array $environmentIds = [], array $scopes = []): array
     {
-        $attested = $this->attestedSequences();
+        $context = new EnvironmentChainContext;
+
+        // The platform's own tables, stated rather than resolved: the package's
+        // ChainInventory binding is the host's to change, the platform's trail is not.
+        $inventory = new DatabaseChainInventory(AuditStorage::models());
+
+        $pass = new PackageCheckpointer(new AuditLogChain($this->log, $context), $inventory, $context);
 
         return array_map(
-            function (array $chain) use ($attested, $dryRun, $force): ChainCheckpoint {
-                [$environmentId, $scope, $head] = $chain;
-
-                return $this->checkpointChain(
-                    $environmentId,
-                    $scope,
-                    $head,
-                    $attested[$this->key($environmentId, $scope)] ?? null,
-                    $dryRun,
-                    $force,
-                );
-            },
-            $this->chains($environmentIds, $scopes),
+            static fn (CheckpointOutcome $outcome): ChainCheckpoint => ChainCheckpoint::fromOutcome($outcome),
+            $pass->checkpointAll($dryRun, $force, new ChainFilter($environmentIds, $scopes)),
         );
-    }
-
-    private function checkpointChain(string $environmentId, string $scope, int $head, ?int $attested, bool $dryRun, bool $force): ChainCheckpoint
-    {
-        // Nothing appended since the last checkpoint: another signature over the same
-        // head would attest exactly what the previous one already attests.
-        if (! $force && $attested !== null && $attested >= $head) {
-            return ChainCheckpoint::skipped($environmentId, $scope, $head, $attested, 'already checkpointed at head');
-        }
-
-        if ($dryRun) {
-            return ChainCheckpoint::pending($environmentId, $scope, $head, $attested);
-        }
-
-        try {
-            // Re-enter the chain's own environment: checkpoint() resolves the
-            // environment from context (never from an argument), and the checkpoint row
-            // it writes is environment-owned. Signing env A's chain from env B's
-            // context would either anchor the wrong chain or be refused outright.
-            $checkpoint = $this->environments()->runAs(
-                GenericEnvironment::of($environmentId),
-                fn () => $this->log->checkpoint($scope === DatabaseAuditLog::SYSTEM_SCOPE ? null : $scope),
-            );
-        } catch (Throwable $failure) {
-            // Recorded, not thrown: a deployment has one chain per organization, and a
-            // single unsignable one (a missing signing key for its environment, say)
-            // must not stop every chain after it in the pass. The command prints the
-            // reason and exits non-zero, so it is still loud.
-            return ChainCheckpoint::failed($environmentId, $scope, $head, $attested, $failure::class.': '.$failure->getMessage());
-        }
-
-        return ChainCheckpoint::signed($environmentId, $scope, $checkpoint->up_to_sequence, $attested, $checkpoint->id);
-    }
-
-    /**
-     * Every (environment, scope) chain that has at least one entry, with its head.
-     *
-     * @param  list<string>  $environmentIds
-     * @param  list<string>  $scopes
-     * @return list<array{string, string, int}>
-     */
-    private function chains(array $environmentIds, array $scopes): array
-    {
-        $query = DB::table('audit_logs')
-            ->select('environment_id', 'scope')
-            ->selectRaw('max(sequence) as head_sequence')
-            ->groupBy('environment_id', 'scope')
-            ->orderBy('environment_id')
-            ->orderBy('scope');
-
-        if ($environmentIds !== []) {
-            $query->whereIn('environment_id', $environmentIds);
-        }
-
-        if ($scopes !== []) {
-            $query->whereIn('scope', $scopes);
-        }
-
-        $chains = [];
-
-        foreach ($query->get() as $row) {
-            $environmentId = $row->environment_id ?? null;
-            $scope = $row->scope ?? null;
-            $head = $row->head_sequence ?? null;
-
-            if (! is_string($environmentId) || ! is_string($scope) || ! is_numeric($head)) {
-                continue;
-            }
-
-            $chains[] = [$environmentId, $scope, (int) $head];
-        }
-
-        return $chains;
-    }
-
-    /**
-     * The highest sequence already attested for each chain.
-     *
-     * @return array<string, int>
-     */
-    private function attestedSequences(): array
-    {
-        $rows = DB::table('audit_checkpoints')
-            ->select('environment_id', 'scope')
-            ->selectRaw('max(up_to_sequence) as attested_sequence')
-            ->groupBy('environment_id', 'scope')
-            ->get();
-
-        $attested = [];
-
-        foreach ($rows as $row) {
-            $environmentId = $row->environment_id ?? null;
-            $scope = $row->scope ?? null;
-            $sequence = $row->attested_sequence ?? null;
-
-            if (! is_string($environmentId) || ! is_string($scope) || ! is_numeric($sequence)) {
-                continue;
-            }
-
-            $attested[$this->key($environmentId, $scope)] = (int) $sequence;
-        }
-
-        return $attested;
-    }
-
-    /**
-     * A chain's map key. The separator is a NUL byte because neither an environment
-     * key nor a scope can contain one, so no two chains can ever collide on it.
-     */
-    private function key(string $environmentId, string $scope): string
-    {
-        return $environmentId."\0".$scope;
     }
 }

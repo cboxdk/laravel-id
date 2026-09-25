@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Audit\Exceptions;
 
-use RuntimeException;
+use Cbox\AuditChain\Exceptions\CannotCheckpointEmptyChain;
 
-class CannotCheckpointEmptyScope extends RuntimeException
+/**
+ * A {@see CannotCheckpointEmptyChain} (still a RuntimeException), so it can be caught
+ * either as the platform's exception or as the audit-chain package's.
+ */
+class CannotCheckpointEmptyScope extends CannotCheckpointEmptyChain
 {
     public static function make(string $scope): self
     {
