@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-09-25
+
 ### Changed
 
 - The hash-chained audit log now runs on the new framework package `cboxdk/laravel-audit-chain` (new dependency). The append path (anchor-row serialisation, the duplicate-key / serialisation-failure retry ladder), verification and the checkpoint cross-check moved there unchanged; `DatabaseAuditLog`, `Checkpointer` and `CheckpointCommand` are now thin adapters that keep the platform's addressing (environment, scope), tables (`audit_logs`, `audit_checkpoints`), canonical hash form (`CboxIdEntryCodec`, byte-identical) and JWT checkpoint signatures (`TokenCheckpointSigner`). No migration, no re-chain, no public signature change. Golden vectors written by the previous implementation (`tests/Fixtures/audit/golden-vectors.json`) are verified and reproduced byte for byte by the new one. See [UPGRADING.md](UPGRADING.md).
