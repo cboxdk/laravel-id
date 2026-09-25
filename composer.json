@@ -16,19 +16,6 @@
         "audit"
     ],
     "license": "MIT",
-    "repositories": [
-        {
-            "_comment": "LOCAL DEVELOPMENT ONLY (feat/extract-audit-chain). Resolves cboxdk/laravel-audit-chain from the sibling checkout until v0.1.0 is tagged on Packagist. REMOVE THIS BLOCK BEFORE MERGE.",
-            "type": "path",
-            "url": "../laravel-audit-chain",
-            "options": {
-                "symlink": true,
-                "versions": {
-                    "cboxdk/laravel-audit-chain": "0.1.0"
-                }
-            }
-        }
-    ],
     "require": {
         "php": "^8.4",
         "ext-openssl": "*",
