@@ -341,3 +341,16 @@ it('issues no CIBA refresh token when offline access was not asked for', functio
 
     expect($body['refresh_token'] ?? null)->toBeNull();
 });
+
+it('refuses a binding message too long to show as invalid_binding_message', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
+    $user = $this->makeUser('long@example.test');
+
+    $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid',
+        'login_hint' => $user->id,
+        'binding_message' => str_repeat('x', 256),
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_binding_message');
+});

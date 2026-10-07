@@ -18,7 +18,33 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
-## Unreleased — the audit chain moves into `cboxdk/laravel-audit-chain`
+## 1.21.0 — keys that mint keys, and approvals for one action
+
+**Run `php artisan migrate`.** Two additive migrations: provenance columns on
+`environment_api_keys` and `organization_api_keys` (plus `scopes` on organization keys),
+and `purpose`, `action_digest` and `consumed_at` on `ciba_requests`. Every existing row
+keeps its meaning.
+
+**Only if you implement these contracts yourself** (the bundled implementations are
+updated):
+
+- `EnvironmentApiKeys::issue()` gains a trailing `?KeyProvenance $provenance = null`.
+- `OrganizationApiKeys::issue()` gains trailing `?array $scopes = null` and
+  `?KeyProvenance $provenance = null`.
+
+**Behaviour you may notice:**
+
+- `EnvironmentApiKeys::issue()` now throws `UnknownApiKeyScope` for a scope nothing
+  recognises; it used to store it. If your host's endpoints guard scopes beyond
+  `EnvironmentApiScope`, rebind `ManagementScopes` to name them.
+- A dynamically registered client can no longer obtain `vault.manage`, `vault.lease`,
+  `apps.manifest` or `decisions:read`, even if you listed one in
+  `oauth.dynamic_registration.allowed_scopes`. Adjust `oauth.reserved_scopes` if you
+  deliberately want otherwise.
+- A CIBA request whose `binding_message` is longer than 255 characters is refused with
+  `invalid_binding_message`.
+
+## 1.20.0 — the audit chain moves into `cboxdk/laravel-audit-chain`
 
 **No action is required, and nothing about the trail changes.** The hash-chained audit log
 (`src/Kernel/Audit/`) now runs on the new framework package

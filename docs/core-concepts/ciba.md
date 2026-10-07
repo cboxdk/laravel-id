@@ -80,5 +80,7 @@ Mirrors the device grant's hardening:
 
 - [Approve agent actions with CIBA](../cookbook/approve-agent-actions-with-ciba.md) —
   wire the notification + approval surface to the domain event.
+- [Require a person's approval for one action](../cookbook/require-approval-for-one-action.md) —
+  the same surface, approving one change instead of a sign-in.
 - [AI token vault](token-vault.md) — the credential half of agent authority.
 - [Security: CIBA](../security/ciba.md) — the threat model.

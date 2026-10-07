@@ -198,6 +198,12 @@ call — the agent never holds the long-lived secret. See the full recipe:
 to approve a high-risk agent action first, see
 [Approve agent actions with CIBA](approve-agent-actions-with-ciba.md).
 
+## Require a person's approval for one action
+
+Hold a sensitive change a key or agent asked for until its owner approves it on their
+device, bound to exactly that change and spent once. See the full recipe:
+[Require a person's approval for one action](require-approval-for-one-action.md).
+
 ## Sign a CLI in (device grant)
 
 A terminal, a CI job or a TV has no browser to be redirected back to. This package serves

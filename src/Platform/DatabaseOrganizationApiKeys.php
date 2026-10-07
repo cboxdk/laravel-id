@@ -9,6 +9,7 @@ use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Platform\Contracts\OrganizationApiKeys;
 use Cbox\Id\Platform\Models\OrganizationApiKey;
 use Cbox\Id\Platform\ValueObjects\IssuedOrganizationApiKey;
+use Cbox\Id\Platform\ValueObjects\KeyProvenance;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -47,18 +48,20 @@ class DatabaseOrganizationApiKeys implements OrganizationApiKeys
      */
     private const PREFIX = 'cbid_org_';
 
-    public function issue(string $organizationId, string $name, MembershipRole $role, ?DateTimeInterface $expiresAt = null): IssuedOrganizationApiKey
+    public function issue(string $organizationId, string $name, MembershipRole $role, ?DateTimeInterface $expiresAt = null, ?array $scopes = null, ?KeyProvenance $provenance = null): IssuedOrganizationApiKey
     {
-        $plaintext = self::PREFIX.Str::random(40);
+        $plaintext = self::prefix().Str::random(40);
 
         $key = OrganizationApiKey::query()->create([
             'organization_id' => $organizationId,
             'name' => $name,
             // A non-secret fragment so the key is identifiable in a list.
-            'prefix' => substr($plaintext, 0, 12),
+            'prefix' => substr($plaintext, 0, strlen(self::prefix()) + 3),
             'token_hash' => $this->hash($plaintext),
             'role' => $role,
+            'scopes' => $scopes === null ? null : array_values(array_unique($scopes)),
             'expires_at' => $expiresAt,
+            ...($provenance ?? new KeyProvenance)->toAttributes(),
         ]);
 
         return new IssuedOrganizationApiKey($key, $plaintext);
@@ -68,7 +71,7 @@ class DatabaseOrganizationApiKeys implements OrganizationApiKeys
     {
         // Cheap shape check before touching the database — a token that can't be
         // ours never triggers a lookup.
-        if (! str_starts_with($plaintext, self::PREFIX)) {
+        if (! str_starts_with($plaintext, self::prefix())) {
             return null;
         }
 
@@ -131,6 +134,20 @@ class DatabaseOrganizationApiKeys implements OrganizationApiKeys
             ->where('organization_id', $organizationId)
             ->orderByDesc('id')
             ->get();
+    }
+
+    /**
+     * The configured prefix (`cbox-id.management_keys.organization_prefix`), or
+     * `cbid_org_` when it is unset or not a well-formed prefix — lowercase letters and
+     * digits, an underscore-separated marker, ending in `_`.
+     */
+    public static function prefix(): string
+    {
+        $configured = config('cbox-id.management_keys.organization_prefix');
+
+        return is_string($configured) && preg_match('/^[a-z][a-z0-9]*_[a-z0-9]+_$/', $configured) === 1
+            ? $configured
+            : self::PREFIX;
     }
 
     private function hash(string $plaintext): string

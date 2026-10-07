@@ -17,6 +17,25 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-10-07
+
+### Added
+
+- **Management keys that can be minted by keys.** Both key tables gain provenance columns (`created_by_type`, `created_by_id`, `parent_key_id`, `rotated_from_id`, `description`, `step_up_policy`), written from the new `KeyProvenance` value object passed to `issue()`. Organization keys gain optional `scopes`, narrowing a key below its role (`OrganizationApiKey::permits()`); a key minted without them is bounded by its role alone, as before.
+- **`ManagementScopes`**, the vocabulary an environment key's scopes are checked against, bound to `EnumManagementScopes` (the `EnvironmentApiScope` enum). Rebind it to add the scopes a host's own endpoints require. `EnvironmentApiKey::can()` accepts a string as well as the enum.
+- **`cbox-id.management_keys.organization_prefix`**: the prefix organization keys are minted and resolved under, `cbid_org_` by default.
+- **`ActionApprovals`** (`CibaActionApprovals`): ask a person to approve one action, bound to a digest of exactly that action, and spend the approval once with `consume()`. Built on the CIBA request store, so the same approval surfaces answer it; it raises `oauth.backchannel_authentication_requested` with `purpose: action`. See [Require a person's approval for one action](docs/cookbook/require-approval-for-one-action.md).
+- **`cbox-id.oauth.reserved_scopes`** (`vault.manage`, `vault.lease`, `apps.manifest`, `decisions:read`): scopes no dynamically registered client may hold, refused at registration and on every save even when `allowed_scopes` names one.
+
+### Changed
+
+- `EnvironmentApiKeys::issue()` refuses a scope `ManagementScopes` does not know (`UnknownApiKeyScope`) instead of storing it.
+- `POST /oauth/backchannel_authentication` answers `400 invalid_binding_message` for a `binding_message` over 255 characters, instead of failing on the column.
+
+### Security
+
+- An action approval is never redeemable for tokens: `CibaAuthenticationService::redeem()` treats a request carrying an action digest as unknown.
+
 ## [1.20.0] - 2026-09-25
 
 ### Changed

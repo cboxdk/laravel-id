@@ -7,6 +7,7 @@ namespace Cbox\Id\Platform\Contracts;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Platform\Models\OrganizationApiKey;
 use Cbox\Id\Platform\ValueObjects\IssuedOrganizationApiKey;
+use Cbox\Id\Platform\ValueObjects\KeyProvenance;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 
@@ -20,9 +21,12 @@ interface OrganizationApiKeys
     /**
      * Issue a new key. Returns the stored record plus the one-time plaintext, which
      * is never recoverable afterwards. The key carries a role that bounds what it
-     * can do, and an optional expiry.
+     * can do, and an optional expiry. `scopes`, when given, narrows it further below the
+     * role (null: the role alone); `provenance` records who minted it and from which key.
+     *
+     * @param  list<string>|null  $scopes
      */
-    public function issue(string $organizationId, string $name, MembershipRole $role, ?DateTimeInterface $expiresAt = null): IssuedOrganizationApiKey;
+    public function issue(string $organizationId, string $name, MembershipRole $role, ?DateTimeInterface $expiresAt = null, ?array $scopes = null, ?KeyProvenance $provenance = null): IssuedOrganizationApiKey;
 
     /**
      * Resolve a presented plaintext token to its active key, recording use. Returns

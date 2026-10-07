@@ -10,6 +10,7 @@ use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
+use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
 use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
@@ -74,6 +75,8 @@ class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(PushedAuthorizationRequests::class, PushedAuthorizationService::class);
         $this->app->singleton(DeviceAuthorization::class, DeviceAuthorizationService::class);
         $this->app->singleton(BackchannelAuthentication::class, CibaAuthenticationService::class);
+        // A person approving ONE action, on the same request store and approval surfaces.
+        $this->app->singleton(ActionApprovals::class, CibaActionApprovals::class);
         $this->app->singleton(EndSession::class, EndSessionService::class);
         $this->app->singleton(ClientAssertion::class, ClientAssertionValidator::class);
 

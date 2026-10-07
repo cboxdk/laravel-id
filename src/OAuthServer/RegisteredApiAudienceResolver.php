@@ -9,6 +9,7 @@ use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\ReservedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\ApiAudience;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredScope;
 use Cbox\Id\OAuthServer\ValueObjects\ResolvedAudience;
@@ -90,11 +91,14 @@ class RegisteredApiAudienceResolver implements AudienceResolver
 
     public function ungrantable(ScopeHolder $holder, array $scopes): array
     {
-        if ($holder->environmentId === null || $holder->isEnvironmentOwned()) {
-            return [];
-        }
+        // A self-registered client may never hold a reserved scope, however it came to ask.
+        $refused = $holder->dynamicallyRegistered
+            ? array_values(array_intersect($scopes, ReservedScopes::all()))
+            : [];
 
-        $refused = [];
+        if ($holder->environmentId === null || $holder->isEnvironmentOwned()) {
+            return $refused;
+        }
 
         foreach ($this->apis->registeredScopes($holder->environmentId, $this->apiScopes($scopes)) as $key => $scope) {
             if (! $scope->mayBeHeldBy($holder)) {

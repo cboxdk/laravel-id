@@ -21,6 +21,9 @@ use Illuminate\Http\Request;
  */
 class BackchannelAuthenticationController
 {
+    /** The longest binding message stored and shown to the person approving. */
+    public const int BINDING_MESSAGE_MAX = 255;
+
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,
         private readonly BackchannelAuthentication $ciba,
@@ -62,6 +65,17 @@ class BackchannelAuthenticationController
         $scopes = $scope === '' ? [] : array_values(array_filter(explode(' ', $scope), fn (string $s): bool => $s !== ''));
 
         $bindingMessage = $request->string('binding_message')->toString();
+
+        // CIBA Core §7.1/§13: a binding message the OP cannot display is
+        // `invalid_binding_message`, not a database error. It is shown on a phone beside
+        // an Approve button, so it is short by design; the column holds 255.
+        if (mb_strlen($bindingMessage) > self::BINDING_MESSAGE_MAX) {
+            return new JsonResponse([
+                'error' => 'invalid_binding_message',
+                'error_description' => 'The binding_message is longer than '.self::BINDING_MESSAGE_MAX.' characters.',
+            ], 400);
+        }
+
         $requestedExpiry = $request->has('requested_expiry') ? $request->integer('requested_expiry') : null;
 
         // OIDC CIBA Core §7.1: the optional `nonce` binds the eventual id_token to

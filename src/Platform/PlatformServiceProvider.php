@@ -11,6 +11,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
+use Cbox\Id\Platform\Contracts\ManagementScopes;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Platform\Contracts\OrganizationApiKeys;
 use Cbox\Id\Platform\Contracts\OrganizationProjects;
@@ -75,6 +76,10 @@ class PlatformServiceProvider extends ServiceProvider
         $this->app->singleton(OrganizationApiKeys::class, DatabaseOrganizationApiKeys::class);
 
         $this->app->singleton(EnvironmentApiKeys::class, DatabaseEnvironmentApiKeys::class);
+
+        // What a management key may carry. Rebind to add the scopes a host's own
+        // endpoints require; the enum stays the core set.
+        $this->app->singleton(ManagementScopes::class, EnumManagementScopes::class);
 
         // The signed bridge that lets an account member administer a tenant
         // environment without a second login (and without being a subject there).

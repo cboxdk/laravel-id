@@ -31,6 +31,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_polled_at
  * @property Carbon|null $approved_at
  * @property Carbon $expires_at
+ * @property string|null $purpose
+ * @property string|null $action_digest
+ * @property Carbon|null $consumed_at
  */
 class BackchannelAuthRequest extends Model implements EnvironmentOwned
 {
@@ -52,6 +55,7 @@ class BackchannelAuthRequest extends Model implements EnvironmentOwned
             'last_polled_at' => 'datetime',
             'approved_at' => 'datetime',
             'expires_at' => 'datetime',
+            'consumed_at' => 'datetime',
         ];
     }
 }

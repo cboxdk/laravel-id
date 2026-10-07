@@ -14,14 +14,11 @@ permissions:
 jobs:
   # Dependency vulnerability scan against the PHP Security Advisories database.
   dependencies:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/cboxdk/php-baseimages/php-cli:8.5-bookworm-dev-v1
     steps:
       - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.4"
-          coverage: none
-          tools: composer:v2
       - run: composer install --no-interaction --no-progress
       - name: composer audit
         run: composer audit --no-dev
@@ -29,7 +26,7 @@ jobs:
   # Secret scanning — a leaked key is the worst failure mode for a security lib.
   # TruffleHog's action is free for organizations (gitleaks-action is not).
   secrets:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,7 +39,7 @@ jobs:
   # Static application security testing. Findings are uploaded to the Security tab
   # as SARIF rather than failing the build, so triage happens in review.
   sast:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
@@ -50,7 +47,7 @@ jobs:
       - uses: actions/checkout@v7
       # Semgrep runs via `docker run`, NOT as a job-level `container:`. A container job
       # makes the runner inject an ALPINE node to execute JS actions (checkout,
-      # upload-sarif); this runner ships only glibc node24, so every step died on
+      # upload-sarif), and on the old self-hosted runner every step died on
       # `/__e/node24_alpine/bin/node: no such file` before any scanning happened.
       # Keeping the job on the host lets the JS actions run; semgrep stays pinned to
       # its own image.

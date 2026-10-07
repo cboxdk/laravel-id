@@ -10,7 +10,12 @@ on:
 
 jobs:
   quality:
-    runs-on: self-hosted
+    # GitHub-hosted: the repository is public, so its runners cost nothing, and an
+    # ephemeral runner is the only safe place for a pull request's code. The toolchain is
+    # the cbox base image's dev tier (PHP, Composer, Node), pinned by the v1 channel.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/cboxdk/php-baseimages/php-cli:${{ matrix.php }}-bookworm-dev-v1
     strategy:
       fail-fast: false
       matrix:
@@ -20,11 +25,6 @@ jobs:
     name: PHP ${{ matrix.php }} · testbench ${{ matrix.testbench }}
     steps:
       - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php }}
-          coverage: none
-          tools: composer:v2
       - name: Pin the Laravel major
         run: composer require "orchestra/testbench:${{ matrix.testbench }}" --dev --no-update --no-interaction
       - run: composer update --no-interaction --no-progress --prefer-dist
