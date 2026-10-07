@@ -75,23 +75,18 @@ requirements to the feature that addresses it, and end with what remains yours.
 | Art. 30 | Records of processing | audit trail of identity/access events |
 | Art. 33 | Breach detection & notification | tamper-evident log surfaces anomalies for your 72h clock (plus app-layer risk-scoring, if added) |
 | Art. 22 | Automated decisions | **applies at the app layer, not this framework** — if the host adds risk-scoring (e.g. `cboxdk/laravel-risk`) it is explainable (reasons breakdown) and ships in monitor mode; see that package's docs |
-| Art. 17 | Right to erasure | **Not a control this package provides — see the note below.** |
+| Art. 17 | Right to erasure | `SubjectEraser` — one transactional call that removes the subject's credentials, sessions, grants, memberships, role grants and vault secrets, scrubs stored payloads, pseudonymises the subject row (id kept) and tells downstream SCIM apps to delete them. See the note below. |
 
-> **Art. 17, honestly.** The package ships **no erasure primitive**. `Subjects` can
-> `deactivate()` a user; it cannot delete one, and there is no anonymisation service,
-> command, or endpoint anywhere in `src/`. Nor is the subject model as opaque as it
-> sounds: alongside whatever your own users table holds, this package stores contact PII
-> in its own tables — `platform_operators`, `memberships`, `magic_links`,
-> `invitations`, the credential-token tables, `otp_challenges`, `directory_users` and
-> `directory_groups`. None of those are covered by the retention pruner, which sweeps
-> only ephemeral protocol state.
->
-> Two further tensions to plan for rather than discover: `audit_logs` is **deliberately
-> never pruned** (pruning it breaks chain verification), and an erasure that rewrites a
-> chained audit entry would invalidate every entry after it. Satisfying an erasure request
-> is therefore an **operator procedure** across those tables, with a documented decision
-> about what the audit trail retains under Art. 17(3)(b)/(e). Budget for it; do not
-> assume the package does it.
+> **Art. 17, honestly.** `SubjectEraser::erase()` covers the package's own stores and
+> returns a receipt of what it did ([Security: erasure](erasure.md)); a host adds its own
+> stores to the same pipeline. What it does **not** do is rewrite the audit trail: every
+> column of an audit entry is inside the hash chain, so past entries keep the subject's
+> opaque id (no longer personal data once the subject row is pseudonymised) and a
+> `user.erased` tombstone is appended instead. Some entries also hold an IP address or,
+> for invitation and verification events, an email address; retaining those is a decision
+> you document under Art. 17(3)(b)/(e), with a retention period. Platform operators are
+> not subjects and are outside the eraser. Copies outside the package — your SIEM,
+> webhook receivers, backups — are yours to erase.
 
 ## HIPAA Security Rule (§164.312 technical safeguards)
 
@@ -123,7 +118,7 @@ The package cannot supply these — they are process, not code:
 
 - **Policies & governance**: infosec policy, access-review cadence, onboarding/offboarding, vendor management.
 - **Data retention & DPIA**: define retention for audit logs (and risk data, if you add app-layer risk-scoring); run a Legitimate Interest Assessment / DPIA (GDPR).
-- **Erasure / subject-rights procedures**: the package ships no erasure primitive — see the Art. 17 note above for the tables involved and the audit-trail tension.
+- **Erasure / subject-rights procedures**: who may invoke `SubjectEraser`, how a request is verified, your own stores registered as erasure steps, and the documented Art. 17(3) decision on what the audit trail retains — see the Art. 17 note above.
 - **Master-key custody and rotation schedule**: where the key lives and who can read it, and when you rotate it. The package supports rotation (a versioned keyring and `cbox-id:crypto:rewrap`, see [master key management](key-management.md)); deciding to do it is yours.
 - **Incident response**: a documented plan, breach-notification workflow, and the NIS2/GDPR reporting timelines.
 - **Independent assurance**: a SOC 2 audit, ISO 27001 certification, HIPAA risk assessment, or PCI ROC/SAQ — performed by an assessor against *your* running system.

@@ -9,6 +9,7 @@ use Cbox\Id\Identity\Contracts\AdminPasswords;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\BreachedPasswordCheck;
 use Cbox\Id\Identity\Contracts\EmailVerification;
+use Cbox\Id\Identity\Contracts\ErasureSteps;
 use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\LoginAttempts;
 use Cbox\Id\Identity\Contracts\MagicLink;
@@ -22,9 +23,19 @@ use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\SignedInSession;
 use Cbox\Id\Identity\Contracts\SignedInSubject;
+use Cbox\Id\Identity\Contracts\SubjectEraser;
+use Cbox\Id\Identity\Contracts\SubjectPseudonymiser;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\UserImport;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
+use Cbox\Id\Identity\Erasure\DatabaseSubjectPseudonymiser;
+use Cbox\Id\Identity\Erasure\DefaultSubjectEraser;
+use Cbox\Id\Identity\Erasure\ErasureStepRegistry;
+use Cbox\Id\Identity\Erasure\Steps\ApiTokensErasureStep;
+use Cbox\Id\Identity\Erasure\Steps\CredentialsErasureStep;
+use Cbox\Id\Identity\Erasure\Steps\EventPayloadsErasureStep;
+use Cbox\Id\Identity\Erasure\Steps\MembershipsErasureStep;
+use Cbox\Id\Identity\Erasure\Steps\SessionsErasureStep;
 use Cbox\Id\Identity\Hashing\HashVerifierRegistry;
 use Cbox\Id\Identity\Hashing\NativePasswordVerifier;
 use Cbox\Id\Identity\ValueObjects\PasswordHashTarget;
@@ -41,6 +52,20 @@ class IdentityServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // GDPR Art. 17. The pipeline is a registry every module adds its own step to; the
+        // Identity steps come first because they run in registration order and the
+        // sessions step needs the OAuth session participants the OAuth step later removes.
+        $this->app->singleton(ErasureSteps::class, ErasureStepRegistry::class);
+        $this->app->singleton(SubjectPseudonymiser::class, DatabaseSubjectPseudonymiser::class);
+        $this->app->bind(SubjectEraser::class, DefaultSubjectEraser::class);
+        $this->callAfterResolving(ErasureSteps::class, static function (ErasureSteps $steps, Application $app): void {
+            $steps->register($app->make(MembershipsErasureStep::class));
+            $steps->register($app->make(SessionsErasureStep::class));
+            $steps->register($app->make(CredentialsErasureStep::class));
+            $steps->register($app->make(ApiTokensErasureStep::class));
+            $steps->register($app->make(EventPayloadsErasureStep::class));
+        });
+
         // The TOTP secret of a subject's MFA factor, bound to the subject (see MfaService).
         // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
         $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {

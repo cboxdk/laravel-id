@@ -131,6 +131,16 @@ reason audited, never returned) so the vault is no enumeration oracle. Every sto
 rotation, revocation, grant and lease is audited with actor and purpose — never the
 value. Honest scope: a lease TTL is advisory. See [Security: token vault](token-vault.md).
 
+## Erasure (GDPR Art. 17)
+
+`SubjectEraser` erases a person in one transaction — credentials, sessions, grants,
+memberships and role grants, vault secrets, stored payloads — pseudonymises the subject
+row in place (id kept), emits `user.erased` (outbound SCIM deletes them downstream) and
+returns a receipt with counts. Every module registers its own step; a host adds steps for
+its own tables. It deliberately does not rewrite the hash-chained audit trail: past
+entries keep the opaque id and a tombstone is appended, so the chain still verifies. See
+[Security: erasure](erasure.md).
+
 ## Master key management
 
 Every recoverable secret at rest is sealed under the crypto master key, and since 1.22

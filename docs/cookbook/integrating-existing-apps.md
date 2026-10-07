@@ -68,7 +68,9 @@ final class AppSubjects implements Subjects
 
 Ids are opaque, so anything works: an auto-increment id, a ULID, even a namespaced
 id (`"reseller:42"`) if you have several authenticatable models. **Cbox ID stores no
-PII it can't delete through your resolver** — good for GDPR erasure.
+PII it can't delete through your resolver** — good for GDPR erasure: `SubjectEraser`
+erases what the package holds; bind your own `SubjectPseudonymiser` for your user rows
+(see [Security: erasure](../security/erasure.md)).
 
 > The package ships a default `DatabaseSubjects` over an optional users table for
 > greenfield installs. Binding your own resolver replaces it entirely.

@@ -59,6 +59,16 @@ return [
     ],
 
     /*
+     * GDPR Art. 17 erasure (SubjectEraser). `pseudonym_key` keys the hash an erased
+     * subject's email and name are replaced with. Unset, it is derived from the crypto
+     * master key; set it if you rotate that key and need an erasure retried after the
+     * rotation to write byte-identical placeholders.
+     */
+    'erasure' => [
+        'pseudonym_key' => env('CBOX_ID_ERASURE_PSEUDONYM_KEY'),
+    ],
+
+    /*
      * Login lockout — the deployment default for how many failed sign-ins on ONE
      * subject lock it, inside what window, and for how long.
      *
