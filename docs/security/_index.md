@@ -129,8 +129,16 @@ hashing won't do), never plaintext. Access is deny-by-default: a lease needs a l
 `(secret, client)` grant, and every failure raises a **uniform** `LeaseDenied` (the
 reason audited, never returned) so the vault is no enumeration oracle. Every store,
 rotation, revocation, grant and lease is audited with actor and purpose — never the
-value. Honest scope: a lease TTL is advisory, and master-key rotation is a manual
-re-seal. See [Security: token vault](token-vault.md).
+value. Honest scope: a lease TTL is advisory. See [Security: token vault](token-vault.md).
+
+## Master key management
+
+Every recoverable secret at rest is sealed under the crypto master key, and since 1.22
+each ciphertext names the key generation that sealed it. Rotation is a configuration
+change plus `cbox-id:crypto:rewrap`: the new key seals, the previous keys only open,
+the rewrap re-seals every registered column in resumable chunks, and the doctor warns
+until nothing is left under a previous key. Envelopes from earlier releases keep
+opening. See [Security: master key management](key-management.md).
 
 ## CIBA backchannel approval
 

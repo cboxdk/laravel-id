@@ -124,7 +124,7 @@ The package cannot supply these — they are process, not code:
 - **Policies & governance**: infosec policy, access-review cadence, onboarding/offboarding, vendor management.
 - **Data retention & DPIA**: define retention for audit logs (and risk data, if you add app-layer risk-scoring); run a Legitimate Interest Assessment / DPIA (GDPR).
 - **Erasure / subject-rights procedures**: the package ships no erasure primitive — see the Art. 17 note above for the tables involved and the audit-trail tension.
-- **Master-key custody *and rotation***: there is no re-encrypt/rewrap routine, so rotating the crypto master key is not a supported operation today.
+- **Master-key custody and rotation schedule**: where the key lives and who can read it, and when you rotate it. The package supports rotation (a versioned keyring and `cbox-id:crypto:rewrap`, see [master key management](key-management.md)); deciding to do it is yours.
 - **Incident response**: a documented plan, breach-notification workflow, and the NIS2/GDPR reporting timelines.
 - **Independent assurance**: a SOC 2 audit, ISO 27001 certification, HIPAA risk assessment, or PCI ROC/SAQ — performed by an assessor against *your* running system.
 - **Penetration testing**: schedule and act on a recurring third-party test.

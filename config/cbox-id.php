@@ -958,6 +958,17 @@ return [
          */
         'key' => env('CBOX_ID_CRYPTO_KEY'),
 
+        /*
+         * Previous master keys, kept ONLY to open secrets sealed before a rotation.
+         * Comma-separated in the env var, each in the same base64 form as the key
+         * above. Nothing is ever sealed under these.
+         *
+         * To rotate: generate a new key, make it CBOX_ID_CRYPTO_KEY, move the old one
+         * here, deploy, then run `php artisan cbox-id:crypto:rewrap`. Remove the old
+         * key only once `php artisan cbox-id:doctor` reports nothing left under it.
+         */
+        'previous_keys' => env('CBOX_ID_CRYPTO_PREVIOUS_KEYS'),
+
     ],
 
 ];

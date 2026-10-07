@@ -91,8 +91,10 @@ It is an engineering artifact, not a certification or audit result.
   verify JWTs locally rely on the short TTL.
 - **A determined human with clean signals** defeats heuristic abuse scoring — it
   raises cost, it isn't a wall.
-- **The crypto master key's custody** (KMS/HSM/backup) is the operator's to secure —
-  and **rotating it is not a supported operation**: no re-encrypt/rewrap routine ships.
+- **The crypto master key's custody** (KMS/HSM/backup) is the operator's to secure.
+  Rotating it is supported (a versioned keyring plus `cbox-id:crypto:rewrap`, see
+  [master key management](key-management.md)), but rotation does not undo a
+  compromise: rotate the secrets it sealed too.
 - **The front-channel is the host's attack surface.** This package does not serve
   `/authorize`; consent, `prompt`/`max_age`/`acr_values` handling, registered-set
   redirect matching and the RFC 9207 `iss` parameter are threats your app owns. See

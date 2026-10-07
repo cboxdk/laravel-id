@@ -29,7 +29,9 @@ use Cbox\Id\Identity\Hashing\HashVerifierRegistry;
 use Cbox\Id\Identity\Hashing\NativePasswordVerifier;
 use Cbox\Id\Identity\ValueObjects\PasswordHashTarget;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Hashing\Hasher;
@@ -39,6 +41,12 @@ class IdentityServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // The TOTP secret of a subject's MFA factor, bound to the subject (see MfaService).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('mfa_factors', 'secret_encrypted', 'cbox-id:mfa:', contextColumn: 'user_id'));
+        });
+
         // Deny-by-default hash verification. The registry ships with only the
         // native verifier (bcrypt/argon2 via PHP's vetted password_verify); a host
         // teaches it a foreign format (Firebase scrypt, PBKDF2, …) by listing its

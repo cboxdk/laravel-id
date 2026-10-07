@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Provisioning;
 
 use Cbox\Id\Directory\DirectoryServiceProvider;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Provisioning\Console\DrainProvisioningCommand;
 use Cbox\Id\Provisioning\Console\SyncProvisioningCommand;
@@ -28,6 +30,12 @@ class ProvisioningServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // The downstream SCIM bearer/client secret (ProvisioningConnection::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('provisioning_connections', 'auth_secret_encrypted', 'cbox-id:provisioning-connection:'));
+        });
+
         $this->app->singleton(ScimClient::class, HttpScimClient::class);
         $this->app->singleton(ProvisioningConnections::class, DatabaseProvisioningConnections::class);
         $this->app->singleton(ProvisioningService::class, OutboxProvisioningService::class);

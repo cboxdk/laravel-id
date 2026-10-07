@@ -14,6 +14,8 @@ use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Contracts\StaffAccess;
 use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
@@ -23,6 +25,12 @@ class AccessControlServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // A declared legacy-login handler's secret (LegacyLoginDeclarationRecord::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('legacy_login_declarations', 'secret_encrypted', 'cbox-id:legacy-login:'));
+        });
+
         // Driver-independent: it asks whichever AccessChecker is bound, so an external
         // RBAC adapter answers live decisions exactly as it answers token claims.
         $this->app->singleton(PermissionDecisions::class, AppPermissionDecisions::class);

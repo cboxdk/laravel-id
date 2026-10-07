@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks;
 
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
@@ -15,6 +17,12 @@ class WebhookServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // An endpoint's signing secret (WebhookEndpoint::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('webhook_endpoints', 'secret_encrypted', 'cbox-id:webhook-endpoint:'));
+        });
+
         $this->app->singleton(WebhookRegistry::class, DatabaseWebhookRegistry::class);
         $this->app->singleton(WebhookDispatcher::class, HttpWebhookDispatcher::class);
     }

@@ -118,9 +118,9 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 |---|---|---|
 | Envelope encryption for secrets at rest | **Full** | XChaCha20-Poly1305-IETF (libsodium), random nonce per message, bound to a context string as AEAD additional data. Not AES-GCM. |
 | Signing key management and rotation | **Full** | RSA-2048, P-256 or Ed25519; private keys sealed per-`kid`; `cbox-id:keys:rotate` with an Active→Rotating→Retired overlap so in-flight tokens keep verifying. |
-| Master-key rotation | **No** | There is no re-encrypt/rewrap routine. The vault's `key_version` column is written as a constant and never read. Plan master-key custody accordingly. |
+| Master-key rotation | **Full** | Versioned keyring: each ciphertext names its key (a derived id, never the key); `CBOX_ID_CRYPTO_PREVIOUS_KEYS` keeps old keys for opening only; `cbox-id:crypto:rewrap` re-seals every registered column in resumable chunks (`--dry-run`); the doctor warns while anything is under a previous key. Pre-1.22 envelopes keep opening. See [master key management](../security/key-management.md). |
 | HSM / KMS integration | **Contract only** | `SecretBox` is the swap point; no AWS KMS, Vault or PKCS#11 implementation ships. |
-| Token vault for downstream credentials | **Full** | Seals third-party credentials and brokers short-lived, deny-by-default leases to clients. Uniform refusal with no enumeration oracle; the real reason goes to the audit log only. Per-grant TTL can only shorten the default. Secret rotation is supported (master-key rotation is not — see above). |
+| Token vault for downstream credentials | **Full** | Seals third-party credentials and brokers short-lived, deny-by-default leases to clients. Uniform refusal with no enumeration oracle; the real reason goes to the audit log only. Per-grant TTL can only shorten the default. Secret rotation is supported, and vault secrets are re-sealed by a master-key rotation like every other sealed column. |
 
 ## Operations & tooling
 

@@ -65,6 +65,10 @@ decodes to the same 32-byte key. Either form works; raw is the recommended, cano
 > Back this key up **separately from the database**. Lose it and every sealed secret —
 > including private signing keys — becomes unrecoverable.
 
+The key can be rotated later without losing anything: the old one moves to
+`CBOX_ID_CRYPTO_PREVIOUS_KEYS` and `php artisan cbox-id:crypto:rewrap` re-seals every
+secret under the new one. See [Security: master key management](../security/key-management.md).
+
 Prefer a guided setup? `php artisan cbox-id:install` generates the key, writes it to
 `.env`, runs the migrations and mints the first signing key in one step; `php artisan
 cbox-id:doctor` then verifies the install.

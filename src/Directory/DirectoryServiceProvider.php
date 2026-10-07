@@ -11,6 +11,8 @@ use Cbox\Id\Directory\Contracts\Directories;
 use Cbox\Id\Directory\Contracts\DirectoryGroups;
 use Cbox\Id\Directory\Contracts\DirectorySync;
 use Cbox\Id\Directory\Contracts\DirectoryUsers;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
@@ -18,6 +20,12 @@ class DirectoryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // A pull directory's provider credentials, bound to the directory id.
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('directories', 'credentials', 'cbox-id:directory-credentials:'));
+        });
+
         $this->app->singleton(Directories::class, DirectoryService::class);
         $this->app->singleton(DirectorySync::class, DatabaseDirectorySync::class);
         $this->app->singleton(DirectoryUsers::class, DatabaseDirectoryUsers::class);

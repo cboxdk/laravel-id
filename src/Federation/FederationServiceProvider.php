@@ -17,6 +17,8 @@ use Cbox\Id\Federation\Saml\SamlMetadataImporter;
 use Cbox\Id\Federation\Validators\DispatchingAssertionValidator;
 use Cbox\Id\Federation\Validators\OidcAssertionValidator;
 use Cbox\Id\Federation\Validators\SamlAssertionValidator;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -24,6 +26,12 @@ class FederationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // An SSO connection's config incl. its client secret (Connection::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('connections', 'config_encrypted', 'cbox-id:connection:'));
+        });
+
         $this->app->singleton(Connections::class, ConnectionService::class);
         $this->app->singleton(FederationFlow::class, FederationLoginService::class);
         $this->app->singleton(DnsResolver::class, SystemDnsResolver::class);

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Id\TokenVault;
 
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Support\PackageConfigMerger;
 use Cbox\Id\TokenVault\Contracts\SecretVault;
@@ -16,6 +18,12 @@ class TokenVaultServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // The vaulted downstream credential, bound to its row (VaultSecret::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('vault_secrets', 'secret_encrypted', 'cbox-id:vault-secret:'));
+        });
+
         PackageConfigMerger::mergeInto($this->app, __DIR__.'/../../config/cbox-id.php', 'cbox-id');
 
         $this->app->singleton(SecretVault::class, function (Application $app): SecretVault {
