@@ -39,9 +39,12 @@ use Cbox\Id\Api\Http\Middleware\CanonicalIssuerHost;
 use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
 use Cbox\Id\Api\Http\Middleware\ScimContentType;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -67,8 +70,13 @@ class ApiServiceProvider extends ServiceProvider
         VerifyCsrfToken::class,
     ];
 
+    /** The named rate limiter on `POST /oauth/register`. */
+    public const REGISTRATION_LIMITER = 'cbox-id.client-registration';
+
     public function boot(): void
     {
+        RateLimiter::for(self::REGISTRATION_LIMITER, fn (Request $request): Limit => $this->registrationLimit($request));
+
         // Liveness probe. Deliberately OUTSIDE both the environment resolution and the
         // IdP-surface gate below: a kubelet probes the POD (so the Host header maps to
         // no environment), and "this process is alive" must not depend on a database
@@ -156,6 +164,11 @@ class ApiServiceProvider extends ServiceProvider
                 // RFC 8414 + RFC 9728 — the metadata MCP clients discover the server by.
                 Route::get('/.well-known/oauth-authorization-server', AuthorizationServerMetadataController::class);
                 Route::get('/.well-known/oauth-protected-resource', ProtectedResourceMetadataController::class);
+                // RFC 9728 §3.1: a host-declared resource's metadata, at the well-known
+                // suffix inserted before the resource's own path (`/mcp` is described at
+                // `/.well-known/oauth-protected-resource/mcp`).
+                Route::get('/.well-known/oauth-protected-resource/{path}', [ProtectedResourceMetadataController::class, 'show'])
+                    ->where('path', '.+');
 
                 // IdP-role SAML metadata (this platform AS the IdP) — public,
                 // imported by a relying SP during federation setup. Registered before
@@ -248,7 +261,10 @@ class ApiServiceProvider extends ServiceProvider
                 // client sends a Laravel token. The credential is the registration access
                 // token (RFC 7592 §2), presented as a bearer.
                 Route::middleware(NoStore::class)->withoutMiddleware(self::CSRF_MIDDLEWARE)->group(function (): void {
-                    Route::post('/oauth/register', RegistrationController::class);
+                    // Unauthenticated registration (`open`, `mcp`) is also held to a
+                    // per-address hourly ceiling — see registrationLimit().
+                    Route::post('/oauth/register', RegistrationController::class)
+                        ->middleware('throttle:'.self::REGISTRATION_LIMITER);
                     Route::get('/oauth/register/{client}', [RegisteredClientController::class, 'show']);
                     Route::put('/oauth/register/{client}', [RegisteredClientController::class, 'update']);
                     Route::delete('/oauth/register/{client}', [RegisteredClientController::class, 'destroy']);
@@ -456,5 +472,25 @@ class ApiServiceProvider extends ServiceProvider
         }
 
         return $middleware;
+    }
+
+    /**
+     * Registrations per client address per hour, when registration needs no credential.
+     *
+     * The per-minute throttle on the group bounds a burst; it does nothing about a patient
+     * caller filling `oauth_clients` at thirty rows a minute, all day, from one address —
+     * which is what an endpoint anyone may call invites. `protected` mode is gated by the
+     * initial access token instead, and is not limited here.
+     */
+    private function registrationLimit(Request $request): Limit
+    {
+        $mode = config('cbox-id.oauth.dynamic_registration.mode', 'disabled');
+        $perHour = config('cbox-id.oauth.dynamic_registration.max_per_ip_per_hour', 20);
+
+        if (! in_array($mode, ['open', 'mcp'], true) || ! is_numeric($perHour) || (int) $perHour <= 0) {
+            return Limit::none();
+        }
+
+        return Limit::perHour((int) $perHour)->by('client-registration|'.$request->ip());
     }
 }

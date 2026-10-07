@@ -110,6 +110,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 ### Cookbook
 
 - [Cookbook](cookbook/_index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
+- [Protect an MCP server](cookbook/protect-an-mcp-server.md) — protected resource metadata, MCP client registration, metadata documents, audience-bound tokens
 - [Integrating an existing app](cookbook/integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
 
 ### Extension points

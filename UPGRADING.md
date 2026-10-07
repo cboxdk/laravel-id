@@ -18,6 +18,46 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.22.0 (unreleased) — MCP authorization: protected resources, metadata documents, `mcp` registration
+
+**Run `php artisan migrate`.** One additive migration: a nullable, indexed
+`oauth_clients.last_used_at`. Nothing reads it until you enable the new prune target.
+
+**Only if you implement these contracts yourself** (the bundled implementations are
+updated):
+
+- `RefreshTokens::rotate()` gains a trailing `?string $resource = null`. Refuse a value
+  that differs from the grant's audience with `InvalidAudience::boundToAnotherResource()`,
+  before consuming the token.
+- If you construct `RegisteredApiAudienceResolver`, `DynamicClientRegistrar`,
+  `PushedAuthorizationController` or `ProtectedResourceMetadataController` by hand, they
+  take new constructor arguments (see the changelog). Resolved from the container, nothing
+  changes.
+
+**Behaviour you may notice:**
+
+- **A repeated `resource` is refused** with `invalid_target` at `/oauth/token` and
+  `/oauth/par`. It used to be collapsed to its last value by PHP's parser. Ask for one token
+  per resource.
+- **A self-registered client may no longer name an arbitrary `resource`.** A client
+  registered through RFC 7591 (any mode) is refused (`invalid_target`) a resource that is
+  not a registered API, a declared protected resource with `dynamic_clients`, or the issuer.
+  If such clients rely on a resource server you run, register it as an API or declare it in
+  `oauth.protected_resources`. Operator-registered clients keep the pass-through unless you
+  set `oauth.resource_indicators.unknown_resources` to `refuse`.
+- **A refresh request naming a different `resource` is refused** (`invalid_target`); the
+  refresh token stays valid. Naming the same resource, or none, works as before.
+- **The device grant now honours `resource`** at the token endpoint; it was ignored.
+- **`open` registration is held to 20 registrations per address per hour.** Set
+  `oauth.dynamic_registration.max_per_ip_per_hour` (0 switches the ceiling off).
+- UserInfo and the decision endpoint's `WWW-Authenticate` gain `resource_metadata`.
+- `AuthorizationCodes::issue()` throws `InvalidGrant` for a malformed `resource`.
+
+Nothing else changes until you opt in: declare `oauth.protected_resources`, set
+`oauth.dynamic_registration.mode` to `mcp`, enable
+`oauth.client_id_metadata_documents.enabled`, or set `prune.retention_days.oauth_clients`.
+See [Protect an MCP server with Cbox ID](docs/cookbook/protect-an-mcp-server.md).
+
 ## 1.21.0 — keys that mint keys, and approvals for one action
 
 **Run `php artisan migrate`.** Two additive migrations: provenance columns on

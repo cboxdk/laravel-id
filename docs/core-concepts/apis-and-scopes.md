@@ -105,7 +105,45 @@ The ID Token and UserInfo describe the person to the **requesting** client, so t
 
 **Refresh never widens.** A refresh token records the access token's granted scopes and
 resolved audience, not the request. A refresh re-mints what was granted — even if the API
-later makes another scope tenant-requestable.
+later makes another scope tenant-requestable. A refresh request that names a **different**
+`resource` is refused with `invalid_target` before the refresh token is consumed.
+
+## Resources the host serves itself
+
+Not every resource server is an API row. An endpoint that ships with the host application
+— an MCP server at `https://{host}/mcp`, say — exists in every environment, its scopes
+change with the host's code, and nobody should be able to delete it from a console. Declare
+it instead of registering it:
+
+```php
+// config/cbox-id.php
+'oauth' => [
+    'protected_resources' => [
+        [
+            'path' => '/mcp',                     // joined to each environment's issuer
+            'name' => 'MCP',
+            'scopes' => ['mcp:read', 'mcp:write'],
+            'dynamic_clients' => true,            // self-registered clients may use it
+        ],
+    ],
+],
+```
+
+Or rebind `Cbox\Id\OAuthServer\Contracts\ProtectedResources` when the list depends on
+more than config. A declared resource is then:
+
+- **an audience** — `resource=https://{host}/mcp` audiences the token to it, carrying the
+  protocol scopes plus the requested scopes it accepts (rules 3–5 above apply as for an
+  API; an API row with the same identifier wins);
+- **described** — RFC 9728 metadata at `/.well-known/oauth-protected-resource/mcp`;
+- **open or closed to self-registered clients** — a client registered through RFC 7591 or
+  described by a client ID metadata document is refused (`invalid_target`) a resource that
+  did not set `dynamic_clients`, and can never carry a reserved scope to one.
+
+A self-registered client may also never name a resource that is none of these — not an
+API, not declared, not the issuer. Operator clients keep the RFC 8707 pass-through (any
+absolute URI becomes `aud`) unless `oauth.resource_indicators.unknown_resources` is
+`refuse`.
 
 ## Registering an API
 
@@ -164,7 +202,9 @@ audience, `invalid_scope` (RFC 6749 §5.2) when nothing requested may be granted
 
 ## Scope and limits
 
-- `resource` is single-valued; a repeated `resource` parameter is not supported.
+- One `resource` per request. A repeated `resource` is refused with `invalid_target` —
+  one token valid at two resource servers is a token either can replay at the other. Ask
+  for one token per resource.
 - Identifiers match byte-for-byte. `https://tax.example.com` and `https://tax.example.com/`
   are different APIs.
 - Who may register an API, and under which identifiers, is the host's policy. The registry

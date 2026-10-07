@@ -148,3 +148,29 @@ Self-registered clients go through the same rules. An RFC 7592 update that moves
 `none` or `private_key_jwt` revokes its secrets; moving back to a secret method mints a fresh
 one rather than resurrecting the old. Both are recorded as `app.updated` with the client
 itself as the actor.
+
+`mcp` mode (`oauth.dynamic_registration.mode`) is open registration held to what an MCP
+client needs: a public client, the code flow and its refresh, https or loopback redirect
+URIs, and the scopes of [protected resources the host declared](apis-and-scopes.md#resources-the-host-serves-itself)
+as open to self-registered clients. Unused self-registered clients can be swept with
+`cbox-id:prune` once `prune.retention_days.oauth_clients` is set.
+
+## Clients described by a metadata document
+
+With `oauth.client_id_metadata_documents.enabled`, a `client_id` that is an https URL is a
+client too: the JSON document at that URL is its registration
+(draft-ietf-oauth-client-id-metadata-document). Nothing is stored — the document is
+fetched through the SSRF guard, validated, cached, and rebuilt into a `MetadataDocumentClient`
+wherever the client is needed. Your `/authorize` resolves both kinds in one call:
+
+```php
+use Cbox\Id\OAuthServer\Contracts\AuthorizationClients;
+
+$authorizing = app(AuthorizationClients::class)->resolve($clientId); // null = unknown client
+
+$authorizing->allowsRedirectUri($redirectUri); // exact match for a document client
+$authorizing->consentRequired();               // true for every self-registered client
+$authorizing->documentHost;                    // e.g. "client.example" — show it on consent
+```
+
+The full flow is in [Protect an MCP server with Cbox ID](../cookbook/protect-an-mcp-server.md).

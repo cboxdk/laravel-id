@@ -9,6 +9,7 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AuthorizationCode;
+use Cbox\Id\OAuthServer\Support\ResourceIndicator;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\SessionParticipation;
@@ -50,6 +51,14 @@ class AuthorizationCodeService implements AuthorizationCodes
         // means the failure surfaces one round trip later against the verifier.
         if (preg_match('/^[A-Za-z0-9\-._~]{43}$/', $codeChallenge) !== 1) {
             throw InvalidGrant::make('code_challenge is not a base64url-encoded S256 digest');
+        }
+
+        // RFC 8707 §2: the resource a code is bound to becomes the token's `aud`, so it is
+        // held to the same shape the token endpoint demands of one. A host that bound a
+        // relative path or a fragment would otherwise mint a code whose token names an
+        // audience no resource server can match — refused here, where the host is looking.
+        if ($resource !== null && ! ResourceIndicator::isWellFormed($resource)) {
+            throw InvalidGrant::make('resource must be an absolute URI with a host and no fragment');
         }
 
         $code = 'ac_'.bin2hex(random_bytes(32));

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
+use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Authorization\Contracts\PolicyDecisionPoint;
 use Cbox\Id\Kernel\Authorization\ValueObjects\EntitlementValue;
 use Cbox\Id\Kernel\Authorization\ValueObjects\ResourceRef;
@@ -14,7 +15,9 @@ use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
+use Cbox\Id\OAuthServer\Support\BearerChallenge;
 use Cbox\Id\OAuthServer\ValueObjects\Introspection;
+use Cbox\Id\OAuthServer\ValueObjects\ProtectedResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -364,8 +367,15 @@ class DecisionController
      */
     private function refuse(string $error, string $description, int $status = 401, string $scheme = 'Bearer'): JsonResponse
     {
+        // RFC 9728 §5.1 `resource_metadata`, and every value escaped — the description
+        // was concatenated raw, so one carrying a quote ended the header early.
         $headers = $status === 401
-            ? ['WWW-Authenticate' => $scheme.' error="'.$error.'", error_description="'.$description.'"']
+            ? (new BearerChallenge(
+                resourceMetadata: ServerMetadata::issuer().ProtectedResource::WELL_KNOWN,
+                error: $error,
+                errorDescription: $description,
+                scheme: $scheme,
+            ))->headers()
             : [];
 
         return new JsonResponse(['error' => $error, 'error_description' => $description], $status, $headers);

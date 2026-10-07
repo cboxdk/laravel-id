@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\Apis;
+use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
 use Cbox\Id\OAuthServer\Enums\ProtocolScope;
@@ -70,7 +71,28 @@ class ServerMetadata
         return array_values(array_unique([
             ...self::SCOPES_SUPPORTED,
             ...app(Apis::class)->publicScopes($environment->environmentKey()),
+            ...self::openResourceScopes(),
         ]));
+    }
+
+    /**
+     * The scopes of host-declared resources that accept self-registered clients — the
+     * same "anyone here may hold it" test the API scopes above pass. A declared resource
+     * closed to them is described at its own RFC 9728 URL and left out here.
+     *
+     * @return list<string>
+     */
+    private static function openResourceScopes(): array
+    {
+        $scopes = [];
+
+        foreach (app(ProtectedResources::class)->all() as $resource) {
+            if ($resource->dynamicClients) {
+                array_push($scopes, ...$resource->scopes);
+            }
+        }
+
+        return $scopes;
     }
 
     public static function issuer(): string
@@ -203,6 +225,13 @@ class ServerMetadata
         // Advertise DCR only when it is actually enabled.
         if (config('cbox-id.oauth.dynamic_registration.mode', 'disabled') !== 'disabled') {
             $document['registration_endpoint'] = $issuer.'/oauth/register';
+        }
+
+        // draft-ietf-oauth-client-id-metadata-document: an https `client_id` is accepted
+        // as a document URL. Only while it is on, and only with a code flow to use it in —
+        // a document client has no other grant to start.
+        if ($hasAuthorizationEndpoint && filter_var(config('cbox-id.oauth.client_id_metadata_documents.enabled', false), FILTER_VALIDATE_BOOL)) {
+            $document['client_id_metadata_document_supported'] = true;
         }
 
         return $document;

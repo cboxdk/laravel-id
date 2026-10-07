@@ -13,16 +13,20 @@ use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
 use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
+use Cbox\Id\OAuthServer\Contracts\AuthorizationClients;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogoutDelivery;
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
+use Cbox\Id\OAuthServer\Contracts\ClientIdMetadataDocuments;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Contracts\EndSession;
 use Cbox\Id\OAuthServer\Contracts\LogoutTokenIssuer;
+use Cbox\Id\OAuthServer\Contracts\MetadataDocumentFetcher;
+use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
@@ -53,6 +57,18 @@ class OAuthServerServiceProvider extends ServiceProvider
         // carries — so the grant types cannot drift apart on it.
         $this->app->singleton(Apis::class, DatabaseApis::class);
         $this->app->singleton(AudienceResolver::class, RegisteredApiAudienceResolver::class);
+
+        // The resource servers the HOST serves itself (an MCP endpoint, say), declared in
+        // code beside the API rows — what the resolver, the RFC 9728 metadata routes and
+        // the self-registration paths all ask about.
+        $this->app->singleton(ProtectedResources::class, ConfiguredProtectedResources::class);
+
+        // Client ID Metadata Documents: an https `client_id` whose document IS the
+        // registration. The fetcher is its own contract because its URL is chosen by
+        // whoever loads /authorize — it is the SSRF surface, and tests replace it.
+        $this->app->singleton(MetadataDocumentFetcher::class, HttpMetadataDocumentFetcher::class);
+        $this->app->singleton(ClientIdMetadataDocuments::class, CachedClientIdMetadataDocuments::class);
+        $this->app->singleton(AuthorizationClients::class, DefaultAuthorizationClients::class);
 
         // Access-token lifetime is operator-tunable. A short TTL is the standard way
         // stateless roles/permissions claims stay fresh — the token self-expires

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Contracts;
 
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\ValueObjects\ConnectedApplication;
@@ -36,9 +37,15 @@ interface RefreshTokens
      * client mismatch, or — for a DPoP-bound token — a missing or mismatched
      * proof key (`$presentedJkt`).
      *
+     * `$resource` is the RFC 8707 `resource` the refresh request named, if any. A refresh
+     * token stays bound to the audience it was issued for, so a different one is refused
+     * with {@see InvalidAudience} (`invalid_target`) BEFORE the presented token is
+     * consumed.
+     *
      * @throws InvalidGrant
+     * @throws InvalidAudience
      */
-    public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null): RefreshGrant;
+    public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null, ?string $resource = null): RefreshGrant;
 
     /**
      * Revoke every refresh token in the family a given raw token belongs to

@@ -35,6 +35,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
+use Cbox\Id\OAuthServer\Support\ResourceParameter;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
@@ -89,19 +90,23 @@ class TokenController
         }
 
         // RFC 8707 §2: a present-but-malformed `resource` is an error, not a token
-        // silently issued unbound (which would over-scope it to every audience).
-        if ($this->resourceIsMalformed($request)) {
-            return $this->error('invalid_target', 400);
+        // silently issued unbound (which would over-scope it to every audience) — and so
+        // is a repeated one, which PHP's parser would otherwise collapse to its last
+        // value. See ResourceParameter for why one token names one audience.
+        try {
+            $resource = ResourceParameter::fromRequest($request);
+        } catch (InvalidAudience $e) {
+            return $this->error($e->error, 400, $e->getMessage());
         }
 
         try {
             return match ($request->string('grant_type')->toString()) {
-                'client_credentials' => $this->clientCredentials($request, $jkt),
-                'authorization_code' => $this->authorizationCode($request, $jkt),
-                'refresh_token' => $this->refreshToken($request, $jkt),
-                'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt),
+                'client_credentials' => $this->clientCredentials($request, $jkt, $resource),
+                'authorization_code' => $this->authorizationCode($request, $jkt, $resource),
+                'refresh_token' => $this->refreshToken($request, $jkt, $resource),
+                'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt, $resource),
                 'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt),
-                'urn:ietf:params:oauth:grant-type:token-exchange' => $this->tokenExchange($request, $jkt),
+                'urn:ietf:params:oauth:grant-type:token-exchange' => $this->tokenExchange($request, $jkt, $resource),
                 default => $this->error('unsupported_grant_type', 400),
             };
         } catch (ActionDenied) {
@@ -125,7 +130,7 @@ class TokenController
         return $this->dpop->verify($proof, $request->method(), $request->url());
     }
 
-    private function clientCredentials(Request $request, ?string $dpopJkt): JsonResponse
+    private function clientCredentials(Request $request, ?string $dpopJkt, ?string $resource): JsonResponse
     {
         $client = $this->clientAuth->authenticateConfidential($request);
 
@@ -159,13 +164,13 @@ class TokenController
         }
 
         return $this->tokenResponse(
-            $this->issuer->issueClientCredentials($client, $requested, $this->resource($request), $dpopJkt),
+            $this->issuer->issueClientCredentials($client, $requested, $resource, $dpopJkt),
             null,
             requestedScopes: $requested,
         );
     }
 
-    private function authorizationCode(Request $request, ?string $dpopJkt): JsonResponse
+    private function authorizationCode(Request $request, ?string $dpopJkt, ?string $requested): JsonResponse
     {
         // Confidential clients must authenticate with their secret in addition to
         // PKCE (RFC 6749 §4.1.3). PKCE alone is the guard for public clients, which
@@ -208,8 +213,6 @@ class TokenController
         //
         // A code carrying no resource is unchanged: there is nothing to contradict, and
         // codes issued before the column existed must not be retroactively bound.
-        $requested = $this->resource($request);
-
         if ($grant->resource !== null && $requested !== null && $requested !== $grant->resource) {
             return $this->error('invalid_target', 400, 'the requested resource is not the one this authorization was granted for');
         }
@@ -284,7 +287,7 @@ class TokenController
         );
     }
 
-    private function deviceCode(Request $request, ?string $dpopJkt): JsonResponse
+    private function deviceCode(Request $request, ?string $dpopJkt, ?string $resource): JsonResponse
     {
         $client = $this->clientAuth->authenticate($request);
 
@@ -314,8 +317,12 @@ class TokenController
             return $this->error('invalid_grant', 400, $e->getMessage());
         }
 
+        // RFC 8707 on the device grant: the resource is named on the token request, the
+        // only request the device itself makes after the person approved. It was read for
+        // every other grant and dropped here, so a CLI asking for an MCP server's audience
+        // got a token for the issuer. The audience resolver still decides what it may be.
         $access = $this->issuer->issueForUser(
-            $client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt,
+            $client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt,
         );
 
         // A refresh token when the client asked for offline access — the same rule,
@@ -408,7 +415,7 @@ class TokenController
         return $this->tokenResponse($access, $this->idTokenIfOpenId($client, IdTokenGrant::fromAuthorization($grant), $access), $refresh, $grant->scopes);
     }
 
-    private function refreshToken(Request $request, ?string $dpopJkt): JsonResponse
+    private function refreshToken(Request $request, ?string $dpopJkt, ?string $resource): JsonResponse
     {
         $client = $this->clientAuth->authenticate($request);
 
@@ -422,7 +429,10 @@ class TokenController
         }
 
         try {
-            $rotated = $this->refreshTokens->rotate($client->client_id, $request->string('refresh_token')->toString(), $dpopJkt);
+            // The requested resource goes IN, so a refresh naming another audience is refused
+            // before the presented token is consumed — refusing after rotation would cost
+            // the client its only refresh token for asking a question.
+            $rotated = $this->refreshTokens->rotate($client->client_id, $request->string('refresh_token')->toString(), $dpopJkt, $resource);
         } catch (InvalidGrant $e) {
             // The reason already exists on the exception; discarding it collapsed
             // expired-code, wrong-redirect_uri, PKCE-mismatch, replayed-code and
@@ -635,35 +645,6 @@ class TokenController
     }
 
     /**
-     * RFC 8707 resource indicator. Returns a well-formed absolute URI, or null
-     * when none was requested. A malformed value is rejected upfront in
-     * {@see resourceIsMalformed()}, so by here a non-null value is well-formed.
-     */
-    private function resource(Request $request): ?string
-    {
-        $resource = trim($request->string('resource')->toString());
-
-        return $resource === '' ? null : $resource;
-    }
-
-    /**
-     * A `resource` was supplied but is not an absolute URI (RFC 8707 requires an
-     * absolute URI, and forbids a fragment). Absent `resource` is not malformed.
-     */
-    private function resourceIsMalformed(Request $request): bool
-    {
-        $resource = trim($request->string('resource')->toString());
-
-        if ($resource === '') {
-            return false;
-        }
-
-        $parts = parse_url($resource);
-
-        return ! is_array($parts) || ! isset($parts['scheme'], $parts['host']) || isset($parts['fragment']);
-    }
-
-    /**
      * @return list<string>
      */
     private function scopes(Request $request): array
@@ -677,7 +658,7 @@ class TokenController
      * RFC 8693 token exchange — exchange a valid subject access token for a new,
      * down-scoped and/or re-audienced access token. Requires client authentication.
      */
-    private function tokenExchange(Request $request, ?string $dpopJkt): JsonResponse
+    private function tokenExchange(Request $request, ?string $dpopJkt, ?string $resource): JsonResponse
     {
         $client = $this->clientAuth->authenticateConfidential($request);
 
@@ -702,7 +683,7 @@ class TokenController
                 subjectToken: $subjectToken,
                 subjectTokenType: $subjectTokenType,
                 requestedScopes: $this->scopes($request),
-                resource: $this->resource($request),
+                resource: $resource,
                 dpopJkt: $dpopJkt,
                 requestedTokenType: $request->string('requested_token_type')->toString() ?: null,
             ));

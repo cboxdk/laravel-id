@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
+use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Dpop\DpopResourceGuard;
 use Cbox\Id\OAuthServer\Exceptions\InvalidDpopProof;
+use Cbox\Id\OAuthServer\Support\BearerChallenge;
+use Cbox\Id\OAuthServer\ValueObjects\ProtectedResource;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\MembershipStatus;
@@ -160,10 +163,18 @@ class UserInfoController
 
     private function challenge(string $description, string $scheme = 'Bearer'): JsonResponse
     {
+        // RFC 9728 §5.1: name where this resource is described, so a client holding only
+        // the endpoint's URL can discover which authorization server to ask.
+        $challenge = new BearerChallenge(
+            resourceMetadata: ServerMetadata::issuer().ProtectedResource::WELL_KNOWN,
+            error: 'invalid_token',
+            scheme: $scheme,
+        );
+
         return new JsonResponse(
             ['error' => 'invalid_token', 'error_description' => $description],
             401,
-            ['WWW-Authenticate' => $scheme.' error="invalid_token"'],
+            $challenge->headers(),
         );
     }
 }

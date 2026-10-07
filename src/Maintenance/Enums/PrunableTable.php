@@ -45,6 +45,14 @@ enum PrunableTable: string
     case OauthSessionParticipants = 'oauth_session_participants';
 
     /**
+     * SELF-REGISTERED clients nobody has used in the retention window — not operator
+     * clients, which are never swept. Off unless configured: deleting a client is not
+     * the same kind of act as deleting an expired token, so the package default
+     * (`cbox-id.prune.retention_days.oauth_clients`) is null and an operator opts in.
+     */
+    case OauthClients = 'oauth_clients';
+
+    /**
      * How long a dead row is kept by default, in days.
      *
      * Replay guards (`dpop_proofs`, `consumed_assertions`, authorization codes) are
@@ -63,6 +71,9 @@ enum PrunableTable: string
             self::OauthRefreshTokens, self::Events, self::AuthSessions,
             self::UsageMeteredEvents, self::WebhookDeliveries, self::ProvisioningOperations,
             self::OauthSessionParticipants => 30,
+            // Reached only when the key is missing entirely, which the package's merged
+            // config never leaves it; the shipped default is null (off).
+            self::OauthClients => 90,
         };
     }
 
@@ -157,6 +168,24 @@ enum PrunableTable: string
                         ->from('auth_sessions')
                         ->whereColumn('auth_sessions.id', 'oauth_session_participants.session_id')
                         ->where('auth_sessions.expires_at', '>=', $cutoff)))),
+
+            // A client is dead when it REGISTERED ITSELF (RFC 7591 — the registration
+            // access token marks it), has minted no token since the cutoff (or never did,
+            // and was registered before it), and holds no refresh token that could still
+            // be redeemed: a person who granted offline access is still using it, however
+            // quiet. Operator-registered clients never match. Secrets cascade with the row.
+            self::OauthClients => $query
+                ->whereNotNull('registration_access_token_hash')
+                ->where(fn (Builder $unused) => $unused
+                    ->where('last_used_at', '<', $cutoff)
+                    ->orWhere(fn (Builder $never) => $never
+                        ->whereNull('last_used_at')
+                        ->where('created_at', '<', $cutoff)))
+                ->whereNotExists(fn (Builder $live) => $live
+                    ->from('oauth_refresh_tokens')
+                    ->whereColumn('oauth_refresh_tokens.client_id', 'oauth_clients.client_id')
+                    ->whereNull('oauth_refresh_tokens.revoked_at')
+                    ->where('oauth_refresh_tokens.expires_at', '>', Carbon::now())),
         };
     }
 }
