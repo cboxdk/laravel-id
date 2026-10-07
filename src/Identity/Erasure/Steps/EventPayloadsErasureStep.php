@@ -33,13 +33,7 @@ class EventPayloadsErasureStep implements ErasureStep
     {
         $environment = $this->environments()->current()?->environmentKey();
 
-        $candidates = Event::query()
-            ->where('environment_id', $environment)
-            ->where(static function ($query) use ($request): void {
-                foreach (PayloadScrubber::needles($request) as $needle) {
-                    $query->orWhere('payload', 'like', '%'.$needle.'%');
-                }
-            });
+        $candidates = PayloadScrubber::mentioningInPayload(Event::query()->where('environment_id', $environment), $request);
 
         $scrubbed = 0;
 

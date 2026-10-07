@@ -142,11 +142,15 @@ it('keeps the audit chain verifiable after an erasure', function (): void {
 it('scrubs the email from the domain-event outbox', function (): void {
     [$id] = richSubject();
 
-    expect(Event::query()->where('payload', 'like', '%erase.me@example.test%')->exists())->toBeTrue('fixture: user.created carries the email');
+    $mentions = static fn (): bool => Event::query()->get()->contains(
+        static fn (Event $event): bool => str_contains((string) json_encode($event->payload), 'erase.me@example.test'),
+    );
+
+    expect($mentions())->toBeTrue('fixture: user.created carries the email');
 
     $receipt = app(SubjectEraser::class)->erase($id);
 
-    expect(Event::query()->where('payload', 'like', '%erase.me@example.test%')->exists())->toBeFalse()
+    expect($mentions())->toBeFalse()
         ->and($receipt->count('events'))->toBeGreaterThan(0);
 })->group('security');
 
@@ -190,7 +194,7 @@ it('deletes the person from every downstream app over SCIM, whatever the deprovi
         // And no create/update re-sent the person's data after the erasure.
         ->and($fake->requestsOfType('create'))->toHaveCount(1)
         ->and(ProvisionedResource::query()->where('user_id', $user->id)->value('remote_id'))->toBeNull()
-        ->and(DB::table('provisioning_operations')->where('payload', 'like', '%downstream@example.test%')->exists())->toBeFalse();
+        ->and(DB::table('provisioning_operations')->pluck('payload')->filter(static fn (mixed $payload): bool => str_contains((string) $payload, 'downstream@example.test'))->isEmpty())->toBeTrue();
 })->group('security');
 
 it('runs steps a host registers, and lists them on the receipt', function (): void {

@@ -24,11 +24,7 @@ class WebhookDeliveriesErasureStep implements ErasureStep
 
     public function erase(ErasureRequest $request): ErasureStepResult
     {
-        $candidates = WebhookDelivery::query()->where(static function ($query) use ($request): void {
-            foreach (PayloadScrubber::needles($request) as $needle) {
-                $query->orWhere('payload', 'like', '%'.$needle.'%');
-            }
-        });
+        $candidates = PayloadScrubber::mentioningInPayload(WebhookDelivery::query(), $request);
 
         $scrubbed = 0;
 

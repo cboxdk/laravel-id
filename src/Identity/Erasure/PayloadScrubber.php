@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity\Erasure;
 
 use Cbox\Id\Identity\ValueObjects\ErasureRequest;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Rewrites a stored JSON payload (an outbox event, a webhook delivery, a queued SCIM
@@ -41,14 +43,35 @@ class PayloadScrubber
     }
 
     /**
-     * Strings a store can LIKE-match to find candidate rows — the id and the email. The
-     * scrub itself decides; this only narrows the scan.
+     * Narrow a query to the rows whose JSON `payload` column mentions the subject's id or
+     * email — a cheap pre-filter; {@see scrub()} decides on each candidate.
      *
-     * @return list<string>
+     * The column is cast to text per driver because a JSON column does not take LIKE
+     * portably: PostgreSQL has no `json ~~ text` operator at all, and MySQL compares a JSON
+     * value under a binary collation. Lower-cased on both sides, since an address may have
+     * been written with different capitalisation than the subject row now holds.
+     *
+     * @template TModel of Model
+     *
+     * @param  EloquentBuilder<TModel>  $query
+     * @return EloquentBuilder<TModel>
      */
-    public static function needles(ErasureRequest $request): array
+    public static function mentioningInPayload(EloquentBuilder $query, ErasureRequest $request): EloquentBuilder
     {
-        return array_values(array_filter([$request->subjectId, $request->email], static fn (?string $value): bool => $value !== null && $value !== ''));
+        $condition = match ($query->getModel()->getConnection()->getDriverName()) {
+            'pgsql' => 'LOWER(CAST(payload AS TEXT)) LIKE ?',
+            'mysql', 'mariadb' => 'LOWER(CAST(payload AS CHAR)) LIKE ?',
+            'sqlsrv' => 'LOWER(CAST(payload AS NVARCHAR(MAX))) LIKE ?',
+            default => 'LOWER(payload) LIKE ?',
+        };
+
+        $needles = array_values(array_filter([$request->subjectId, $request->email], static fn (?string $value): bool => $value !== null && $value !== ''));
+
+        return $query->where(static function (EloquentBuilder $inner) use ($needles, $condition): void {
+            foreach ($needles as $needle) {
+                $inner->orWhereRaw($condition, ['%'.mb_strtolower($needle).'%']);
+            }
+        });
     }
 
     /**
