@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Cbox\Id\SamlIdp;
 
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\SamlIdp\Contracts\IdpKeyMaterial;
 use Cbox\Id\SamlIdp\Contracts\SamlIdentityProvider;
 use Cbox\Id\SamlIdp\Contracts\ServiceProviders;
@@ -12,6 +18,7 @@ use Cbox\Id\SamlIdp\Enums\NameIdFormat;
 use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Enums\SamlStatusCode;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
+use Cbox\Id\SamlIdp\Exceptions\SubjectNotPermitted;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
 use Cbox\Id\SamlIdp\Models\SamlIdpNameId;
 use Cbox\Id\SamlIdp\Models\SamlIdpSession;
@@ -64,6 +71,12 @@ class SamlIdentityProviderService implements SamlIdentityProvider
      */
     private const METADATA_CACHE_TTL_SECONDS = 3600;
 
+    /**
+     * The SAML attribute carrying the owning organization's id on an assertion to an
+     * organization-owned SP. Never emitted for an environment-wide SP.
+     */
+    public const ORGANIZATION_ATTRIBUTE = 'organization_id';
+
     public function __construct(
         private readonly ServiceProviders $serviceProviders,
         private readonly IdpKeyMaterial $keyMaterial,
@@ -72,6 +85,9 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         private readonly AssertionBuilder $assertions,
         private readonly EmbeddedSignature $embeddedSignature,
         private readonly MessageGuard $guard,
+        private readonly Memberships $memberships,
+        private readonly AuditLog $audit,
+        private readonly EventBus $events,
     ) {}
 
     /**
@@ -537,6 +553,15 @@ class SamlIdentityProviderService implements SamlIdentityProvider
             throw UnknownServiceProvider::forEntityId($request->spEntityId);
         }
 
+        // WHO may be asserted to THIS SP. An organization-owned SP is that organization's
+        // app, and only its active members get in. This check did not exist: every SP was
+        // environment-wide in effect, and the IdP never asked whether the subject had
+        // anything to do with the SP's owner — so anyone who could sign in to the
+        // environment could single-sign-on into any organization's SAML app. Checked
+        // BEFORE the request id is burned, so a refused person does not spend the SP's
+        // request for whoever is allowed. Environment-wide SPs (no owner) are unchanged.
+        $this->assertSubjectPermitted($serviceProvider, $request, $subjectId);
+
         // Single-use: one AuthnRequest buys exactly one assertion. Burning the id
         // HERE rather than at parse time is deliberate — the SSO endpoint parses
         // the same request again when the browser returns from the host's login,
@@ -549,6 +574,14 @@ class SamlIdentityProviderService implements SamlIdentityProvider
 
         $nameId = $this->resolveNameId($serviceProvider, $subjectId, $attributes);
         $mappedAttributes = $this->mapAttributes($serviceProvider, $attributes);
+
+        // An org-owned SP is told WHICH organization vouched for this person, so a
+        // multi-tenant SP can land them in the right tenant without trusting anything the
+        // user typed. Authoritative: set after the mapping, so an attribute mapping that
+        // happens to emit the same name cannot replace it with a subject field.
+        if ($serviceProvider->isOrganizationOwned()) {
+            $mappedAttributes[self::ORGANIZATION_ATTRIBUTE] = [(string) $serviceProvider->organization_id];
+        }
 
         // Record what we are about to tell this SP, so Single Logout can resolve a
         // NameID THROUGH the SP that presents it. Without this, SLO took the NameID from
@@ -592,6 +625,56 @@ class SamlIdentityProviderService implements SamlIdentityProvider
             acsUrl: $serviceProvider->acs_url,
             relayState: $request->relayState,
         );
+    }
+
+    /**
+     * Refuse — audited, announced, and reported to the SP in SAML — when the SP belongs to
+     * an organization the subject is not an ACTIVE member of. An invited or suspended
+     * membership is not access, the same reading the `org_role` claim takes.
+     *
+     * @throws SubjectNotPermitted
+     */
+    private function assertSubjectPermitted(ServiceProvider $serviceProvider, AuthnRequest $request, string $subjectId): void
+    {
+        if (! $serviceProvider->isOrganizationOwned()) {
+            return;
+        }
+
+        $organizationId = (string) $serviceProvider->organization_id;
+
+        if ($this->memberships->activeRole($organizationId, $subjectId) !== null) {
+            return;
+        }
+
+        // On the OWNING organization's trail and bus: it is that organization's app that
+        // somebody tried to get into, so its own admins and its own SIEM should see it.
+        $this->audit->record(new AuditEvent(
+            action: 'saml_idp.assertion_refused',
+            actorType: ActorType::User,
+            actorId: $subjectId,
+            organizationId: $organizationId,
+            targetType: 'saml_service_provider',
+            targetId: $serviceProvider->id,
+            context: ['reason' => 'not_a_member', 'sp_entity_id' => $serviceProvider->entity_id],
+            ip: request()->ip(),
+        ));
+
+        $this->events->emit(new DomainEvent('saml_idp.assertion_refused', [
+            'user_id' => $subjectId,
+            'service_provider_id' => $serviceProvider->id,
+            'sp_entity_id' => $serviceProvider->entity_id,
+            'reason' => 'not_a_member',
+        ], $organizationId));
+
+        throw SubjectNotPermitted::notAMember(new SamlError(
+            spEntityId: $serviceProvider->entity_id,
+            acsUrl: $serviceProvider->acs_url,
+            status: SamlStatusCode::Responder,
+            subStatus: SamlStatusCode::RequestDenied,
+            inResponseTo: $request->id,
+            relayState: $request->relayState,
+            message: 'the signed-in user is not permitted to use this service provider',
+        ));
     }
 
     /**

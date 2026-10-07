@@ -35,6 +35,7 @@ class FakeServiceProviders implements ServiceProviders
             'certificate' => $serviceProvider->certificate,
             'want_authn_requests_signed' => $serviceProvider->wantAuthnRequestsSigned,
             'status' => $serviceProvider->status,
+            'organization_id' => $serviceProvider->organizationId,
         ]);
 
         $this->providers[$model->id] = $model;
