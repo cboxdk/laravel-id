@@ -1,6 +1,9 @@
 <?php
 
 declare(strict_types=1);
+use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Models\Session;
+use Cbox\Id\OAuthServer\Support\SessionIdentifier;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
 use Cbox\Id\Organization\Enums\EnvironmentType;
@@ -121,4 +124,22 @@ function platformRootEnvironment(): Environment
         'is_default' => true,
         'settings' => [],
     ]);
+}
+
+/**
+ * The live session an SSO callback's public `sid` names, or null.
+ *
+ * The callbacks return the opaque OIDC `sid` rather than the `auth_sessions` row key,
+ * which by design cannot be turned back into one — so a test finds the session the way
+ * a back-channel logout does: by deriving each candidate's `sid` and comparing.
+ */
+function sessionForSid(string $sid): ?Session
+{
+    foreach (Session::query()->whereNull('revoked_at')->get() as $session) {
+        if (hash_equals(SessionIdentifier::sid($session->id), $sid)) {
+            return app(SessionManager::class)->active($session->id);
+        }
+    }
+
+    return null;
 }

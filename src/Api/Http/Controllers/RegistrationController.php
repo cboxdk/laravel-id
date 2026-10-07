@@ -15,7 +15,8 @@ use Illuminate\Http\Request;
  * `POST /oauth/register` — OAuth 2.0 Dynamic Client Registration (RFC 7591).
  *
  * Gated by `cbox-id.oauth.dynamic_registration.mode`: `disabled` (403),
- * `protected` (requires the configured initial access token), or `open`.
+ * `protected` (requires the configured initial access token), `open`, or `mcp` (open,
+ * but public clients for host-declared resources only — see DynamicClientRegistrar).
  */
 class RegistrationController
 {
@@ -65,7 +66,9 @@ class RegistrationController
     {
         $mode = config('cbox-id.oauth.dynamic_registration.mode', 'disabled');
 
-        if ($mode === 'open') {
+        // `mcp` is open registration too — anyone may register — held to the MCP profile
+        // by the registrar and to a per-address hourly ceiling by the route's limiter.
+        if ($mode === 'open' || $mode === 'mcp') {
             return null;
         }
 

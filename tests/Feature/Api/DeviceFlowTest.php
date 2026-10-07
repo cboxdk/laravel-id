@@ -6,6 +6,7 @@ use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
+use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -249,3 +250,28 @@ it('issues no refresh token when offline access was not asked for', function ():
 
     expect($body)->not->toHaveKey('refresh_token');
 });
+
+it('issues no refresh token to a device client that may not redeem one', function (): void {
+    // `offline_access` granted, but the registration never named `refresh_token`, so
+    // the refresh grant would refuse this client with `unauthorized_client`. Minting a
+    // long-lived credential its holder can never use is exposure for nothing.
+    $registered = $this->makeClient(
+        ['openid', 'offline_access'],
+        grantTypes: ['urn:ietf:params:oauth:grant-type:device_code'],
+    );
+    $device = app(DeviceAuthorization::class);
+    $result = $device->request($registered->client, ['openid', 'offline_access']);
+
+    expect($device->approve($result->userCode, 'user-1', 'org-1'))->toBeTrue();
+    DeviceCode::query()->update(['last_polled_at' => now()->subMinute()]);
+
+    $body = $this->postJson('/oauth/token', [
+        'grant_type' => DEVICE_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'device_code' => $result->deviceCode,
+    ])->assertOk()->json();
+
+    expect($body)->not->toHaveKey('refresh_token')
+        ->and(RefreshToken::query()->count())->toBe(0);
+})->group('security');

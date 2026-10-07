@@ -16,7 +16,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 |---|---|---|
 | Global subjects with a pluggable user model | **Full** | The host's own `User` model is resolved through config; the package owns the schema. |
 | Password authentication | **Full** | Framework hasher (bcrypt/argon2id), constant-time failure path, rehash-on-login. |
-| Password policy — length, reuse history, expiry, lockout, MFA and SSO mandates | **Full** | An environment sets the floor; an organization may only *tighten* it, never negotiate below it. Minimum length defaults to 12. Reuse history, expiry and lockout each default to **off** until you set them. |
+| Password policy — length, reuse history, expiry, lockout, MFA and SSO mandates | **Full** | An environment sets the floor; an organization may only *tighten* it, never negotiate below it. Minimum length defaults to 12. Reuse history and expiry default to **off** until you set them; lockout is **on** by default (10 failures in 15 minutes, see below). |
 | Breached-password screening | **Contract only** | The shipped default answers "not breached" for every password. See the caveat in [Standards](../security/standards.md#multi-factor-and-credentials). |
 | Password complexity classes | **No** | |
 | Bulk user import with lazy hash migration | **Full** | CSV or JSON via `cbox-id:users:import`; foreign hashes are refused unless you bind a verifier for the format, then upgraded to the platform hasher on first successful login. |
@@ -31,7 +31,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Email verification | **Full** | Hash-only single-use token, TTL, stale-address guard. |
 | One-time passcodes (OTP) | **Partial** | Keyed HMAC at rest (HKDF subkey off the master key), decoy hash for uniform timing, per-recipient and per-IP rate limits, per-challenge attempt cap. **Only the email channel ships** — plus a log channel for development and a null channel. |
 | SMS / voice / push OTP | **Contract only** | `OtpChannel` is the extension point; no driver and no provider SDK ships. |
-| Login lockout | **Partial** | Implemented, serialized under a row lock, audited — but the threshold defaults to `null`, so it is **off until a policy sets it**. Window and duration are fixed at 15 minutes. |
+| Login lockout | **Full** | Serialized under a row lock, audited, and **on by default** since 1.22: 10 failures inside 15 minutes lock the subject for 15 minutes. A policy's `lockoutThreshold` overrides the default; `cbox-id.lockout.*` sets the default, the window and the duration (`threshold: 0` turns the default off). The lock always expires on its own. |
 | Federated sign-in and explicit account linking | **Full** | Provider-agnostic `FederatedPrincipal`. A federated identity is never merged into an existing account by email; that path is refused so linking stays deliberate. |
 | Named social providers (Google, GitHub, Microsoft buttons) | **Host-supplied** | The framework provides the provider-agnostic linking path only. |
 
@@ -77,6 +77,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Inbound SCIM 2.0 server | **Partial** | See [Standards](../security/standards.md#scim-20-inbound-provisioning-server) for the per-section detail. |
 | Directory pull connectors | **Full** | Google Workspace (Admin SDK) and Microsoft Entra (Graph). Both normalise into the same value objects and run the same reconciliation as SCIM push. Neither is a SCIM client — they are proprietary REST APIs shaped into SCIM. Both carry a setup guide in the provider catalogue (`ProviderCatalog::forDirectory()`), so a console can render the same guidance for a directory that it renders for a sign-in connection. |
 | Immediate deprovision | **Full** | Deactivation drops membership and **revokes sessions immediately**. |
+| Erasure (GDPR Art. 17) | **Full** | `SubjectEraser`: one transaction removes credentials, sessions, grants, memberships, role grants and vault secrets, scrubs stored payloads, pseudonymises the subject row (id kept), emits `user.erased` (SCIM `DELETE` downstream) and returns a receipt. Hosts register steps for their own stores. The audit trail is not rewritten — past entries keep the opaque id; see [erasure](../security/erasure.md). |
 | Outbound SCIM provisioning | **Partial** | A generic SCIM 2.0 client against any endpoint, with bearer or client-credentials auth, a durable outbox, retries, dead-lettering, per-connection circuit breaker, and a resolve-once IP-pinned SSRF guard. **Users only — no group or membership push.** No vendor-specific connectors. |
 | Deprovision policy | **Full** | Per connection: deactivate (`active: false`) or delete. |
 
@@ -118,9 +119,9 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 |---|---|---|
 | Envelope encryption for secrets at rest | **Full** | XChaCha20-Poly1305-IETF (libsodium), random nonce per message, bound to a context string as AEAD additional data. Not AES-GCM. |
 | Signing key management and rotation | **Full** | RSA-2048, P-256 or Ed25519; private keys sealed per-`kid`; `cbox-id:keys:rotate` with an Active→Rotating→Retired overlap so in-flight tokens keep verifying. |
-| Master-key rotation | **No** | There is no re-encrypt/rewrap routine. The vault's `key_version` column is written as a constant and never read. Plan master-key custody accordingly. |
+| Master-key rotation | **Full** | Versioned keyring: each ciphertext names its key (a derived id, never the key); `CBOX_ID_CRYPTO_PREVIOUS_KEYS` keeps old keys for opening only; `cbox-id:crypto:rewrap` re-seals every registered column in resumable chunks (`--dry-run`); the doctor warns while anything is under a previous key. Pre-1.22 envelopes keep opening. See [master key management](../security/key-management.md). |
 | HSM / KMS integration | **Contract only** | `SecretBox` is the swap point; no AWS KMS, Vault or PKCS#11 implementation ships. |
-| Token vault for downstream credentials | **Full** | Seals third-party credentials and brokers short-lived, deny-by-default leases to clients. Uniform refusal with no enumeration oracle; the real reason goes to the audit log only. Per-grant TTL can only shorten the default. Secret rotation is supported (master-key rotation is not — see above). |
+| Token vault for downstream credentials | **Full** | Seals third-party credentials and brokers short-lived, deny-by-default leases to clients. Uniform refusal with no enumeration oracle; the real reason goes to the audit log only. Per-grant TTL can only shorten the default. Secret rotation is supported, and vault secrets are re-sealed by a master-key rotation like every other sealed column. |
 
 ## Operations & tooling
 

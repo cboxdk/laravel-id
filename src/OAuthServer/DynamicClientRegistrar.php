@@ -19,6 +19,8 @@ use Cbox\Id\OAuthServer\Support\ClientAudit;
 use Cbox\Id\OAuthServer\Support\ClientSecretStore;
 use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
 use Cbox\Id\OAuthServer\Support\ReservedScopes;
+use Cbox\Id\OAuthServer\Support\SelfRegisteredScopes;
+use Cbox\Id\OAuthServer\Support\WebRedirectUri;
 use Cbox\Id\OAuthServer\ValueObjects\ClientBlueprint;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
@@ -34,6 +36,15 @@ use Illuminate\Support\Facades\DB;
  * client may hold, and redirect URIs must be well-formed
  * and non-fragment (loopback http is permitted for native/CLI clients, which is
  * exactly the MCP case).
+ *
+ * THE `mcp` MODE is open registration held to what an MCP client actually needs and no
+ * more: a public client (`none`, no secret, no keys), the authorization-code and refresh
+ * grants only — PKCE is mandatory for every public client at `/authorize` and the token
+ * endpoint already — redirect URIs on https or a loopback host only (no custom schemes,
+ * no sandbox http), no back-channel logout URI (nothing for the server to call), and the
+ * scopes {@see SelfRegisteredScopes} allows: those of host-declared resources open to
+ * self-registered clients, plus permitted protocol scopes. The same rules apply to an
+ * RFC 7592 update, which goes through {@see validate()} too.
  */
 class DynamicClientRegistrar implements DynamicClientRegistration
 {
@@ -56,19 +67,29 @@ class DynamicClientRegistrar implements DynamicClientRegistration
      */
     private const AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post', 'private_key_jwt'];
 
+    /** The grants an `mcp`-mode registration may hold: the code flow and its refresh. */
+    private const MCP_GRANT_TYPES = ['authorization_code', 'refresh_token'];
+
     public function __construct(
         private readonly ClientRegistry $clients,
         private readonly Apis $apis,
         private readonly ClientSecretStore $secrets,
         private readonly ClientAudit $audit,
+        private readonly SelfRegisteredScopes $selfRegistered,
     ) {}
 
     public function validate(array $request): ClientMetadata
     {
-        $authMethod = $this->authMethod($request);
-        $grantTypes = $this->grantTypes($request);
+        $mcp = config('cbox-id.oauth.dynamic_registration.mode') === 'mcp';
+
+        $authMethod = $this->authMethod($request, $mcp);
+        $grantTypes = $mcp ? $this->mcpGrantTypes($request) : $this->grantTypes($request);
         $responseTypes = $this->responseTypes($request, $grantTypes);
-        $redirectUris = $this->redirectUris($request, $grantTypes);
+        $redirectUris = $this->redirectUris($request, $grantTypes, $mcp);
+
+        if ($mcp && isset($request['backchannel_logout_uri'])) {
+            throw InvalidClientMetadata::metadata('backchannel_logout_uri is not accepted for an MCP client registration');
+        }
 
         // A client that authenticates with a secret cannot be public, and a
         // public client cannot use client_credentials (it has no secret to prove).
@@ -87,7 +108,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             redirectUris: $redirectUris,
             grantTypes: $grantTypes,
             responseTypes: $responseTypes,
-            scopes: $this->scopes($request),
+            scopes: $mcp ? $this->selfRegistered->narrow($this->requestedScopes($request), in_array('refresh_token', $grantTypes, true)) : $this->scopes($request),
             jwks: $this->jwks($request, $authMethod),
             backchannelLogoutUri: $this->backchannelLogoutUri($request),
             backchannelLogoutSessionRequired: $this->backchannelLogoutSessionRequired($request),
@@ -236,16 +257,67 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     /**
      * @param  array<string, mixed>  $request
      */
-    private function authMethod(array $request): string
+    private function authMethod(array $request, bool $mcp = false): string
     {
-        // RFC 7591 §2: the default when omitted is client_secret_basic.
-        $method = $request['token_endpoint_auth_method'] ?? 'client_secret_basic';
+        // RFC 7591 §2: the default when omitted is client_secret_basic — except under the
+        // MCP profile, where a public client is the only kind there is, so asking for
+        // nothing means `none` rather than a refusal.
+        $method = $request['token_endpoint_auth_method'] ?? ($mcp ? 'none' : 'client_secret_basic');
 
         if (! is_string($method) || ! in_array($method, self::AUTH_METHODS, true)) {
             throw InvalidClientMetadata::metadata('unsupported token_endpoint_auth_method');
         }
 
+        // A secret handed to whoever reached an open endpoint authenticates nothing; a
+        // public client with PKCE is the honest shape of an anonymous registrant.
+        if ($mcp && $method !== 'none') {
+            throw InvalidClientMetadata::metadata('this server registers public clients only: token_endpoint_auth_method must be "none"');
+        }
+
         return $method;
+    }
+
+    /**
+     * The `mcp` mode's grants: a subset of the code flow and its refresh, defaulting to
+     * both — an MCP client that registers once and refreshes without a browser.
+     *
+     * @param  array<string, mixed>  $request
+     * @return list<string>
+     */
+    private function mcpGrantTypes(array $request): array
+    {
+        $requested = $this->stringList($request['grant_types'] ?? null);
+        $requested = $requested === [] ? self::MCP_GRANT_TYPES : array_values(array_unique($requested));
+
+        foreach ($requested as $grant) {
+            if (! in_array($grant, self::MCP_GRANT_TYPES, true) || ! in_array($grant, $this->configList('allowed_grant_types'), true)) {
+                throw InvalidClientMetadata::metadata("grant_type not permitted: {$grant}");
+            }
+        }
+
+        if (! in_array('authorization_code', $requested, true)) {
+            throw InvalidClientMetadata::metadata('an MCP client registration needs the authorization_code grant');
+        }
+
+        return $requested;
+    }
+
+    /**
+     * The scopes the request named, or null when it named none at all (so the defaults
+     * apply). An empty or non-string `scope` is "none at all".
+     *
+     * @param  array<string, mixed>  $request
+     * @return list<string>|null
+     */
+    private function requestedScopes(array $request): ?array
+    {
+        $raw = $request['scope'] ?? null;
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        return array_values(array_filter(explode(' ', $raw), static fn (string $s): bool => $s !== ''));
     }
 
     /**
@@ -385,7 +457,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
      * @param  list<string>  $grantTypes
      * @return list<string>
      */
-    private function redirectUris(array $request, array $grantTypes): array
+    private function redirectUris(array $request, array $grantTypes, bool $mcp = false): array
     {
         $uris = $this->stringList($request['redirect_uris'] ?? null);
         $needsRedirect = in_array('authorization_code', $grantTypes, true);
@@ -395,7 +467,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         }
 
         foreach ($uris as $uri) {
-            $this->assertRedirectUri($uri);
+            if ($mcp && ! WebRedirectUri::isValid($uri)) {
+                throw InvalidClientMetadata::redirectUri("redirect_uri must use https, or http on a loopback host, with no fragment: {$uri}");
+            }
+
+            if (! $mcp) {
+                $this->assertRedirectUri($uri);
+            }
         }
 
         return $uris;

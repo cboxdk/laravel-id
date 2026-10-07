@@ -13,9 +13,14 @@ use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
 use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Contracts\StaffAccess;
+use Cbox\Id\AccessControl\Erasure\RoleGrantsErasureStep;
 use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
+use Cbox\Id\Identity\Contracts\ErasureSteps;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,6 +28,18 @@ class AccessControlServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // This module's share of a GDPR erasure (see SubjectEraser): the personal data it
+        // owns is erased by the module that owns it.
+        $this->callAfterResolving(ErasureSteps::class, static function (ErasureSteps $steps, Application $app): void {
+            $steps->register($app->make(RoleGrantsErasureStep::class));
+        });
+
+        // A declared legacy-login handler's secret (LegacyLoginDeclarationRecord::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('legacy_login_declarations', 'secret_encrypted', 'cbox-id:legacy-login:'));
+        });
+
         // Driver-independent: it asks whichever AccessChecker is bound, so an external
         // RBAC adapter answers live decisions exactly as it answers token claims.
         $this->app->singleton(PermissionDecisions::class, AppPermissionDecisions::class);

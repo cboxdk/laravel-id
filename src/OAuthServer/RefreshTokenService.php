@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer;
 
 use Carbon\CarbonInterface;
+use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\RefreshTokenReuse;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -40,17 +42,20 @@ class RefreshTokenService implements RefreshTokens
      */
     private const REUSE_GRACE_SECONDS = 10;
 
-    public function __construct(private readonly BackchannelLogout $logout) {}
+    public function __construct(
+        private readonly BackchannelLogout $logout,
+        private readonly ?IssuerResolver $issuers = null,
+    ) {}
 
     public function issue(Client $client, ?string $userId, ?string $organizationId, array $scopes, ?string $audience = null, ?string $dpopJkt = null, ?int $authTime = null, array $amr = [], ?string $sessionId = null): string
     {
         return $this->mint((string) Str::ulid(), $client->client_id, $userId, $organizationId, $scopes, $audience, $dpopJkt, $authTime, $amr, $sessionId);
     }
 
-    public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null): RefreshGrant
+    public function rotate(string $clientId, string $rawToken, ?string $presentedJkt = null, ?string $resource = null): RefreshGrant
     {
         try {
-            return DB::transaction(function () use ($clientId, $rawToken, $presentedJkt): RefreshGrant {
+            return DB::transaction(function () use ($clientId, $rawToken, $presentedJkt, $resource): RefreshGrant {
                 $token = RefreshToken::query()
                     ->where('token_hash', hash('sha256', $rawToken))
                     ->lockForUpdate()
@@ -78,6 +83,13 @@ class RefreshTokenService implements RefreshTokens
                 // the attacker's own (or no) key is refused.
                 if ($token->jkt !== null && ($presentedJkt === null || ! hash_equals($token->jkt, $presentedJkt))) {
                     throw InvalidGrant::make('DPoP key does not match the refresh token binding');
+                }
+
+                // RFC 8707 §2.2: the refresh stays bound to the audience the grant was
+                // made for. Checked BEFORE anything is consumed, so a client that names
+                // another resource keeps its refresh token and learns why it was refused.
+                if ($resource !== null && ! $this->sameAudience($token->audience, $resource)) {
+                    throw InvalidAudience::boundToAnotherResource();
                 }
 
                 // Within-grace replay by a verified presenter (concurrent double
@@ -122,6 +134,19 @@ class RefreshTokenService implements RefreshTokens
 
             throw InvalidGrant::make('refresh token reuse detected');
         }
+    }
+
+    /**
+     * A grant with no recorded audience was audienced to the issuer, so naming the issuer
+     * on refresh asks for exactly what it already has.
+     */
+    private function sameAudience(?string $bound, string $requested): bool
+    {
+        if ($bound !== null) {
+            return $bound === $requested;
+        }
+
+        return $this->issuers !== null && rtrim($requested, '/') === rtrim($this->issuers->issuer(), '/');
     }
 
     public function revoke(string $rawToken, ?string $clientId = null): void

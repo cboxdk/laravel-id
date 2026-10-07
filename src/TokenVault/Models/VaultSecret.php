@@ -20,9 +20,11 @@ use Illuminate\Support\Carbon;
  * verifiable. The sealed blob is opened only at lease time, for an authorized
  * agent, and the plaintext is never persisted unsealed, logged, or audited.
  *
- * `key_version` records which master-key generation sealed the blob; the crypto
- * kernel has no automatic master-key rotation, so a re-seal is a manual
- * operation and this column makes a future migration auditable.
+ * `key_version` is SUPERSEDED and not read. It was meant to record which master-key
+ * generation sealed the blob, but since 1.22 the ciphertext itself names its key
+ * (`v1.<key-id>.…`, see LibsodiumSecretBox) and `cbox-id:crypto:rewrap` re-seals the
+ * vault with every other sealed column — so a second, separately maintained record
+ * could only ever disagree with the truth. Still written as 1 for compatibility.
  *
  * @property string $id
  * @property string $environment_id

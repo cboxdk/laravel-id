@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Identity\Contracts\ErasureSteps;
 use Cbox\Id\Identity\Contracts\LogoutPropagator;
 use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
@@ -13,16 +14,20 @@ use Cbox\Id\OAuthServer\ClientAssertion\ClientAssertionValidator;
 use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
 use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
+use Cbox\Id\OAuthServer\Contracts\AuthorizationClients;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogoutDelivery;
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
+use Cbox\Id\OAuthServer\Contracts\ClientIdMetadataDocuments;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Contracts\EndSession;
 use Cbox\Id\OAuthServer\Contracts\LogoutTokenIssuer;
+use Cbox\Id\OAuthServer\Contracts\MetadataDocumentFetcher;
+use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
@@ -30,6 +35,7 @@ use Cbox\Id\OAuthServer\Contracts\SupportSessions;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\OAuthServer\Erasure\OAuthGrantsErasureStep;
 use Cbox\Id\OAuthServer\Listeners\WithdrawAccessOnMembershipRemoval;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
@@ -39,6 +45,12 @@ class OAuthServerServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // This module's share of a GDPR erasure (see SubjectEraser): the personal data it
+        // owns is erased by the module that owns it.
+        $this->callAfterResolving(ErasureSteps::class, static function (ErasureSteps $steps, Application $app): void {
+            $steps->register($app->make(OAuthGrantsErasureStep::class));
+        });
+
         // Identity declares this; OAuthServer (which already depends on Identity)
         // supplies it, so a credential change can cut long-lived grants without
         // Identity importing OAuth.
@@ -53,6 +65,18 @@ class OAuthServerServiceProvider extends ServiceProvider
         // carries — so the grant types cannot drift apart on it.
         $this->app->singleton(Apis::class, DatabaseApis::class);
         $this->app->singleton(AudienceResolver::class, RegisteredApiAudienceResolver::class);
+
+        // The resource servers the HOST serves itself (an MCP endpoint, say), declared in
+        // code beside the API rows — what the resolver, the RFC 9728 metadata routes and
+        // the self-registration paths all ask about.
+        $this->app->singleton(ProtectedResources::class, ConfiguredProtectedResources::class);
+
+        // Client ID Metadata Documents: an https `client_id` whose document IS the
+        // registration. The fetcher is its own contract because its URL is chosen by
+        // whoever loads /authorize — it is the SSRF surface, and tests replace it.
+        $this->app->singleton(MetadataDocumentFetcher::class, HttpMetadataDocumentFetcher::class);
+        $this->app->singleton(ClientIdMetadataDocuments::class, CachedClientIdMetadataDocuments::class);
+        $this->app->singleton(AuthorizationClients::class, DefaultAuthorizationClients::class);
 
         // Access-token lifetime is operator-tunable. A short TTL is the standard way
         // stateless roles/permissions claims stay fresh — the token self-expires

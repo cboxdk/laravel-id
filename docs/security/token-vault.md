@@ -55,12 +55,12 @@ exist.
   credentials that are themselves short-lived and narrowly scoped.
 - **Post-lease exposure is out of scope.** Once leased, the value lives in the
   agent's memory and travels to the provider; the vault cannot protect it there.
-- **No automatic master-key rotation.** The crypto kernel rotates asymmetric
-  *signing* keys, not the symmetric `SecretBox` master key, and the sealed format
-  carries no key-id prefix. Rotating the master key means re-sealing every entry
-  yourself: open with the old-key box, seal with the new-key box, under the same
-  row-bound context. The `key_version` column exists to make that migration
-  auditable; treat a master-key change as a deliberate, scripted operation.
+- **Master-key rotation is the platform's, not the vault's.** Since 1.22 every
+  sealed value names the master-key generation that sealed it, and
+  `cbox-id:crypto:rewrap` re-seals vault secrets with everything else (see
+  [master key management](key-management.md)). The `key_version` column predates
+  that and is superseded by the tag inside the ciphertext; it is still written as
+  `1` and is not read.
 - **This is a primitive, not a policy.** Whether a given agent should hold a given
   credential, and for how long, is the host's decision; the vault enforces the
   mechanics — sealing, grants, uniform denial, audit.

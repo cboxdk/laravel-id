@@ -6,8 +6,13 @@ namespace Cbox\Id\Console;
 
 use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\EnvironmentRelyingParties;
+use Cbox\Id\Kernel\Crypto\Contracts\MasterKeyRing;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\Contracts\SecretRewrapper;
 use Cbox\Id\Kernel\Crypto\Enums\KeyStatus;
+use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
+use Cbox\Id\Kernel\Crypto\ValueObjects\MasterKeySet;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Console\Command;
@@ -39,6 +44,7 @@ class DoctorCommand extends Command
 
         $this->checkExtensions();
         $this->checkCryptoKey();
+        $this->checkMasterKeyRotation();
         $this->checkMigrations();
         $this->checkSigningKeys();
         $this->checkPlatformRoot();
@@ -101,16 +107,70 @@ class DoctorCommand extends Command
 
     private function checkCryptoKey(): void
     {
-        $key = config('cbox-id.crypto.key');
-        $decoded = is_string($key) && $key !== '' ? base64_decode($key, true) : false;
-
-        if ($decoded !== false && strlen($decoded) === 32) {
-            $this->addOk('Crypto master key', 'Set and valid (32 bytes). Keep it backed up separately from the database.');
+        try {
+            $keys = MasterKeySet::fromConfig(config('cbox-id.crypto.key'), config('cbox-id.crypto.previous_keys'));
+        } catch (CryptoConfigurationException $e) {
+            $this->addFail('Crypto master key', $e->getMessage().' Run `php artisan cbox-id:install` to generate a key.');
 
             return;
         }
 
-        $this->addFail('Crypto master key', 'CBOX_ID_CRYPTO_KEY is missing or not a base64 32-byte value. Run `php artisan cbox-id:install` to generate one.');
+        $previous = count($keys->previous);
+
+        $this->addOk('Crypto master key', 'Set and valid (32 bytes, id '.$keys->current->id.')'
+            .($previous > 0 ? " plus {$previous} previous key(s) for opening older secrets" : '')
+            .'. Keep it backed up separately from the database.');
+    }
+
+    /**
+     * A rotation is only finished when nothing is left under the old key — until then the
+     * old key cannot be dropped, and the operator who drops it anyway makes every secret
+     * still under it unreadable. So while a previous key is configured, count what is not
+     * yet current and say so.
+     *
+     * Untagged envelopes from before 1.22 are not a warning on their own: with no previous
+     * key configured they can only be under the current key. They are mentioned so the
+     * operator knows a rewrap will tag them.
+     */
+    private function checkMasterKeyRotation(): void
+    {
+        try {
+            $ring = app(MasterKeyRing::class);
+            $rewrapper = app(SecretRewrapper::class);
+            $remaining = 0;
+            $columns = [];
+
+            foreach (app(SealedColumns::class)->all() as $column) {
+                $count = $rewrapper->remaining($column);
+
+                if ($count > 0) {
+                    $remaining += $count;
+                    $columns[] = $column->name();
+                }
+            }
+        } catch (Throwable) {
+            // The key itself is reported by checkCryptoKey(); an unreachable database by
+            // checkMigrations(). Neither needs saying twice.
+            return;
+        }
+
+        if ($ring->previousKeyIds() === []) {
+            $this->addOk('Master key rotation', $remaining > 0
+                ? "No rotation in progress. {$remaining} secret(s) predate key versioning; `php artisan cbox-id:crypto:rewrap` tags them with the current key (optional)."
+                : 'No rotation in progress; every secret is sealed under the current key.');
+
+            return;
+        }
+
+        if ($remaining > 0) {
+            $this->addWarn('Master key rotation', "{$remaining} secret(s) are not yet sealed under the current key (".implode(', ', $columns).'). '
+                .'Run `php artisan cbox-id:crypto:rewrap`, and keep CBOX_ID_CRYPTO_PREVIOUS_KEYS until this clears.');
+
+            return;
+        }
+
+        $this->addWarn('Master key rotation', 'Every secret is sealed under the current key. The previous key(s) '
+            .implode(', ', $ring->previousKeyIds()).' are no longer needed: remove them from CBOX_ID_CRYPTO_PREVIOUS_KEYS.');
     }
 
     private function checkMigrations(): void

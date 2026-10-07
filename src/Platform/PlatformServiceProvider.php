@@ -6,9 +6,11 @@ namespace Cbox\Id\Platform;
 
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Platform\Contracts\EnvironmentAdminHandoff;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
 use Cbox\Id\Platform\Contracts\ManagementScopes;
@@ -29,6 +31,12 @@ class PlatformServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // An operator's TOTP secret, bound to the operator (see DatabaseOperatorMfa).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('operator_mfa_factors', 'secret_encrypted', 'cbox-id:operator-mfa:', contextColumn: 'operator_id'));
+        });
+
         // SHARED, or the memo inside it is not a memo.
         //
         // `PlatformRoot::model()` memoises the root environment for the request and says

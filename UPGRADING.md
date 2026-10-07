@@ -18,6 +18,95 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.22.0 — MCP authorization: protected resources, metadata documents, `mcp` registration
+
+**Run `php artisan migrate`.** One additive migration: a nullable, indexed
+`oauth_clients.last_used_at`. Nothing reads it until you enable the new prune target.
+
+**Only if you implement these contracts yourself** (the bundled implementations are
+updated):
+
+- `RefreshTokens::rotate()` gains a trailing `?string $resource = null`. Refuse a value
+  that differs from the grant's audience with `InvalidAudience::boundToAnotherResource()`,
+  before consuming the token.
+- If you construct `RegisteredApiAudienceResolver`, `DynamicClientRegistrar`,
+  `PushedAuthorizationController` or `ProtectedResourceMetadataController` by hand, they
+  take new constructor arguments (see the changelog). Resolved from the container, nothing
+  changes.
+
+**Behaviour you may notice:**
+
+- **A repeated `resource` is refused** with `invalid_target` at `/oauth/token` and
+  `/oauth/par`. It used to be collapsed to its last value by PHP's parser. Ask for one token
+  per resource.
+- **A self-registered client may no longer name an arbitrary `resource`.** A client
+  registered through RFC 7591 (any mode) is refused (`invalid_target`) a resource that is
+  not a registered API, a declared protected resource with `dynamic_clients`, or the issuer.
+  If such clients rely on a resource server you run, register it as an API or declare it in
+  `oauth.protected_resources`. Operator-registered clients keep the pass-through unless you
+  set `oauth.resource_indicators.unknown_resources` to `refuse`.
+- **A refresh request naming a different `resource` is refused** (`invalid_target`); the
+  refresh token stays valid. Naming the same resource, or none, works as before.
+- **The device grant now honours `resource`** at the token endpoint; it was ignored.
+- **`open` registration is held to 20 registrations per address per hour.** Set
+  `oauth.dynamic_registration.max_per_ip_per_hour` (0 switches the ceiling off).
+- UserInfo and the decision endpoint's `WWW-Authenticate` gain `resource_metadata`.
+- `AuthorizationCodes::issue()` throws `InvalidGrant` for a malformed `resource`.
+
+Nothing else changes until you opt in: declare `oauth.protected_resources`, set
+`oauth.dynamic_registration.mode` to `mcp`, enable
+`oauth.client_id_metadata_documents.enabled`, or set `prune.retention_days.oauth_clients`.
+See [Protect an MCP server with Cbox ID](docs/cookbook/protect-an-mcp-server.md).
+## 1.22.0 — security hardening
+
+**Run `php artisan migrate`.** One additive migration: a nullable, indexed
+`organization_id` on `saml_service_providers`. Every existing SP keeps `null` and its
+current behaviour.
+
+**Behaviour you will notice:**
+
+- **Login lockout is now on by default.** With no environment or organization policy
+  naming a `lockoutThreshold`, 10 failed sign-ins on one subject inside 15 minutes lock
+  it for 15 minutes. Tune with `CBOX_ID_LOCKOUT_THRESHOLD`,
+  `CBOX_ID_LOCKOUT_WINDOW_MINUTES` and `CBOX_ID_LOCKOUT_DURATION_MINUTES`; set
+  `CBOX_ID_LOCKOUT_THRESHOLD=0` to restore the previous "off unless a policy sets it". A
+  policy that names a threshold is unaffected. If your test suite drives more than nine
+  failed sign-ins at one account, it will now see a lock.
+- **Refresh tokens only for clients that may redeem them.** A client whose
+  `grant_types` registration does not allow `refresh_token` (directly, or implied by
+  `authorization_code`) no longer receives a refresh token for `offline_access` on the
+  device-code or CIBA grants. Add `refresh_token` to such a client's grant types if it
+  needs one. Authorization-code clients are unaffected.
+- **SSO callback JSON changed.** The package's `POST /sso/saml/{connection}/acs` and
+  `/sso/oidc/{connection}/callback` now return `sid` (the opaque OIDC session id) instead
+  of `session_id` (the `auth_sessions` row key). A host that read `session_id` from these
+  responses should call `FederationFlow::completeLogin()` from its own controller and
+  keep the returned `Session`, as the reference app does.
+- **Ciphertext format.** Secrets sealed from now on are `v1.<key-id>.<payload>`. Every
+  secret already stored keeps opening, unchanged. Do not downgrade below 1.22 after new
+  secrets have been sealed: earlier releases cannot read the new format.
+- **SAML IdP SSO endpoint**: an issuance-time refusal is now answered with a SAML error
+  Response to the SP rather than a 500.
+
+**To scope an existing SAML app to its organization**, set
+`saml_service_providers.organization_id` (or re-register it with
+`NewServiceProvider(organizationId: …)`). From then on only active members of that
+organization are asserted to it.
+
+**Optional, recommended:** run `php artisan cbox-id:crypto:rewrap` once to tag every
+existing secret with the current key's id; `cbox-id:doctor` reports how many predate key
+versioning. To **rotate** the master key, follow
+[master key management](docs/security/key-management.md).
+
+**Only if you implement these yourself** (bundled implementations are updated):
+
+- `SamlIdentityProviderService`'s constructor gains `Memberships`, `AuditLog` and
+  `EventBus` (container-resolved; only matters if you construct it by hand).
+- A host binding its own `Subjects` resolver should also bind a `SubjectPseudonymiser`
+  before using `SubjectEraser`; the default only rewrites the package users table.
+- A host sealing its own columns with the `SecretBox` should register them with
+  `SealedColumns` so a rotation re-seals them.
+
 ## 1.21.0 — keys that mint keys, and approvals for one action
 
 **Run `php artisan migrate`.** Two additive migrations: provenance columns on

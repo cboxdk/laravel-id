@@ -115,8 +115,10 @@ each in the way its own failure mode demands: `maxAgeDays` and `mfa` HOLD an aut
 subject rather than turning them away (refusing entry to someone who needs to rotate or
 enrol locks out exactly the wrong people), and `lockoutThreshold` counts per SUBJECT and
 is checked before the credential, so a locked account is not an oracle for which guess was
-right. Honest scope: the lockout window and duration are fixed at 15 minutes rather than
-tenant-configurable, deliberately — an indefinite lock is a denial-of-service tool.
+right. Lockout is on by default (10 failures in 15 minutes lock for 15 minutes) when no
+policy names a threshold. Honest scope: the window and duration are deployment
+configuration (`cbox-id.lockout.*`), never tenant policy, deliberately — an indefinite lock
+is a denial-of-service tool.
 See [Security: password policy](password-policy.md).
 
 ## AI token vault
@@ -127,8 +129,26 @@ hashing won't do), never plaintext. Access is deny-by-default: a lease needs a l
 `(secret, client)` grant, and every failure raises a **uniform** `LeaseDenied` (the
 reason audited, never returned) so the vault is no enumeration oracle. Every store,
 rotation, revocation, grant and lease is audited with actor and purpose — never the
-value. Honest scope: a lease TTL is advisory, and master-key rotation is a manual
-re-seal. See [Security: token vault](token-vault.md).
+value. Honest scope: a lease TTL is advisory. See [Security: token vault](token-vault.md).
+
+## Erasure (GDPR Art. 17)
+
+`SubjectEraser` erases a person in one transaction — credentials, sessions, grants,
+memberships and role grants, vault secrets, stored payloads — pseudonymises the subject
+row in place (id kept), emits `user.erased` (outbound SCIM deletes them downstream) and
+returns a receipt with counts. Every module registers its own step; a host adds steps for
+its own tables. It deliberately does not rewrite the hash-chained audit trail: past
+entries keep the opaque id and a tombstone is appended, so the chain still verifies. See
+[Security: erasure](erasure.md).
+
+## Master key management
+
+Every recoverable secret at rest is sealed under the crypto master key, and since 1.22
+each ciphertext names the key generation that sealed it. Rotation is a configuration
+change plus `cbox-id:crypto:rewrap`: the new key seals, the previous keys only open,
+the rewrap re-seals every registered column in resumable chunks, and the doctor warns
+until nothing is left under a previous key. Envelopes from earlier releases keep
+opening. See [Security: master key management](key-management.md).
 
 ## CIBA backchannel approval
 

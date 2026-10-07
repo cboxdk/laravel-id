@@ -43,6 +43,7 @@ trait InteractsWithSamlIdp
         bool $wantAuthnRequestsSigned = false,
         NameIdFormat $nameIdFormat = NameIdFormat::EmailAddress,
         string $nameIdAttribute = 'email',
+        ?string $organizationId = null,
     ): ServiceProvider {
         return app(ServiceProviders::class)->register(new NewServiceProvider(
             entityId: $entityId,
@@ -52,6 +53,7 @@ trait InteractsWithSamlIdp
             attributeMappings: $attributeMappings,
             certificate: $certificate,
             wantAuthnRequestsSigned: $wantAuthnRequestsSigned,
+            organizationId: $organizationId,
         ));
     }
 

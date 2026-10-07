@@ -50,6 +50,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $api_key_prefix the prefix of this app's customer API keys; null = it accepts none
  * @property bool $first_party
  * @property string|null $registration_access_token_hash
+ * @property Carbon|null $last_used_at when an access token was last minted for it, to the hour
  * @property Carbon|null $created_at
  */
 class Client extends Model implements EnvironmentOwned
@@ -81,6 +82,15 @@ class Client extends Model implements EnvironmentOwned
     public function isDynamicallyRegistered(): bool
     {
         return $this->registration_access_token_hash !== null;
+    }
+
+    /**
+     * Described by a client ID metadata document instead of registered — see
+     * {@see MetadataDocumentClient}, the only kind that answers true.
+     */
+    public function isMetadataDocumentClient(): bool
+    {
+        return false;
     }
 
     /**
@@ -161,6 +171,7 @@ class Client extends Model implements EnvironmentOwned
             'jwks' => 'array',
             'first_party' => 'boolean',
             'backchannel_logout_session_required' => 'boolean',
+            'last_used_at' => 'datetime',
         ];
     }
 }

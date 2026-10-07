@@ -25,6 +25,8 @@ use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use DateTimeInterface;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -320,10 +322,36 @@ class JwtTokenIssuer implements TokenIssuer
             'support_session_id' => $actor?->supportSessionId,
         ]);
 
+        $this->markUsed($client);
+
         // Carry the GRANTED scopes back: grantScopes() may have filtered the request
         // down to the client's registered set, and RFC 6749 §5.1 makes the token
         // endpoint echo `scope` whenever that happened. Without this the caller had no
         // way to know what it actually got.
         return new IssuedToken($token, $jti, $ttl, $dpopJkt !== null ? 'DPoP' : 'Bearer', $scopes, $audience->resource);
+    }
+
+    /**
+     * Stamp `last_used_at`, at most once an hour per client — what pruning of unused
+     * self-registered clients reads (`cbox-id:prune`, `oauth_clients`).
+     *
+     * One conditional UPDATE, on the query builder: no model events, no `updated_at`
+     * (a client was used, not edited), and a no-op for the rest of the hour, so a busy
+     * client costs one write an hour rather than one per token. A client that was never
+     * persisted — one described by a client ID metadata document — has nothing to stamp.
+     */
+    private function markUsed(Client $client): void
+    {
+        if (! $client->exists) {
+            return;
+        }
+
+        $now = now();
+        $stale = $now->copy()->subHour();
+
+        DB::table($client->getTable())
+            ->where($client->getKeyName(), $client->getKey())
+            ->where(static fn (QueryBuilder $query): QueryBuilder => $query->whereNull('last_used_at')->orWhere('last_used_at', '<', $stale))
+            ->update(['last_used_at' => $now]);
     }
 }

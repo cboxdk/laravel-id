@@ -211,6 +211,12 @@ the two machine endpoints; the page the person approves on is yours, and it is a
 lines. See the full recipe:
 [Sign a CLI in with the device grant](sign-a-cli-in-with-the-device-grant.md).
 
+## Protect an MCP server
+
+Declare your MCP endpoint as a protected resource, let MCP clients register themselves (or
+present a client ID metadata document), and accept only tokens audienced to it. See the full
+recipe: [Protect an MCP server with Cbox ID](protect-an-mcp-server.md).
+
 ## Rotate an app's secret without downtime
 
 A client can hold several live secrets. Rotate with a grace period, roll the new secret

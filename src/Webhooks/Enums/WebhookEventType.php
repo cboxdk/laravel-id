@@ -84,6 +84,9 @@ enum WebhookEventType: string
     case ApiKeyRevoked = 'api_key.revoked';
     case SupportSessionStarted = 'support_session.started';
 
+    // GDPR Art. 17 (1.22).
+    case UserErased = 'user.erased';
+
     /** A subscription to every catalogued event, present and future. */
     public const WILDCARD = '*';
 
@@ -156,7 +159,7 @@ enum WebhookEventType: string
     {
         return match ($this) {
             self::UserCreated, self::UserUpdated, self::UserDeactivated, self::UserReactivated,
-            self::UserLogin, self::IdentityLinked => WebhookEventGroup::Users,
+            self::UserLogin, self::IdentityLinked, self::UserErased => WebhookEventGroup::Users,
             self::OrganizationCreated, self::OrganizationUpdated, self::OrganizationSuspended,
             self::OrganizationReactivated, self::OrganizationDeleted, self::OrganizationArchived,
             self::OrganizationSettingsUpdated => WebhookEventGroup::Organizations,
@@ -223,6 +226,7 @@ enum WebhookEventType: string
             self::UserUpdated => 'A user\'s profile changed. Payload: `user_id`, `changed` (the fields that changed).',
             self::UserDeactivated => 'A user was deactivated and can no longer sign in. Payload: `user_id`.',
             self::UserReactivated => 'A deactivated user was reactivated. Payload: `user_id`.',
+            self::UserErased => 'A user was erased (GDPR Art. 17): credentials, sessions, grants and memberships removed, and their email and name replaced with placeholders. The id stays. Erase your own copy of them. Payload: `user_id`.',
             self::UserLogin => 'A user signed in through a federated (SSO) connection. Payload: `user_id`, `connection_id`.',
             self::IdentityLinked => 'An external identity (a social or enterprise login) was linked to a user. Payload: `user_id`, `provider`.',
             self::OrganizationCreated => 'An organization was created. Payload: `id`, `slug`.',
@@ -310,6 +314,7 @@ enum WebhookEventType: string
             self::OrganizationArchived => 'An organization was archived',
             self::UserLogin => 'A user signed in',
             self::UserReactivated => 'A user was reactivated',
+            self::UserErased => 'A user was erased',
             self::IdentityLinked => 'An external identity was linked to a user',
             self::RoleUnassigned => 'A role was removed from a member',
             self::RoleAssignedEverywhere => 'A role was granted across the environment',

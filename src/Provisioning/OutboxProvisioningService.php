@@ -50,6 +50,7 @@ class OutboxProvisioningService implements ProvisioningService
         'organization.member_added' => OperationType::Upsert,
         'organization.member_role_changed' => OperationType::Upsert,
         'organization.member_removed' => OperationType::Deprovision,
+        'user.erased' => OperationType::Erase,
     ];
 
     public function __construct(
@@ -74,6 +75,10 @@ class OutboxProvisioningService implements ProvisioningService
             return 0;
         }
 
+        if ($type === OperationType::Erase) {
+            return $this->enqueueErasure($userId);
+        }
+
         // Deny-by-default: only connections in the CURRENT environment (an env-B
         // connection is invisible here via the hard scope). A deprovision targets
         // only connections the user has genuinely LEFT — never one that still covers
@@ -94,6 +99,34 @@ class OutboxProvisioningService implements ProvisioningService
         foreach ($connections as $connection) {
             $this->enqueue($connection->id, $userId, $type, $source);
             $enqueued++;
+        }
+
+        return $enqueued;
+    }
+
+    /**
+     * An erased subject is DELETED from every downstream app that holds a record of them
+     * — decided by the provisioned resource, not by scope. By the time this runs the
+     * person has no memberships left, so "in scope" would find nothing and the remote
+     * copies would live on. No snapshot is taken: the subject row is already
+     * pseudonymised, and a DELETE needs only the remote id.
+     */
+    private function enqueueErasure(string $userId): int
+    {
+        $connectionIds = ProvisionedResource::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('remote_id')
+            ->pluck('connection_id')
+            ->unique()
+            ->all();
+
+        $enqueued = 0;
+
+        foreach ($connectionIds as $connectionId) {
+            if (is_string($connectionId)) {
+                $this->enqueue($connectionId, $userId, OperationType::Erase, []);
+                $enqueued++;
+            }
         }
 
         return $enqueued;
@@ -176,6 +209,7 @@ class OutboxProvisioningService implements ProvisioningService
             OperationType::Reactivate => $this->upsert($connection, $operation, $resource, $source),
             OperationType::Deactivate => $this->deactivate($connection, $resource),
             OperationType::Deprovision => $this->deprovision($connection, $resource),
+            OperationType::Erase => $this->erase($connection, $resource),
         };
 
         return $this->finalize($connection, $operation, $result);
@@ -304,6 +338,30 @@ class OutboxProvisioningService implements ProvisioningService
         }
 
         return $this->deactivate($connection, $resource);
+    }
+
+    /**
+     * DELETE the remote record, whatever the connection's deprovision policy — the policy
+     * chooses between deactivate and delete for a person who LEFT; an erased person is
+     * not a leaver, and a deactivated record is still a copy of them. A remote that no
+     * longer has them (404) is the outcome we wanted.
+     */
+    private function erase(ProvisioningConnection $connection, ?ProvisionedResource $resource): ScimResult
+    {
+        if ($resource === null || ! is_string($resource->remote_id) || $resource->remote_id === '') {
+            return ScimResult::http(204);
+        }
+
+        $result = $this->client->deleteUser($connection, $resource->remote_id);
+
+        if ($result->successful() || $result->notFound()) {
+            $resource->remote_id = null;
+            $this->markResourceState($resource, ResourceState::Deprovisioned);
+
+            return $result->notFound() ? ScimResult::http(204) : $result;
+        }
+
+        return $result;
     }
 
     /**

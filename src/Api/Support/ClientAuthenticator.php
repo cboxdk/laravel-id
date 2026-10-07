@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Support;
 
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
+use Cbox\Id\OAuthServer\Contracts\ClientIdMetadataDocuments;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadataDocument;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Http\Request;
 
@@ -22,12 +24,18 @@ use Illuminate\Http\Request;
  * assertion with a secret — or Basic with body credentials — is refused. Secrets are
  * verified in constant time by the {@see ClientRegistry}; public clients (no secret,
  * `none`) authenticate by `client_id` alone where the endpoint allows it.
+ *
+ * A `client_id` the registry does not know may be a client ID metadata document URL
+ * ({@see ClientIdMetadataDocuments}, when enabled). Such a client never holds a secret, so
+ * one presented alongside it is refused; a `none` document client authenticates by
+ * `client_id` (PKCE carries the proof), and a `private_key_jwt` one only by assertion.
  */
 class ClientAuthenticator
 {
     public function __construct(
         private readonly ClientRegistry $clients,
         private readonly ClientAssertion $assertions,
+        private readonly ?ClientIdMetadataDocuments $documents = null,
     ) {}
 
     /**
@@ -49,7 +57,7 @@ class ClientAuthenticator
         }
 
         [$clientId, $secret] = $credentials;
-        $client = $this->clients->byClientId($clientId);
+        $client = $this->clients->byClientId($clientId) ?? $this->documentClient($clientId, $secret);
 
         if ($client === null) {
             return null;
@@ -107,6 +115,26 @@ class ClientAuthenticator
         $client = $this->clients->byClientId($clientId);
 
         return $client !== null && $this->clients->verifySecret($client, $secret) ? $client : null;
+    }
+
+    /**
+     * The client a metadata document describes, when `$clientId` is one and no secret was
+     * presented. A document client cannot hold a secret, so a request carrying one is not
+     * from it; and a document that cannot be fetched or fails validation authenticates
+     * nobody — the same `invalid_client` an unknown id gets, with no detail that would
+     * tell a prober which.
+     */
+    private function documentClient(string $clientId, string $secret): ?Client
+    {
+        if ($this->documents === null || $secret !== '' || ! $this->documents->supports($clientId)) {
+            return null;
+        }
+
+        try {
+            return $this->documents->resolve($clientId);
+        } catch (InvalidClientMetadataDocument) {
+            return null;
+        }
     }
 
     private function hasAssertion(Request $request): bool

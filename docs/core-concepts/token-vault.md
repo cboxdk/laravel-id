@@ -72,9 +72,10 @@ only** — it is never persisted unsealed, logged, or written to an audit row.
 - **The vault is only as safe as the caller.** Once leased, the plaintext lives in
   the agent's process; the vault cannot protect it there. Grant narrowly, cap TTLs,
   and prefer provider tokens that are themselves short-lived and scoped.
-- **Master-key rotation is manual.** The crypto kernel does not rotate the SecretBox
-  master key; the `key_version` column records which generation sealed each blob so a
-  re-seal migration is auditable. See [Security: token vault](../security/token-vault.md).
+- **Master-key rotation is platform-wide.** Each sealed value names the master-key
+  generation that sealed it, and `cbox-id:crypto:rewrap` re-seals the vault along
+  with every other sealed column. The older `key_version` column is superseded by that
+  tag. See [Security: master key management](../security/key-management.md).
 
 ## Where to go next
 

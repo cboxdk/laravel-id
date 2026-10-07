@@ -52,7 +52,7 @@ It is an engineering artifact, not a certification or audit result.
 |--------|-----------|
 | Secrets at rest | XChaCha20-Poly1305 AEAD, context-bound; secrets never logged |
 | Cross-tenant data leak | deny-by-default tenant scope; missing tenant ⇒ zero rows |
-| SSRF to internal services / metadata | `cboxdk/laravel-ssrf` guard on outbound URLs |
+| SSRF to internal services / metadata | `cboxdk/laravel-ssrf` guard on outbound URLs — including the client ID metadata document (and its `jwks_uri`) a client names in `client_id`: resolved and pinned, https only, no redirects, size- and time-limited, and checked against the client-ID URL shape before any request is made |
 | Email/account enumeration | constant-time login timing, generic errors |
 | Token leakage window | short (15 min) access-token TTL; revocation; refresh rotation |
 
@@ -63,6 +63,7 @@ It is an engineering artifact, not a certification or audit result.
 | Brute force / automated abuse | per-endpoint rate limits, login/MFA/signup throttles |
 | Algorithmic-complexity DoS (auth graph) | visited-set cycle guard in relationship checks |
 | Flooded webhook retries | bounded retry schedule |
+| Registration flooding (open / `mcp` DCR) | per-minute throttle plus a per-address hourly ceiling; unused self-registered clients swept by `cbox-id:prune` when enabled |
 
 ### Elevation of privilege (authorization)
 
@@ -72,6 +73,7 @@ It is an engineering artifact, not a certification or audit result.
 | Vertical (role escalation) | owner-only guards; org-membership check on org switch |
 | Sensitive action on a stolen session | short absolute + idle session lifetimes, and MFA verification primitives. **Step-up re-authentication itself is the app's**: this package records `auth_time`/`amr` and stamps `acr` so a client can demand a fresh factor, but it ships no sudo mode, no freshness window, and no RFC 9470 challenge |
 | Privileged token minting | confidential-client secret required on auth_code; introspection auth |
+| Self-registered client minting a token for someone else's resource server (confused deputy) | a self-registered client (RFC 7591, or a metadata document) may be audienced only to a registered API, a declared resource open to such clients, or the issuer; a repeated `resource` is refused so no token is valid at two resource servers; a refresh token never changes audience; reserved scopes are never granted to such a client |
 
 ## Residual risk (honest scope)
 
@@ -91,8 +93,10 @@ It is an engineering artifact, not a certification or audit result.
   verify JWTs locally rely on the short TTL.
 - **A determined human with clean signals** defeats heuristic abuse scoring — it
   raises cost, it isn't a wall.
-- **The crypto master key's custody** (KMS/HSM/backup) is the operator's to secure —
-  and **rotating it is not a supported operation**: no re-encrypt/rewrap routine ships.
+- **The crypto master key's custody** (KMS/HSM/backup) is the operator's to secure.
+  Rotating it is supported (a versioned keyring plus `cbox-id:crypto:rewrap`, see
+  [master key management](key-management.md)), but rotation does not undo a
+  compromise: rotate the secrets it sealed too.
 - **The front-channel is the host's attack surface.** This package does not serve
   `/authorize`; consent, `prompt`/`max_age`/`acr_values` handling, registered-set
   redirect matching and the RFC 9207 `iss` parameter are threats your app owns. See

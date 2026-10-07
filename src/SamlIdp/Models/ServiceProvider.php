@@ -24,8 +24,14 @@ use Illuminate\Support\Carbon;
  * signing certificate, used to verify signed AuthnRequests when
  * `want_authn_requests_signed` is set.
  *
+ * `organization_id` OWNS the SP when set: the IdP then asserts only subjects who are
+ * active members of that organization, and says which organization in the assertion.
+ * Null is an environment-wide SP — any subject of the environment may be asserted to
+ * it, which was the only kind there was before 1.22.
+ *
  * @property string $id
  * @property string $environment_id
+ * @property string|null $organization_id
  * @property string $entity_id
  * @property string $acs_url
  * @property string|null $slo_url
@@ -50,6 +56,12 @@ class ServiceProvider extends Model implements EnvironmentOwned
     public function isActive(): bool
     {
         return $this->status === ServiceProviderStatus::Active;
+    }
+
+    /** Owned by one organization, rather than open to the whole environment. */
+    public function isOrganizationOwned(): bool
+    {
+        return $this->organization_id !== null && $this->organization_id !== '';
     }
 
     /**

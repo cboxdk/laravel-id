@@ -61,6 +61,7 @@ own events can be subscribed to as well.
 | `user.login` | current | A user signed in through a federated (SSO) connection. Payload: `user_id`, `connection_id`. |
 | `user.reactivated` | current | A deactivated user was reactivated. Payload: `user_id`. |
 | `identity.linked` | current | An external identity (a social or enterprise login) was linked to a user. Payload: `user_id`, `provider`. |
+| `user.erased` | current | A user was erased (GDPR Art. 17): credentials, sessions, grants and memberships removed, and their email and name replaced with placeholders. The id stays. Erase your own copy of them. Payload: `user_id`. |
 
 ### Organizations
 

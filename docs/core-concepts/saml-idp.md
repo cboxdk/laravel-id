@@ -64,6 +64,39 @@ app(ServiceProviders::class)->register(new NewServiceProvider(
 `AssertionConsumerServiceURL` that differs is refused. That exact match is the
 open-redirect / assertion-to-attacker defense.
 
+### Organization-owned service providers
+
+By default an SP is **environment-wide**: any subject of the environment may be
+asserted to it. That suits an app every person in the environment uses. An app that
+belongs to one customer organization should be registered as that organization's:
+
+```php
+app(ServiceProviders::class)->register(new NewServiceProvider(
+    entityId: 'https://northwind.example-crm.test',
+    acsUrl: 'https://northwind.example-crm.test/saml/acs',
+    organizationId: $organization->id,
+));
+```
+
+For an organization-owned SP the IdP:
+
+- **refuses** to assert a subject who is not an **active** member of that organization
+  (no membership, an unaccepted invitation, or a suspended membership). The refusal is
+  checked at issuance, before the request id is spent, and is reported to the SP as a
+  signed `Responder` / `RequestDenied` Response on its registered ACS. It throws
+  `SubjectNotPermitted`, a subclass of `InvalidAuthnRequest`, so a host that already
+  answers `InvalidAuthnRequest` with `issueErrorResponse()` needs no change;
+- records `saml_idp.assertion_refused` on the **owning organization's** audit trail and
+  emits the same-named domain event (payload: `user_id`, `service_provider_id`,
+  `sp_entity_id`, `reason`) to its webhooks;
+- adds an `organization_id` attribute to every assertion it does issue, naming the owning
+  organization. It is set after the SP's attribute mapping, so a mapping that emits the
+  same name cannot overwrite it with a subject field.
+
+Before 1.22 every SP behaved as environment-wide, whatever organization the console
+filed it under. Existing registrations keep `organization_id = null` and their behaviour;
+set it to scope them.
+
 ## Endpoints
 
 Registered by the `Api` layer behind `ResolveEnvironment` + throttling:
@@ -167,6 +200,7 @@ the active key is ever non-RSA the IdP refuses to sign rather than downgrade.
 | Malformed XML, or a DOCTYPE/ENTITY (XXE) payload | refused (parsed via the XXE-safe loader) |
 | Request `Destination` ≠ the published SingleSignOnService URL, or absent on a signed request | refused (SAML core §3.2.1) |
 | Request `IssueInstant` outside a 15-minute window (or missing) | refused — the window covers the host login hand-off, so a request survives a real sign-in |
+| SP is organization-owned and the subject is not an active member of that organization | refused at issuance with `Responder` / `RequestDenied` (`SubjectNotPermitted`), audited and announced as `saml_idp.assertion_refused` |
 | A second assertion for the same request id | refused — one `AuthnRequest` buys exactly one assertion (the id is burned at *issuance*, so re-parsing it across the login hand-off is fine) |
 | `NameIDPolicy/@Format` is neither `unspecified` nor the SP's registered format | refused with `Requester` / `InvalidNameIDPolicy` (SAML core §3.4.1.1) |
 

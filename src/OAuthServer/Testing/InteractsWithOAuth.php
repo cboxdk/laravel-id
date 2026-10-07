@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Testing;
 
+use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\Apis;
+use Cbox\Id\OAuthServer\Contracts\AuthorizationClients;
+use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
+use Cbox\Id\OAuthServer\Contracts\ClientIdMetadataDocuments;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Contracts\MetadataDocumentFetcher;
 use Cbox\Id\OAuthServer\Contracts\ServiceAccounts;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Models\Api;
@@ -80,5 +85,61 @@ trait InteractsWithOAuth
         }
 
         return app(Apis::class)->register(new NewApi($identifier, $name, $organizationId, $clientId, $definitions));
+    }
+
+    /**
+     * Declare a host-served protected resource (`cbox-id.oauth.protected_resources`) for
+     * the rest of the test — an MCP endpoint at `{issuer}/mcp`, by default.
+     *
+     * @param  list<string>  $scopes
+     * @return array<string, mixed> the declaration, as config holds it
+     */
+    protected function declareProtectedResource(
+        string $path = '/mcp',
+        array $scopes = ['mcp:tools'],
+        bool $dynamicClients = true,
+        ?string $identifier = null,
+        ?string $name = null,
+    ): array {
+        $declaration = array_filter([
+            'path' => $identifier === null ? $path : null,
+            'identifier' => $identifier,
+            'name' => $name,
+            'scopes' => $scopes,
+            'dynamic_clients' => $dynamicClients,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        $existing = config('cbox-id.oauth.protected_resources', []);
+
+        config(['cbox-id.oauth.protected_resources' => [...(is_array($existing) ? $existing : []), $declaration]]);
+
+        return $declaration;
+    }
+
+    /**
+     * Turn client ID metadata documents on and answer every fetch from memory. Serve a
+     * document with `->serve($url, [...])`; refuse one as the SSRF guard would with
+     * `->refuseAsUnsafe($url)`.
+     */
+    protected function fakeClientMetadataDocuments(): FakeMetadataDocumentFetcher
+    {
+        config(['cbox-id.oauth.client_id_metadata_documents.enabled' => true]);
+
+        $fetcher = new FakeMetadataDocumentFetcher;
+
+        app()->instance(MetadataDocumentFetcher::class, $fetcher);
+
+        // The documents service and everything holding it are singletons built with the
+        // previous fetcher; drop them so the next resolve picks the fake up.
+        foreach ([
+            ClientIdMetadataDocuments::class,
+            AuthorizationClients::class,
+            ClientAssertion::class,
+            ClientAuthenticator::class,
+        ] as $abstract) {
+            app()->forgetInstance($abstract);
+        }
+
+        return $fetcher;
     }
 }

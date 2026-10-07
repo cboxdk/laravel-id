@@ -17,6 +17,49 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-10-08
+
+### Added
+
+- **Host-declared protected resources.** `ProtectedResources` (bound to `ConfiguredProtectedResources`, reading `cbox-id.oauth.protected_resources`) lets a host declare resource servers it serves itself — an MCP endpoint at `{issuer}/mcp`, say — with the scopes each accepts and whether self-registered clients may use it, without registering an API row. A declared resource is an RFC 8707 audience: `resource` naming it audiences the token to it with the protocol scopes plus the requested scopes it accepts; with no `resource`, scopes belonging to exactly one declared resource pick it. `ProtectedResource` is the value object; `InvalidProtectedResource` is thrown for a declaration that cannot be served.
+- **RFC 9728 path-suffixed metadata.** `GET /.well-known/oauth-protected-resource/{path}` serves each declared resource's document (§3.1), 404 for a path nothing is declared at. The root document's `scopes_supported` is read from `ProtectedResources::issuerScopes()`.
+- **`BearerChallenge`**: an RFC 6750 §3 `WWW-Authenticate` builder with RFC 9728 §5.1 `resource_metadata`, every value escaped. UserInfo and the decision endpoint now use it, pointing at the root metadata document.
+- **Client ID Metadata Documents** (draft-ietf-oauth-client-id-metadata-document), off by default (`cbox-id.oauth.client_id_metadata_documents.enabled`). An https URL `client_id` is resolved by `ClientIdMetadataDocuments` (`CachedClientIdMetadataDocuments`): fetched through `MetadataDocumentFetcher` (`HttpMetadataDocumentFetcher` — SSRF-guarded via `cboxdk/laravel-ssrf`, pinned, no redirects, size- and time-limited), validated (`ClientMetadataDocument`), cached for its `Cache-Control: max-age` within `min_ttl`/`max_ttl`, and described as a never-persisted `MetadataDocumentClient`. The token, PAR and revocation endpoints accept it by `client_id`; `private_key_jwt` documents authenticate by assertion against the key set at `jwks_uri`. `client_id_metadata_document_supported` is advertised when on. Failures are `InvalidClientMetadataDocument` with a stable `reason`.
+- **`AuthorizationClients`** (`DefaultAuthorizationClients`): one call for the host's `/authorize` that resolves a registered client or a metadata document client into an `AuthorizationClient` — with `allowsRedirectUri()` (exact match for document clients), `consentRequired()` (always for self-registered clients) and the document's host, `client_uri` and `logo_uri` for the consent screen.
+- **`mcp` dynamic registration mode**: open registration held to public clients, the `authorization_code`/`refresh_token` grants, https or loopback redirect URIs, no back-channel logout URI, and the scopes `SelfRegisteredScopes` allows (declared resources open to self-registered clients, plus the protocol scopes in `allowed_scopes`). Reserved scopes are never granted.
+- `cbox-id.oauth.dynamic_registration.max_per_ip_per_hour` (default 20): a per-address hourly ceiling on `POST /oauth/register` in `open` and `mcp` modes.
+- `cbox-id.oauth.resource_indicators.unknown_resources` (`accept` | `refuse`, default `accept`).
+- `oauth_clients.last_used_at`, stamped by the token issuer at most once an hour, and a `cbox-id:prune` target (`retention_days.oauth_clients`, off by default) that removes self-registered clients unused for that many days and holding no live refresh token.
+- `ResourceParameter` reads the one RFC 8707 `resource` off a request the same way everywhere, counting repeated keys on the wire.
+- Testing: `InteractsWithOAuth::declareProtectedResource()` and `fakeClientMetadataDocuments()` (a `FakeMetadataDocumentFetcher`).
+- Docs: [Protect an MCP server with Cbox ID](docs/cookbook/protect-an-mcp-server.md); the standards matrix and threat model updated.
+
+### Changed
+
+- `resource` is honoured on the device grant at the token endpoint (it was dropped), validated at `POST /oauth/par`, and bound for the life of a refresh token: a refresh naming a different `resource` is `invalid_target`, refused before the refresh token is consumed. `RefreshTokens::rotate()` gains a trailing `?string $resource = null`.
+- A repeated `resource` (form body, query string or array) is refused with `invalid_target` — one token is never valid at several resource servers. It used to be silently collapsed to its last value.
+- A malformed `resource` is now held to `ResourceIndicator` (absolute, host, no fragment, ≤ 255 characters) and its `invalid_target` carries an `error_description`. `AuthorizationCodes::issue()` refuses a malformed `resource`.
+- Constructor changes on container-built classes: `RegisteredApiAudienceResolver` (`ProtectedResources`, `IssuerResolver`), `DynamicClientRegistrar` (`SelfRegisteredScopes`), `PushedAuthorizationController` (`AudienceResolver`), `ProtectedResourceMetadataController` (`ProtectedResources`); optional trailing dependencies on `RefreshTokenService`, `ClientAuthenticator` and `ClientAssertionValidator`.
+- `Client::isMetadataDocumentClient()` (false on every persisted client).
+
+- **Login lockout is on by default**: 10 failed sign-ins inside 15 minutes lock a subject for 15 minutes when no policy names a threshold. A policy's `lockoutThreshold` still wins; `cbox-id.lockout.threshold = 0` restores the old default.
+- The package SAML ACS and OIDC callback return `sid` (the opaque OIDC session id) instead of `session_id`.
+- The browser SSO routes (OIDC redirect/callback, SAML login/SLO) send `Cache-Control: no-store`.
+- The package SAML IdP SSO endpoint answers an issuance-time refusal (including a replayed request) with a SAML error Response instead of a 500.
+
+### Security
+
+- A self-registered client (RFC 7591, or a metadata document) may only be audienced to a registered API, a declared resource open to self-registered clients, or the issuer; any other `resource` is `invalid_target`. Until now such a client could have a token signed by this issuer audienced to any URI it named.
+- **Master-key rotation.** The `SecretBox` is now a versioned keyring: new ciphertext is `v1.<key-id>.<payload>`, where the key id is a derived HMAC of the key (never the key). `cbox-id.crypto.previous_keys` (`CBOX_ID_CRYPTO_PREVIOUS_KEYS`) keeps old keys for opening only; `CBOX_ID_CRYPTO_KEY` stays the current key. `cbox-id:crypto:rewrap` re-seals every registered sealed column onto the current key in resumable, compare-and-set chunks (`--dry-run`, `--column`, `--chunk`), and `cbox-id:doctor` warns while anything is still under a previous key. New contracts: `MasterKeyRing`, `SealedColumns` (every module registers its own sealed columns; hosts can register theirs) and `SecretRewrapper`. See [master key management](docs/security/key-management.md).
+- **GDPR Art. 17 erasure.** `SubjectEraser::erase()` removes a subject's credentials, sessions, OAuth grants, memberships, role grants, API tokens, vault secrets and stored payload copies in one transaction, pseudonymises the subject row in place (id kept), records a `user.erased` audit tombstone, emits `user.erased`, and returns an `ErasureReceipt`. The pipeline is the `ErasureSteps` registry of `ErasureStep`s, one per module; hosts register their own. `SubjectPseudonymiser` is the swap point for a host-owned user store. The audit trail is deliberately not rewritten. See [erasure](docs/security/erasure.md).
+- **`user.erased`** webhook event, and an outbound-SCIM `erase` operation that sends `DELETE /Users/{id}` to every connection holding a remote record of the person, whatever its deprovision policy.
+- **Organization-owned SAML service providers.** `NewServiceProvider` gains `organizationId`; `saml_service_providers.organization_id` stores it (migration). Assertions to an organization-owned SP carry an `organization_id` attribute.
+- **`cbox-id.lockout.*`** — `threshold`, `window_minutes`, `duration_minutes` (`CBOX_ID_LOCKOUT_*`).
+
+- **SAML IdP apps are no longer environment-wide by accident.** An organization-owned SP is only ever asserted to active members of its organization; anyone else is refused with `SubjectNotPermitted` (`Responder`/`RequestDenied`), audited and emitted as `saml_idp.assertion_refused`. Before this, any subject of an environment could single-sign-on into any organization's SAML app. Existing SPs stay environment-wide until you set their organization.
+- A refresh token is minted only for a client that may redeem it (`GrantPolicy` allows `refresh_token`). Device-only and CIBA-only clients that did not register `refresh_token` were being handed refresh tokens the refresh grant would refuse.
+- The raw `auth_sessions` row key no longer leaves the server from the SSO callbacks.
+
 ## [1.21.0] - 2026-10-07
 
 ### Added

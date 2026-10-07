@@ -16,6 +16,11 @@ use Illuminate\Support\Collection;
  */
 interface ServiceProviders
 {
+    /**
+     * Register an SP. With {@see NewServiceProvider::$organizationId} set it is owned
+     * by that organization and the IdP refuses to assert anyone who is not an active
+     * member of it; without, it is environment-wide.
+     */
     public function register(NewServiceProvider $serviceProvider): ServiceProvider;
 
     /**

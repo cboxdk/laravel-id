@@ -344,11 +344,13 @@ mid-pass simply belongs to the next checkpoint.
 
 `cbox-id.audit.checkpoint.schedule` defaults to **false**. Signing the first checkpoint is
 a **one-way door**: a checkpoint attests the chain's hashes *as they are today*, and is
-meant to be exported to an append-only store you cannot retract. The planned GDPR-erasure
-design needs exactly one **re-chain** of the existing rows — hashing the *ciphertext* of
-`ip` and `context` rather than the plaintext, so destroying a per-subject key leaves every
-hashed byte unchanged and `verifyChain()` still passes bit-for-bit. Any checkpoint signed
-before that re-chain would afterwards report tampering that never happened.
+meant to be exported to an append-only store you cannot retract. The erasure shipped in
+1.22 (`SubjectEraser`) does not touch audit rows — it appends a tombstone — so it is
+compatible with signed checkpoints. A future crypto-shredding design for the personal
+data inside audit entries would need one **re-chain** of the existing rows (hashing the
+*ciphertext* of `ip` and `context`, so destroying a per-subject key leaves every hashed
+byte unchanged); any checkpoint signed before that re-chain would afterwards report
+tampering that never happened.
 
 No checkpoint has ever been signed, so that window is still open. Enable in this order:
 

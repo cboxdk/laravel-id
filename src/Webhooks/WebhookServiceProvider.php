@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks;
 
+use Cbox\Id\Identity\Contracts\ErasureSteps;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
+use Cbox\Id\Webhooks\Erasure\WebhookDeliveriesErasureStep;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -15,6 +20,18 @@ class WebhookServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // This module's share of a GDPR erasure (see SubjectEraser): the personal data it
+        // owns is erased by the module that owns it.
+        $this->callAfterResolving(ErasureSteps::class, static function (ErasureSteps $steps, Application $app): void {
+            $steps->register($app->make(WebhookDeliveriesErasureStep::class));
+        });
+
+        // An endpoint's signing secret (WebhookEndpoint::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('webhook_endpoints', 'secret_encrypted', 'cbox-id:webhook-endpoint:'));
+        });
+
         $this->app->singleton(WebhookRegistry::class, DatabaseWebhookRegistry::class);
         $this->app->singleton(WebhookDispatcher::class, HttpWebhookDispatcher::class);
     }

@@ -6,7 +6,9 @@ namespace Cbox\Id\OAuthServer\ClientAssertion;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
+use Cbox\Id\OAuthServer\Contracts\ClientIdMetadataDocuments;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadataDocument;
 use Cbox\Id\OAuthServer\Models\Client;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
@@ -51,6 +53,7 @@ class ClientAssertionValidator implements ClientAssertion
         private readonly ClientRegistry $clients,
         private readonly IssuerResolver $issuers,
         private readonly Cache $cache,
+        private readonly ?ClientIdMetadataDocuments $documents = null,
     ) {}
 
     /**
@@ -78,7 +81,7 @@ class ClientAssertionValidator implements ClientAssertion
             return null;
         }
 
-        $client = $this->clients->byClientId($sub);
+        $client = $this->clients->byClientId($sub) ?? $this->documentClient($sub);
 
         if ($client === null || ! is_array($client->jwks) || $client->jwks === []) {
             return null;
@@ -105,6 +108,23 @@ class ClientAssertionValidator implements ClientAssertion
         }
 
         return $this->consumeJti($sub, $verified) ? $client : null;
+    }
+
+    /**
+     * A client described by a metadata document, whose keys are the set its `jwks_uri`
+     * serves (fetched through the SSRF guard and cached with the document).
+     */
+    private function documentClient(string $clientId): ?Client
+    {
+        if ($this->documents === null || ! $this->documents->supports($clientId)) {
+            return null;
+        }
+
+        try {
+            return $this->documents->resolve($clientId);
+        } catch (InvalidClientMetadataDocument) {
+            return null;
+        }
     }
 
     /**

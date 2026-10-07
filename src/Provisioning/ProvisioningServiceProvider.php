@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace Cbox\Id\Provisioning;
 
 use Cbox\Id\Directory\DirectoryServiceProvider;
+use Cbox\Id\Identity\Contracts\ErasureSteps;
+use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
+use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Provisioning\Console\DrainProvisioningCommand;
 use Cbox\Id\Provisioning\Console\SyncProvisioningCommand;
 use Cbox\Id\Provisioning\Contracts\ProvisioningConnections;
 use Cbox\Id\Provisioning\Contracts\ProvisioningService;
 use Cbox\Id\Provisioning\Contracts\ScimClient;
+use Cbox\Id\Provisioning\Erasure\ProvisioningErasureStep;
 use Cbox\Id\Provisioning\Listeners\ProvisionOnDomainEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -28,6 +33,18 @@ class ProvisioningServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // This module's share of a GDPR erasure (see SubjectEraser): the personal data it
+        // owns is erased by the module that owns it.
+        $this->callAfterResolving(ErasureSteps::class, static function (ErasureSteps $steps, Application $app): void {
+            $steps->register($app->make(ProvisioningErasureStep::class));
+        });
+
+        // The downstream SCIM bearer/client secret (ProvisioningConnection::secretContext()).
+        // Registered so a master-key rotation (`cbox-id:crypto:rewrap`) re-seals it.
+        $this->callAfterResolving(SealedColumns::class, static function (SealedColumns $columns): void {
+            $columns->register(new SealedColumn('provisioning_connections', 'auth_secret_encrypted', 'cbox-id:provisioning-connection:'));
+        });
+
         $this->app->singleton(ScimClient::class, HttpScimClient::class);
         $this->app->singleton(ProvisioningConnections::class, DatabaseProvisioningConnections::class);
         $this->app->singleton(ProvisioningService::class, OutboxProvisioningService::class);

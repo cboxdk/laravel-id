@@ -59,7 +59,10 @@ domain event  →  listener (enqueue)  →  outbox  →  drain (deliver)  →  r
    → deactivate, `organization.member_removed` → de-provision, …) and writes one
    durable `ProvisioningOperation` per in-scope connection. It never makes an HTTP
    call on the request thread. Deny-by-default: no connection in the environment ⇒
-   nothing enqueued.
+   nothing enqueued. `user.erased` (GDPR erasure, see
+   [Security: erasure](../security/erasure.md)) is the one exception to "in-scope": it
+   enqueues a `DELETE /Users/{id}` for every connection that holds a remote record of
+   the person, whatever the connection's deprovision policy.
 2. **Drain (queue worker).** `DrainProvisioningConnection` (one per connection,
    `ShouldBeUnique`) delivers the outbox with the SCIM statefulness above, bounded
    exponential backoff + jitter, a dead-letter cap, and a per-connection circuit

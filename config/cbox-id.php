@@ -59,6 +59,41 @@ return [
     ],
 
     /*
+     * GDPR Art. 17 erasure (SubjectEraser). `pseudonym_key` keys the hash an erased
+     * subject's email and name are replaced with. Unset, it is derived from the crypto
+     * master key; set it if you rotate that key and need an erasure retried after the
+     * rotation to write byte-identical placeholders.
+     */
+    'erasure' => [
+        'pseudonym_key' => env('CBOX_ID_ERASURE_PSEUDONYM_KEY'),
+    ],
+
+    /*
+     * Login lockout — the deployment default for how many failed sign-ins on ONE
+     * subject lock it, inside what window, and for how long.
+     *
+     * ON BY DEFAULT since 1.22: ten failures inside fifteen minutes lock the account
+     * for fifteen minutes. Before that the threshold came only from an `AuthPolicy`
+     * and was null unless an operator set one, so a fresh install would accept an
+     * unbounded online guessing run against any single account.
+     *
+     * `threshold` is the floor that applies when no environment or organization
+     * policy names one; a policy's `lockoutThreshold` still wins whenever it is set,
+     * and an organization may still only TIGHTEN it. Set the threshold to `0` (or
+     * `null`) to return to the old behaviour of "off unless a policy says so".
+     *
+     * The window and the duration are deliberately deployment settings, not tenant
+     * policy: a tenant that set either wrong would turn the control into a
+     * denial-of-service tool (anyone who knows an email address could lock its
+     * owner out indefinitely). The lock always expires on its own.
+     */
+    'lockout' => [
+        'threshold' => env('CBOX_ID_LOCKOUT_THRESHOLD', 10),
+        'window_minutes' => env('CBOX_ID_LOCKOUT_WINDOW_MINUTES', 15),
+        'duration_minutes' => env('CBOX_ID_LOCKOUT_DURATION_MINUTES', 15),
+    ],
+
+    /*
      * User API tokens (`cbid_pat_…`). A token issued without an explicit
      * expiry gets this TTL — no token is ever open-ended.
      */
@@ -443,6 +478,11 @@ return [
      *                 matching `initial_access_token`.
      *   'open'      — anyone may register (rate-limited). Suitable for public MCP
      *                 deployments that expect unknown clients.
+     *   'mcp'       — anyone may register, held to the MCP profile: public clients
+     *                 only (PKCE), the authorization_code/refresh_token grants, https or
+     *                 loopback redirect URIs, and only the scopes of protected resources
+     *                 declared with `dynamic_clients` (plus the protocol scopes listed in
+     *                 allowed_scopes). Reserved scopes are never granted.
      *
      * allowed_scopes limits what a dynamically registered client may request; a
      * requested scope outside this list is dropped. It governs scopes no API owns:
@@ -543,6 +583,73 @@ return [
                 'urn:openid:params:grant-type:ciba',
                 'urn:ietf:params:oauth:grant-type:token-exchange',
             ],
+
+            /*
+             * Registrations per client IP address per hour, in the modes that need no
+             * credential (`open`, `mcp`). On top of the per-minute throttle every
+             * protocol endpoint has. 0 or null switches the hourly ceiling off.
+             */
+            'max_per_ip_per_hour' => env('CBOX_ID_DCR_MAX_PER_IP_PER_HOUR', 20),
+        ],
+
+        /*
+         * Resource servers the HOST application serves itself — beside the registered
+         * APIs operators manage as data. Each is an RFC 8707 audience a client may ask
+         * for with `resource`, and is described by RFC 9728 metadata at
+         * `/.well-known/oauth-protected-resource/{path}`.
+         *
+         *   [
+         *       'path' => '/mcp',                // joined to the environment's issuer…
+         *       // 'identifier' => 'https://…',  // …or an absolute identifier
+         *       'name' => 'MCP',                 // RFC 9728 resource_name (optional)
+         *       'scopes' => ['mcp:read', 'mcp:write'],
+         *       'dynamic_clients' => true,       // self-registered clients may use it
+         *       // 'client_id' => '…',           // whose app roles its tokens carry
+         *       // 'documentation' => 'https://…',
+         *   ],
+         *
+         * Rebind Cbox\Id\OAuthServer\Contracts\ProtectedResources to compute the list.
+         */
+        'protected_resources' => [],
+
+        /*
+         * RFC 8707 `resource` values that are none of: a registered API, a declared
+         * protected resource, the issuer. `accept` (the default, and the behaviour
+         * before 1.22) binds the token to the value verbatim for an operator-registered
+         * client; `refuse` answers `invalid_target`. A self-registered client (RFC 7591,
+         * or a client ID metadata document) is ALWAYS refused an unknown resource.
+         */
+        'resource_indicators' => [
+            'unknown_resources' => env('CBOX_ID_UNKNOWN_RESOURCES', 'accept'),
+        ],
+
+        /*
+         * Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document):
+         * an https URL accepted as `client_id`, its JSON document read as the client's
+         * registration. Off by default. When on, discovery advertises
+         * `client_id_metadata_document_supported`.
+         *
+         * The document is fetched server-side from a URL the CLIENT chose, so: through
+         * the SSRF guard (`verify_url` — keep it on; switch it off only to reach a
+         * development host you own), no redirects, at most `max_bytes`, within
+         * `timeout` / `connect_timeout` seconds. It is cached for its Cache-Control
+         * max-age, held between `min_ttl` and `max_ttl`, or `default_ttl` when it
+         * declares none.
+         *
+         * A document client is a public client (or `private_key_jwt` via `jwks_uri`),
+         * consent is always required, and its scopes are those of declared protected
+         * resources with `dynamic_clients` plus the protocol scopes in
+         * `dynamic_registration.allowed_scopes` — never a reserved scope.
+         */
+        'client_id_metadata_documents' => [
+            'enabled' => env('CBOX_ID_CIMD_ENABLED', false),
+            'verify_url' => env('CBOX_ID_CIMD_VERIFY_URL', true),
+            'max_bytes' => env('CBOX_ID_CIMD_MAX_BYTES', 5120),
+            'timeout' => env('CBOX_ID_CIMD_TIMEOUT', 5),
+            'connect_timeout' => env('CBOX_ID_CIMD_CONNECT_TIMEOUT', 3),
+            'min_ttl' => env('CBOX_ID_CIMD_MIN_TTL', 60),
+            'default_ttl' => env('CBOX_ID_CIMD_DEFAULT_TTL', 3600),
+            'max_ttl' => env('CBOX_ID_CIMD_MAX_TTL', 86400),
         ],
 
         /*
@@ -902,6 +1009,11 @@ return [
             'webhook_deliveries' => env('CBOX_ID_PRUNE_WEBHOOK_DELIVERIES', 30),
             'provisioning_operations' => env('CBOX_ID_PRUNE_PROVISIONING_OPERATIONS', 30),
             'oauth_session_participants' => env('CBOX_ID_PRUNE_SESSION_PARTICIPANTS', 30),
+            // Self-registered (RFC 7591) clients unused for this many days, with no live
+            // refresh token. Null = never (the default) — an MCP deployment with open
+            // registration should set it, e.g. 30. Operator-registered clients are never
+            // swept.
+            'oauth_clients' => env('CBOX_ID_PRUNE_UNUSED_DYNAMIC_CLIENTS'),
         ],
     ],
 
@@ -932,6 +1044,17 @@ return [
          * keys) unrecoverable. Back it up separately from the database.
          */
         'key' => env('CBOX_ID_CRYPTO_KEY'),
+
+        /*
+         * Previous master keys, kept ONLY to open secrets sealed before a rotation.
+         * Comma-separated in the env var, each in the same base64 form as the key
+         * above. Nothing is ever sealed under these.
+         *
+         * To rotate: generate a new key, make it CBOX_ID_CRYPTO_KEY, move the old one
+         * here, deploy, then run `php artisan cbox-id:crypto:rewrap`. Remove the old
+         * key only once `php artisan cbox-id:doctor` reports nothing left under it.
+         */
+        'previous_keys' => env('CBOX_ID_CRYPTO_PREVIOUS_KEYS'),
 
     ],
 
