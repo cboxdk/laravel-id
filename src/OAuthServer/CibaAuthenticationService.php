@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
@@ -131,7 +132,9 @@ class CibaAuthenticationService implements BackchannelAuthentication
             ->where('client_id', $clientId)
             ->first();
 
-        if ($record === null) {
+        // An ACTION approval is spent by the host ({@see ActionApprovals::consume()}) and is
+        // never a token: it reads as unknown here, whichever client presents it.
+        if ($record === null || $record->action_digest !== null) {
             throw new InvalidGrant('unknown auth_req_id');
         }
 

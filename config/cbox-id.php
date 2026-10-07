@@ -392,6 +392,21 @@ return [
     ],
 
     /*
+     * Management keys — the bearer credentials a host's management APIs authenticate.
+     *
+     * `organization_prefix` is what an organization (management-plane) key starts with,
+     * `cbid_org_` by default. A host whose product calls that plane something else may
+     * name it so a leaked key reads as what it is (`cbid_ws_` for a "workspace"). The
+     * prefix is part of the stored hash, so CHANGING it invalidates every key already
+     * issued under the old one: choose it before the first key, or re-mint after. It must
+     * be lowercase letters and digits ending in `_`; anything else falls back to the
+     * default.
+     */
+    'management_keys' => [
+        'organization_prefix' => env('CBOX_ID_ORGANIZATION_KEY_PREFIX', 'cbid_org_'),
+    ],
+
+    /*
      * The IdP PROTOCOL surface this package registers — OIDC discovery, JWKS, the
      * RFC 8414 / RFC 9728 metadata, every `/oauth/*` endpoint, the SAML endpoints and
      * SCIM — and the extra middleware a HOST may wrap around all of it.
@@ -492,6 +507,15 @@ return [
     ],
 
     'oauth' => [
+        /*
+         * Scopes no client may grant ITSELF. A dynamically registered client is refused
+         * these at registration and on every later save, even if `allowed_scopes` below
+         * names one: each is authority over the environment (its stored secrets, its
+         * apps' role catalogues, every person's permissions), which an operator hands out
+         * deliberately and a self-registering client must never be able to ask for.
+         */
+        'reserved_scopes' => ['vault.manage', 'vault.lease', 'apps.manifest', 'decisions:read'],
+
         'dynamic_registration' => [
             'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),
             'initial_access_token' => env('CBOX_ID_DCR_INITIAL_ACCESS_TOKEN'),

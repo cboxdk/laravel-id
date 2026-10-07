@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\Contracts;
 
+use Cbox\Id\Platform\Exceptions\UnknownApiKeyScope;
 use Cbox\Id\Platform\Models\EnvironmentApiKey;
 use Cbox\Id\Platform\ValueObjects\IssuedEnvironmentApiKey;
+use Cbox\Id\Platform\ValueObjects\KeyProvenance;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 
@@ -19,11 +21,14 @@ interface EnvironmentApiKeys
     /**
      * Issue a new key into an environment. Returns the stored record plus the
      * one-time plaintext, which is never recoverable afterwards. `scopes` is the
-     * allow-list the key carries (deny-by-default).
+     * allow-list the key carries (deny-by-default); a scope {@see ManagementScopes} does
+     * not know is refused. `provenance` records who minted it and from which key.
      *
      * @param  list<string>  $scopes
+     *
+     * @throws UnknownApiKeyScope
      */
-    public function issue(string $environmentId, string $name, array $scopes, ?DateTimeInterface $expiresAt = null): IssuedEnvironmentApiKey;
+    public function issue(string $environmentId, string $name, array $scopes, ?DateTimeInterface $expiresAt = null, ?KeyProvenance $provenance = null): IssuedEnvironmentApiKey;
 
     /**
      * Resolve a presented plaintext token to its active key WITHIN THE CURRENT

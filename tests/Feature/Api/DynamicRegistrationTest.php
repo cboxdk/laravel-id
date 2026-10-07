@@ -405,3 +405,21 @@ it('reads back the exact auth method a client registered with', function (string
     'none' => ['none', []],
     'private_key_jwt' => ['private_key_jwt', ['jwks' => ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'n' => 'abc', 'e' => 'AQAB']]]]],
 ]);
+
+/*
+ * A reserved scope is authority over the environment itself. A self-registering client
+ * must never obtain one, even when an operator lists it in the allow-list by mistake.
+ */
+it('never grants a self-registering client a reserved scope, whatever the allow-list says', function (): void {
+    openDcr();
+    config(['cbox-id.oauth.dynamic_registration.allowed_scopes' => ['openid', 'vault.manage', 'apps.manifest']]);
+
+    $response = $this->postJson('/oauth/register', [
+        'token_endpoint_auth_method' => 'none',
+        'grant_types' => ['authorization_code'],
+        'redirect_uris' => ['https://app.test/cb'],
+        'scope' => 'openid vault.manage apps.manifest',
+    ])->assertStatus(201);
+
+    expect($response->json('scope'))->toBe('openid');
+})->group('security');

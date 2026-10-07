@@ -18,6 +18,7 @@ use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
 use Cbox\Id\OAuthServer\Support\ClientAudit;
 use Cbox\Id\OAuthServer\Support\ClientSecretStore;
 use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
+use Cbox\Id\OAuthServer\Support\ReservedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\ClientBlueprint;
 use Cbox\Id\OAuthServer\ValueObjects\ClientMetadata;
 use Cbox\Id\OAuthServer\ValueObjects\DynamicRegistration;
@@ -467,7 +468,8 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             ? array_values(array_filter(explode(' ', $raw), static fn (string $s): bool => $s !== ''))
             : [];
 
-        $allowed = $this->configList('allowed_scopes');
+        // A reserved scope is never self-granted, whatever the allow-list says.
+        $allowed = array_values(array_diff($this->configList('allowed_scopes'), ReservedScopes::all()));
 
         // A REGISTERED API SCOPE IS JUDGED BY ITS API, NOT BY THE ALLOW-LIST. A
         // self-registered client holds one only when the API is environment-owned and the

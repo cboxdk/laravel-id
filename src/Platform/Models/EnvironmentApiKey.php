@@ -27,6 +27,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_used_at
  * @property Carbon|null $expires_at
  * @property Carbon|null $revoked_at
+ * @property string|null $description
+ * @property string|null $created_by_type
+ * @property string|null $created_by_id
+ * @property string|null $parent_key_id
+ * @property string|null $rotated_from_id
+ * @property array<string, mixed>|null $step_up_policy
  */
 class EnvironmentApiKey extends Model implements EnvironmentOwned
 {
@@ -50,10 +56,13 @@ class EnvironmentApiKey extends Model implements EnvironmentOwned
         return $this->expires_at === null || $this->expires_at->isFuture();
     }
 
-    /** Whether this key carries the given scope (deny-by-default). */
-    public function can(EnvironmentApiScope $scope): bool
+    /**
+     * Whether this key carries the given scope (deny-by-default). A string names a scope
+     * the host added beyond the {@see EnvironmentApiScope} core set.
+     */
+    public function can(EnvironmentApiScope|string $scope): bool
     {
-        return in_array($scope->value, $this->scopes, true);
+        return in_array($scope instanceof EnvironmentApiScope ? $scope->value : $scope, $this->scopes, true);
     }
 
     /**
@@ -63,6 +72,7 @@ class EnvironmentApiKey extends Model implements EnvironmentOwned
     {
         return [
             'scopes' => 'array',
+            'step_up_policy' => 'array',
             'last_used_at' => 'datetime',
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',

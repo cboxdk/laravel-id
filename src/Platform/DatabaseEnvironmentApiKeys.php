@@ -8,8 +8,11 @@ use Cbox\Id\Identity\DatabaseSessionManager;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\GenericEnvironment;
 use Cbox\Id\Platform\Contracts\EnvironmentApiKeys;
+use Cbox\Id\Platform\Contracts\ManagementScopes;
+use Cbox\Id\Platform\Exceptions\UnknownApiKeyScope;
 use Cbox\Id\Platform\Models\EnvironmentApiKey;
 use Cbox\Id\Platform\ValueObjects\IssuedEnvironmentApiKey;
+use Cbox\Id\Platform\ValueObjects\KeyProvenance;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -47,8 +50,16 @@ class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
      */
     private const PREFIX = 'cbid_env_';
 
-    public function issue(string $environmentId, string $name, array $scopes, ?DateTimeInterface $expiresAt = null): IssuedEnvironmentApiKey
+    public function __construct(private readonly ManagementScopes $scopes) {}
+
+    public function issue(string $environmentId, string $name, array $scopes, ?DateTimeInterface $expiresAt = null, ?KeyProvenance $provenance = null): IssuedEnvironmentApiKey
     {
+        $unknown = array_values(array_filter($scopes, fn (string $scope): bool => ! $this->scopes->knows($scope)));
+
+        if ($unknown !== []) {
+            throw UnknownApiKeyScope::for($unknown);
+        }
+
         $plaintext = self::PREFIX.Str::random(40);
 
         $key = $this->environments()->runAs(GenericEnvironment::of($environmentId), fn (): EnvironmentApiKey => EnvironmentApiKey::query()->create([
@@ -57,8 +68,9 @@ class DatabaseEnvironmentApiKeys implements EnvironmentApiKeys
             // A non-secret fragment so the key is identifiable in a list.
             'prefix' => substr($plaintext, 0, 13),
             'token_hash' => $this->hash($plaintext),
-            'scopes' => $scopes,
+            'scopes' => array_values(array_unique($scopes)),
             'expires_at' => $expiresAt,
+            ...($provenance ?? new KeyProvenance)->toAttributes(),
         ]));
 
         return new IssuedEnvironmentApiKey($key, $plaintext);

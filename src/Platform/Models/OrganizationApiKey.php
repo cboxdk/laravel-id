@@ -25,6 +25,13 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_used_at
  * @property Carbon|null $expires_at
  * @property Carbon|null $revoked_at
+ * @property list<string>|null $scopes
+ * @property string|null $description
+ * @property string|null $created_by_type
+ * @property string|null $created_by_id
+ * @property string|null $parent_key_id
+ * @property string|null $rotated_from_id
+ * @property array<string, mixed>|null $step_up_policy
  */
 class OrganizationApiKey extends Model
 {
@@ -45,6 +52,17 @@ class OrganizationApiKey extends Model
         }
 
         return $this->expires_at === null || $this->expires_at->isFuture();
+    }
+
+    /**
+     * Whether this key may use $scope. A key minted with no scopes is bounded by its role
+     * alone, as every key was before scopes existed; one minted with scopes carries only
+     * those. The host intersects this with what the role permits — a scope never lifts a
+     * key above its role.
+     */
+    public function permits(string $scope): bool
+    {
+        return $this->scopes === null || in_array($scope, $this->scopes, true);
     }
 
     /**
@@ -69,6 +87,8 @@ class OrganizationApiKey extends Model
     {
         return [
             'role' => MembershipRole::class,
+            'scopes' => 'array',
+            'step_up_policy' => 'array',
             'last_used_at' => 'datetime',
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',
