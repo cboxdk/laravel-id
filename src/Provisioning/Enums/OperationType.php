@@ -14,6 +14,9 @@ namespace Cbox\Id\Provisioning\Enums;
  *  - {@see Reactivate}  → PATCH replace `active` = true.
  *  - {@see Deprovision} → PATCH `active` = false OR DELETE, per the connection's
  *                         de-provision policy (e.g. membership removed).
+ *  - {@see Erase}       → DELETE /Users/{id}, ALWAYS, whatever the policy: the person
+ *                         was erased (GDPR Art. 17), and a deactivated remote record is
+ *                         still a copy of them.
  */
 enum OperationType: string
 {
@@ -21,4 +24,5 @@ enum OperationType: string
     case Deactivate = 'deactivate';
     case Reactivate = 'reactivate';
     case Deprovision = 'deprovision';
+    case Erase = 'erase';
 }

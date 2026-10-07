@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use Cbox\Id\Console\HealthChecks;
 use Cbox\Id\Directory\DirectoryConnectors;
+use Cbox\Id\Identity\Erasure\ErasureStepRegistry;
 use Cbox\Id\Identity\Hashing\HashVerifierRegistry;
+use Cbox\Id\Kernel\Crypto\SealedColumnRegistry;
 use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
@@ -296,6 +298,8 @@ function memoExemptSingletons(): array
         DirectoryConnectors::class => 'boot-time registry of directory connectors',
         HashVerifierRegistry::class => 'boot-time registry of legacy hash verifiers',
         ChannelRegistry::class => 'boot-time registry of OTP channels, plus their resolved instances',
+        SealedColumnRegistry::class => 'boot-time registry of SecretBox-sealed columns, filled by service providers',
+        ErasureStepRegistry::class => 'boot-time registry of GDPR erasure steps, filled by service providers',
         // Not a memo of a decision — a cache of a short-lived OAuth token with its own
         // expiry, keyed by connection, explicitly written to outlive a job. See the
         // property's docblock: a cache with NO expiry there is the bug it guards against.

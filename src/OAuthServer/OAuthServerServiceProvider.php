@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Identity\Contracts\ErasureSteps;
 use Cbox\Id\Identity\Contracts\LogoutPropagator;
 use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
@@ -34,6 +35,7 @@ use Cbox\Id\OAuthServer\Contracts\SupportSessions;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\OAuthServer\Erasure\OAuthGrantsErasureStep;
 use Cbox\Id\OAuthServer\Listeners\WithdrawAccessOnMembershipRemoval;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
@@ -43,6 +45,12 @@ class OAuthServerServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // This module's share of a GDPR erasure (see SubjectEraser): the personal data it
+        // owns is erased by the module that owns it.
+        $this->callAfterResolving(ErasureSteps::class, static function (ErasureSteps $steps, Application $app): void {
+            $steps->register($app->make(OAuthGrantsErasureStep::class));
+        });
+
         // Identity declares this; OAuthServer (which already depends on Identity)
         // supplies it, so a credential change can cut long-lived grants without
         // Identity importing OAuth.

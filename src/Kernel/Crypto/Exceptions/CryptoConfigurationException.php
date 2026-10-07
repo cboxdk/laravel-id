@@ -21,6 +21,14 @@ class CryptoConfigurationException extends RuntimeException
         return new self("The crypto master key must be exactly {$expected} bytes; got {$actual}.");
     }
 
+    public static function invalidPreviousKey(int $position): self
+    {
+        return new self(
+            'Entry '.($position + 1).' of CBOX_ID_CRYPTO_PREVIOUS_KEYS (cbox-id.crypto.previous_keys) is not '
+            .'a base64-encoded 32-byte key. Previous keys are comma-separated, each in the same form as CBOX_ID_CRYPTO_KEY.'
+        );
+    }
+
     public static function keyGenerationFailed(string $reason): self
     {
         return new self('Failed to generate a signing key: '.$reason);

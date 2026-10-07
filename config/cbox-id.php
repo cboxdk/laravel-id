@@ -59,6 +59,41 @@ return [
     ],
 
     /*
+     * GDPR Art. 17 erasure (SubjectEraser). `pseudonym_key` keys the hash an erased
+     * subject's email and name are replaced with. Unset, it is derived from the crypto
+     * master key; set it if you rotate that key and need an erasure retried after the
+     * rotation to write byte-identical placeholders.
+     */
+    'erasure' => [
+        'pseudonym_key' => env('CBOX_ID_ERASURE_PSEUDONYM_KEY'),
+    ],
+
+    /*
+     * Login lockout — the deployment default for how many failed sign-ins on ONE
+     * subject lock it, inside what window, and for how long.
+     *
+     * ON BY DEFAULT since 1.22: ten failures inside fifteen minutes lock the account
+     * for fifteen minutes. Before that the threshold came only from an `AuthPolicy`
+     * and was null unless an operator set one, so a fresh install would accept an
+     * unbounded online guessing run against any single account.
+     *
+     * `threshold` is the floor that applies when no environment or organization
+     * policy names one; a policy's `lockoutThreshold` still wins whenever it is set,
+     * and an organization may still only TIGHTEN it. Set the threshold to `0` (or
+     * `null`) to return to the old behaviour of "off unless a policy says so".
+     *
+     * The window and the duration are deliberately deployment settings, not tenant
+     * policy: a tenant that set either wrong would turn the control into a
+     * denial-of-service tool (anyone who knows an email address could lock its
+     * owner out indefinitely). The lock always expires on its own.
+     */
+    'lockout' => [
+        'threshold' => env('CBOX_ID_LOCKOUT_THRESHOLD', 10),
+        'window_minutes' => env('CBOX_ID_LOCKOUT_WINDOW_MINUTES', 15),
+        'duration_minutes' => env('CBOX_ID_LOCKOUT_DURATION_MINUTES', 15),
+    ],
+
+    /*
      * User API tokens (`cbid_pat_…`). A token issued without an explicit
      * expiry gets this TTL — no token is ever open-ended.
      */
@@ -1009,6 +1044,17 @@ return [
          * keys) unrecoverable. Back it up separately from the database.
          */
         'key' => env('CBOX_ID_CRYPTO_KEY'),
+
+        /*
+         * Previous master keys, kept ONLY to open secrets sealed before a rotation.
+         * Comma-separated in the env var, each in the same base64 form as the key
+         * above. Nothing is ever sealed under these.
+         *
+         * To rotate: generate a new key, make it CBOX_ID_CRYPTO_KEY, move the old one
+         * here, deploy, then run `php artisan cbox-id:crypto:rewrap`. Remove the old
+         * key only once `php artisan cbox-id:doctor` reports nothing left under it.
+         */
+        'previous_keys' => env('CBOX_ID_CRYPTO_PREVIOUS_KEYS'),
 
     ],
 

@@ -52,25 +52,7 @@ class SamlIdpSsoController
         } catch (UnknownServiceProvider) {
             return new Response('Unknown or inactive SAML service provider.', 403);
         } catch (InvalidAuthnRequest $exception) {
-            // A refusal the SP can be told about in SAML goes back to its ACS as a
-            // signed Response with a failure StatusCode — the SP logs it and shows
-            // its own error page, instead of the user landing on an unbranded 400
-            // the SP never hears about. Everything else stays an opaque refusal.
-            $error = $exception->samlError();
-
-            if ($error === null) {
-                return new Response('SAML AuthnRequest rejected.', 400);
-            }
-
-            try {
-                $errorResponse = $this->idp->issueErrorResponse($error);
-            } catch (UnknownServiceProvider) {
-                // The SP was disabled between parsing and answering — there is no
-                // trusted ACS left to deliver to.
-                return new Response('Unknown or inactive SAML service provider.', 403);
-            }
-
-            return $errorResponse->toPostBinding()->toResponse();
+            return $this->refuse($exception);
         }
 
         // The host owns "who is logged in": no subject → hand off to its login and
@@ -97,13 +79,47 @@ class SamlIdpSsoController
             return new Response('That account can no longer sign in.', 403);
         }
 
-        $response = $this->idp->issueResponse($authnRequest, $subjectId, $this->attributesFor($subjectId));
+        // Issuance refuses too — a replayed request, or (since 1.22) a subject who is not
+        // an active member of the organization that owns this SP. Both go back to the SP
+        // the same way a parse-time refusal does, rather than surfacing as a 500.
+        try {
+            $response = $this->idp->issueResponse($authnRequest, $subjectId, $this->attributesFor($subjectId));
+        } catch (UnknownServiceProvider) {
+            return new Response('Unknown or inactive SAML service provider.', 403);
+        } catch (InvalidAuthnRequest $exception) {
+            return $this->refuse($exception);
+        }
 
         // The binding carries its own policy: a self-submitting form aimed at another
         // origin is what `form-action` exists to refuse, so the response has to say
         // which origin THIS assertion is for rather than the host loosening its policy
         // for every page it serves.
         return $response->toPostBinding()->toResponse();
+    }
+
+    /**
+     * A refusal the SP can be told about in SAML goes back to its ACS as a signed
+     * Response with a failure StatusCode — the SP logs it and shows its own error page,
+     * instead of the user landing on an unbranded 400 the SP never hears about.
+     * Everything else stays an opaque refusal.
+     */
+    private function refuse(InvalidAuthnRequest $exception): Response
+    {
+        $error = $exception->samlError();
+
+        if ($error === null) {
+            return new Response('SAML AuthnRequest rejected.', 400);
+        }
+
+        try {
+            $errorResponse = $this->idp->issueErrorResponse($error);
+        } catch (UnknownServiceProvider) {
+            // The SP was disabled between parsing and answering — there is no
+            // trusted ACS left to deliver to.
+            return new Response('Unknown or inactive SAML service provider.', 403);
+        }
+
+        return $errorResponse->toPostBinding()->toResponse();
     }
 
     /**

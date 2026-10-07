@@ -108,7 +108,16 @@ attacked at all.
 The lock is checked **before** the credential, or a locked account still tells an attacker
 which guess was right.
 
-Two durations are deliberately not policy fields:
+**On by default.** When no environment or organization policy names a threshold, the
+deployment default applies: `cbox-id.lockout.threshold`, 10 unless you change it
+(`CBOX_ID_LOCKOUT_THRESHOLD`). A policy that names a threshold wins over the default; an
+organization may still only tighten its environment's. Set the default to `0` to go back
+to "off unless a policy says so" — the behaviour before 1.22, when a fresh install
+accepted an unbounded guessing run against any one account.
+
+Two durations are deliberately not policy fields. They are deployment configuration
+(`cbox-id.lockout.window_minutes` and `cbox-id.lockout.duration_minutes`), never tenant
+policy:
 
 - The counting **window** (15 minutes). Failures spread thinly over weeks are not an
   attack in progress, and counting them forever locks out people who occasionally mistype.

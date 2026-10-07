@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Enums\ConnectionType;
-use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Tests\Support\SamlIdp;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -47,9 +46,10 @@ it('completes SAML SSO through the ACS endpoint and starts a session', function 
         'SAMLResponse' => $idp->signedResponse('alice@corp.com', SP_METADATA, ACS_URL),
     ]);
 
-    $response->assertOk()->assertJsonStructure(['session_id', 'user_id', 'organization_id']);
+    $response->assertOk()->assertJsonStructure(['sid', 'user_id', 'organization_id'])
+        ->assertJsonMissingPath('session_id');
 
-    $session = app(SessionManager::class)->active((string) $response->json('session_id'));
+    $session = sessionForSid((string) $response->json('sid'));
     expect($session)->not->toBeNull()
         ->and($session?->amr)->toBe(['sso'])
         ->and($session?->organization_id)->toBe($org->id);

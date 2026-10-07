@@ -28,7 +28,9 @@ const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
  */
 function approvedDeviceGrant(array $registeredScopes, string $requestedScope): array
 {
-    $registered = test()->makeClient($registeredScopes, grantTypes: [DEVICE_GRANT_TYPE]);
+    // `refresh_token` registered too: a refresh token is only minted for a client that
+    // may redeem one, and the positive control below expects one.
+    $registered = test()->makeClient($registeredScopes, grantTypes: [DEVICE_GRANT_TYPE, 'refresh_token']);
 
     $start = test()->postJson('/oauth/device_authorization', [
         'client_id' => $registered->client->client_id,

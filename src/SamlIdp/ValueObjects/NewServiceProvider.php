@@ -11,6 +11,11 @@ use Cbox\Id\SamlIdp\Enums\ServiceProviderStatus;
  * Input for registering a relying SAML service provider. `attributeMappings` maps
  * an emitted SAML attribute name to the subject/user field it is read from (e.g.
  * `['email' => 'email', 'firstName' => 'given_name']`).
+ *
+ * `organizationId` makes the SP organization-owned: only active members of that
+ * organization are ever asserted to it. Leave it null for an environment-wide SP (an
+ * app every subject of the environment may sign in to), which is how every SP behaved
+ * before the field existed. Trailing and optional so existing callers are unchanged.
  */
 readonly class NewServiceProvider
 {
@@ -27,5 +32,6 @@ readonly class NewServiceProvider
         public bool $wantAuthnRequestsSigned = false,
         public ServiceProviderStatus $status = ServiceProviderStatus::Active,
         public ?string $sloUrl = null,
+        public ?string $organizationId = null,
     ) {}
 }

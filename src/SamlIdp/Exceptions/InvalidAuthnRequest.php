@@ -41,6 +41,12 @@ class InvalidAuthnRequest extends RuntimeException
         return $exception;
     }
 
+    /** Attach the SAML error a subclass's named constructor wants reported. */
+    protected function reportAs(SamlError $error): void
+    {
+        $this->samlError = $error;
+    }
+
     /** The SAML error to deliver to the SP's ACS, or null when there is none. */
     public function samlError(): ?SamlError
     {
