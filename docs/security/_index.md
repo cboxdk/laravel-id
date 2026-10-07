@@ -115,8 +115,10 @@ each in the way its own failure mode demands: `maxAgeDays` and `mfa` HOLD an aut
 subject rather than turning them away (refusing entry to someone who needs to rotate or
 enrol locks out exactly the wrong people), and `lockoutThreshold` counts per SUBJECT and
 is checked before the credential, so a locked account is not an oracle for which guess was
-right. Honest scope: the lockout window and duration are fixed at 15 minutes rather than
-tenant-configurable, deliberately — an indefinite lock is a denial-of-service tool.
+right. Lockout is on by default (10 failures in 15 minutes lock for 15 minutes) when no
+policy names a threshold. Honest scope: the window and duration are deployment
+configuration (`cbox-id.lockout.*`), never tenant policy, deliberately — an indefinite lock
+is a denial-of-service tool.
 See [Security: password policy](password-policy.md).
 
 ## AI token vault

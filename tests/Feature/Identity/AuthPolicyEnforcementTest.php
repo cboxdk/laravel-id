@@ -152,7 +152,67 @@ it("inherits an organization's MFA mandate when the caller names none", function
 
 // ---------------------------------------------------------------- lockout
 
-it('never locks out when the policy sets no threshold', function (): void {
+it('locks out at the deployment default when no policy sets a threshold', function (): void {
+    // On by default since 1.22. A fresh install with no policy used to accept an
+    // unbounded guessing run against one account; the safe state should not be opt-in.
+    $id = policySubject();
+    $attempts = app(LoginAttempts::class);
+
+    foreach (range(1, 9) as $ignored) {
+        expect($attempts->recordFailure($id))->toBeFalse();
+    }
+
+    expect($attempts->isLockedOut($id))->toBeFalse()
+        ->and($attempts->recordFailure($id))->toBeTrue('the tenth failure in the window locks')
+        ->and($attempts->isLockedOut($id))->toBeTrue();
+
+    // Fifteen minutes by default, and it expires on its own.
+    $this->travel(16)->minutes();
+
+    expect($attempts->isLockedOut($id))->toBeFalse();
+})->group('security');
+
+it('honours a configured default threshold, window and duration', function (): void {
+    config([
+        'cbox-id.lockout.threshold' => '3',
+        'cbox-id.lockout.window_minutes' => '5',
+        'cbox-id.lockout.duration_minutes' => '60',
+    ]);
+
+    $id = policySubject();
+    $attempts = app(LoginAttempts::class);
+
+    $attempts->recordFailure($id);
+    $attempts->recordFailure($id);
+
+    expect($attempts->recordFailure($id))->toBeTrue();
+
+    $this->travel(30)->minutes();
+
+    expect($attempts->isLockedOut($id))->toBeTrue('a 60-minute lock still holds after 30');
+
+    $this->travel(31)->minutes();
+
+    expect($attempts->isLockedOut($id))->toBeFalse();
+});
+
+it('lets a policy threshold win over the deployment default', function (): void {
+    app(AuthPolicies::class)->setForEnvironment(new AuthPolicy(lockoutThreshold: 20));
+
+    $id = policySubject();
+    $attempts = app(LoginAttempts::class);
+
+    foreach (range(1, 19) as $ignored) {
+        $attempts->recordFailure($id);
+    }
+
+    expect($attempts->isLockedOut($id))->toBeFalse()
+        ->and($attempts->recordFailure($id))->toBeTrue();
+});
+
+it('never locks out when the default is switched off and no policy sets a threshold', function (): void {
+    config(['cbox-id.lockout.threshold' => 0]);
+
     $id = policySubject();
     $attempts = app(LoginAttempts::class);
 
@@ -261,6 +321,8 @@ it('audits a failed sign-in that does not reach the lockout threshold', function
 })->group('security');
 
 it('audits a failed sign-in on a deployment with no lockout policy', function (): void {
+    config(['cbox-id.lockout.threshold' => 0]);
+
     // The earlier return: with no policy there is no threshold, so the method used to
     // stop before anything was written. A deployment that has not configured lockout is
     // the one that most needs the trail.

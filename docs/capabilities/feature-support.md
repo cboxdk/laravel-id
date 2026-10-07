@@ -16,7 +16,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 |---|---|---|
 | Global subjects with a pluggable user model | **Full** | The host's own `User` model is resolved through config; the package owns the schema. |
 | Password authentication | **Full** | Framework hasher (bcrypt/argon2id), constant-time failure path, rehash-on-login. |
-| Password policy — length, reuse history, expiry, lockout, MFA and SSO mandates | **Full** | An environment sets the floor; an organization may only *tighten* it, never negotiate below it. Minimum length defaults to 12. Reuse history, expiry and lockout each default to **off** until you set them. |
+| Password policy — length, reuse history, expiry, lockout, MFA and SSO mandates | **Full** | An environment sets the floor; an organization may only *tighten* it, never negotiate below it. Minimum length defaults to 12. Reuse history and expiry default to **off** until you set them; lockout is **on** by default (10 failures in 15 minutes, see below). |
 | Breached-password screening | **Contract only** | The shipped default answers "not breached" for every password. See the caveat in [Standards](../security/standards.md#multi-factor-and-credentials). |
 | Password complexity classes | **No** | |
 | Bulk user import with lazy hash migration | **Full** | CSV or JSON via `cbox-id:users:import`; foreign hashes are refused unless you bind a verifier for the format, then upgraded to the platform hasher on first successful login. |
@@ -31,7 +31,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Email verification | **Full** | Hash-only single-use token, TTL, stale-address guard. |
 | One-time passcodes (OTP) | **Partial** | Keyed HMAC at rest (HKDF subkey off the master key), decoy hash for uniform timing, per-recipient and per-IP rate limits, per-challenge attempt cap. **Only the email channel ships** — plus a log channel for development and a null channel. |
 | SMS / voice / push OTP | **Contract only** | `OtpChannel` is the extension point; no driver and no provider SDK ships. |
-| Login lockout | **Partial** | Implemented, serialized under a row lock, audited — but the threshold defaults to `null`, so it is **off until a policy sets it**. Window and duration are fixed at 15 minutes. |
+| Login lockout | **Full** | Serialized under a row lock, audited, and **on by default** since 1.22: 10 failures inside 15 minutes lock the subject for 15 minutes. A policy's `lockoutThreshold` overrides the default; `cbox-id.lockout.*` sets the default, the window and the duration (`threshold: 0` turns the default off). The lock always expires on its own. |
 | Federated sign-in and explicit account linking | **Full** | Provider-agnostic `FederatedPrincipal`. A federated identity is never merged into an existing account by email; that path is refused so linking stays deliberate. |
 | Named social providers (Google, GitHub, Microsoft buttons) | **Host-supplied** | The framework provides the provider-agnostic linking path only. |
 

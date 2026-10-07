@@ -59,6 +59,31 @@ return [
     ],
 
     /*
+     * Login lockout — the deployment default for how many failed sign-ins on ONE
+     * subject lock it, inside what window, and for how long.
+     *
+     * ON BY DEFAULT since 1.22: ten failures inside fifteen minutes lock the account
+     * for fifteen minutes. Before that the threshold came only from an `AuthPolicy`
+     * and was null unless an operator set one, so a fresh install would accept an
+     * unbounded online guessing run against any single account.
+     *
+     * `threshold` is the floor that applies when no environment or organization
+     * policy names one; a policy's `lockoutThreshold` still wins whenever it is set,
+     * and an organization may still only TIGHTEN it. Set the threshold to `0` (or
+     * `null`) to return to the old behaviour of "off unless a policy says so".
+     *
+     * The window and the duration are deliberately deployment settings, not tenant
+     * policy: a tenant that set either wrong would turn the control into a
+     * denial-of-service tool (anyone who knows an email address could lock its
+     * owner out indefinitely). The lock always expires on its own.
+     */
+    'lockout' => [
+        'threshold' => env('CBOX_ID_LOCKOUT_THRESHOLD', 10),
+        'window_minutes' => env('CBOX_ID_LOCKOUT_WINDOW_MINUTES', 15),
+        'duration_minutes' => env('CBOX_ID_LOCKOUT_DURATION_MINUTES', 15),
+    ],
+
+    /*
      * User API tokens (`cbid_pat_…`). A token issued without an explicit
      * expiry gets this TTL — no token is ever open-ended.
      */

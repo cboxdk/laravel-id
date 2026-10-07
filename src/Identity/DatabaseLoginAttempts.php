@@ -16,8 +16,15 @@ use Illuminate\Support\Facades\DB;
 /**
  * The default {@see LoginAttempts}: a per-subject counter in `login_attempt_counters`.
  *
+ * ON BY DEFAULT. When no environment or organization policy names a threshold, the
+ * deployment default `cbox-id.lockout.threshold` (10) applies. It used to be "off until a
+ * policy sets it", which meant a fresh install accepted an unbounded online guessing run
+ * against any one account — the safe state was the one an operator had to remember to
+ * opt into. A policy that names a threshold still wins, and `0` turns the default off.
+ *
  * Two durations are deliberately NOT policy fields, because a tenant setting them wrong
- * is worse than not setting them at all:
+ * is worse than not setting them at all — they are deployment configuration
+ * (`cbox-id.lockout.window_minutes` / `duration_minutes`, both 15 by default):
  *
  * - The counting WINDOW. Failures spread thinly over weeks are not an attack in
  *   progress, and counting them forever locks out people who simply mistype
@@ -30,11 +37,11 @@ use Illuminate\Support\Facades\DB;
  */
 class DatabaseLoginAttempts implements LoginAttempts
 {
-    /** How long failures accumulate before the count starts again. */
-    private const WINDOW_MINUTES = 15;
+    /** How long failures accumulate before the count starts again, absent config. */
+    private const DEFAULT_WINDOW_MINUTES = 15;
 
-    /** How long a locked account stays locked. */
-    private const LOCKOUT_MINUTES = 15;
+    /** How long a locked account stays locked, absent config. */
+    private const DEFAULT_LOCKOUT_MINUTES = 15;
 
     public function __construct(
         private readonly AuthPolicies $policies,
@@ -85,7 +92,10 @@ class DatabaseLoginAttempts implements LoginAttempts
             return false;
         }
 
-        return DB::transaction(function () use ($subjectId, $threshold): bool {
+        $windowMinutes = self::minutes('window_minutes', self::DEFAULT_WINDOW_MINUTES);
+        $lockoutMinutes = self::minutes('duration_minutes', self::DEFAULT_LOCKOUT_MINUTES);
+
+        return DB::transaction(function () use ($subjectId, $threshold, $windowMinutes, $lockoutMinutes): bool {
             $counter = LoginAttemptCounter::query()
                 ->where('user_id', $subjectId)
                 ->lockForUpdate()
@@ -107,14 +117,14 @@ class DatabaseLoginAttempts implements LoginAttempts
             }
 
             $windowExpired = $counter->window_started_at === null
-                || $counter->window_started_at->addMinutes(self::WINDOW_MINUTES)->isPast();
+                || $counter->window_started_at->addMinutes($windowMinutes)->isPast();
 
             $failures = $windowExpired ? 1 : $counter->failures + 1;
 
             $counter->forceFill([
                 'failures' => $failures,
                 'window_started_at' => $windowExpired ? $now : $counter->window_started_at,
-                'locked_until' => $failures >= $threshold ? $now->copy()->addMinutes(self::LOCKOUT_MINUTES) : null,
+                'locked_until' => $failures >= $threshold ? $now->copy()->addMinutes($lockoutMinutes) : null,
             ])->save();
 
             if ($failures < $threshold) {
@@ -126,7 +136,7 @@ class DatabaseLoginAttempts implements LoginAttempts
                 actorType: ActorType::System,
                 targetType: 'user',
                 targetId: $subjectId,
-                context: ['failures' => $failures, 'threshold' => $threshold, 'minutes' => self::LOCKOUT_MINUTES],
+                context: ['failures' => $failures, 'threshold' => $threshold, 'minutes' => $lockoutMinutes],
             ));
 
             return true;
@@ -139,13 +149,19 @@ class DatabaseLoginAttempts implements LoginAttempts
     }
 
     /**
-     * The lowest threshold binding this subject, or null when no policy sets one.
+     * The lowest threshold binding this subject, falling back to the deployment default
+     * when no policy sets one. Null only when the default is switched off too.
      *
      * Same resolution as the rest of the policy engine: the environment baseline
      * tightened by every organization the subject belongs to, so an organization that
      * demands a tighter threshold gets it regardless of what context the caller had.
      */
     private function thresholdFor(string $subjectId, ?string $organizationId): ?int
+    {
+        return $this->policyThresholdFor($subjectId, $organizationId) ?? self::defaultThreshold();
+    }
+
+    private function policyThresholdFor(string $subjectId, ?string $organizationId): ?int
     {
         if ($organizationId !== null) {
             return $this->policies->resolve($organizationId)->lockoutThreshold;
@@ -162,5 +178,47 @@ class DatabaseLoginAttempts implements LoginAttempts
         }
 
         return $policy->lockoutThreshold;
+    }
+
+    /**
+     * `cbox-id.lockout.threshold`, read leniently because it arrives from an env var: a
+     * numeric string is a number, and anything that is not a positive integer — `0`,
+     * empty, `null`, garbage — means "no deployment default". Refusing to boot over a
+     * typo here would be worse than the old default it replaces.
+     */
+    private static function defaultThreshold(): ?int
+    {
+        $configured = config('cbox-id.lockout.threshold');
+
+        if (is_int($configured)) {
+            return $configured > 0 ? $configured : null;
+        }
+
+        if (is_string($configured) && ctype_digit($configured)) {
+            $value = (int) $configured;
+
+            return $value > 0 ? $value : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * A window/duration in minutes from config. A non-positive or unparseable value
+     * falls back to the built-in default rather than to zero: a zero-minute lock is no
+     * lock, and a zero-minute window never accumulates a second failure, so either would
+     * silently switch the control off.
+     */
+    private static function minutes(string $key, int $default): int
+    {
+        $configured = config('cbox-id.lockout.'.$key);
+
+        $value = match (true) {
+            is_int($configured) => $configured,
+            is_string($configured) && ctype_digit($configured) => (int) $configured,
+            default => 0,
+        };
+
+        return $value > 0 ? $value : $default;
     }
 }
