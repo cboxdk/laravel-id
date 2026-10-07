@@ -228,7 +228,7 @@ class TokenController
         //
         // It records what the access token was GRANTED — its scopes and resolved audience
         // — not what was asked for, so a refresh re-mints exactly that and never more.
-        $refresh = in_array('offline_access', $grant->scopes, true)
+        $refresh = $this->mayHoldRefreshToken($client, $grant->scopes)
             ? $this->refreshTokens->issue(
                 $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 // The login this family descends from, so a refreshed ID Token can
@@ -332,7 +332,7 @@ class TokenController
         // No `authTime`/`amr`: a device grant does not record them, so a refreshed
         // ID Token describes the login without asserting an assurance level nobody
         // captured. Better absent than invented.
-        $refresh = in_array('offline_access', $grant->scopes, true)
+        $refresh = $this->mayHoldRefreshToken($client, $grant->scopes)
             ? $this->refreshTokens->issue(
                 $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
             )
@@ -398,7 +398,7 @@ class TokenController
         // `authTime` and `amr` are carried through, unlike the device grant: CIBA DOES
         // record how the person approved it, and a refreshed ID Token that kept them is
         // strictly more honest than one that omits them.
-        $refresh = in_array('offline_access', $grant->scopes, true)
+        $refresh = $this->mayHoldRefreshToken($client, $grant->scopes)
             ? $this->refreshTokens->issue(
                 $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
                 $grant->authTime, $grant->amr,
@@ -774,6 +774,26 @@ class TokenController
             'Cache-Control' => 'no-store',
             'Pragma' => 'no-cache',
         ]);
+    }
+
+    /**
+     * Whether to mint a refresh token alongside this grant's access token: the person
+     * granted `offline_access` AND the client may actually redeem one.
+     *
+     * The second half did not exist. Every branch minted on `offline_access` alone, so a
+     * device-only or CIBA-only client — one whose registration never named
+     * `refresh_token` — was handed a long-lived credential that `refreshToken()` would
+     * then refuse with `unauthorized_client`. A credential its holder can never use is
+     * pure exposure: it sits in the client's storage and logs, and is a live row in
+     * ours, for nothing. Asking {@see GrantPolicy} keeps minting and redemption on ONE
+     * rule, so they cannot disagree again; that rule still treats `refresh_token` as
+     * implied by `authorization_code`, so code-flow clients are unaffected.
+     *
+     * @param  list<string>  $scopes
+     */
+    private function mayHoldRefreshToken(Client $client, array $scopes): bool
+    {
+        return in_array('offline_access', $scopes, true) && $this->grantAllowed($client, 'refresh_token');
     }
 
     /** @see GrantPolicy — shared with the flow-initiation endpoints. */
