@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Models\Connection;
-use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Models\Session;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -93,11 +93,14 @@ it('completes login on a valid callback (code exchange + id_token + nonce)', fun
     $response = $this->withSession(['oidc.'.$connection->id => ['state' => $state, 'nonce' => $nonce]])
         ->get('/sso/oidc/'.$connection->id.'/callback?code=auth-code&state='.$state);
 
-    $response->assertOk();
-    $sessionId = $response->json('session_id');
+    $response->assertOk()->assertJsonMissingPath('session_id');
+    $sid = $response->json('sid');
 
-    expect($sessionId)->toBeString()
-        ->and(app(SessionManager::class)->active($sessionId))->not->toBeNull();
+    // The public name of the session is the opaque OIDC `sid`, never the row key.
+    expect($sid)->toBeString()
+        ->and(Session::query()->whereKey($sid)->exists())->toBeFalse()
+        ->and(sessionForSid($sid))->not->toBeNull()
+        ->and((string) $response->headers->get('Cache-Control'))->toContain('no-store');
 });
 
 it('rejects a callback whose state does not match (CSRF)', function (): void {
@@ -162,7 +165,7 @@ it('completes login on a form_post callback', function (): void {
 
     $response->assertOk();
 
-    expect(app(SessionManager::class)->active((string) $response->json('session_id')))->not->toBeNull();
+    expect(sessionForSid((string) $response->json('sid')))->not->toBeNull();
 });
 
 it('rejects a form_post callback whose state does not match (CSRF)', function (): void {
@@ -214,7 +217,7 @@ it('completes a form_post callback carrying no session, on the flow cookie alone
 
     $response->assertOk();
 
-    expect(app(SessionManager::class)->active((string) $response->json('session_id')))->not->toBeNull();
+    expect(sessionForSid((string) $response->json('sid')))->not->toBeNull();
 });
 
 /**

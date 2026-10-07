@@ -313,7 +313,13 @@ class ApiServiceProvider extends ServiceProvider
 
             // Browser redirect flows, so they need a session for state/nonce and for the
             // SAML InResponseTo request id.
-            Route::middleware(['web', 'throttle:30,1'])->group(function (): void {
+            //
+            // NoStore on every one of them. The callback's answer names the signed-in
+            // subject and session, and the redirect carries a single-use state and nonce
+            // in its Location: a shared proxy or a back-button replay serving either to
+            // someone else is a session handed across. The SAML ACS above already had it;
+            // these did not.
+            Route::middleware(['web', 'throttle:30,1', NoStore::class])->group(function (): void {
                 // OIDC (RP-initiated) login. The id_token signature + nonce are the auth.
                 Route::get('/sso/oidc/{connection}/redirect', OidcRedirectController::class);
 

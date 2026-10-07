@@ -14,6 +14,7 @@ use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Support\FederationFlowStash;
 use Cbox\Id\Federation\Support\FirstAuthorizationProfile;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
+use Cbox\Id\OAuthServer\Support\SessionIdentifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -79,8 +80,15 @@ class OidcCallbackController
             return $this->error(409, 'An account already exists for this email; link SSO from your account settings instead.');
         }
 
+        // `sid`, NOT the row key. `auth_sessions.id` is a ULID: it dates the session to
+        // the millisecond and is the handle the host's own session screens and
+        // `SessionManager::revoke()` are addressed by, so it never leaves the server.
+        // The value here is the same opaque digest the ID Token's `sid` and the
+        // back-channel logout token carry ({@see SessionIdentifier}), so one session has
+        // one public name everywhere. A host that needs the session itself calls
+        // `FederationFlow::completeLogin()` from its own controller and keeps the model.
         return new JsonResponse([
-            'session_id' => $session->id,
+            'sid' => SessionIdentifier::sid($session->id),
             'user_id' => $session->user_id,
             'organization_id' => $session->organization_id,
         ]);
