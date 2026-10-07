@@ -18,7 +18,7 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
-## Unreleased — keys that mint keys, and approvals for one action
+## 1.21.0 — keys that mint keys, and approvals for one action
 
 **Run `php artisan migrate`.** Two additive migrations: provenance columns on
 `environment_api_keys` and `organization_api_keys` (plus `scopes` on organization keys),

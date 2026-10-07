@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-10-07
+
 ### Added
 
 - **Management keys that can be minted by keys.** Both key tables gain provenance columns (`created_by_type`, `created_by_id`, `parent_key_id`, `rotated_from_id`, `description`, `step_up_policy`), written from the new `KeyProvenance` value object passed to `issue()`. Organization keys gain optional `scopes`, narrowing a key below its role (`OrganizationApiKey::permits()`); a key minted without them is bounded by its role alone, as before.
