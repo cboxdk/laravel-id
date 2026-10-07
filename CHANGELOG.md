@@ -17,6 +17,27 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **Master-key rotation.** The `SecretBox` is now a versioned keyring: new ciphertext is `v1.<key-id>.<payload>`, where the key id is a derived HMAC of the key (never the key). `cbox-id.crypto.previous_keys` (`CBOX_ID_CRYPTO_PREVIOUS_KEYS`) keeps old keys for opening only; `CBOX_ID_CRYPTO_KEY` stays the current key. `cbox-id:crypto:rewrap` re-seals every registered sealed column onto the current key in resumable, compare-and-set chunks (`--dry-run`, `--column`, `--chunk`), and `cbox-id:doctor` warns while anything is still under a previous key. New contracts: `MasterKeyRing`, `SealedColumns` (every module registers its own sealed columns; hosts can register theirs) and `SecretRewrapper`. See [master key management](docs/security/key-management.md).
+- **GDPR Art. 17 erasure.** `SubjectEraser::erase()` removes a subject's credentials, sessions, OAuth grants, memberships, role grants, API tokens, vault secrets and stored payload copies in one transaction, pseudonymises the subject row in place (id kept), records a `user.erased` audit tombstone, emits `user.erased`, and returns an `ErasureReceipt`. The pipeline is the `ErasureSteps` registry of `ErasureStep`s, one per module; hosts register their own. `SubjectPseudonymiser` is the swap point for a host-owned user store. The audit trail is deliberately not rewritten. See [erasure](docs/security/erasure.md).
+- **`user.erased`** webhook event, and an outbound-SCIM `erase` operation that sends `DELETE /Users/{id}` to every connection holding a remote record of the person, whatever its deprovision policy.
+- **Organization-owned SAML service providers.** `NewServiceProvider` gains `organizationId`; `saml_service_providers.organization_id` stores it (migration). Assertions to an organization-owned SP carry an `organization_id` attribute.
+- **`cbox-id.lockout.*`** — `threshold`, `window_minutes`, `duration_minutes` (`CBOX_ID_LOCKOUT_*`).
+
+### Changed
+
+- **Login lockout is on by default**: 10 failed sign-ins inside 15 minutes lock a subject for 15 minutes when no policy names a threshold. A policy's `lockoutThreshold` still wins; `cbox-id.lockout.threshold = 0` restores the old default.
+- The package SAML ACS and OIDC callback return `sid` (the opaque OIDC session id) instead of `session_id`.
+- The browser SSO routes (OIDC redirect/callback, SAML login/SLO) send `Cache-Control: no-store`.
+- The package SAML IdP SSO endpoint answers an issuance-time refusal (including a replayed request) with a SAML error Response instead of a 500.
+
+### Security
+
+- **SAML IdP apps are no longer environment-wide by accident.** An organization-owned SP is only ever asserted to active members of its organization; anyone else is refused with `SubjectNotPermitted` (`Responder`/`RequestDenied`), audited and emitted as `saml_idp.assertion_refused`. Before this, any subject of an environment could single-sign-on into any organization's SAML app. Existing SPs stay environment-wide until you set their organization.
+- A refresh token is minted only for a client that may redeem it (`GrantPolicy` allows `refresh_token`). Device-only and CIBA-only clients that did not register `refresh_token` were being handed refresh tokens the refresh grant would refuse.
+- The raw `auth_sessions` row key no longer leaves the server from the SSO callbacks.
+
 ## [1.21.0] - 2026-10-07
 
 ### Added
