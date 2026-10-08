@@ -10,8 +10,13 @@ use Cbox\Id\Api\Http\Controllers\Scim\ScimController;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Scim\Enums\ScimPatchOp;
+use Cbox\Id\Scim\Exceptions\InvalidScimFilter;
+use Cbox\Id\Scim\Filter\ScimFilterEvaluator;
+use Cbox\Id\Scim\Filter\ScimFilterParser;
+use Cbox\Id\Scim\Filter\ScimPatchPath;
 use Cbox\Id\Scim\ScimSchema;
 use Cbox\Id\Scim\Support\ScimBoolean;
+use Cbox\Id\Scim\Support\ScimETag;
 use Illuminate\Http\Request;
 
 /**
@@ -40,39 +45,52 @@ class ScimMapper
      */
     public static function fromRequest(Request $request, ?string $externalId = null): ScimUser
     {
+        return self::fromArray($request->all(), $externalId);
+    }
+
+    /**
+     * {@see fromRequest()} over a decoded body — the `data` of a `/Bulk` operation is
+     * read by exactly the same rules as a single-resource request.
+     *
+     * @param  array<array-key, mixed>  $body
+     *
+     * @throws InvalidScimRequest
+     */
+    public static function fromArray(array $body, ?string $externalId = null): ScimUser
+    {
         // Read case-insensitively (RFC 7643 §2.1). PATCH has always lowercased its paths;
         // POST and PUT read exact casing, so a provisioner sending `UserName` had it
         // silently read as empty — see ScimAttributes.
-        $userName = ScimAttributes::string($request, 'userName');
-        $externalId ??= ScimAttributes::string($request, 'externalId') ?: $userName;
+        $userName = ScimAttributes::stringValue($body, 'userName');
+        $externalId ??= ScimAttributes::stringValue($body, 'externalId') ?: $userName;
 
-        $email = self::extractEmail(ScimAttributes::get($request, 'emails'));
+        $email = self::extractEmail(ScimAttributes::value($body, 'emails'));
 
         // Okta's default SCIM profile sends the name PARTS and NEVER name.formatted or
         // displayName. Reading only `name.formatted` here meant a create landed with no
         // stored name at all: displayName fell back to the userName (an email address),
         // and a later single-part PATCH had nothing to merge against. The parts are
         // persisted, and the display name is composed from them.
-        $givenName = self::nullableStr(ScimAttributes::get($request, 'name.givenName'));
-        $familyName = self::nullableStr(ScimAttributes::get($request, 'name.familyName'));
+        $givenName = self::nullableStr(ScimAttributes::value($body, 'name.givenName'));
+        $familyName = self::nullableStr(ScimAttributes::value($body, 'name.familyName'));
 
-        $displayName = ScimAttributes::string($request, 'displayName');
+        $displayName = ScimAttributes::stringValue($body, 'displayName');
         if ($displayName === '') {
-            $formatted = self::nullableStr(ScimAttributes::get($request, 'name.formatted'));
+            $formatted = self::nullableStr(ScimAttributes::value($body, 'name.formatted'));
             $displayName = $formatted ?? trim(($givenName ?? '').' '.($familyName ?? ''));
         }
 
-        // NB: read the extension by literal top-level key — the URN contains a
-        // dot ("2.0"), so $request->input() would misparse it as a nested path.
-        $enterprise = $request->all()[self::ENTERPRISE_URN] ?? null;
+        // NB: read the extension by its top-level key, never as a dot path — the URN
+        // contains a dot ("2.0"), which a dot-path reader would split.
+        $enterprise = self::topLevel($body, self::ENTERPRISE_URN);
 
         return self::build(
             $externalId,
             $userName,
             $email,
             $displayName !== '' ? $displayName : $userName,
-            self::activeFromRequest($request),
-            self::normalizeEnterprise($enterprise),
+            self::activeFrom(ScimAttributes::value($body, 'active')),
+            self::normalizeEnterprise(is_array($enterprise) ? self::enterpriseKeys($enterprise) : null),
             $givenName,
             $familyName,
         );
@@ -87,10 +105,8 @@ class ScimMapper
      * which on this code path deactivates the account, drops org membership and revokes
      * every session — a deprovision caused by a typo, reported to the IdP as success.
      */
-    private static function activeFromRequest(Request $request): bool
+    private static function activeFrom(mixed $value): bool
     {
-        $value = ScimAttributes::get($request, 'active');
-
         if ($value === null) {
             return true;
         }
@@ -156,7 +172,7 @@ class ScimMapper
                     throw InvalidScimRequest::noTarget();
                 }
 
-                if (! self::removeAttribute($attributes, $path)) {
+                if (! self::removePath($attributes, $path)) {
                     throw UnsupportedScimPath::forPath($path);
                 }
 
@@ -164,7 +180,7 @@ class ScimMapper
             }
 
             if (is_string($path)) {
-                if (! self::setAttribute($attributes, $path, $value, $touched)) {
+                if (! self::setPath($attributes, $path, $value, $touched)) {
                     throw UnsupportedScimPath::forPath($path);
                 }
             } elseif (is_array($value)) {
@@ -179,7 +195,7 @@ class ScimMapper
                 // path was a hard 400. setAttribute now descends into complex values, so
                 // both spellings land — and both register in $touched below.
                 foreach ($value as $key => $nested) {
-                    self::setAttribute($attributes, (string) $key, $nested, $touched);
+                    self::setPath($attributes, (string) $key, $nested, $touched);
                 }
             }
         }
@@ -226,17 +242,73 @@ class ScimMapper
     }
 
     /**
-     * Clear a nullable attribute for a SCIM `remove` op. Required identifiers
-     * (userName/externalId) and the `active` flag are not clearable this way — a
-     * deactivation is a `replace active:false`, not a remove.
+     * The canonical spelling of each Enterprise User attribute (RFC 7643 §4.3), keyed by
+     * its folded name — paths arrive in any case (RFC 7643 §2.1).
+     */
+    private const ENTERPRISE_NAMES = [
+        'employeenumber' => 'employeeNumber',
+        'costcenter' => 'costCenter',
+        'organization' => 'organization',
+        'division' => 'division',
+        'department' => 'department',
+        'manager' => 'manager',
+    ];
+
+    /** The sub-attributes of the Enterprise `manager` (RFC 7643 §4.3). */
+    private const MANAGER_FIELDS = ['value' => 'value', '$ref' => '$ref', 'displayname' => 'displayName'];
+
+    /**
+     * Core attributes this server addresses by name — anything else unqualified that the
+     * Enterprise extension defines is read as the extension's (see {@see resolve()}).
+     */
+    private const CORE_ATTRIBUTES = ['active', 'username', 'displayname', 'name', 'emails', 'externalid', 'id'];
+
+    /**
+     * Multi-valued core attributes this server does not store, whose values a PATCH may
+     * address one at a time (`phoneNumbers[type eq "mobile"].value`,
+     * `addresses[type eq "work"].streetAddress`). Accepted and ignored, like the
+     * attribute itself — see {@see isTolerated()}.
+     */
+    private const TOLERATED_MULTI_VALUED = ['phonenumbers', 'addresses', 'photos', 'ims', 'roles', 'groups', 'entitlements', 'x509certificates'];
+
+    /**
+     * Clear an attribute for a SCIM `remove` op (RFC 7644 §3.5.2.2). Required
+     * identifiers (userName/externalId) and the `active` flag are not clearable this
+     * way — a deactivation is a `replace active:false`, not a remove.
      *
      * @param  array<string, mixed>  $attributes
      */
-    private static function removeAttribute(array &$attributes, string $path): bool
+    private static function removePath(array &$attributes, string $path): bool
     {
+        if (strcasecmp(trim($path), self::ENTERPRISE_URN) === 0) {
+            $attributes['enterprise'] = [];
+
+            return true;
+        }
+
+        $parsed = self::parsePath($path);
+
+        if ($parsed === null) {
+            return self::unparsableIsTolerated($path);
+        }
+
+        [$schema, $parsed] = $parsed;
+
+        if ($schema === 'enterprise') {
+            return self::removeEnterprise($attributes, $parsed);
+        }
+
+        if ($schema !== 'core') {
+            return false;
+        }
+
+        if ($parsed->filter !== null) {
+            return self::removeFiltered($attributes, $parsed);
+        }
+
         // NB: assign directly, never through a closure — $attributes is by-reference and
         // an arrow function would capture it by VALUE, silently discarding every write.
-        switch (self::canonicalPath($path)) {
+        switch (self::target($parsed)) {
             case 'displayname':
             case 'name.formatted':
                 $attributes['displayName'] = null;
@@ -250,57 +322,136 @@ class ScimMapper
                 $attributes['familyName'] = null;
 
                 return true;
+            case 'name':
+                $attributes['givenName'] = null;
+                $attributes['familyName'] = null;
+
+                return true;
             case 'emails':
                 $attributes['email'] = null;
 
                 return true;
             default:
-                // Same tolerated set as setAttribute: removing an attribute we never
-                // stored is a no-op by definition, not a protocol error.
-                return self::isTolerated(self::canonicalPath($path));
+                // Same tolerated set as setPath: removing an attribute we never stored
+                // is a no-op by definition, not a protocol error.
+                return self::isTolerated(self::target($parsed));
         }
     }
 
     /**
-     * Reduce a PATCH path to the attribute it targets.
+     * A `remove` that selects values with a filter: `emails[type eq "work"]`. Only the
+     * stored address can be removed, and only when the filter selects it.
      *
-     * Paths arrive with value filters — `emails[type eq "work"].value` — and the filter
-     * varies by IdP and even by mapping (`emails[type eq "work"].value`,
-     * `emails[type EQ "work"].value`, a different type). Matching the whole string as a
-     * literal meant one exact spelling worked and every variant fell through to a silent
-     * no-op, so an IdP saw 200 OK and recorded a successful write that never happened.
+     * @param  array<string, mixed>  $attributes
      */
-    private static function canonicalPath(string $path): string
+    private static function removeFiltered(array &$attributes, ScimPatchPath $path): bool
     {
-        // Strip any [ ... ] value filter, then the trailing sub-attribute it selected.
-        $canonical = strtolower(trim($path));
-        $canonical = (string) preg_replace('/\[[^\]]*\]/', '', $canonical);
-        $canonical = (string) preg_replace('/^(emails|phonenumbers)\.value$/', '$1', $canonical);
+        $attribute = strtolower($path->attribute->attribute);
 
-        return trim($canonical, '.');
-    }
+        if ($attribute === 'emails') {
+            if (in_array($path->subAttribute, [null, 'value'], true) && self::selectsStoredEmail($path, $attributes)) {
+                $attributes['email'] = null;
+            }
 
-    /**
-     * Whether an `emails[...]` path targets the address this server actually stores.
-     *
-     * No filter at all means the whole attribute — the pathless and `"path": "emails"`
-     * shapes — and that is the sign-in address. A filter naming `work` or `primary` is the
-     * same thing said precisely. Anything else names a secondary address this server does
-     * not model, and must not be written over the login.
-     */
-    private static function filterNamesPrimaryEmail(string $path): bool
-    {
-        if (preg_match('/\[([^\]]*)\]/', $path, $matches) !== 1) {
             return true;
         }
 
-        $filter = strtolower($matches[1]);
+        return in_array($attribute, self::TOLERATED_MULTI_VALUED, true);
+    }
 
-        // `primary eq true` and `type eq "work"`, in every quoting and casing an IdP
-        // sends. A filter this server cannot read is treated as secondary: refusing to
-        // guess is the safe direction when the thing being guessed is somebody's identity.
-        return (bool) preg_match('/\btype\s+eq\s+["\']?work["\']?/', $filter)
-            || (bool) preg_match('/\bprimary\s+eq\s+true\b/', $filter);
+    /**
+     * The path parsed by the RFC 7644 grammar, with the schema it belongs to: `core`
+     * (unqualified, or qualified with the core User URN), `enterprise` (qualified with
+     * the Enterprise User URN, or an unqualified name only the extension defines), or
+     * `other` (some other URN this server does not implement). Null when the path does
+     * not parse at all.
+     *
+     * The unqualified fallback exists because Microsoft Entra ID patches the manager as
+     * `"path": "manager"` — and RFC 7644 §3.10 only says extension attributes SHOULD be
+     * qualified.
+     *
+     * @return array{'core'|'enterprise'|'other', ScimPatchPath}|null
+     */
+    private static function parsePath(string $path): ?array
+    {
+        try {
+            $parsed = (new ScimFilterParser)->parsePath($path);
+        } catch (InvalidScimFilter) {
+            return null;
+        }
+
+        $attribute = $parsed->attribute;
+
+        if ($attribute->schema !== null) {
+            return match (true) {
+                $attribute->inSchema(ScimSchema::USER_URN) => ['core', $parsed],
+                $attribute->inSchema(self::ENTERPRISE_URN) => ['enterprise', $parsed],
+                default => ['other', $parsed],
+            };
+        }
+
+        $name = strtolower($attribute->attribute);
+
+        if (! in_array($name, self::CORE_ATTRIBUTES, true) && array_key_exists($name, self::ENTERPRISE_NAMES)) {
+            return ['enterprise', $parsed];
+        }
+
+        return ['core', $parsed];
+    }
+
+    /**
+     * What a parsed core path writes: `emails[type eq "work"].value` and
+     * `emails.value` both write `emails`, the one address this server stores.
+     */
+    private static function target(ScimPatchPath $path): string
+    {
+        return (string) preg_replace('/^(emails|phonenumbers)\.value$/', '$1', $path->target());
+    }
+
+    /**
+     * A path the grammar cannot read. Refused — unless it plainly addresses a value of
+     * a multi-valued attribute this server either does not store or stores only as the
+     * primary address, where an IdP-specific filter spelling must not fail the whole
+     * (atomic) PATCH: `emails[something we have never seen].value` is treated as a
+     * secondary address and left alone, exactly as it was before this server had a
+     * filter parser.
+     */
+    private static function unparsableIsTolerated(string $path): bool
+    {
+        if (preg_match('/^\s*([A-Za-z][A-Za-z0-9_-]*)\s*\[/', $path, $m) !== 1) {
+            return false;
+        }
+
+        $attribute = strtolower($m[1]);
+
+        return $attribute === 'emails' || in_array($attribute, self::TOLERATED_MULTI_VALUED, true);
+    }
+
+    /**
+     * Whether a value filter on `emails` selects the address this server stores.
+     *
+     * This server keeps ONE email, it is the identifier somebody signs in with, and it is
+     * returned as the primary. It is therefore modelled, for the purpose of a value
+     * filter, as `{type: "work", primary: true, value: <the address>}`: a filter naming
+     * `work` or `primary` — or the current address itself — selects it; one naming
+     * `home` or `other` names a secondary address this server does not model and must
+     * not be written over the login. The filter is EVALUATED (RFC 7644 §3.5.2), so
+     * `emails[type eq "work" and primary eq true]` and `emails[type EQ "work"]` mean what
+     * they say, and `emails[type eq "home"]` does not slip through.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private static function selectsStoredEmail(ScimPatchPath $path, array $attributes): bool
+    {
+        if ($path->filter === null) {
+            return true;
+        }
+
+        return (new ScimFilterEvaluator)->matches($path->filter, [
+            'type' => 'work',
+            'primary' => true,
+            'value' => self::nullableStr($attributes['email'] ?? null),
+        ]);
     }
 
     /**
@@ -313,31 +464,66 @@ class ScimMapper
      *
      * @throws InvalidScimRequest
      */
-    private static function setAttribute(array &$attributes, string $path, mixed $value, array &$touched): bool
+    private static function setPath(array &$attributes, string $path, mixed $value, array &$touched): bool
     {
-        // Enterprise extension: paths arrive fully qualified with the schema URN
-        // (Okta: "urn:...:User:department") or, pathless, as a nested object under
-        // the URN key. Normalize either form onto the enterprise sub-array.
-        if (self::applyEnterprisePatch($attributes, $path, $value)) {
-            $touched[] = self::canonicalPath($path);
+        // The whole extension as one nested object — the pathless spelling
+        // `{"urn:…:enterprise:2.0:User": {"department": "…"}}`.
+        if (strcasecmp(trim($path), self::ENTERPRISE_URN) === 0) {
+            if (! is_array($value)) {
+                return false;
+            }
+
+            $enterprise = is_array($attributes['enterprise'] ?? null) ? $attributes['enterprise'] : [];
+            $attributes['enterprise'] = self::normalizeEnterprise(array_merge($enterprise, self::enterpriseKeys($value)));
+            $touched[] = 'enterprise';
 
             return true;
         }
 
-        $canonical = self::canonicalPath($path);
+        $parsed = self::parsePath($path);
+
+        if ($parsed === null) {
+            return self::unparsableIsTolerated($path);
+        }
+
+        [$schema, $parsed] = $parsed;
+
+        if ($schema === 'enterprise') {
+            return self::setEnterprise($attributes, $parsed, $value, $touched);
+        }
+
+        if ($schema !== 'core') {
+            return false;
+        }
+
+        if ($parsed->filter !== null) {
+            return self::setFiltered($attributes, $parsed, $value, $touched);
+        }
+
+        $canonical = self::target($parsed);
 
         switch ($canonical) {
             case 'active':
                 // Strict, never coercive: FILTER_VALIDATE_BOOLEAN answered false for any
                 // value it did not recognise, so `"active": "fasle"` deactivated the
                 // subject, dropped membership and revoked every session — and the IdP
-                // recorded it as a successful write.
+                // recorded it as a successful write. Entra's `"False"` is still a boolean.
                 $attributes['active'] = ScimBoolean::parse($value)
                     ?? throw InvalidScimRequest::notABoolean('active');
                 break;
             case 'username':
                 $attributes['userName'] = self::str($value);
                 break;
+            case 'externalid':
+                // externalId is this directory's provisioning key: the row, the linked
+                // subject and its federated identity are all keyed by it. Re-keying it
+                // in place would orphan all three, so it is immutable here — the same
+                // rule PUT applies. Writing the value it already has is not a change.
+                if (self::str($value) !== self::str($attributes['externalId'] ?? null)) {
+                    throw new InvalidScimRequest('externalId cannot be changed once provisioned; it is this directory\'s provisioning key.', 'mutability');
+                }
+
+                return true;
             case 'displayname':
             case 'name.formatted':
                 $attributes['displayName'] = self::str($value);
@@ -352,24 +538,6 @@ class ScimMapper
                 $attributes['familyName'] = self::str($value);
                 break;
             case 'emails':
-                // ONLY WHEN THE FILTER MEANS THE SIGN-IN ADDRESS.
-                //
-                // This server stores ONE email and it is the identifier somebody signs in
-                // with. The filter is stripped so that every spelling of "the work one"
-                // is recognised — that was deliberate and is why `emails[type EQ 'work']`
-                // works — but stripping it also made `emails[type eq "home"].value`
-                // indistinguishable from it, so an IdP mapping that syncs a personal
-                // address silently replaced the person's login with it. The directory
-                // records a routine attribute update; the person can no longer sign in
-                // under the address their organization knows them by.
-                //
-                // A secondary address is not refused, because a 400 fails the WHOLE patch
-                // (RFC 7644 §3.5.2 is atomic) and would break every sync for every user
-                // who happens to have one. It is simply not something this server stores.
-                if (! self::filterNamesPrimaryEmail($path)) {
-                    return true;
-                }
-
                 $attributes['email'] = self::extractEmail($value);
                 break;
             case 'name':
@@ -388,6 +556,46 @@ class ScimMapper
     }
 
     /**
+     * An `add`/`replace` that selects values with a filter.
+     *
+     * ONLY WHEN THE FILTER SELECTS THE SIGN-IN ADDRESS is anything written. This server
+     * stores ONE email and it is the identifier somebody signs in with. An IdP mapping
+     * that syncs a personal address as `emails[type eq "home"].value` used to be
+     * indistinguishable from the work one once the filter was stripped, and replaced the
+     * person's login with it. A secondary address is not refused either — a 400 fails
+     * the WHOLE patch (RFC 7644 §3.5.2 is atomic) and would break every sync for every
+     * user who happens to have one. It is simply not something this server stores.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $touched
+     */
+    private static function setFiltered(array &$attributes, ScimPatchPath $path, mixed $value, array &$touched): bool
+    {
+        $attribute = strtolower($path->attribute->attribute);
+
+        if ($attribute === 'emails') {
+            // `.type`, `.primary`, `.display` of the selected address are not stored
+            // separately; the address is the only thing to write.
+            if (! in_array($path->subAttribute === null ? null : strtolower($path->subAttribute), [null, 'value'], true)) {
+                return true;
+            }
+
+            if (! self::selectsStoredEmail($path, $attributes)) {
+                return true;
+            }
+
+            $attributes['email'] = is_array($value) && ! array_is_list($value)
+                ? self::nullableStr(ScimAttributes::value($value, 'value'))
+                : self::extractEmail($value);
+            $touched[] = 'emails';
+
+            return true;
+        }
+
+        return in_array($attribute, self::TOLERATED_MULTI_VALUED, true);
+    }
+
+    /**
      * Apply a complex attribute supplied as a whole object by descending into its
      * sub-attributes.
      *
@@ -401,7 +609,7 @@ class ScimMapper
         }
 
         foreach ($value as $key => $sub) {
-            if (! self::setAttribute($attributes, $path.'.'.$key, $sub, $touched)) {
+            if (! self::setPath($attributes, $path.'.'.$key, $sub, $touched)) {
                 return false;
             }
         }
@@ -420,19 +628,18 @@ class ScimMapper
      * DEACTIVATED. Entra then quarantines the provisioning job after repeated failures.
      *
      * So: accept and ignore what we understand but don't keep; refuse only what we
-     * cannot interpret at all.
+     * cannot interpret at all. A sub-attribute of a tolerated multi-valued attribute
+     * (`addresses.streetAddress`) is tolerated with it.
      */
     private static function isTolerated(string $canonicalPath): bool
     {
+        $base = explode('.', $canonicalPath, 2)[0];
+
+        if (in_array($base, self::TOLERATED_MULTI_VALUED, true)) {
+            return true;
+        }
+
         return in_array($canonicalPath, [
-            'phonenumbers',
-            'addresses',
-            'photos',
-            'ims',
-            'roles',
-            'groups',
-            'entitlements',
-            'x509certificates',
             'title',
             'usertype',
             'nickname',
@@ -447,47 +654,150 @@ class ScimMapper
     }
 
     /**
-     * Handle an enterprise-extension patch operation. Returns true when the path
-     * belonged to the enterprise schema (and was applied), false otherwise.
+     * Write one Enterprise User attribute: `urn:…:enterprise:2.0:User:department`,
+     * `…:User:manager`, `…:User:manager.value`, or the unqualified `manager` Entra sends.
+     *
+     * Every attribute of RFC 7643 §4.3 is stored; anything else under the URN is not
+     * part of the extension at all and is refused. Previously every unsupported
+     * attribute returned 200 and was then silently dropped — the IdP recorded a write
+     * that never happened.
      *
      * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $touched
      */
-    private static function applyEnterprisePatch(array &$attributes, string $path, mixed $value): bool
+    private static function setEnterprise(array &$attributes, ScimPatchPath $path, mixed $value, array &$touched): bool
     {
-        $enterprise = is_array($attributes['enterprise'] ?? null) ? $attributes['enterprise'] : [];
+        $name = self::ENTERPRISE_NAMES[strtolower($path->attribute->attribute)] ?? null;
+        $sub = $path->attribute->subAttribute ?? $path->subAttribute;
 
-        // Pathless nested object: { "urn:...:User": { "department": "..." } }
-        if ($path === self::ENTERPRISE_URN && is_array($value)) {
-            $attributes['enterprise'] = self::normalizeEnterprise(array_merge($enterprise, $value));
-
-            return true;
+        // The extension's attributes are all single-valued: a value filter selects nothing.
+        if ($name === null || $path->filter !== null) {
+            return false;
         }
 
-        // Fully-qualified single attribute: "urn:...:User:department"
-        $prefix = self::ENTERPRISE_URN.':';
-        if (str_starts_with($path, $prefix)) {
-            $attribute = substr($path, strlen($prefix));
+        $enterprise = is_array($attributes['enterprise'] ?? null) ? $attributes['enterprise'] : [];
 
-            // Same split as the core schema: an attribute of the extension we simply do
-            // not persist is TOLERATED (accepted, ignored), but one that is not part of
-            // the extension at all is refused. Previously every unsupported attribute
-            // returned 200 and was then silently dropped by normalizeEnterprise() — the
-            // IdP recorded a write that never happened.
-            // ENTERPRISE_ATTRIBUTES already IS the full RFC 7643 §4.3 set, so anything
-            // else is genuinely undefined by the schema — refuse it. Previously any
-            // unsupported attribute returned 200 and was then silently dropped by
-            // normalizeEnterprise(), so the IdP recorded a write that never happened.
-            if (! in_array($attribute, self::ENTERPRISE_ATTRIBUTES, true)) {
+        if ($sub !== null) {
+            $field = self::MANAGER_FIELDS[strtolower($sub)] ?? null;
+
+            if ($name !== 'manager' || $field === null) {
                 return false;
             }
 
-            $enterprise[$attribute] = $value;
-            $attributes['enterprise'] = self::normalizeEnterprise($enterprise);
-
-            return true;
+            $manager = self::normalizeManager($enterprise['manager'] ?? null) ?? [];
+            $manager[$field] = $value;
+            $enterprise['manager'] = $manager;
+        } else {
+            $enterprise[$name] = $value;
         }
 
-        return false;
+        $attributes['enterprise'] = self::normalizeEnterprise($enterprise);
+        $touched[] = 'enterprise.'.strtolower($name);
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private static function removeEnterprise(array &$attributes, ScimPatchPath $path): bool
+    {
+        $name = self::ENTERPRISE_NAMES[strtolower($path->attribute->attribute)] ?? null;
+        $sub = $path->attribute->subAttribute ?? $path->subAttribute;
+
+        if ($name === null || $path->filter !== null) {
+            return false;
+        }
+
+        $enterprise = is_array($attributes['enterprise'] ?? null) ? $attributes['enterprise'] : [];
+
+        if ($sub === null) {
+            unset($enterprise[$name]);
+        } elseif ($name === 'manager' && isset(self::MANAGER_FIELDS[strtolower($sub)])) {
+            $manager = self::normalizeManager($enterprise['manager'] ?? null) ?? [];
+            unset($manager[self::MANAGER_FIELDS[strtolower($sub)]]);
+            $enterprise['manager'] = $manager;
+        } else {
+            return false;
+        }
+
+        $attributes['enterprise'] = self::normalizeEnterprise($enterprise);
+
+        return true;
+    }
+
+    /**
+     * Re-key an Enterprise object onto the canonical attribute spellings, so
+     * `{"Department": "x"}` is `department` (RFC 7643 §2.1).
+     *
+     * @param  array<array-key, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private static function enterpriseKeys(array $value): array
+    {
+        $out = [];
+
+        foreach ($value as $key => $item) {
+            $name = self::ENTERPRISE_NAMES[strtolower((string) $key)] ?? null;
+
+            if ($name !== null) {
+                $out[$name] = $item;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The Enterprise `manager` as the complex attribute RFC 7643 §4.3 defines —
+     * `{value, $ref, displayName}` — from any of the shapes identity providers send it
+     * in: that object; a bare id string; or, from Microsoft Entra ID, a one-element list
+     * of that object (`"value": [{"$ref": "…", "value": "…"}]`). Null when nothing usable
+     * is left.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function normalizeManager(mixed $value): ?array
+    {
+        if (is_string($value)) {
+            return $value === '' ? null : ['value' => $value];
+        }
+
+        if (! is_array($value)) {
+            return null;
+        }
+
+        if (array_is_list($value)) {
+            return self::normalizeManager($value[0] ?? null);
+        }
+
+        $manager = [];
+
+        foreach ($value as $key => $item) {
+            $field = self::MANAGER_FIELDS[strtolower((string) $key)] ?? null;
+
+            if ($field !== null && is_string($item) && $item !== '') {
+                $manager[$field] = $item;
+            }
+        }
+
+        return $manager === [] ? null : $manager;
+    }
+
+    /**
+     * A top-level body member matched without regard to case — never as a dot path.
+     *
+     * @param  array<array-key, mixed>  $body
+     */
+    private static function topLevel(array $body, string $name): mixed
+    {
+        foreach ($body as $key => $value) {
+            if (strcasecmp((string) $key, $name) === 0) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -506,6 +816,19 @@ class ScimMapper
             if (! array_key_exists($key, $value) || $value[$key] === null || $value[$key] === '') {
                 continue;
             }
+
+            if ($key === 'manager') {
+                // Always the complex attribute RFC 7643 §4.3 defines, never a bare id —
+                // a schema-violating string here broke the IdP's own read-back.
+                $manager = self::normalizeManager($value[$key]);
+
+                if ($manager !== null) {
+                    $out[$key] = $manager;
+                }
+
+                continue;
+            }
+
             $out[$key] = $value[$key];
         }
 
@@ -587,6 +910,17 @@ class ScimMapper
     }
 
     /**
+     * The resource's weak entity-tag (RFC 7644 §3.14) — `meta.version` and the `ETag`
+     * header both.
+     */
+    public static function version(DirectoryUser $directoryUser): string
+    {
+        $revision = $directoryUser->getAttribute('version');
+
+        return ScimETag::forRevision($directoryUser->id, is_int($revision) ? $revision : 1);
+    }
+
+    /**
      * The absolute URI of a User resource — `meta.location` and `Content-Location` both.
      */
     public static function location(string $id): string
@@ -634,6 +968,7 @@ class ScimMapper
                 self::location($directoryUser->id),
                 $directoryUser->created_at,
                 $directoryUser->updated_at,
+                self::version($directoryUser),
             ),
         ];
 

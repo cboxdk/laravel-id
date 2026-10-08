@@ -6,12 +6,15 @@ namespace Cbox\Id\Federation;
 
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\OidcRelyingParty;
+use Cbox\Id\Federation\Contracts\OidcTokenExchange;
+use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Support\BrowserStartUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
+use Cbox\Id\Federation\ValueObjects\OidcTokenSet;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -25,7 +28,7 @@ use Illuminate\Support\Facades\Http;
  * point of use, so a validator-only connection is not forced to carry them. See
  * {@see OidcConnectionConfig}.
  */
-class OidcClient implements OidcRelyingParty
+class OidcClient implements OidcRelyingParty, OidcTokenExchange
 {
     public function __construct(
         private readonly Connections $connections,
@@ -69,6 +72,15 @@ class OidcClient implements OidcRelyingParty
      */
     public function exchangeCode(Connection $connection, string $code, string $redirectUri): string
     {
+        return $this->exchange($connection, $code, $redirectUri)->idToken;
+    }
+
+    /**
+     * The same exchange, keeping the access token for a provider whose identity is
+     * behind UserInfo. See {@see OidcTokenSet}.
+     */
+    public function exchange(Connection $connection, string $code, string $redirectUri): OidcTokenSet
+    {
         $config = $this->connections->oidcConfig($connection);
 
         $endpoint = $config->requireField($config->tokenEndpoint, 'token_endpoint');
@@ -83,17 +95,32 @@ class OidcClient implements OidcRelyingParty
             throw InvalidAssertion::make('token endpoint blocked: '.$e->getMessage());
         }
 
+        $form = [
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+        ];
+        $headers = [];
+        $secret = $this->clientSecret($connection, $config);
+
+        // Basic only where discovery ruled the body form out (and never for a minted
+        // assertion, which Apple expects in the body). One method per request — RFC 6749
+        // §2.3 — so the body carries no secret when the header does. The client id stays
+        // out of the body too: a server that sees it in both places may treat that as
+        // two methods.
+        if ($config->signingCredential === null && $config->tokenEndpointAuthMethod === TokenEndpointAuthMethod::ClientSecretBasic) {
+            $headers['Authorization'] = TokenEndpointAuthMethod::basicCredentials($config->clientId, $secret);
+        } else {
+            $form['client_id'] = $config->clientId;
+            $form['client_secret'] = $secret;
+        }
+
         $response = Http::asForm()
             ->withOptions($pinned)          // pinned resolution + no redirects
             ->withoutRedirecting()          // a 30x to an internal host must not be followed
+            ->withHeaders($headers)
             ->timeout(10)
-            ->post($endpoint, [
-                'grant_type' => 'authorization_code',
-                'code' => $code,
-                'redirect_uri' => $redirectUri,
-                'client_id' => $config->clientId,
-                'client_secret' => $this->clientSecret($connection, $config),
-            ]);
+            ->post($endpoint, $form);
 
         if (! $response->successful()) {
             throw InvalidAssertion::make('token exchange failed');
@@ -105,7 +132,12 @@ class OidcClient implements OidcRelyingParty
             throw InvalidAssertion::make('token response contained no id_token');
         }
 
-        return $idToken;
+        $accessToken = $response->json('access_token');
+
+        return new OidcTokenSet(
+            idToken: $idToken,
+            accessToken: is_string($accessToken) && $accessToken !== '' ? $accessToken : null,
+        );
     }
 
     /**

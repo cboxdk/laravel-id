@@ -42,6 +42,10 @@ How the platform is put together and the ideas you build against:
 - **[Inbound SCIM provisioning server](scim.md)** — the SCIM 2.0 endpoint a
   customer's IdP pushes users and groups INTO: directory-scoped bearer auth, the
   full User and Group lifecycle, type-checked filters and RFC 7644 error semantics.
+- **[Sign-in provider catalogue](sign-in-provider-catalogue.md)** — the social and
+  workforce providers people can sign in with (Google, Microsoft, GitHub, Apple,
+  LinkedIn, Bitbucket, Xero, Intuit and more): issuers, endpoints, scopes and how each
+  maps to a verified identity.
 - **[Outbound SCIM provisioning](outbound-provisioning.md)** — push user and
   membership changes OUT to downstream apps over their SCIM 2.0 endpoints; the
   stateful mirror of the inbound directory.

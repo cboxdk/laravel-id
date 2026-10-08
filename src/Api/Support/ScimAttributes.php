@@ -28,7 +28,15 @@ final class ScimAttributes
 {
     public static function string(Request $request, string $path): string
     {
-        $value = self::get($request, $path);
+        return self::stringValue($request->all(), $path);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $data
+     */
+    public static function stringValue(array $data, string $path): string
+    {
+        $value = self::value($data, $path);
 
         return is_scalar($value) ? (string) $value : '';
     }
@@ -38,11 +46,23 @@ final class ScimAttributes
      */
     public static function get(Request $request, string $path): mixed
     {
-        /** @var array<string, mixed> $cursor */
-        $cursor = $request->all();
+        return self::value($request->all(), $path);
+    }
+
+    /**
+     * The same read over a decoded body — a `/Bulk` operation's `data` has no Request
+     * of its own, and must be read by exactly the rules a single-resource request is.
+     *
+     * @param  array<array-key, mixed>  $data
+     */
+    public static function value(array $data, string $path): mixed
+    {
+        $cursor = $data;
         $value = null;
 
-        foreach (explode('.', $path) as $segment) {
+        $segments = explode('.', $path);
+
+        foreach ($segments as $index => $segment) {
             $key = self::matchKey($cursor, $segment);
 
             if ($key === null) {
@@ -52,8 +72,12 @@ final class ScimAttributes
             $value = $cursor[$key];
 
             if (is_array($value)) {
-                /** @var array<string, mixed> $value */
                 $cursor = $value;
+            } elseif ($index < count($segments) - 1) {
+                // `name.givenName` against a `name` that is a plain string: there is no
+                // sub-attribute to find. Carrying on would look `givenName` up one level
+                // too high.
+                return null;
             }
         }
 
@@ -66,7 +90,7 @@ final class ScimAttributes
      * An exact hit wins without scanning — the overwhelmingly common case, since most
      * clients do send the canonical spelling.
      *
-     * @param  array<string, mixed>  $values
+     * @param  array<array-key, mixed>  $values
      */
     private static function matchKey(array $values, string $name): ?string
     {

@@ -6,9 +6,9 @@ namespace Cbox\Id\Federation\Validators;
 
 use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
-use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\Support\OrganizationVouchedEmail;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Federation\ValueObjects\OidcConnectionConfig;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
@@ -101,22 +101,11 @@ class OidcAssertionValidator implements AssertionValidator
      */
     private function verifiedFor(Connection $connection, array $claims): ?bool
     {
-        if (($claims['email_verified'] ?? null) !== true) {
-            return null;
-        }
-
-        $email = $this->optionalString($claims, 'email');
-
-        if ($email === null) {
-            return null;
-        }
-
-        $organizationId = $connection->organization_id;
-        $verified = app(DomainVerification::class)->forEmail($email);
-
-        // An empty owner vouches for nothing — the same rule every ownership check in
-        // this codebase states, for the same reason.
-        return $organizationId !== '' && $verified?->organization_id === $organizationId ? true : null;
+        return app(OrganizationVouchedEmail::class)->verified(
+            $connection,
+            $this->optionalString($claims, 'email'),
+            $claims['email_verified'] ?? null,
+        );
     }
 
     /**

@@ -87,6 +87,20 @@ class IntrospectionController
             $body['aud'] = $aud;
         }
 
+        // RFC 9470 §6.2: when and how strongly the person behind the token signed in, so a
+        // resource server that introspects rather than decoding the JWT can make the same
+        // step-up decision as one that reads the claims. Absent on a client_credentials
+        // token, which has no login to describe.
+        $acr = $result->acr();
+        if ($acr !== null) {
+            $body['acr'] = $acr;
+        }
+
+        $authTime = $result->authTime();
+        if ($authTime !== null) {
+            $body['auth_time'] = $authTime;
+        }
+
         // RFC 8693 §4.1: a support session's token is held by somebody acting for its
         // subject, and a resource server that introspects rather than decoding the JWT must
         // learn that as surely as one that reads the claim.

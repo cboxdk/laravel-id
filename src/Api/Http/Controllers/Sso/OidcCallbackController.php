@@ -8,6 +8,8 @@ use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Contracts\OidcRelyingParty;
+use Cbox\Id\Federation\Contracts\OidcTokenExchange;
+use Cbox\Id\Federation\Contracts\OidcUserInfo;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
@@ -34,6 +36,7 @@ class OidcCallbackController
         private readonly FederationFlow $flow,
         private readonly FederationFlowStash $stash,
         private readonly FirstAuthorizationProfile $firstAuthorization,
+        private readonly ?OidcUserInfo $userInfo = null,
     ) {}
 
     public function __invoke(Request $request, string $connection): JsonResponse
@@ -58,7 +61,20 @@ class OidcCallbackController
         }
 
         try {
-            $idToken = $this->client->exchangeCode($model, $code, url('/sso/oidc/'.$model->id.'/callback'));
+            $redirectUri = url('/sso/oidc/'.$model->id.'/callback');
+
+            // The access token is kept only when the bound relying party can hand it
+            // over; a host's own OidcRelyingParty that cannot still signs people in, just
+            // without what only UserInfo holds.
+            if ($this->client instanceof OidcTokenExchange) {
+                $tokens = $this->client->exchange($model, $code, $redirectUri);
+                $idToken = $tokens->idToken;
+                $accessToken = $tokens->accessToken;
+            } else {
+                $idToken = $this->client->exchangeCode($model, $code, $redirectUri);
+                $accessToken = null;
+            }
+
             $principal = $this->validator->validate($model, $idToken);
 
             // Replay defense: the id_token's nonce must be the one we sent.
@@ -72,6 +88,10 @@ class OidcCallbackController
             // Apple, on the first authorization. Merged before provisioning, because
             // provisioning is what creates the account and there is no second chance.
             $principal = $this->firstAuthorization->merge($model, $request, $principal);
+
+            // The address a provider keeps behind UserInfo rather than in the token —
+            // Intuit. AFTER the nonce check, so only a proven subject is completed.
+            $principal = ($this->userInfo ?? app(OidcUserInfo::class))->complete($model, $principal, $accessToken);
 
             $session = $this->flow->completeLogin($model, $principal);
         } catch (InvalidAssertion|ConnectionInactive) {

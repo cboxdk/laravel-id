@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation;
 
+use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
@@ -69,18 +70,20 @@ class OAuth2Client
             throw InvalidAssertion::make($template->key.' profile carried no '.$template->profile->subject);
         }
 
+        [$email, $listedVerified] = $this->email($template->profile, $profile, $token);
+
         return new FederatedPrincipal(
             provider: 'oauth2:'.$template->key,
             subject: $subject,
-            email: $this->email($template->profile, $profile, $token),
+            email: $email,
             name: $this->stringAt($profile, $template->profile->name ?? ''),
             connectionId: $connectionId,
 
             // The catalogue names WHERE each provider puts this, because plain OAuth 2.0
-            // standardises nothing — GitHub's `/user/emails` marks it `verified`, Discord
-            // uses `verified` on the user object. Read at last, after being declared on
-            // nine entries and consumed by none.
-            emailVerified: $this->verifiedFlag($profile, $template->profile->emailVerified),
+            // standardises nothing — Discord uses `verified` on the user object,
+            // Bitbucket `is_confirmed` on each entry of its address list. Read at last,
+            // after being declared on nine entries and consumed by none.
+            emailVerified: $listedVerified ?? $this->verifiedFlag($profile, $template->profile->emailVerified),
             // Keyed, because the principal's contract says so — a provider that answered
             // a bare list here would otherwise reach the audit trail as one.
             raw: array_filter($profile, 'is_string', ARRAY_FILTER_USE_KEY),
@@ -91,21 +94,34 @@ class OAuth2Client
     {
         $endpoint = $template->tokenEndpoint ?? throw InvalidAssertion::make($template->key.' has no token endpoint');
 
-        $response = Http::asForm()
-            ->withOptions($this->pinned($endpoint))
-            ->withoutRedirecting()
+        $form = [
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+        ];
+        $headers = [
             // GitHub answers form-encoded unless asked otherwise, and a form-encoded body
             // read as JSON is an empty array — which surfaces as "no access token" rather
             // than as the parsing problem it is.
-            ->withHeaders(['Accept' => 'application/json'])
+            'Accept' => 'application/json',
+        ];
+
+        // ONE of the two, never both. RFC 6749 §2.3 forbids a client from using more
+        // than one authentication method per request, and a server that enforces it
+        // answers `invalid_request` — which reads as a bad code, not a bad request.
+        if ($template->tokenEndpointAuthMethod === TokenEndpointAuthMethod::ClientSecretBasic) {
+            $headers['Authorization'] = TokenEndpointAuthMethod::basicCredentials($config->clientId, $config->clientSecret);
+        } else {
+            $form['client_id'] = $config->clientId;
+            $form['client_secret'] = $config->clientSecret;
+        }
+
+        $response = Http::asForm()
+            ->withOptions($this->pinned($endpoint))
+            ->withoutRedirecting()
+            ->withHeaders($headers)
             ->timeout(10)
-            ->post($endpoint, [
-                'grant_type' => 'authorization_code',
-                'code' => $code,
-                'redirect_uri' => $redirectUri,
-                'client_id' => $config->clientId,
-                'client_secret' => $config->clientSecret,
-            ]);
+            ->post($endpoint, $form);
 
         if (! $response->successful()) {
             throw InvalidAssertion::make('token exchange failed');
@@ -123,40 +139,67 @@ class OAuth2Client
     }
 
     /**
-     * The address, including the second call GitHub needs.
+     * The address, including the second call GitHub and Bitbucket need, and whether the
+     * address list vouched for it.
      *
-     * `/user` returns `email: null` for anyone who has not made theirs public — which is
-     * the default — so without this a majority of GitHub sign-ins would arrive with no
-     * address at all. The template names the fallback endpoint; nothing here is
-     * GitHub-specific beyond that.
+     * `/user` returns `email: null` for anyone who has not made theirs public on GitHub —
+     * which is the default — and Bitbucket's `/user` carries no address at all, so without
+     * this most sign-ins from either would arrive with no address. The template names the
+     * fallback endpoint and the shape of its answer; nothing here is provider-specific.
+     *
+     * The second element is true only when the map judges entries by a verified flag and
+     * the chosen entry carried an explicit true; null otherwise — never false, because an
+     * absent claim is not a denial we should invent.
      *
      * @param  array<mixed>  $profile
+     * @return array{0: ?string, 1: ?bool}
      */
-    private function email(ProviderProfileMap $map, array $profile, string $token): ?string
+    private function email(ProviderProfileMap $map, array $profile, string $token): array
     {
         $email = $this->stringAt($profile, $map->email ?? '');
 
         if ($email !== null || $map->emailEndpoint === null) {
-            return $email;
+            return [$email, null];
         }
 
-        $addresses = $this->fetch($map->emailEndpoint, $token);
+        $response = $this->fetch($map->emailEndpoint, $token);
+        $addresses = $map->emailListPath === null ? $response : data_get($response, $map->emailListPath);
+
+        if (! is_array($addresses)) {
+            return [null, null];
+        }
 
         // Take the primary. Not the first: the list is not ordered, and picking whichever
         // came back first would attach the account to an address the person may have
         // added and forgotten.
         foreach ($addresses as $entry) {
-            if (is_array($entry) && ($entry['primary'] ?? false) === true && is_string($entry['email'] ?? null)) {
-                return $entry['email'];
+            if (! is_array($entry) || ($entry[$map->emailEntryPrimary] ?? false) !== true) {
+                continue;
             }
+
+            $address = $entry[$map->emailEntryAddress] ?? null;
+
+            if (! is_string($address) || $address === '') {
+                continue;
+            }
+
+            if ($map->emailEntryVerified === null) {
+                return [$address, null];
+            }
+
+            // A primary the provider has not confirmed is not taken at all — see
+            // ProviderProfileMap::$emailEntryVerified for why "take it, unverified" is
+            // not the safe middle ground it looks like.
+            return ($entry[$map->emailEntryVerified] ?? null) === true ? [$address, true] : [null, null];
         }
 
-        return null;
+        return [null, null];
     }
 
     /**
-     * GitHub's email endpoint answers a LIST, not an object, so this is deliberately
-     * untyped beyond "some array" — the callers know which shape they asked for.
+     * GitHub's email endpoint answers a LIST, not an object, and Bitbucket's an envelope
+     * around one, so this is deliberately untyped beyond "some array" — the callers know
+     * which shape they asked for.
      *
      * @return array<mixed>
      */

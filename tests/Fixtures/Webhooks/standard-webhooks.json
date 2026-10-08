@@ -1,0 +1,35 @@
+{
+    "_comment": "Golden Standard Webhooks (https://www.standardwebhooks.com/) signature vectors for endpoints on the standard_webhooks signature scheme. 'reference_library_sign' is copied verbatim from the specification repository's own library tests (libraries/php/tests/WebhookTest.php testSignFunctionWorks; the same vector is in the JavaScript and Go suites) — it is the spec authors' number, not ours. The other cases were computed independently with OpenSSL and Python's hmac module, never with the code under test. reordered_signature is the SAME input signed over \"{timestamp}.{id}.{body}\": a verifier must reject it.",
+    "source": "https://github.com/standard-webhooks/standard-webhooks/blob/main/libraries/php/tests/WebhookTest.php",
+    "algorithm": "HMAC-SHA256, standard base64 (padded); the key is the base64-decoded bytes after whsec_",
+    "id_header": "webhook-id",
+    "timestamp_header": "webhook-timestamp",
+    "signature_header": "webhook-signature",
+    "signed_payload_template": "{id}.{timestamp}.{body}",
+    "signature_entry_template": "v1,{signature}",
+    "cases": [
+        {
+            "name": "reference_library_sign",
+            "note": "The specification's published sign() vector. A 24-byte key (the spec's minimum), and a body with a space in it: the MAC covers the bytes as sent.",
+            "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+            "id": "msg_p5jXN8AQM9LWM0D4loKWxJek",
+            "timestamp": 1614265330,
+            "body": "{\"test\": 2432232314}",
+            "signature": "g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=",
+            "header": "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=",
+            "reordered_signature": "M7sOAg3Fv2e+haLMpJcOJ2tWR8rNXJE5PGDOuYY6KPE="
+        },
+        {
+            "name": "cbox_hex_secret_as_whsec",
+            "note": "An endpoint minted on the Cbox scheme (64 hex characters) and moved to Standard Webhooks. Its whsec_ form is base64 of the 64 hex characters, so the decoded key is the exact key the Cbox scheme already used (64 bytes, the top of the spec's range). The body is the real delivery envelope and the id is its delivery_id.",
+            "cbox_secret": "7f3c1a9b2e5d48f0a6c3b1d7e9f24a58c0b6d3e1f7a94c25d8b0e6f3a1c7d495",
+            "secret": "whsec_N2YzYzFhOWIyZTVkNDhmMGE2YzNiMWQ3ZTlmMjRhNThjMGI2ZDNlMWY3YTk0YzI1ZDhiMGU2ZjNhMWM3ZDQ5NQ==",
+            "id": "01HF3QK9Z8VN0T7M2XW5RB4YCD",
+            "timestamp": 1700000000,
+            "body": "{\"type\":\"organization.member_added\",\"sequence\":1,\"data\":{\"user_id\":\"user_1\",\"organization_id\":\"org_a\"},\"delivery_id\":\"01HF3QK9Z8VN0T7M2XW5RB4YCD\"}",
+            "signature": "QT4zKhRC6ks3sPBm/ZlBdV8WcT2rusxEa3ehCtbRoUg=",
+            "header": "v1,QT4zKhRC6ks3sPBm/ZlBdV8WcT2rusxEa3ehCtbRoUg=",
+            "reordered_signature": "wEMKhMW0AHDsuzT4Us39dY6nF9tm2WdV0K9AEbJBFDo="
+        }
+    ]
+}

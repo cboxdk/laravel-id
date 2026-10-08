@@ -51,4 +51,14 @@ class UnsupportedGroupPatch extends RuntimeException
     {
         return new self('A PATCH operation must name a target path.', 'noTarget');
     }
+
+    /**
+     * A pathless `add`/`replace` whose `value` is not an object. With no `path` the
+     * target is the resource itself, and `value` must be the attributes to set
+     * (RFC 7644 §3.5.2.1, §3.5.2.3) — a scalar there names nothing to write.
+     */
+    public static function notAnObject(): self
+    {
+        return new self('A PATCH operation without a path must carry an object of attributes as its value.', 'invalidValue');
+    }
 }

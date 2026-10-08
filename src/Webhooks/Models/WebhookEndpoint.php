@@ -7,6 +7,7 @@ namespace Cbox\Id\Webhooks\Models;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Webhooks\Enums\EndpointStatus;
+use Cbox\Id\Webhooks\Enums\SignatureScheme;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -24,6 +25,10 @@ use Illuminate\Support\Carbon;
  * \Cbox\Id\Webhooks\Support\EndpointCircuitBreaker and self-healing after the
  * cooldown — see that class for why the two are kept apart.
  *
+ * `signature_scheme` is how deliveries to this endpoint are signed — see
+ * {@see SignatureScheme}. It defaults to `cbox` in the column AND in memory, so an
+ * endpoint built without naming it (here or by a host) is on the original scheme.
+ *
  * @property string $id
  * @property string $environment_id
  * @property string|null $organization_id
@@ -36,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $circuit_opened_at
  * @property Carbon|null $last_success_at
  * @property string|null $last_error
+ * @property SignatureScheme $signature_scheme
  */
 class WebhookEndpoint extends Model implements EnvironmentOwned
 {
@@ -45,6 +51,16 @@ class WebhookEndpoint extends Model implements EnvironmentOwned
     protected $table = 'webhook_endpoints';
 
     protected $guarded = [];
+
+    /**
+     * Mirrors the column default, so a model that has not been re-read after insert
+     * still reports the scheme it will be delivered with instead of null.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'signature_scheme' => 'cbox',
+    ];
 
     public function secretContext(): string
     {
@@ -63,6 +79,7 @@ class WebhookEndpoint extends Model implements EnvironmentOwned
             'consecutive_failures' => 'integer',
             'circuit_opened_at' => 'datetime',
             'last_success_at' => 'datetime',
+            'signature_scheme' => SignatureScheme::class,
         ];
     }
 }

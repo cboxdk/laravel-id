@@ -6,33 +6,68 @@ namespace Cbox\Id\Webhooks;
 
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
+use Cbox\Id\Webhooks\Contracts\WebhookSigningSchemes;
 use Cbox\Id\Webhooks\Enums\EndpointStatus;
+use Cbox\Id\Webhooks\Enums\SignatureScheme;
 use Cbox\Id\Webhooks\Enums\WebhookEventType;
 use Cbox\Id\Webhooks\Exceptions\UnknownWebhookEvent;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
+use Cbox\Id\Webhooks\Support\StandardWebhookSignature;
 use Cbox\Id\Webhooks\ValueObjects\RegisteredEndpoint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
-class DatabaseWebhookRegistry implements WebhookRegistry
+class DatabaseWebhookRegistry implements WebhookRegistry, WebhookSigningSchemes
 {
     public function __construct(private readonly SecretBox $secretBox) {}
 
-    public function register(string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
+    /**
+     * The trailing `$scheme` is an addition on this class only — {@see WebhookRegistry}
+     * keeps its signature; {@see WebhookSigningSchemes::registerWithScheme()} is the
+     * contract route to the same thing.
+     */
+    public function register(string $organizationId, string $url, array $eventTypes, SignatureScheme $scheme = SignatureScheme::Cbox): RegisteredEndpoint
     {
-        return $this->store($organizationId, $url, $eventTypes);
+        return $this->store($organizationId, $url, $eventTypes, $scheme);
     }
 
-    public function registerForEnvironment(string $url, array $eventTypes): RegisteredEndpoint
+    public function registerForEnvironment(string $url, array $eventTypes, SignatureScheme $scheme = SignatureScheme::Cbox): RegisteredEndpoint
     {
-        return $this->store(null, $url, $eventTypes);
+        return $this->store(null, $url, $eventTypes, $scheme);
+    }
+
+    public function registerWithScheme(string $organizationId, string $url, array $eventTypes, SignatureScheme $scheme): RegisteredEndpoint
+    {
+        return $this->store($organizationId, $url, $eventTypes, $scheme);
+    }
+
+    public function registerForEnvironmentWithScheme(string $url, array $eventTypes, SignatureScheme $scheme): RegisteredEndpoint
+    {
+        return $this->store(null, $url, $eventTypes, $scheme);
+    }
+
+    public function changeSignatureScheme(string $endpointId, ?string $organizationId, SignatureScheme $scheme): ?WebhookEndpoint
+    {
+        // The same exact-owner match as pause(): an id learned from another organization
+        // must not let a tenant change how that organization's deliveries are signed —
+        // flipping a receiver's scheme is as good as silencing it until they notice.
+        $endpoint = $this->owned($endpointId, $organizationId);
+
+        if ($endpoint === null) {
+            return null;
+        }
+
+        $endpoint->signature_scheme = $scheme;
+        $endpoint->save();
+
+        return $endpoint;
     }
 
     /**
      * @param  list<string>  $eventTypes
      */
-    private function store(?string $organizationId, string $url, array $eventTypes): RegisteredEndpoint
+    private function store(?string $organizationId, string $url, array $eventTypes, SignatureScheme $scheme): RegisteredEndpoint
     {
         // A null organization here is PLATFORM-wide coverage — matching() delivers every
         // org's events to it. It is unreachable except through registerForEnvironment(),
@@ -51,7 +86,14 @@ class DatabaseWebhookRegistry implements WebhookRegistry
             }
         }
 
-        $secret = bin2hex(random_bytes(32));
+        // The Cbox scheme's secret is exactly what it has always been — 64 hex characters,
+        // used as the HMAC key as written. A Standard Webhooks endpoint is minted in the
+        // spec's own `whsec_` form, so its owner can paste it into any Standard Webhooks
+        // library without converting anything.
+        $secret = match ($scheme) {
+            SignatureScheme::Cbox => bin2hex(random_bytes(32)),
+            SignatureScheme::StandardWebhooks => StandardWebhookSignature::mintSecret(),
+        };
 
         $endpoint = new WebhookEndpoint;
         $endpoint->id = (string) Str::ulid();
@@ -60,6 +102,7 @@ class DatabaseWebhookRegistry implements WebhookRegistry
             'url' => $url,
             'event_types' => $eventTypes,
             'status' => EndpointStatus::Active,
+            'signature_scheme' => $scheme,
         ]);
         $endpoint->secret_encrypted = $this->secretBox->seal($secret, $endpoint->secretContext());
         $endpoint->save();
@@ -73,14 +116,18 @@ class DatabaseWebhookRegistry implements WebhookRegistry
         // org admin who learned another org's endpoint id disable that org's webhooks —
         // and pass null to act as the environment, so a tenant cannot silence the
         // operator's own platform-wide endpoints either.
-        $endpoint = WebhookEndpoint::query()
+        $this->owned($endpointId, $organizationId)?->update(['status' => EndpointStatus::Paused]);
+    }
+
+    /** The endpoint with this id, only if this exact owner (null = the environment) holds it. */
+    private function owned(string $endpointId, ?string $organizationId): ?WebhookEndpoint
+    {
+        return WebhookEndpoint::query()
             ->whereKey($endpointId)
             ->where(fn ($query) => $organizationId === null
                 ? $query->whereNull('organization_id')
                 : $query->where('organization_id', $organizationId))
             ->first();
-
-        $endpoint?->update(['status' => EndpointStatus::Paused]);
     }
 
     public function matching(?string $organizationId, string $eventType): Collection

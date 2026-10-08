@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Support;
 
 use Cbox\Id\Directory\Models\DirectoryGroup;
 use Cbox\Id\Scim\ScimSchema;
+use Cbox\Id\Scim\Support\ScimETag;
 
 /**
  * Maps between the SCIM 2.0 Group representation (RFC 7643 §4.2) and the
@@ -38,6 +39,7 @@ class ScimGroupMapper
                 self::location($group->id),
                 $group->created_at,
                 $group->updated_at,
+                self::version($group),
             ),
         ];
 
@@ -55,6 +57,18 @@ class ScimGroupMapper
         }
 
         return $resource;
+    }
+
+    /**
+     * The group's weak entity-tag (RFC 7644 §3.14). Membership is part of the group,
+     * so the revision behind it moves on every membership change too — see
+     * {@see DirectoryGroup::recordRevision()}.
+     */
+    public static function version(DirectoryGroup $group): string
+    {
+        $revision = $group->getAttribute('version');
+
+        return ScimETag::forRevision($group->id, is_int($revision) ? $revision : 1);
     }
 
     /**

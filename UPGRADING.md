@@ -18,6 +18,39 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.23.0 — SCIM completeness, Standard Webhooks, step-up, more providers
+
+**Run `php artisan migrate`.** Two additive migrations: `webhook_endpoints.signature_scheme`
+(NOT NULL, default `cbox`) and an integer `version` (default 1) on `directory_users` and
+`directory_groups`. Existing rows keep their current behaviour.
+
+**No public contract changed.** New capabilities arrive as new contracts
+(`WebhookSigningSchemes`, `AuthenticationAwareTokenIssuer`, `DirectoryUserSearch`,
+`DirectoryGroupSearch`, `ScimUserResources`, `ScimGroupResources`, `ScimBulkProcessor`,
+`OidcTokenExchange`, `OidcUserInfo`) and trailing optional parameters.
+
+**Behaviour you may notice:**
+
+- **SCIM `POST /Users` with an existing `externalId` is now `409 uniqueness`**, where it
+  used to update the existing user and answer `201`. Microsoft Entra ID and Okta both
+  expect the 409 and then match the user with a filter; a custom client that relied on
+  POST being an upsert must `GET ?filter=externalId eq "…"` and `PUT`/`PATCH` instead. A
+  duplicate group `displayName` is `409` instead of a `500`.
+- A SCIM PATCH that changes a provisioned user's `externalId` is `400 mutability`.
+- SCIM filters that were refused (`and` mixed with `or`, `members[...]`, `pr`, date
+  comparisons) are now answered.
+- **Access tokens carry `acr` and `auth_time`** for authorization-code grants and their
+  refreshes (`auth_time` only for CIBA), and introspection returns them. A token-minting
+  hook that set either claim itself now has it dropped — both are reserved.
+- `POST /oauth/par` refuses a malformed `max_age` with `invalid_request`.
+- An OIDC connection saved from a discovery document that rules out `client_secret_post`
+  authenticates with HTTP Basic. Connections saved before 1.23 are unchanged.
+
+**If you bind your own** `OidcRelyingParty`, implement `OidcTokenExchange` as well, or
+Intuit sign-ins arrive without an email. If you bind your own `TokenIssuer`, implement
+`AuthenticationAwareTokenIssuer` to stamp `acr`/`auth_time`; without it your tokens carry
+neither and a step-up-guarded resource refuses them.
+
 ## 1.22.0 — MCP authorization: protected resources, metadata documents, `mcp` registration
 
 **Run `php artisan migrate`.** One additive migration: a nullable, indexed

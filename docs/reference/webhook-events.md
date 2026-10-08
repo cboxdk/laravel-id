@@ -16,9 +16,20 @@ HMAC-signed JSON envelope:
   "delivery_id": "01J…" }
 ```
 
-`X-Cbox-Signature: t=<timestamp>,v1=<hex HMAC-SHA256 of "<timestamp>.<raw body>">`, with
-`X-Cbox-Timestamp` beside it. `data.organization_id` is present on every event that belongs
-to an organization.
+How it is signed depends on the endpoint's signature scheme, and only that scheme's headers
+are sent:
+
+- **Cbox** (the default, and every endpoint registered before 1.23):
+  `X-Cbox-Signature: t=<timestamp>,v1=<hex HMAC-SHA256 of "<timestamp>.<raw body>">`, with
+  `X-Cbox-Timestamp` beside it, keyed by the 64-hex-character secret as written.
+- **Standard Webhooks** ([standardwebhooks.com](https://www.standardwebhooks.com/)):
+  `webhook-id` (the `delivery_id`, the same on every retry), `webhook-timestamp`, and
+  `webhook-signature: v1,<base64 HMAC-SHA256 of "<webhook-id>.<timestamp>.<raw body>">`,
+  keyed by the decoded bytes of a `whsec_` secret.
+
+[Verify webhook signatures](../cookbook/verify-webhook-signatures.md) covers choosing a
+scheme, moving an endpoint between them, and the receiver-side verifiers.
+`data.organization_id` is present on every event that belongs to an organization.
 
 ## Rendering this list yourself
 

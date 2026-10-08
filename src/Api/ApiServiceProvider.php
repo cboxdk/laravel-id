@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api;
 
+use Cbox\Id\Api\Contracts\ScimBulkProcessor;
+use Cbox\Id\Api\Contracts\ScimGroupResources;
+use Cbox\Id\Api\Contracts\ScimUserResources;
 use Cbox\Id\Api\Http\Controllers\ApiKeyVerificationController;
 use Cbox\Id\Api\Http\Controllers\AuthorizationServerMetadataController;
 use Cbox\Id\Api\Http\Controllers\BackchannelAuthenticationController;
@@ -19,6 +22,7 @@ use Cbox\Id\Api\Http\Controllers\PushedAuthorizationController;
 use Cbox\Id\Api\Http\Controllers\RegisteredClientController;
 use Cbox\Id\Api\Http\Controllers\RegistrationController;
 use Cbox\Id\Api\Http\Controllers\RevocationController;
+use Cbox\Id\Api\Http\Controllers\Scim\BulkController as ScimBulkController;
 use Cbox\Id\Api\Http\Controllers\Scim\DiscoveryController as ScimDiscoveryController;
 use Cbox\Id\Api\Http\Controllers\Scim\GroupController;
 use Cbox\Id\Api\Http\Controllers\Scim\UserController;
@@ -39,6 +43,9 @@ use Cbox\Id\Api\Http\Middleware\CanonicalIssuerHost;
 use Cbox\Id\Api\Http\Middleware\NoStore;
 use Cbox\Id\Api\Http\Middleware\ResolveEnvironment;
 use Cbox\Id\Api\Http\Middleware\ScimContentType;
+use Cbox\Id\Api\Scim\DefaultScimBulkProcessor;
+use Cbox\Id\Api\Scim\DirectoryScimGroupResources;
+use Cbox\Id\Api\Scim\DirectoryScimUserResources;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
@@ -72,6 +79,16 @@ class ApiServiceProvider extends ServiceProvider
 
     /** The named rate limiter on `POST /oauth/register`. */
     public const REGISTRATION_LIMITER = 'cbox-id.client-registration';
+
+    public function register(): void
+    {
+        // The SCIM resource operations, shared by the single-resource controllers and
+        // `/Bulk` so the two run one code path. Rebind either to change how this
+        // server provisions, without touching HTTP.
+        $this->app->singleton(ScimUserResources::class, DirectoryScimUserResources::class);
+        $this->app->singleton(ScimGroupResources::class, DirectoryScimGroupResources::class);
+        $this->app->singleton(ScimBulkProcessor::class, DefaultScimBulkProcessor::class);
+    }
 
     public function boot(): void
     {
@@ -295,6 +312,10 @@ class ApiServiceProvider extends ServiceProvider
                 Route::put('/Groups/{id}', [GroupController::class, 'replace']);
                 Route::patch('/Groups/{id}', [GroupController::class, 'patch']);
                 Route::delete('/Groups/{id}', [GroupController::class, 'destroy']);
+
+                // RFC 7644 §3.7. One request under the throttle above, however many
+                // operations it carries — bounded by `cbox-id.scim.bulk.*` instead.
+                Route::post('/Bulk', ScimBulkController::class);
             });
         });
 

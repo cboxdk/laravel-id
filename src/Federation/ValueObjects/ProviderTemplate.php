@@ -7,6 +7,8 @@ namespace Cbox\Id\Federation\ValueObjects;
 use Cbox\Id\Federation\Enums\ClientSecretKind;
 use Cbox\Id\Federation\Enums\FederationProtocol;
 use Cbox\Id\Federation\Enums\ProviderCapability;
+use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
+use Cbox\Id\Federation\OidcDiscovery;
 
 /**
  * One entry in the provider catalogue: everything about a provider that is the same for
@@ -96,7 +98,61 @@ readonly class ProviderTemplate
          * the two cannot disagree.
          */
         public ?DirectorySetup $directory = null,
+
+        /**
+         * How the token endpoint expects the client secret — OAuth 2.0 entries only.
+         *
+         * An OIDC provider says this in its discovery document and the connection
+         * records what it said; a plain OAuth 2.0 provider has no document, so the
+         * catalogue says it instead. Bitbucket is why this exists: it documents HTTP
+         * Basic and nothing else, while every entry before it took the secret in the
+         * request body. See {@see TokenEndpointAuthMethod}.
+         */
+        public TokenEndpointAuthMethod $tokenEndpointAuthMethod = TokenEndpointAuthMethod::ClientSecretPost,
+
+        /**
+         * Where the discovery document lives, when it is not `{issuer}/.well-known/openid-configuration`.
+         *
+         * OpenID Connect Discovery §4 puts it under the issuer, and nearly everyone does.
+         * Intuit publishes its own at `developer.api.intuit.com` — and a document does
+         * answer at the issuer-relative path, but it names a different authorization
+         * endpoint from the one Intuit documents. The catalogue pins the documented one.
+         * The issuer check in {@see OidcDiscovery} still applies: the document must name
+         * the issuer this entry declares, wherever it was fetched from.
+         */
+        public ?string $discoveryUrl = null,
+
+        /**
+         * True when the identity's email and name are not in the `id_token` and have to
+         * be read from the provider's UserInfo endpoint (OpenID Connect Core §5.3).
+         *
+         * Intuit's `id_token` carries `sub`, `aud`, `realmid`, `iss` and the times — no
+         * address at all. Without this, every Intuit sign-in arrives with no email. When
+         * set, {@see $profile} describes the UserInfo response rather than the token,
+         * which is the only place Intuit's camel-cased `emailVerified` appears.
+         */
+        public bool $profileFromUserInfo = false,
     ) {}
+
+    /**
+     * The discovery document URL for this installation, or null when the issuer cannot be
+     * resolved yet.
+     *
+     * The catalogue's own URL when it declares one, otherwise the standard location under
+     * the resolved issuer — so a caller asks the template and never builds the path itself.
+     *
+     * @param  array<string, string>  $values
+     */
+    public function discoveryUrlFor(array $values): ?string
+    {
+        $issuer = $this->issuerFor($values);
+
+        if ($issuer === null) {
+            return null;
+        }
+
+        return $this->discoveryUrl ?? rtrim($issuer, '/').'/.well-known/openid-configuration';
+    }
 
     /**
      * The issuer for this installation, or null when a required parameter is missing.

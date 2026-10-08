@@ -69,6 +69,9 @@ final class SamlIdp
         // Pinned by the cross-tenant replay test: two unrelated IdPs legitimately
         // choosing the same assertion id is the case the ledger's key must allow.
         ?string $assertionId = null,
+        // Many IdPs send the address only as an emailAddress-format NameID.
+        bool $emailAttribute = true,
+        string $nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
     ): string {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $before = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
@@ -82,6 +85,7 @@ final class SamlIdp
         $recipient = FED_SP_ACS;
         $inResponseToAttr = $inResponseTo !== null ? ' InResponseTo="'.htmlspecialchars($inResponseTo, ENT_QUOTES).'"' : '';
         $destinationAttr = $destination !== null ? ' Destination="'.htmlspecialchars($destination, ENT_QUOTES).'"' : '';
+        $emailAttributeXml = $emailAttribute ? '<saml:Attribute Name="email"><saml:AttributeValue>'.$nameId.'</saml:AttributeValue></saml:Attribute>' : '';
 
         $xml = <<<XML
 <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{$responseId}" Version="2.0" IssueInstant="{$now}"{$inResponseToAttr}{$destinationAttr}>
@@ -90,7 +94,7 @@ final class SamlIdp
   <saml:Assertion ID="{$assertionId}" Version="2.0" IssueInstant="{$now}">
     <saml:Issuer>{$issuer}</saml:Issuer>
     <saml:Subject>
-      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{$nameId}</saml:NameID>
+      <saml:NameID Format="{$nameIdFormat}">{$nameId}</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
         <saml:SubjectConfirmationData NotOnOrAfter="{$after}" Recipient="{$recipient}"/>
       </saml:SubjectConfirmation>
@@ -102,7 +106,7 @@ final class SamlIdp
       <saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext>
     </saml:AuthnStatement>
     <saml:AttributeStatement>
-      <saml:Attribute Name="email"><saml:AttributeValue>{$nameId}</saml:AttributeValue></saml:Attribute>
+      {$emailAttributeXml}
       <saml:Attribute Name="name"><saml:AttributeValue>Alice Example</saml:AttributeValue></saml:Attribute>
     </saml:AttributeStatement>
   </saml:Assertion>
@@ -271,6 +275,27 @@ it('validates a genuinely signed SAML response into a principal', function (): v
         ->and($principal->name)->toBe('Alice Example')
         ->and($principal->provider)->toBe('saml')
         ->and($principal->connectionId)->toBe($connection->id);
+});
+
+it('reads the email from an emailAddress-format NameID when no attribute carries it', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    $principal = app(AssertionValidator::class)->validate($connection, $idp->response(emailAttribute: false));
+
+    expect($principal->email)->toBe('alice@corp.com');
+});
+
+it('never reads a NameID of another format as an email', function (): void {
+    $idp = new SamlIdp;
+    $connection = samlConnection($idp);
+
+    $principal = app(AssertionValidator::class)->validate($connection, $idp->response(
+        emailAttribute: false,
+        nameIdFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+    ));
+
+    expect($principal->email)->toBeNull();
 });
 
 /**

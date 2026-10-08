@@ -6,6 +6,7 @@ namespace Cbox\Id\Directory\Support;
 
 use Cbox\Id\Directory\Enums\ScimFilterAttribute;
 use Cbox\Id\Directory\Models\DirectoryUser;
+use Cbox\Id\Scim\Filter\ScimFilterParser;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -22,6 +23,11 @@ use Illuminate\Database\Eloquent\Builder;
  * attribute's type cannot answer, and a literal that is not a value of that type all
  * return null, so the caller surfaces `invalidFilter` rather than silently
  * mis-matching.
+ *
+ * @deprecated Since 1.23 the directory stores parse filters with the full RFC 7644
+ *             grammar ({@see ScimFilterParser}) and translate
+ *             them with {@see ScimDirectoryQuery}; nothing in the package calls this
+ *             any more. It is kept, unchanged, for hosts that use it directly.
  */
 readonly class ScimUserFilter
 {

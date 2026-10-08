@@ -253,11 +253,28 @@ class SamlAssertionValidator implements AssertionValidator
         return new FederatedPrincipal(
             provider: $connection->type->value,
             subject: $nameId,
-            email: $this->firstClaim($attributes, self::EMAIL_CLAIMS),
+            email: $this->firstClaim($attributes, self::EMAIL_CLAIMS) ?? $this->emailFromNameId($nameId, $response->getNameIdFormat()),
             name: $this->firstClaim($attributes, self::NAME_CLAIMS),
             connectionId: $connection->id,
             raw: $attributes,
         );
+    }
+
+    /**
+     * The NameID as the email, when the IdP said that is what it is.
+     *
+     * Many IdPs (Okta's default, Google Workspace) send the address only as the NameID,
+     * with format `emailAddress`, and no email attribute. An attribute still wins when
+     * one is sent; a NameID in any other format (persistent, transient, unspecified) is an
+     * identifier, not an address, and is never read as one.
+     */
+    private function emailFromNameId(string $nameId, mixed $format): ?string
+    {
+        if ($format !== 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress') {
+            return null;
+        }
+
+        return filter_var($nameId, FILTER_VALIDATE_EMAIL) === false ? null : $nameId;
     }
 
     /**

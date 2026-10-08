@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers\Scim;
 
+use Cbox\Id\Api\Contracts\ScimBulkProcessor;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -17,7 +18,7 @@ class DiscoveryController
     /** RFC 7643 §4.3 Enterprise User extension schema URN. */
     private const ENTERPRISE_URN = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
 
-    public function serviceProviderConfig(): JsonResponse
+    public function serviceProviderConfig(ScimBulkProcessor $bulk): JsonResponse
     {
         return $this->scim(array_filter([
             'schemas' => ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
@@ -28,12 +29,18 @@ class DiscoveryController
             // absent optional field is correct; a present broken one is a promise the
             // deployment cannot keep.
             'documentationUri' => $this->documentationUri(),
+            // Every flag below is read off — or held to — the code that implements it:
+            // advertising is a statement about what this server accepts.
             'patch' => ['supported' => true],
-            'bulk' => ['supported' => false, 'maxOperations' => 0, 'maxPayloadSize' => 0],
+            // RFC 7644 §3.7, bounded by `cbox-id.scim.bulk.*`.
+            'bulk' => ['supported' => true, 'maxOperations' => $bulk->maxOperations(), 'maxPayloadSize' => $bulk->maxPayloadSize()],
+            // The full §3.4.2.2 grammar; the page size is capped at 200.
             'filter' => ['supported' => true, 'maxResults' => 200],
             'changePassword' => ['supported' => false],
-            'sort' => ['supported' => false],
-            'etag' => ['supported' => false],
+            // `sortBy`/`sortOrder` on /Users and /Groups (§3.4.2.3).
+            'sort' => ['supported' => true],
+            // `meta.version`, `ETag`, `If-Match` and `If-None-Match` (§3.14).
+            'etag' => ['supported' => true],
             'authenticationSchemes' => [[
                 'type' => 'oauthbearertoken',
                 'name' => 'OAuth Bearer Token',
