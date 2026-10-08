@@ -170,6 +170,11 @@ app(DirectorySync::class)->provisionUser($directory->id, new ScimUser('okta|1', 
 app(DirectorySync::class)->deprovisionUser($directory->id, 'okta|1');
 ```
 
+The IdP then talks to `/scim/v2` with that token: full RFC 7644 filters, `sortBy`, ETags
+(`If-Match` / `If-None-Match`) and `/Bulk`. What to set on the Microsoft Entra ID and Okta
+side, and which of their test cases this server is held to:
+[Connect Microsoft Entra ID and Okta over SCIM](connect-entra-and-okta-scim.md).
+
 ## Provision users to a downstream app (outbound — the platform → a SaaS app)
 
 The mirror direction: push the platform's user/membership changes OUT to an
@@ -216,6 +221,28 @@ lines. See the full recipe:
 Declare your MCP endpoint as a protected resource, let MCP clients register themselves (or
 present a client ID metadata document), and accept only tokens audienced to it. See the full
 recipe: [Protect an MCP server with Cbox ID](protect-an-mcp-server.md).
+
+## Require step-up authentication
+
+Make one resource demand a recent or second-factor login (RFC 9470): the resource server
+answers `401 insufficient_user_authentication` with `acr_values` and `max_age`, the client
+re-runs `/authorize`, and the new token's `acr` and `auth_time` satisfy it. One value
+object, `AuthenticationRequirement`, decides on both ends. See
+[Require step-up authentication](require-step-up-authentication.md).
+
+## Verify webhook signatures
+
+Each webhook endpoint is signed in one of two schemes: the default Cbox scheme, or
+Standard Webhooks (`webhook-id` / `webhook-timestamp` / `webhook-signature`, `whsec_`
+secrets), which any Standard Webhooks library verifies. Both ship a receiver-side
+verifier. See [Verify webhook signatures](verify-webhook-signatures.md).
+
+## Walk a customer through their IdP's SSO setup
+
+`IdentityProviderGuides` lists twenty enterprise identity providers, mapping each of your
+service-provider values onto the field their admin console calls it, plus SCIM guides for
+the ones that can push to you. See
+[Enterprise SSO setup guides](enterprise-sso-setup-guides.md).
 
 ## Rotate an app's secret without downtime
 

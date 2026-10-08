@@ -100,6 +100,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 - [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
 
 - [Membership lifecycle](core-concepts/membership-lifecycle.md) — leave, transfer ownership, owner archive, and the single-owner rule
+- [Sign-in provider catalogue](core-concepts/sign-in-provider-catalogue.md) — the social and workforce sign-in providers and how each maps to a verified identity
 
 ### Reference
 
@@ -111,6 +112,10 @@ them, and each SDK's own repository is the authority on what it currently suppor
 
 - [Cookbook](cookbook/_index.md) — central login, reseller hierarchy, billing entitlements, SCIM, SSO, webhooks
 - [Protect an MCP server](cookbook/protect-an-mcp-server.md) — protected resource metadata, MCP client registration, metadata documents, audience-bound tokens
+- [Require step-up authentication](cookbook/require-step-up-authentication.md) — RFC 9470: the `insufficient_user_authentication` challenge, `acr_values`/`max_age` at `/authorize`, `acr`/`auth_time` on access tokens
+- [Verify webhook signatures](cookbook/verify-webhook-signatures.md) — the Cbox scheme or Standard Webhooks, per endpoint, with receiver-side verifiers
+- [Connect Microsoft Entra ID and Okta over SCIM](cookbook/connect-entra-and-okta-scim.md) — the IdP-side settings, and the filters, sorting, ETags and `/Bulk` they rely on
+- [Enterprise SSO setup guides](cookbook/enterprise-sso-setup-guides.md) — twenty IdPs' admin-console field names for your SAML/OIDC/SCIM values
 - [Integrating an existing app](cookbook/integrating-existing-apps.md) — adopt over existing users/auth (incl. Laravel Passport), unify auth across products
 
 ### Extension points
