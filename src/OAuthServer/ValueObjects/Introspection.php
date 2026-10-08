@@ -71,9 +71,29 @@ readonly class Introspection
     }
 
     /**
-     * The DPoP confirmation thumbprint (`cnf.jkt`, RFC 9449) this token is
-     * sender-constrained to, or null for a plain bearer token.
+     * RFC 9470 §6: the authentication context class the login behind this token achieved
+     * (`acr`), or null when the token carries none — a `client_credentials` token, or a
+     * grant that recorded no authentication methods.
      */
+    public function acr(): ?string
+    {
+        $acr = $this->claims['acr'] ?? null;
+
+        return is_string($acr) && $acr !== '' ? $acr : null;
+    }
+
+    /**
+     * RFC 9470 §6: when the person behind this token last actively authenticated
+     * (`auth_time`, unix seconds), or null when the token does not say. A refreshed token
+     * carries the ORIGINAL login's time, not the refresh's.
+     */
+    public function authTime(): ?int
+    {
+        $authTime = $this->claims['auth_time'] ?? null;
+
+        return is_int($authTime) ? $authTime : null;
+    }
+
     /**
      * RFC 8693 §4.1: the subject of the party ACTING for this token's subject — set on a
      * support session's token — or null. Read like `cnf`: a JWT decode yields a stdClass.
@@ -91,6 +111,10 @@ readonly class Introspection
         return is_string($subject) && $subject !== '' ? $subject : null;
     }
 
+    /**
+     * The DPoP confirmation thumbprint (`cnf.jkt`, RFC 9449) this token is
+     * sender-constrained to, or null for a plain bearer token.
+     */
     public function confirmationThumbprint(): ?string
     {
         // `cnf` may arrive as an array or, from a JWT decode, a stdClass — cast so

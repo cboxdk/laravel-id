@@ -15,11 +15,12 @@ use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
-use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareTokenIssuer;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
 use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Memberships;
@@ -39,7 +40,7 @@ use Illuminate\Support\Str;
  * veto throws {@see ActionDenied} before any `jti` is recorded — so a denied token
  * leaves no trace.
  */
-class JwtTokenIssuer implements TokenIssuer
+class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
 {
     /**
      * Fallback access-token lifetime when none is configured. Short by design: the
@@ -52,8 +53,11 @@ class JwtTokenIssuer implements TokenIssuer
      * Claims a hook may never set or overwrite — the protocol/security-bearing ones.
      * Enrichment that names any of these is dropped. `org_role` is among them because
      * it is authorization data an app enforces on: a hook must not promote anyone.
+     * `acr` and `auth_time` likewise: a resource server grants step-up-gated access on
+     * them (RFC 9470), so a hook that could set them could vouch for a second factor or a
+     * fresh sign-in that never happened.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act', 'acr', 'auth_time'];
 
     public function __construct(
         private readonly TokenSigner $signer,
@@ -75,6 +79,18 @@ class JwtTokenIssuer implements TokenIssuer
     public function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
     {
         return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt);
+    }
+
+    public function issueForAuthenticatedUser(
+        Client $client,
+        string $userId,
+        ?string $organizationId,
+        array $scopes,
+        AuthenticationEvent $authentication,
+        ?string $resource = null,
+        ?string $dpopJkt = null,
+    ): IssuedToken {
+        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt, authentication: $authentication);
     }
 
     public function issueActing(
@@ -188,8 +204,9 @@ class JwtTokenIssuer implements TokenIssuer
     /**
      * @param  list<string>  $scopes
      * @param  ActingParty|null  $actor  set only for a support session's token (see issueActing())
+     * @param  AuthenticationEvent|null  $authentication  the login behind a user grant (see issueForAuthenticatedUser())
      */
-    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null): IssuedToken
+    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null, ?AuthenticationEvent $authentication = null): IssuedToken
     {
         // What this token is FOR — scopes, audience, and whose roles it carries — decided
         // once, here, for every grant type. See AudienceResolver.
@@ -278,6 +295,15 @@ class JwtTokenIssuer implements TokenIssuer
                 $claims['roles'] = $rbac->roles;
                 $claims['permissions'] = $rbac->permissions;
             }
+        }
+
+        // RFC 9470 §6.1: when and how strongly the person signed in, so a resource server
+        // can refuse a stale or single-factor login with `insufficient_user_authentication`
+        // instead of trusting every live token alike. Only for a person (a machine has no
+        // login to describe), and set before the hook runs — a hook sees them, and cannot
+        // change them: both are reserved.
+        if ($userId !== null && $authentication !== null) {
+            $claims = [...$claims, ...$authentication->claims()];
         }
 
         // RFC 8693 §4.1: who is REALLY holding a support session's token. Set before the

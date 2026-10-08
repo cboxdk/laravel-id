@@ -9,7 +9,9 @@ use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\PushedAuthorizationRequests;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAuthenticationRequirement;
 use Cbox\Id\OAuthServer\Support\ResourceParameter;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationRequirement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -53,6 +55,16 @@ class PushedAuthorizationController
             if (! is_string($challenge) || $challenge === '' || ($params['code_challenge_method'] ?? 'S256') !== 'S256') {
                 return $this->error('invalid_request', 400);
             }
+        }
+
+        // `max_age` and `acr_values` (OIDC Core §3.1.2.1, RFC 9470 §4) read the way /authorize
+        // will read them. RFC 9126 §2.1 has this endpoint validate the request as the
+        // authorization endpoint would, and a malformed `max_age` refused here reaches the
+        // client directly instead of after the person has been sent to sign in.
+        try {
+            AuthenticationRequirement::fromAuthorizationRequest($params);
+        } catch (InvalidAuthenticationRequirement $e) {
+            return $this->error($e->error, 400, $e->getMessage());
         }
 
         // RFC 8707 at the back channel: the resource this authorization is FOR is checked
