@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation\ValueObjects;
 
+use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\Federation\OidcClient;
 
 /**
@@ -21,7 +22,22 @@ readonly class DiscoveredOidcProvider
         public string $tokenEndpoint,
         public ?string $jwksUri = null,
         public ?string $userinfoEndpoint = null,
+
+        /**
+         * `token_endpoint_auth_methods_supported`, as the document listed it — empty when
+         * it did not say. Kept raw so a console can show what the provider claims; the
+         * decision is {@see self::tokenEndpointAuthMethod()}.
+         *
+         * @var list<string>
+         */
+        public array $tokenEndpointAuthMethods = [],
     ) {}
+
+    /** How the OIDC client should present the secret at this provider's token endpoint. */
+    public function tokenEndpointAuthMethod(): TokenEndpointAuthMethod
+    {
+        return TokenEndpointAuthMethod::forAdvertised($this->tokenEndpointAuthMethods);
+    }
 
     /** Whether every endpoint the OIDC client requires was present. */
     public function isComplete(): bool
@@ -49,6 +65,13 @@ readonly class DiscoveredOidcProvider
 
         if ($this->userinfoEndpoint !== null && $this->userinfoEndpoint !== '') {
             $config['userinfo_endpoint'] = $this->userinfoEndpoint;
+        }
+
+        // Only when it differs from what the client has always done, so a connection
+        // saved from a provider that takes the body form stores exactly what it did
+        // before this key existed.
+        if ($this->tokenEndpointAuthMethod() !== TokenEndpointAuthMethod::ClientSecretPost) {
+            $config['token_endpoint_auth_method'] = $this->tokenEndpointAuthMethod()->value;
         }
 
         return $config;

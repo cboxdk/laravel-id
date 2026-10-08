@@ -8,6 +8,7 @@ use Cbox\Id\Federation\Exceptions\OidcDiscoveryFailed;
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Federation\ValueObjects\DiscoveredOidcProvider;
+use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -27,10 +28,18 @@ use Throwable;
 class OidcDiscovery
 {
     /**
+     * Resolve a provider from its issuer.
+     *
+     * `$discoveryUrl` is for the provider that publishes its document somewhere other
+     * than under the issuer — Intuit, whose catalogue entry names it
+     * ({@see ProviderTemplate::discoveryUrlFor()}). It changes where the document is
+     * fetched from and nothing else: the document must still name `$issuer`, so a
+     * misdirected URL fails here exactly as a hostile document would.
+     *
      * @throws OidcDiscoveryFailed
      * @throws UnsafeFederationUrl when the URL resolves to a non-public destination
      */
-    public function fromIssuer(string $issuer): DiscoveredOidcProvider
+    public function fromIssuer(string $issuer, ?string $discoveryUrl = null): DiscoveredOidcProvider
     {
         $issuer = rtrim(trim($issuer), '/');
 
@@ -38,7 +47,8 @@ class OidcDiscovery
             throw OidcDiscoveryFailed::make('the issuer was empty.');
         }
 
-        $url = $issuer.'/.well-known/openid-configuration';
+        $discoveryUrl = $discoveryUrl === null ? '' : trim($discoveryUrl);
+        $url = $discoveryUrl !== '' ? $discoveryUrl : $issuer.'/.well-known/openid-configuration';
         $pinned = SafeFederationUrl::pinnedOptions($url);
 
         try {
@@ -70,6 +80,7 @@ class OidcDiscovery
             tokenEndpoint: $this->string($document, 'token_endpoint'),
             jwksUri: $this->optionalString($document, 'jwks_uri'),
             userinfoEndpoint: $this->optionalString($document, 'userinfo_endpoint'),
+            tokenEndpointAuthMethods: $this->stringList($document, 'token_endpoint_auth_methods_supported'),
         );
 
         if (! $provider->isComplete()) {
@@ -87,6 +98,21 @@ class OidcDiscovery
         $value = $document[$key] ?? null;
 
         return is_string($value) ? $value : '';
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $document
+     * @return list<string>
+     */
+    private function stringList(array $document, string $key): array
+    {
+        $value = $document[$key] ?? null;
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, static fn (mixed $item): bool => is_string($item) && $item !== ''));
     }
 
     /**

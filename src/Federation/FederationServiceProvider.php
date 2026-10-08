@@ -10,6 +10,7 @@ use Cbox\Id\Federation\Contracts\DnsResolver;
 use Cbox\Id\Federation\Contracts\DomainVerification;
 use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Contracts\OidcRelyingParty;
+use Cbox\Id\Federation\Contracts\OidcUserInfo;
 use Cbox\Id\Federation\Contracts\SamlSpSingleLogout;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Saml\SamlLogout;
@@ -42,6 +43,10 @@ class FederationServiceProvider extends ServiceProvider
         // module's published surface rather than reaching past it into a concrete class.
         $this->app->singleton(OidcRelyingParty::class, OidcClient::class);
         $this->app->singleton(SamlSpSingleLogout::class, SamlLogout::class);
+
+        // UserInfo, for the catalogue providers whose id_token carries no address
+        // (Intuit). A no-op for every other connection.
+        $this->app->singleton(OidcUserInfo::class, OidcUserInfoClient::class);
 
         // Enterprise SSO onboarding: parse an IdP's SAML metadata (paste or URL)
         // into a connection prefill via the vetted onelogin parser.

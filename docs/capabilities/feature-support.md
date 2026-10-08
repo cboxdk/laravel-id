@@ -33,7 +33,8 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | SMS / voice / push OTP | **Contract only** | `OtpChannel` is the extension point; no driver and no provider SDK ships. |
 | Login lockout | **Full** | Serialized under a row lock, audited, and **on by default** since 1.22: 10 failures inside 15 minutes lock the subject for 15 minutes. A policy's `lockoutThreshold` overrides the default; `cbox-id.lockout.*` sets the default, the window and the duration (`threshold: 0` turns the default off). The lock always expires on its own. |
 | Federated sign-in and explicit account linking | **Full** | Provider-agnostic `FederatedPrincipal`. A federated identity is never merged into an existing account by email; that path is refused so linking stays deliberate. |
-| Named social providers (Google, GitHub, Microsoft buttons) | **Host-supplied** | The framework provides the provider-agnostic linking path only. |
+| Named social providers (Google, GitHub, Microsoft buttons) | **Partial** | `ProviderCatalog` carries fifteen providers — Google, Microsoft Entra ID, Okta, Auth0, Keycloak, GitLab, Slack, GitHub, Discord, Apple, Facebook, LinkedIn, Bitbucket, Xero, Intuit — with issuers or endpoints, scopes, claim mapping and setup steps, and the OIDC and OAuth 2.0 clients that complete them. The sign-in page and its buttons are the host's. See [Sign-in provider catalogue](../core-concepts/sign-in-provider-catalogue.md). |
+| Enterprise IdP setup guides | **Full** | `IdentityProviderGuides`: twenty typed guides (SAML or OIDC, plus SCIM where the IdP can push to a custom app) mapping your values to each IdP's own field labels. Data only — the console is the host's. See [Enterprise SSO setup guides](../cookbook/enterprise-sso-setup-guides.md). |
 
 ## Authorization
 
