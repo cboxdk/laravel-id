@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.23.1] - 2026-10-08
+
+### Fixed
+
+- `cbox-id:doctor` counts signing keys per environment. Signing keys are environment-owned and the doctor runs with no environment set, so the environment scope hid every key and it warned "No active signing key yet" on every multi-environment install. It now reads past the scope, reports OK when every environment has an active key, and names the environments that have none.
+
 ## [1.23.0] - 2026-10-08
 
 ### Added

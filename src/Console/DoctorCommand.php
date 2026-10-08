@@ -14,6 +14,7 @@ use Cbox\Id\Kernel\Crypto\Exceptions\CryptoConfigurationException;
 use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\ValueObjects\MasterKeySet;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
+use Cbox\Id\Kernel\Tenancy\Scopes\EnvironmentScope;
 use Cbox\Id\Organization\Models\Environment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
@@ -188,19 +189,54 @@ class DoctorCommand extends Command
             : $this->addFail('Migrations', 'Core tables are missing. Run `php artisan migrate`.');
     }
 
+    /**
+     * An active signing key in EVERY environment, counted across environments.
+     *
+     * Signing keys are environment-owned, and the doctor runs with no environment set —
+     * so a plain query went through the environment scope's `where 1 = 0` and reported
+     * "no active signing key" on every multi-environment install, however many there were.
+     * Read past the scope, per environment: an environment without one is named (a key is
+     * minted on first use there, so it is a warning, not a failure).
+     */
     private function checkSigningKeys(): void
     {
         try {
-            $active = SigningKey::query()->where('status', KeyStatus::Active->value)->count();
+            /** @var list<string> $withKey */
+            $withKey = SigningKey::query()
+                ->withoutGlobalScope(EnvironmentScope::class)
+                ->where('status', KeyStatus::Active->value)
+                ->distinct()
+                ->pluck('environment_id')
+                ->filter(static fn (mixed $id): bool => is_string($id))
+                ->values()
+                ->all();
+            /** @var list<string> $environments */
+            $environments = Environment::query()->pluck('id')->filter(static fn (mixed $id): bool => is_string($id))->values()->all();
         } catch (Throwable) {
             $this->addWarn('Signing keys', 'Could not read signing keys (migrations not run yet?).');
 
             return;
         }
 
-        $active > 0
-            ? $this->addOk('Signing keys', "{$active} active key(s). Tokens can be signed and the JWKS is populated.")
-            : $this->addWarn('Signing keys', 'No active signing key yet — one is minted on first use, or run `php artisan cbox-id:install`.');
+        if ($environments === []) {
+            $withKey !== []
+                ? $this->addOk('Signing keys', count($withKey).' environment(s) with an active key. Tokens can be signed and the JWKS is populated.')
+                : $this->addWarn('Signing keys', 'No active signing key yet — one is minted on first use, or run `php artisan cbox-id:install`.');
+
+            return;
+        }
+
+        $missing = array_values(array_diff($environments, $withKey));
+
+        if ($missing === []) {
+            $this->addOk('Signing keys', 'Every environment ('.count($environments).') has an active key. Tokens can be signed and each JWKS is populated.');
+
+            return;
+        }
+
+        $slugs = Environment::query()->whereIn('id', $missing)->pluck('slug')->filter(static fn (mixed $slug): bool => is_string($slug))->all();
+
+        $this->addWarn('Signing keys', 'No active signing key yet in: '.implode(', ', $slugs).' — one is minted on first use there, or run `php artisan cbox-id:install`.');
     }
 
     /**
