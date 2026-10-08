@@ -28,6 +28,7 @@ client credentials, device, CIBA and token exchange — mints through the same
 | `roles`, `permissions` | user tokens with any grant | The person's roles and their permissions for one app — the API's linked app when the token is for a [registered API](apis-and-scopes.md) that names one, otherwise the requesting client's. Environment-wide grants count when no organization is bound. Absent on `client_credentials`. |
 | `ent`, `ent_ver` | when the org has Claims-mode entitlements | Embedded capability gates and the highest version among them. |
 | `cnf.jkt` | DPoP-bound tokens | RFC 9449 key thumbprint; `token_type` is then `DPoP`. |
+| `auth_time`, `acr` | user grants with a recorded login | RFC 9470 §6.1: when the person signed in, and the class reached (`urn:cbox-id:aal1`/`aal2`, derived from the login's `amr`). Authorization code and its refreshes carry both, always the original login's values. CIBA carries `auth_time` only. Device, token exchange, support-session and `client_credentials` tokens carry neither. See [Require step-up authentication](../cookbook/require-step-up-authentication.md). |
 | custom | when a `TokenMinting` hook adds them | Hooks can add claims but never overwrite the ones above. |
 
 ## Audience

@@ -136,6 +136,29 @@ final class AuthenticateMcp
 }
 ```
 
+### Tools that need a stronger login
+
+A live, audienced, scoped token can still come from a password-only login made
+yesterday. For tools that delete or pay, also check the login behind the token. Answer
+`401` with the RFC 9470 challenge, and the MCP client re-authorizes with `acr_values` and
+`max_age`:
+
+```php
+use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationRequirement;
+
+$stepUp = AuthenticationRequirement::of(AuthenticationContextClass::Aal2, maxAge: 300)
+    ->assessToken($introspection);
+
+if (! $stepUp->isSatisfied()) {
+    return response()->json(['error' => 'insufficient_user_authentication'], 401,
+        $stepUp->challenge($challenge)->headers());
+}
+```
+
+Your `/authorize` then has to honour those two parameters. See
+[Require step-up authentication](require-step-up-authentication.md).
+
 ## 3. Handle the MCP client at `/authorize`
 
 Three calls cover what is new: resolve the client (registered or described by a document),
