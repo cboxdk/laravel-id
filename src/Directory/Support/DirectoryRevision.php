@@ -35,8 +35,51 @@ class DirectoryRevision
         }
 
         // A caller that set the revision itself (recordRevision()) has already moved it.
-        if ($model->isDirty() && ! $model->isDirty('version')) {
+        if (self::changes($model) && ! $model->isDirty('version')) {
             $model->setAttribute('version', $revision + 1);
         }
+    }
+
+    /**
+     * Whether the save changes what is stored — by VALUE.
+     *
+     * `isDirty()` alone is not that on MySQL: its JSON column hands back the document with
+     * its keys re-ordered, and Eloquent compares a decoded array-cast attribute with `===`,
+     * which is order-sensitive — so writing the very same resource again looked like a
+     * change there and nowhere else, and the tag moved on an idempotent re-push. A JSON
+     * attribute whose old and new values are the same document, keys in any order, is
+     * not a change.
+     */
+    private static function changes(Model $model): bool
+    {
+        foreach (array_keys($model->getDirty()) as $key) {
+            $now = $model->getAttribute($key);
+            $was = $model->getOriginal($key);
+
+            if (! is_array($now) || ! is_array($was) || self::canonical($now) !== self::canonical($was)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<mixed>  $value
+     * @return array<mixed>
+     */
+    private static function canonical(array $value): array
+    {
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $value[$key] = self::canonical($item);
+            }
+        }
+
+        return $value;
     }
 }

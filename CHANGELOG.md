@@ -63,6 +63,7 @@ more trust than the wording it removes.
 
 ### Fixed
 
+- A SCIM resource's version no longer moves on MySQL when a write changes nothing: MySQL hands its JSON column back with the keys re-ordered, and Eloquent compared the decoded document order-sensitively, so an idempotent re-push looked like a change there and nowhere else. Revisions now compare JSON attributes by value.
 - SAML sign-in reads the email from an `emailAddress`-format NameID when no email attribute is sent — the default for Okta and Google Workspace. An attribute still wins; a NameID in any other format is never read as an address.
 - SCIM `caseExact` attributes (`externalId`, `id`) compare byte-for-byte on MySQL and MariaDB too: their default collations fold case, so `externalId eq "EXT-LEE"` matched `ext-lee` there and nowhere else. Compared as binary on those engines; PostgreSQL and SQLite already compared exactly.
 
