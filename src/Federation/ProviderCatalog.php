@@ -8,6 +8,7 @@ use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Federation\Enums\ClientSecretKind;
 use Cbox\Id\Federation\Enums\FederationProtocol;
 use Cbox\Id\Federation\Enums\ProviderCapability;
+use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\Federation\ValueObjects\DirectorySetup;
 use Cbox\Id\Federation\ValueObjects\ProviderParameter;
 use Cbox\Id\Federation\ValueObjects\ProviderProfileMap;
@@ -81,6 +82,10 @@ class ProviderCatalog
             self::discord(),
             self::apple(),
             self::facebook(),
+            self::linkedin(),
+            self::bitbucket(),
+            self::xero(),
+            self::intuit(),
         ];
     }
 
@@ -533,6 +538,157 @@ class ProviderCatalog
                 'Request the email permission — without App Review it works only for people with a role on the app.',
                 'Copy the App ID and App Secret from Settings → Basic.',
             ],
+        );
+    }
+
+    /**
+     * Sign In with LinkedIn using OpenID Connect.
+     *
+     * The issuer is the one LinkedIn's discovery document names —
+     * `https://www.linkedin.com/oauth`, path and all. LinkedIn's own prose still says
+     * `https://www.linkedin.com`; the document is what discovery checks against and what
+     * the tokens carry, so the document wins.
+     *
+     * Two things to know. The token endpoint takes the secret in the request BODY only,
+     * and the discovery document does not list auth methods at all — which is why silence
+     * there keeps the body form rather than switching to Basic. And `sub` is PAIRWISE: the
+     * same member has a different subject under each LinkedIn app, so replacing the app
+     * on LinkedIn's side unlinks every account here. Keep the app; rotate its secret.
+     */
+    private static function linkedin(): ProviderTemplate
+    {
+        return new ProviderTemplate(
+            key: 'linkedin',
+            name: 'LinkedIn',
+            protocol: FederationProtocol::Oidc,
+            scopes: ['openid', 'profile', 'email'],
+            profile: new ProviderProfileMap(subject: 'sub', email: 'email', name: 'name', emailVerified: 'email_verified'),
+            issuerTemplate: 'https://www.linkedin.com/oauth',
+            documentationUrl: 'https://learn.microsoft.com/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2',
+            setupSteps: [
+                'In the LinkedIn Developer Portal, open My apps and select or create your app.',
+                'On the Products tab, request "Sign In with LinkedIn using OpenID Connect". Until it is granted, the openid, profile and email scopes are refused.',
+                'On the Auth tab, add the redirect URI shown below as a redirect URL. It must be absolute and https, and LinkedIn ignores anything after a "?".',
+                'Copy the Client ID and Client Secret from the Auth tab.',
+            ],
+        );
+    }
+
+    /**
+     * Bitbucket Cloud, as an OAuth 2.0 consumer.
+     *
+     * Not OIDC — no discovery, no `id_token` — and unlike the other OAuth 2.0 entries in
+     * three ways, each declared rather than special-cased:
+     *
+     * - **Basic at the token endpoint.** Atlassian documents the exchange with the
+     *   consumer key and secret as HTTP Basic credentials and nothing else.
+     * - **No address on the profile.** `/2.0/user` carries none; `/2.0/user/emails`
+     *   answers Bitbucket's paginated envelope (`values`, `next`), each entry with
+     *   `is_primary` and `is_confirmed`. Only the primary address is taken, and only when
+     *   it is confirmed — Bitbucket lists unconfirmed addresses too.
+     * - **The subject is `uuid`.** Never `username`, which is deprecated, nor
+     *   `nickname`, which Atlassian says is not guaranteed to be unique.
+     *
+     * Scopes live on the consumer, not the request: Bitbucket refuses an authorization
+     * asking for a scope the consumer was not granted, so the setup steps say which
+     * permissions to tick.
+     */
+    private static function bitbucket(): ProviderTemplate
+    {
+        return new ProviderTemplate(
+            key: 'bitbucket',
+            name: 'Bitbucket',
+            protocol: FederationProtocol::OAuth2,
+            scopes: ['account', 'email'],
+            profile: new ProviderProfileMap(
+                subject: 'uuid',
+                email: null,
+                name: 'display_name',
+                emailVerified: null,
+                emailEndpoint: 'https://api.bitbucket.org/2.0/user/emails',
+                emailListPath: 'values',
+                emailEntryAddress: 'email',
+                emailEntryPrimary: 'is_primary',
+                emailEntryVerified: 'is_confirmed',
+            ),
+            authorizationEndpoint: 'https://bitbucket.org/site/oauth2/authorize',
+            tokenEndpoint: 'https://bitbucket.org/site/oauth2/access_token',
+            profileEndpoint: 'https://api.bitbucket.org/2.0/user',
+            documentationUrl: 'https://support.atlassian.com/bitbucket-cloud/docs/use-oauth-on-bitbucket-cloud/',
+            setupSteps: [
+                'In Bitbucket, open the workspace, then Settings → Workspace settings → OAuth consumers (under Apps and features) → Add consumer.',
+                'Give it a Name and set the Callback URL to the redirect URI shown below.',
+                'Grant the consumer the Account permissions for email and read. Bitbucket fixes scopes on the consumer and refuses a sign-in that asks for more.',
+                'Save, then select the consumer\'s name to reveal its Key and Secret — the key is the client ID.',
+            ],
+            tokenEndpointAuthMethod: TokenEndpointAuthMethod::ClientSecretBasic,
+        );
+    }
+
+    /**
+     * Sign In with Xero.
+     *
+     * Plain OIDC with a fixed issuer. Xero's tokens also carry `xero_userid`, the user's
+     * id in Xero's own APIs; the account is linked by `sub`, which Xero documents as the
+     * unique identifier for the end user and which the `id_token` validation reads.
+     * Xero documents `given_name` and `family_name` but no `name` and no
+     * `email_verified`, so the address is never carried as verified.
+     */
+    private static function xero(): ProviderTemplate
+    {
+        return new ProviderTemplate(
+            key: 'xero',
+            name: 'Xero',
+            protocol: FederationProtocol::Oidc,
+            scopes: ['openid', 'profile', 'email'],
+            profile: new ProviderProfileMap(subject: 'sub', email: 'email'),
+            issuerTemplate: 'https://identity.xero.com',
+            documentationUrl: 'https://developer.xero.com/documentation/xero-app-store/app-partner-guides/sign-in/',
+            setupSteps: [
+                'In the Xero Developer portal, open My Apps and create an app with the "Auth Code" grant type.',
+                'Give it a name, a URL, and the redirect URI shown below as its redirect URI.',
+                'Save, then generate a client secret and copy it with the client ID — Xero displays the secret once.',
+            ],
+        );
+    }
+
+    /**
+     * Sign In with Intuit (QuickBooks), production keys.
+     *
+     * The issuer is `https://oauth.platform.intuit.com/op/v1`, but Intuit publishes its
+     * discovery document at `developer.api.intuit.com` — a document also answers under
+     * the issuer, naming a different authorization endpoint from the documented one, so
+     * the catalogue pins the documented document.
+     *
+     * The `id_token` carries no address. Intuit's address, and its camel-cased
+     * `emailVerified`, come from UserInfo, so this entry's profile map describes the
+     * UserInfo response and the callback reads it after the token is proven. Intuit
+     * tells apps to admit people only when `emailVerified` is true; here an unverified
+     * address is simply stored unverified, which is the platform's own rule for every
+     * provider — nothing merges into an existing account by email.
+     *
+     * Production only: Intuit's sandbox document differs in its UserInfo host, and
+     * Development keys work only against sandbox companies. A sandbox connection is an
+     * ordinary hand-configured OIDC connection.
+     */
+    private static function intuit(): ProviderTemplate
+    {
+        return new ProviderTemplate(
+            key: 'intuit',
+            name: 'Intuit',
+            protocol: FederationProtocol::Oidc,
+            scopes: ['openid', 'email', 'profile'],
+            profile: new ProviderProfileMap(subject: 'sub', email: 'email', emailVerified: 'emailVerified'),
+            issuerTemplate: 'https://oauth.platform.intuit.com/op/v1',
+            documentationUrl: 'https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/openid-connect',
+            setupSteps: [
+                'Sign in to the Intuit Developer portal and open your app.',
+                'Go to the Production section and select Keys & OAuth. Development keys only work against sandbox companies.',
+                'Add the redirect URI shown below to the app\'s redirect URIs.',
+                'Copy the Client ID and Client secret.',
+            ],
+            discoveryUrl: 'https://developer.api.intuit.com/.well-known/openid_configuration',
+            profileFromUserInfo: true,
         );
     }
 }

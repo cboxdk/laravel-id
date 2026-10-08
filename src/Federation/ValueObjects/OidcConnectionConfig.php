@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation\ValueObjects;
 
+use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 
@@ -48,6 +49,21 @@ readonly class OidcConnectionConfig
          * because a provider that mints cannot also accept a pasted string.
          */
         public ?SigningKeyCredential $signingCredential = null,
+
+        /**
+         * The provider's UserInfo endpoint, as discovery found it. Read only for a
+         * catalogue provider whose identity lives there rather than in the `id_token` —
+         * see {@see ProviderTemplate::$profileFromUserInfo}.
+         */
+        public ?string $userinfoEndpoint = null,
+
+        /**
+         * How the secret is presented at the token endpoint. The body form unless the
+         * provider's discovery document ruled it out — see {@see TokenEndpointAuthMethod}.
+         * Irrelevant when `$signingCredential` is set: a minted assertion is sent as the
+         * secret whatever this says.
+         */
+        public TokenEndpointAuthMethod $tokenEndpointAuthMethod = TokenEndpointAuthMethod::ClientSecretPost,
     ) {}
 
     /**
@@ -66,6 +82,11 @@ readonly class OidcConnectionConfig
             signingKey: self::optional($config, 'signing_key'),
             scopes: self::stringList($config, 'scopes'),
             signingCredential: SigningKeyCredential::fromArray($config),
+            userinfoEndpoint: self::optional($config, 'userinfo_endpoint'),
+            // An unknown value falls back to the body form rather than refusing the
+            // connection: it is what every connection used before this key existed.
+            tokenEndpointAuthMethod: TokenEndpointAuthMethod::tryFrom(self::optional($config, 'token_endpoint_auth_method') ?? '')
+                ?? TokenEndpointAuthMethod::ClientSecretPost,
         );
     }
 
@@ -85,6 +106,12 @@ readonly class OidcConnectionConfig
             'signing_key' => $this->signingKey,
             'scopes' => $this->scopes,
             ...($this->signingCredential?->toArray() ?? []),
+            'userinfo_endpoint' => $this->userinfoEndpoint,
+            // Stored only when it is not the default, so a round-trip of an existing
+            // connection writes back exactly the keys it was read from.
+            'token_endpoint_auth_method' => $this->tokenEndpointAuthMethod === TokenEndpointAuthMethod::ClientSecretPost
+                ? null
+                : $this->tokenEndpointAuthMethod->value,
         ], static fn (mixed $value): bool => $value !== null && $value !== []);
     }
 
