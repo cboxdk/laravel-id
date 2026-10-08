@@ -40,10 +40,17 @@ final readonly class ScimAttributeSelection
 
     public static function fromRequest(Request $request): self
     {
-        return new self(
-            self::parse($request->query('attributes')),
-            self::parse($request->query('excludedAttributes')),
-        );
+        return self::fromParameters($request->query('attributes'), $request->query('excludedAttributes'));
+    }
+
+    /**
+     * The selection from the raw `attributes` / `excludedAttributes` values — what a
+     * caller without a Request (a `/Bulk` operation) passes; null for either means the
+     * parameter was absent.
+     */
+    public static function fromParameters(mixed $attributes, mixed $excludedAttributes): self
+    {
+        return new self(self::parse($attributes), self::parse($excludedAttributes));
     }
 
     /**

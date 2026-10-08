@@ -114,12 +114,25 @@ it('filters users by a compound `or` grouped inside the directory scope', functi
         ->assertJsonPath('totalResults', 2);
 });
 
-it('refuses a filter that mixes `and` with `or` (ambiguous precedence)', function (): void {
+/**
+ * Mixing `and` with `or` used to be refused because the old parser could not tell which
+ * binds tighter. RFC 7644 §3.4.2.2 can: "not" over "and" over "or". So this reads as
+ * `(userName eq "a" and active eq true) or userName eq "b"` — and a user named "b"
+ * matches even though no user named "a" exists.
+ */
+it('answers a filter that mixes `and` with `or` by the RFC precedence', function (): void {
     $headers = $this->scimHeaders;
+    provision($this, $headers, 'b', 'okta|b', 'b@corp.com');
 
     $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "a" and active eq true or userName eq "b"'), $headers)
-        ->assertStatus(400)
-        ->assertJsonPath('scimType', 'invalidFilter');
+        ->assertOk()
+        ->assertJsonPath('totalResults', 1)
+        ->assertJsonPath('Resources.0.userName', 'b');
+
+    // Grouped the other way, the `and` must hold — and nobody is named "a".
+    $this->getJson('/scim/v2/Users?filter='.urlencode('userName eq "a" and (active eq true or userName eq "b")'), $headers)
+        ->assertOk()
+        ->assertJsonPath('totalResults', 0);
 });
 
 it('rejects an unsupported filter with invalidFilter', function (): void {

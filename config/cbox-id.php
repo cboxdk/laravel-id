@@ -210,9 +210,19 @@ return [
      * this package does not register and most hosts do not either, so the link that
      * appeared in a connector's setup screen led to a 404. An absent optional field is
      * correct; a present broken one is a promise the deployment cannot keep.
+     *
+     * `bulk` bounds `POST /scim/v2/Bulk` (RFC 7644 §3.7.4): at most `max_operations`
+     * operations and `max_payload_size` bytes per request, each exceeded with a 413
+     * that names the limit, and both advertised in ServiceProviderConfig. One bulk
+     * request counts once against the SCIM rate limit however many operations it
+     * carries, so these are what bound its cost.
      */
     'scim' => [
         'documentation_uri' => env('CBOX_ID_SCIM_DOCUMENTATION_URI'),
+        'bulk' => [
+            'max_operations' => env('CBOX_ID_SCIM_BULK_MAX_OPERATIONS', 1000),
+            'max_payload_size' => env('CBOX_ID_SCIM_BULK_MAX_PAYLOAD_SIZE', 1048576),
+        ],
     ],
 
     'webhooks' => [
