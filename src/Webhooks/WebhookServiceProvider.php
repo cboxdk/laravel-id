@@ -10,6 +10,7 @@ use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
+use Cbox\Id\Webhooks\Contracts\WebhookSigningSchemes;
 use Cbox\Id\Webhooks\Erasure\WebhookDeliveriesErasureStep;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Foundation\Application;
@@ -33,6 +34,11 @@ class WebhookServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(WebhookRegistry::class, DatabaseWebhookRegistry::class);
+        // Bound to the database registry directly, not aliased to whatever WebhookRegistry
+        // resolves to: a host that swaps the registry for its own class must not have this
+        // contract start failing on a type it never implemented. The class is stateless, so
+        // two instances are one behaviour.
+        $this->app->singleton(WebhookSigningSchemes::class, DatabaseWebhookRegistry::class);
         $this->app->singleton(WebhookDispatcher::class, HttpWebhookDispatcher::class);
     }
 

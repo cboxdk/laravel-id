@@ -9,19 +9,23 @@ use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
+use Cbox\Id\Webhooks\Enums\SignatureScheme;
 use Cbox\Id\Webhooks\Exceptions\UnsafeWebhookUrl;
 use Cbox\Id\Webhooks\Jobs\DeliverWebhook;
 use Cbox\Id\Webhooks\Models\WebhookDelivery;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
+use Cbox\Id\Webhooks\Support\CboxWebhookSignature;
 use Cbox\Id\Webhooks\Support\EndpointCircuitBreaker;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
+use Cbox\Id\Webhooks\Support\StandardWebhookSignature;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
  * Delivers events over HTTP with an HMAC-SHA256 signature (secret opened from
- * the sealed store). Failures are recorded and retried with exponential backoff.
+ * the sealed store) in the endpoint's {@see SignatureScheme}. Failures are recorded
+ * and retried with exponential backoff.
  *
  * Fan-out and SENDING are deliberately separated. {@see dispatch()} only writes
  * the delivery rows and queues a {@see DeliverWebhook} job for each; the blocking
@@ -267,16 +271,8 @@ class HttpWebhookDispatcher implements WebhookDispatcher
 
         $secret = $this->secretBox->open($endpoint->secret_encrypted, $endpoint->secretContext());
 
-        // Sign `timestamp.body` (Stripe-style) so a receiver can bind the signature
-        // to a moment and reject a replayed delivery outside its tolerance window.
-        $timestamp = time();
-        $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
-
         try {
-            $response = Http::withHeaders([
-                'X-Cbox-Timestamp' => (string) $timestamp,
-                'X-Cbox-Signature' => 't='.$timestamp.',v1='.$signature,
-            ])
+            $response = Http::withHeaders($this->signatureHeaders($endpoint, $delivery, $body, $secret))
                 ->withOptions($pinned)          // pinned resolution + no redirects
                 ->withoutRedirecting()          // a 30x to an internal host must not be followed
                 ->connectTimeout(5)
@@ -303,6 +299,45 @@ class HttpWebhookDispatcher implements WebhookDispatcher
 
         $delivery->save();
         $endpoint->save();
+    }
+
+    /**
+     * The signature headers for one attempt, in the endpoint's scheme — and ONLY that
+     * scheme's. Sending both sets would hand every receiver two MACs over overlapping
+     * input with key material derived from one secret, for no receiver's benefit: each
+     * verifies exactly one scheme, and the other set is noise it must be told to ignore.
+     *
+     * Both sign a FRESH timestamp per attempt, so a retry passes the receiver's tolerance
+     * window and a captured delivery does not stay replayable.
+     *
+     * - Cbox (the default): `timestamp.body` (Stripe-style), sent as `X-Cbox-Timestamp` and
+     *   `X-Cbox-Signature: t=…,v1=<hex>` — byte for byte what it has always been.
+     * - Standard Webhooks: `id.timestamp.body`, with the DELIVERY id as `webhook-id`. One
+     *   delivery row is one message — it is what a retry re-sends — so the id is the same
+     *   on every attempt and a receiver can dedupe on it, which is the spec's stated use.
+     *   It is the same value as the envelope's `delivery_id`.
+     *
+     * The endpoint has one secret at a time (there is no rotation overlap window in this
+     * module), so the Standard Webhooks header carries one `v1,` entry; the helper already
+     * takes several for when it does.
+     *
+     * @return array<string, string>
+     */
+    private function signatureHeaders(WebhookEndpoint $endpoint, WebhookDelivery $delivery, string $body, string $secret): array
+    {
+        // The clock is the framework's, not `time()`: identical in production, and it lets
+        // a test travel between attempts to observe that a retry is re-stamped.
+        $timestamp = now()->getTimestamp();
+
+        return match ($endpoint->signature_scheme) {
+            SignatureScheme::Cbox => CboxWebhookSignature::headers($timestamp, $body, $secret),
+            SignatureScheme::StandardWebhooks => StandardWebhookSignature::headers(
+                $delivery->id,
+                $timestamp,
+                $body,
+                StandardWebhookSignature::secretFor($secret),
+            ),
+        };
     }
 
     /** How long a still-Pending delivery may sit before the sweep re-enqueues it. */
