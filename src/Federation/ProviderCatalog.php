@@ -10,6 +10,7 @@ use Cbox\Id\Federation\Enums\FederationProtocol;
 use Cbox\Id\Federation\Enums\ProviderCapability;
 use Cbox\Id\Federation\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\Federation\ValueObjects\DirectorySetup;
+use Cbox\Id\Federation\ValueObjects\IdentityProviderGuide;
 use Cbox\Id\Federation\ValueObjects\ProviderParameter;
 use Cbox\Id\Federation\ValueObjects\ProviderProfileMap;
 use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
@@ -122,6 +123,22 @@ class ProviderCatalog
             self::all(),
             static fn (ProviderTemplate $t): bool => $t->supports($capability),
         ));
+    }
+
+    /**
+     * The OTHER direction: setup guides for the enterprise identity providers that sign
+     * a customer's people in to us over SAML or OIDC — see {@see IdentityProviderGuides}.
+     *
+     * Delegated rather than merged, and deliberately not part of {@see self::all()}: an
+     * enterprise IdP is not a provider we sign in to, and anything in `all()` can end up
+     * as a button on a sign-in page. This is here only so that someone reading the
+     * catalogue finds the guides.
+     *
+     * @return list<IdentityProviderGuide>
+     */
+    public static function enterpriseGuides(): array
+    {
+        return IdentityProviderGuides::all();
     }
 
     /**
