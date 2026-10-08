@@ -71,7 +71,7 @@ It is an engineering artifact, not a certification or audit result.
 |--------|-----------|
 | Horizontal (IDOR) | org-scoped queries on connection/role/invitation operations |
 | Vertical (role escalation) | owner-only guards; org-membership check on org switch |
-| Sensitive action on a stolen session | short absolute + idle session lifetimes, and MFA verification primitives. **Step-up re-authentication itself is the app's**: this package records `auth_time`/`amr` and stamps `acr` so a client can demand a fresh factor, but it ships no sudo mode, no freshness window, and no RFC 9470 challenge |
+| Sensitive action on a stolen session | short absolute + idle session lifetimes, and MFA verification primitives. Access tokens carry `auth_time` and `acr` (derived from `amr`, reserved against hooks), and `AuthenticationRequirement` gives both ends of RFC 9470 step-up: a resource server checks a token and returns the `insufficient_user_authentication` challenge; `/authorize` reads `acr_values`/`max_age` and assesses the session. **Wiring them in is the app's**: the package ships no sudo mode for its own console and no route middleware |
 | Privileged token minting | confidential-client secret required on auth_code; introspection auth |
 | Self-registered client minting a token for someone else's resource server (confused deputy) | a self-registered client (RFC 7591, or a metadata document) may be audienced only to a registered API, a declared resource open to such clients, or the issuer; a repeated `resource` is refused so no token is valid at two resource servers; a refresh token never changes audience; reserved scopes are never granted to such a client |
 

@@ -11,6 +11,7 @@ use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
+use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareTokenIssuer;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
@@ -37,6 +38,7 @@ use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Cbox\Id\OAuthServer\Support\ResourceParameter;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
@@ -223,7 +225,7 @@ class TokenController
             return $this->actedAuthorizationCode($client, $grant, $grant->actor, $resource, $dpopJkt);
         }
 
-        $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt);
+        $access = $this->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt, AuthenticationEvent::fromAuthorization($grant));
 
         // A refresh token is issued only when the client asked for offline access.
         // If this token exchange was DPoP-bound, bind the refresh token to the same
@@ -392,7 +394,9 @@ class TokenController
 
         // CIBA is OpenID Connect: the token response carries an id_token bound to
         // the approving user (with auth_time and the request nonce).
-        $access = $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt);
+        // With `auth_time` on the access token too (RFC 9470 §6.1) — the approval time; no
+        // `acr`, because a CIBA approval records no authentication methods.
+        $access = $this->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt, AuthenticationEvent::fromAuthorization($grant));
 
         // AND A REFRESH TOKEN WHEN `offline_access` WAS GRANTED — the same fix the device
         // grant needed, in the branch directly above, and the reasoning carries over
@@ -469,9 +473,32 @@ class TokenController
 
     private function accessFromRefresh(Client $client, RefreshGrant $grant, ?string $dpopJkt): IssuedToken
     {
+        // The ORIGINAL login's `auth_time` and `acr`, carried by the rotation family (RFC
+        // 9470 §6.1: established at authentication, unchanged by renewal) — the same values
+        // the refreshed ID Token keeps under OIDC Core §12.2.
         return $grant->userId !== null
-            ? $this->issuer->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $grant->audience, $dpopJkt)
+            ? $this->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $grant->audience, $dpopJkt, AuthenticationEvent::fromRefresh($grant))
             : $this->issuer->issueClientCredentials($client, $grant->scopes, $grant->audience, $dpopJkt);
+    }
+
+    /**
+     * A user's access token, carrying the authentication it descends from when the bound
+     * issuer can stamp it (RFC 9470 §6.1).
+     *
+     * An issuer that is not an {@see AuthenticationAwareTokenIssuer} — a host's own
+     * {@see TokenIssuer} written before the contract existed — is called exactly as before;
+     * its tokens carry no `acr`/`auth_time`, and a resource server requiring them refuses
+     * the token rather than assuming the login was good enough. A grant with no recorded
+     * authentication (a device code, a legacy refresh family) goes the same way, by the
+     * same rule: nothing is invented.
+     *
+     * @param  list<string>  $scopes
+     */
+    private function issueForUser(Client $client, string $userId, ?string $organizationId, array $scopes, ?string $resource, ?string $dpopJkt, AuthenticationEvent $authentication): IssuedToken
+    {
+        return $this->issuer instanceof AuthenticationAwareTokenIssuer && ! $authentication->isEmpty()
+            ? $this->issuer->issueForAuthenticatedUser($client, $userId, $organizationId, $scopes, $authentication, $resource, $dpopJkt)
+            : $this->issuer->issueForUser($client, $userId, $organizationId, $scopes, $resource, $dpopJkt);
     }
 
     /**

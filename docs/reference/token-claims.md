@@ -28,7 +28,8 @@ claim appears where; the notes below say when.
 | `organizations` | — | — | with `organizations` scope | Every active membership: `[{id, name, role}]`. |
 | `ent`, `ent_ver` | when configured | — | — | Claims-mode entitlements and their version. See [Entitlements & billing](../core-concepts/entitlements-and-billing.md). |
 | `cnf` | DPoP-bound | — | — | `{"jkt": …}`, the RFC 9449 key thumbprint. |
-| `nonce`, `auth_time`, `amr`, `acr`, `at_hash` | — | yes | — | OIDC authentication context. |
+| `auth_time`, `acr` | user grants with a recorded login | yes | — | When the person signed in, and the assurance class reached. On the access token for RFC 9470 step-up; see the notes below. |
+| `nonce`, `amr`, `at_hash` | — | yes | — | OIDC authentication context. |
 | `email`, `email_verified` | — | — | with `email` scope | |
 | `name` | — | — | with `profile` scope | |
 
@@ -73,8 +74,30 @@ somebody with less, without a second call. It is the
 }
 ```
 
+## `auth_time` and `acr` — the login behind the token
+
+A resource server that needs a recent or second-factor login reads these two claims and,
+when they fall short, answers with the RFC 9470 `insufficient_user_authentication`
+challenge. See [Require step-up authentication](../cookbook/require-step-up-authentication.md).
+
+- **`acr`** is `urn:cbox-id:aal1` (one factor) or `urn:cbox-id:aal2` (a second factor:
+  `mfa`, `otp` or `passkey` in the login's `amr`). It is **derived from `amr`**, never
+  copied from the requested `acr_values`, so a token never claims more than the login
+  reached. It is absent when the grant recorded no `amr`.
+- **`auth_time`** is the unix time the person authenticated: the sign-in session's
+  creation, or the approval time for CIBA.
+- **Which tokens.** The authorization code grant and every refresh of it carry both. CIBA
+  carries `auth_time` only. Device-code, token-exchange, support-session and
+  `client_credentials` tokens carry neither.
+- **A refresh never changes them.** Both describe the original login (RFC 9470 §6.1, OIDC
+  Core §12.2), on the refreshed access token and ID token alike. A resource with a
+  `max_age` therefore sends the client back to `/authorize` once the login ages out,
+  however recently the token was refreshed.
+- **Introspection** (`POST /oauth/introspect`) returns both, as RFC 9470 §6.2 registers
+  them.
+
 ## Reserved claims
 
 A token-minting hook can add claims but can never set or overwrite `iss`, `sub`,
 `client_id`, `jti`, `scope`, `org`, `org_name`, `org_role`, `iat`, `exp`, `nbf`, `aud`,
-`cnf`, `ent`, `ent_ver`, `typ`, `roles` or `permissions`.
+`cnf`, `ent`, `ent_ver`, `typ`, `roles`, `permissions`, `act`, `acr` or `auth_time`.

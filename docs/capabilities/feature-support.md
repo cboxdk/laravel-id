@@ -22,7 +22,7 @@ Everything that is not a wire protocol. For the RFC-by-RFC record see
 | Bulk user import with lazy hash migration | **Full** | CSV or JSON via `cbox-id:users:import`; foreign hashes are refused unless you bind a verifier for the format, then upgraded to the platform hasher on first successful login. |
 | Sessions — absolute TTL and idle timeout | **Full** | 8 hours and 30 minutes by default; `amr` recorded on the session. |
 | "Remember me" persistent login | **No** | |
-| Step-up / sudo re-authentication | **Host-supplied** | The package records `auth_time` and `amr` and stamps `acr` so your app can decide, and gives you MFA verification primitives. It ships no freshness window, no sudo mode and no re-auth challenge. |
+| Step-up / sudo re-authentication | **Partial / Host-supplied** | RFC 9470: access tokens and introspection carry `acr` and `auth_time`. `AuthenticationRequirement` checks a token or a session against `acr_values`/`max_age`, and `BearerChallenge` renders the `insufficient_user_authentication` challenge. Your resource server and your `/authorize` call them ([Require step-up authentication](../cookbook/require-step-up-authentication.md)). No sudo mode, and no route middleware. |
 | TOTP second factor | **Partial** | SHA-1, 6 digits, 30 s, ±1 step — fixed. Secrets sealed at rest, replay blocked. |
 | WebAuthn / passkeys | **Partial** | Real verification; ES256 and RS256 only; `none` and self-attested `packed` only. **Inert until `rp_id` and `origin` are configured.** Challenge issuance is host-supplied. |
 | Recovery / backup codes | **Full** | |
