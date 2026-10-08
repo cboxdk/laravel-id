@@ -713,7 +713,9 @@ it('filters groups by the attributes IdPs query on', function (string $filter, i
 it('still refuses a group filter it cannot answer, rather than listing everything', function (): void {
     $this->postJson('/scim/v2/Groups', ['displayName' => 'Engineering'], $this->scimHeaders)->assertStatus(201);
 
-    $this->getJson('/scim/v2/Groups?filter='.urlencode('members co "dana"'), $this->scimHeaders)
+    // `description` is not an attribute this store holds. Answering would mean either
+    // every group or none — both a lie.
+    $this->getJson('/scim/v2/Groups?filter='.urlencode('description co "dana"'), $this->scimHeaders)
         ->assertStatus(400)
         ->assertJsonPath('scimType', 'invalidFilter');
 });

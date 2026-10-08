@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory\Models;
 
+use Cbox\Id\Directory\Support\DirectoryRevision;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -21,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string $directory_id
  * @property string|null $external_id
  * @property string $display_name
+ * @property int $version
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -32,6 +34,31 @@ class DirectoryGroup extends Model implements EnvironmentOwned
     protected $table = 'directory_groups';
 
     protected $guarded = [];
+
+    /**
+     * Record a change the row itself does not show — a membership edit lands in the
+     * pivot, never on this row — as a new revision, so the group's entity-tag and
+     * `meta.lastModified` move with it (RFC 7644 §3.14).
+     */
+    public function recordRevision(): void
+    {
+        $this->forceFill(['version' => $this->version + 1])->save();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return ['version' => 'integer'];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(static function (self $model): void {
+            DirectoryRevision::advance($model);
+        });
+    }
 
     /**
      * @return BelongsToMany<DirectoryUser, $this>

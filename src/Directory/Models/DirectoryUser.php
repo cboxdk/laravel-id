@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory\Models;
 
+use Cbox\Id\Directory\Support\DirectoryRevision;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -27,6 +28,7 @@ use Illuminate\Support\Str;
  * @property string|null $email_lower
  * @property string|null $user_id
  * @property bool $active
+ * @property int $version
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -66,6 +68,7 @@ class DirectoryUser extends Model implements EnvironmentOwned
         return [
             'resource' => 'array',
             'active' => 'boolean',
+            'version' => 'integer',
         ];
     }
 
@@ -76,6 +79,8 @@ class DirectoryUser extends Model implements EnvironmentOwned
         // place for this: the one writer that forgets mints the duplicate account the
         // columns exist to prevent.
         static::saving(static function (self $model): void {
+            DirectoryRevision::advance($model);
+
             if (! array_key_exists('resource', $model->getAttributes())) {
                 return;
             }

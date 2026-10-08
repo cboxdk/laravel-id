@@ -39,6 +39,12 @@ class ScimSchema
     /** RFC 7644 §3.4.2 query ListResponse message schema URN. */
     public const LIST_RESPONSE_URN = 'urn:ietf:params:scim:api:messages:2.0:ListResponse';
 
+    /** RFC 7644 §3.7 bulk request message schema URN. */
+    public const BULK_REQUEST_URN = 'urn:ietf:params:scim:api:messages:2.0:BulkRequest';
+
+    /** RFC 7644 §3.7 bulk response message schema URN. */
+    public const BULK_RESPONSE_URN = 'urn:ietf:params:scim:api:messages:2.0:BulkResponse';
+
     /** RFC 7644 §3.12 error message schema URN. */
     public const ERROR_URN = 'urn:ietf:params:scim:api:messages:2.0:Error';
 
@@ -133,9 +139,13 @@ class ScimSchema
      * every run — for a large tenant, straight into the server's rate limit, on a
      * schedule, forever.
      *
+     * `$version` is the resource's weak entity-tag (RFC 7644 §3.14: SCIM ETags "SHOULD
+     * be specified within the 'version' attribute contained in the resource's 'meta'
+     * attribute"), the same value the response's `ETag` header carries.
+     *
      * @return array<string, string>
      */
-    public static function meta(string $resourceType, ?string $location = null, ?DateTimeInterface $created = null, ?DateTimeInterface $lastModified = null): array
+    public static function meta(string $resourceType, ?string $location = null, ?DateTimeInterface $created = null, ?DateTimeInterface $lastModified = null, ?string $version = null): array
     {
         $meta = ['resourceType' => $resourceType];
 
@@ -149,6 +159,10 @@ class ScimSchema
 
         if ($location !== null) {
             $meta['location'] = $location;
+        }
+
+        if ($version !== null) {
+            $meta['version'] = $version;
         }
 
         return $meta;

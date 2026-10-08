@@ -6,12 +6,18 @@ namespace Cbox\Id\Api\Http\Controllers\Scim;
 
 use Cbox\Id\Api\Exceptions\InvalidScimRequest;
 use Cbox\Id\Api\Http\Middleware\AuthenticateScim;
+use Cbox\Id\Api\Scim\ScimOutcome;
+use Cbox\Id\Api\Scim\ScimPatchRequest;
 use Cbox\Id\Directory\Models\Directory;
+use Cbox\Id\Directory\ValueObjects\DirectorySearch;
 use Cbox\Id\Scim\Enums\ScimPatchOp;
+use Cbox\Id\Scim\Enums\ScimSortOrder;
 use Cbox\Id\Scim\ScimSchema;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 /**
  * The plumbing every SCIM endpoint shares: resolving the authenticated directory,
@@ -69,23 +75,66 @@ abstract class ScimController
      */
     protected function operations(Request $request): array
     {
-        $operations = array_change_key_case($request->all(), CASE_LOWER)['operations'] ?? null;
+        return ScimPatchRequest::operations($request->all());
+    }
 
-        if (! is_array($operations) || $operations === []) {
-            throw InvalidScimRequest::missingOperations();
+    /**
+     * The decoded request body. JSON first; a form-encoded body (which no SCIM client
+     * sends, but a test harness might) falls back to the request input.
+     *
+     * @return array<array-key, mixed>
+     */
+    protected function body(Request $request): array
+    {
+        $data = $request->json()->all();
+
+        return $data === [] ? $request->all() : $data;
+    }
+
+    /**
+     * The `sortBy`/`sortOrder`, `filter` and pagination of a list request
+     * (RFC 7644 §3.4.2), or the 400 for a `sortOrder` that is neither `ascending` nor
+     * `descending` — guessing a direction would hand the client the wrong order.
+     */
+    protected function search(Request $request): DirectorySearch
+    {
+        $sortBy = $request->query('sortBy');
+        $sortOrder = $request->query('sortOrder');
+        $order = ScimSortOrder::Ascending;
+
+        if ($sortOrder !== null) {
+            $order = ScimSortOrder::tryParse($sortOrder)
+                ?? throw new HttpResponseException($this->error('400', 'sortOrder must be "ascending" or "descending".', 'invalidValue'));
         }
 
-        $parsed = [];
+        return new DirectorySearch(
+            $request->string('filter')->toString(),
+            $request->has('startIndex') ? $request->integer('startIndex') : null,
+            $request->has('count') ? $request->integer('count') : null,
+            is_string($sortBy) && trim($sortBy) !== '' ? $sortBy : null,
+            $order,
+        );
+    }
 
-        foreach ($operations as $operation) {
-            if (! is_array($operation)) {
-                throw InvalidScimRequest::notAnOperation();
+    /**
+     * The HTTP response for an operation's outcome: the body, `Content-Location` (and,
+     * on a 201, `Location`) from `meta.location`, and `ETag` from `meta.version`
+     * (RFC 7644 §3.14: SCIM ETags "MUST be specified as an HTTP header"). A 304 and a
+     * 204 carry no body at all.
+     */
+    protected function render(ScimOutcome $outcome): SymfonyResponse
+    {
+        if ($outcome->status === 204 || $outcome->status === 304) {
+            $response = new Response('', $outcome->status);
+
+            if ($outcome->version !== null) {
+                $response->headers->set('ETag', $outcome->version);
             }
 
-            $parsed[] = $operation;
+            return $response;
         }
 
-        return $parsed;
+        return $this->resource($outcome->body ?? [], $outcome->status);
     }
 
     /**
@@ -99,7 +148,7 @@ abstract class ScimController
      *
      * A 201 additionally carries `Location` (RFC 7644 §3.3).
      *
-     * @param  array<string, mixed>  $resource
+     * @param  array<array-key, mixed>  $resource
      */
     protected function resource(array $resource, int $status = 200): JsonResponse
     {
@@ -107,6 +156,7 @@ abstract class ScimController
 
         $meta = $resource['meta'] ?? null;
         $location = is_array($meta) ? ($meta['location'] ?? null) : null;
+        $version = is_array($meta) ? ($meta['version'] ?? null) : null;
 
         if (is_string($location) && $location !== '') {
             $response->headers->set('Content-Location', $location);
@@ -114,6 +164,10 @@ abstract class ScimController
             if ($status === 201) {
                 $response->headers->set('Location', $location);
             }
+        }
+
+        if (is_string($version) && $version !== '') {
+            $response->headers->set('ETag', $version);
         }
 
         return $response;
