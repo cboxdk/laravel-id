@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory\Support;
 
+use Cbox\Id\Directory\Enums\ScimAttributeType;
 use Cbox\Id\Directory\Exceptions\UnsupportedDirectoryFilter;
 use Cbox\Id\Directory\Exceptions\UnsupportedDirectorySort;
 use Cbox\Id\Directory\ValueObjects\DirectorySearch;
@@ -303,11 +304,22 @@ class ScimDirectoryQuery
         // document is compared on an expression built from literals only.
         $expression = self::value($attribute, self::driver($query));
         $plain = ! $attribute->needsFolding() && ! $attribute->isJson();
+        $placeholder = '?';
+
+        // `caseExact: true` (RFC 7643 §2.2) means byte-for-byte — but MySQL's and MariaDB's
+        // default collations fold case, so `externalId eq "EXT-LEE"` would match `ext-lee`
+        // there and nowhere else. Compared as binary on those engines; PostgreSQL and SQLite
+        // already compare text byte-for-byte.
+        if ($attribute->type === ScimAttributeType::CaseExactString && in_array(self::driver($query), ['mysql', 'mariadb'], true)) {
+            $expression = 'CAST('.$expression.' AS BINARY)';
+            $placeholder = 'CAST(? AS BINARY)';
+            $plain = false;
+        }
 
         if ($operator === ScimComparisonOperator::NotEqual) {
-            $query->where(function (Builder $either) use ($column, $expression, $plain, $value): void {
+            $query->where(function (Builder $either) use ($column, $expression, $plain, $placeholder, $value): void {
                 $either->whereNull($column);
-                $plain ? $either->orWhere($column, '!=', $value) : $either->whereRaw($expression.' <> ?', [$value], 'or');
+                $plain ? $either->orWhere($column, '!=', $value) : $either->whereRaw($expression.' <> '.$placeholder, [$value], 'or');
             });
 
             return;
@@ -325,7 +337,7 @@ class ScimDirectoryQuery
                 default => '%'.$escaped,
             };
 
-            $query->whereRaw($expression." LIKE ? ESCAPE '!'", [$pattern]);
+            $query->whereRaw($expression.' LIKE '.$placeholder." ESCAPE '!'", [$pattern]);
 
             return;
         }
@@ -338,7 +350,7 @@ class ScimDirectoryQuery
             default => '=',
         };
 
-        $plain ? $query->where($column, $sql, $value) : $query->whereRaw($expression.' '.$sql.' ?', [$value]);
+        $plain ? $query->where($column, $sql, $value) : $query->whereRaw($expression.' '.$sql.' '.$placeholder, [$value]);
     }
 
     /**

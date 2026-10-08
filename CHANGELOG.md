@@ -61,6 +61,14 @@ more trust than the wording it removes.
 - OIDC UserInfo is called only after the id_token and nonce are verified; its `sub` must equal the token's (OIDC Core §5.3.2), it fills only claims the token left empty, and its verified flag passes the same organization-domain rule.
 - Bitbucket: an unconfirmed primary address is not taken at all, so nobody can occupy an address they never received mail at.
 
+### Fixed (release candidate)
+
+- SCIM `caseExact` attributes (`externalId`, `id`) compare byte-for-byte on MySQL and MariaDB too: their default collations fold case, so `externalId eq "EXT-LEE"` matched `ext-lee` there and nowhere else. Compared as binary on those engines; PostgreSQL and SQLite already compared exactly.
+
+### Changed (dependencies)
+
+- Accepts `cboxdk/laravel-siem` `^0.1 || ^0.2`, so a host can take the 0.2 destinations (Datadog, Amazon S3, Google Cloud Storage) when it is ready for them.
+
 ## [1.22.0] - 2026-10-08
 
 ### Added
