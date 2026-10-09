@@ -579,7 +579,9 @@ return [
             // Kubernetes case is the one that bites — `kubectl oidc-login` reads the
             // document, requests `openid groups`, and is refused at /authorize by the very
             // server that told it the scope exists.
-            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'],
+            // `feature_flags` (1.24) likewise: advertised, and it emits a claim. It
+            // discloses only the keys of the flags on for the person who consented.
+            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups', 'feature_flags'],
             /*
              * Grants a DYNAMICALLY registered client may ask for. device_code, CIBA and
              * token-exchange were advertised in discovery but absent here, so no
@@ -1040,6 +1042,26 @@ return [
      */
     'token_vault' => [
         'default_lease_ttl_seconds' => env('CBOX_ID_VAULT_LEASE_TTL', 300),
+    ],
+
+    /*
+     * Feature flags: per-environment switches evaluated per user and organization, and
+     * delivered in the `feature_flags` claim to a client granted the `feature_flags`
+     * scope.
+     *
+     * `cache_ttl` (seconds) caches each environment's compiled flag set, which every
+     * evaluation reads instead of the database. Any change to a flag or one of its rules
+     * forgets the entry at once, so the TTL is a backstop for a cache the application
+     * does not share (a per-pod array or file store), not the mechanism. 0 always reads
+     * the database.
+     *
+     * `max_rules` caps the user and organization rules on one flag. Rules are evaluated
+     * in memory from the cached set, so a flag listing every user is a cache entry the
+     * size of the user table; target an organization or use a rollout instead.
+     */
+    'feature_flags' => [
+        'cache_ttl' => env('CBOX_ID_FEATURE_FLAGS_CACHE_TTL', 300),
+        'max_rules' => env('CBOX_ID_FEATURE_FLAGS_MAX_RULES', 1000),
     ],
 
     'crypto' => [

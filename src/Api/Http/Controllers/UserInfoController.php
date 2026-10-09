@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\Api\Support\ServerMetadata;
+use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
@@ -37,6 +38,8 @@ class UserInfoController
         private readonly Memberships $memberships,
         private readonly AccessChecker $access,
         private readonly IssuerResolver $issuers,
+        // Trailing and optional so existing constructions keep compiling.
+        private readonly ?FeatureFlagClaim $featureFlags = null,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -156,6 +159,19 @@ class UserInfoController
                     $claims['organizations'] = $organizations;
                 }
             }
+        }
+
+        // Feature flags (1.24), read LIVE like `org_role`: a relying party that re-reads
+        // UserInfo sees a flag flipped since the token was minted. Same scope, same shape
+        // as the token's claim — see FeatureFlagClaim.
+        $flags = ($this->featureFlags ?? app(FeatureFlagClaim::class))->for(
+            $token->scopes,
+            $token->clientId === $token->subject ? null : $token->subject,
+            is_string($orgId) && $orgId !== '' ? $orgId : null,
+        );
+
+        if ($flags !== null) {
+            $claims[FeatureFlagClaim::CLAIM] = $flags;
         }
 
         return new JsonResponse($claims);

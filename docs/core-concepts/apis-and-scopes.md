@@ -47,7 +47,7 @@ Environment
 | `name` | What a person calls it. |
 | `organization_id` | The owner. `null` = the environment owns it. |
 | `client_id` | Optional. The app whose declared roles/permissions this API enforces. Must have the **same owner** as the API. |
-| scope `key` | An RFC 6749 scope token (≤ 128 characters). **Unique per environment**, across all APIs — a request names a scope by key alone. The protocol scopes (`openid`, `profile`, `email`, `offline_access`, `organizations`, `groups`) can never be registered. |
+| scope `key` | An RFC 6749 scope token (≤ 128 characters). **Unique per environment**, across all APIs — a request names a scope by key alone. The protocol scopes (`openid`, `profile`, `email`, `offline_access`, `organizations`, `groups`, `feature_flags`) can never be registered. |
 | scope `tenant_requestable` | For an environment-owned API: may a client owned by an organization (or a dynamically registered one) hold this scope? Default `true`. |
 
 ## Who may hold a registered scope

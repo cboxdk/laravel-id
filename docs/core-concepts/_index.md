@@ -52,6 +52,8 @@ How the platform is put together and the ideas you build against:
 - **[OTP delivery channels](otp-channels.md)** — delivered one-time passcodes
   (email/SMS) as a verification and MFA factor, and the caps that make a short
   code safe.
+- **[Feature flags](feature-flags.md)** — switches per environment, on for named users,
+  named organizations or a stable percentage, delivered in the `feature_flags` claim.
 - **[AI token vault](token-vault.md)** — seal downstream third-party credentials
   and broker short-lived, deny-by-default leased access to autonomous / AI agents.
 - **[OAuth clients (apps)](oauth-clients.md)** — registering apps, overlapping secret

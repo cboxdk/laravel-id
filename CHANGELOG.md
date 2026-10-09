@@ -17,6 +17,15 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **Feature flags** (`Cbox\Id\FeatureFlags\`). Environment-owned switches (`feature_flags`, `feature_flag_targets`, migration) with a key, a description, a kill switch (`enabled`) and a default, targeted by user rules and organization rules that each carry their own on/off, and a 0–100 rollout. Precedence, first match wins: switched off → user rule → organization rule → rollout bucket → default (`EvaluationReason`). The rollout bucket is `int(sha256(key + "/" + identity)[0:8], 16) % 100` over the user id (the organization id without one): stable across requests and replicas, monotonic as the percentage rises, salted per flag, and reproducible by an SDK. The `FeatureFlags` contract (`DatabaseFeatureFlags`) manages flags (`all`, `find`, `findByKey`, `create(NewFeatureFlag)`, `update(FeatureFlagChanges)`, `delete`, each taking an optional `AuditActor`) and evaluates them (`isEnabled`, `evaluate` → `FlagEvaluation`, `forSubject` → sorted keys that are on, `evaluateAll`). Rules may name only users and organizations of the current environment (`InvalidFeatureFlag` with a machine `reason`); `UnknownFeatureFlag` for an id not in it.
+- Evaluation reads one compiled, cached set per environment (`cbox-id:feature-flags:{environment}`) and answers in memory. Any save or delete of a flag or rule forgets it at the model, and again after the surrounding transaction commits. `cbox-id.feature_flags.cache_ttl` (300 s, `CBOX_ID_FEATURE_FLAGS_CACHE_TTL`; 0 reads the database) and `cbox-id.feature_flags.max_rules` (1000 per flag, `CBOX_ID_FEATURE_FLAGS_MAX_RULES`).
+- **The `feature_flags` claim** on the access token, the ID token and UserInfo, behind a new protocol scope `feature_flags` (`ProtocolScope::FeatureFlags`, advertised in `scopes_supported` and `claims_supported`): the sorted keys of every flag on for the subject in the bound organization, an empty list when none is, absent without the scope. UserInfo reads it live; a `client_credentials` token is evaluated for its organization. Once the scope is granted a token-minting hook cannot change it; without the scope the name stays free for a hook, as before. `FeatureFlags\Support\FeatureFlagClaim`. `JwtTokenIssuer`, `TokenController` and `UserInfoController` take it as a trailing optional constructor argument.
+- Webhook events `feature_flag.created`, `feature_flag.updated` (with `changed`) and `feature_flag.deleted` under a new `WebhookEventGroup::FeatureFlags`, and the audit actions of the same names (the targeting change recorded as a diff).
+- Erasing a user deletes the flag rules that name them (erasure step `feature_flags.targets`).
+- `InteractsWithFeatureFlags` testing trait (`createFeatureFlag`, `assertFeatureEnabled`, `assertFeatureDisabled`). Docs: [Feature flags](docs/core-concepts/feature-flags.md).
+
 ## [1.23.1] - 2026-10-08
 
 ### Fixed

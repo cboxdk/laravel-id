@@ -61,7 +61,7 @@ it('keeps scope keys unique per environment, across APIs', function (): void {
 it('refuses a scope the authorization server defines itself', function (string $scope): void {
     expect(fn () => $this->makeApi('https://tax.example.test', [$scope]))
         ->toThrow(InvalidApiDefinition::class, 'defined by the authorization server itself');
-})->with(['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups']);
+})->with(['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups', 'feature_flags']);
 
 it('refuses a scope key that is not an RFC 6749 scope-token', function (string $key): void {
     expect(fn () => $this->makeApi('https://tax.example.test', [$key]))
