@@ -6,6 +6,7 @@ namespace Cbox\Id\Kernel\Authorization;
 
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementWriter;
+use Cbox\Id\Kernel\Authorization\Contracts\FineGrainedAuthorization;
 use Cbox\Id\Kernel\Authorization\Contracts\PolicyDecisionPoint;
 use Cbox\Id\Kernel\Authorization\Contracts\RelationshipStore;
 use Illuminate\Contracts\Cache\Repository as Cache;
@@ -29,5 +30,9 @@ class AuthorizationServiceProvider extends ServiceProvider
 
         $this->app->singleton(RelationshipStore::class, DatabaseRelationshipStore::class);
         $this->app->singleton(PolicyDecisionPoint::class, DefaultPolicyDecisionPoint::class);
+
+        // An environment's own relationship model (schema + tuples + checks), cached by
+        // revision. Environment-wide, beside the organization-scoped store above.
+        $this->app->singleton(FineGrainedAuthorization::class, DatabaseFineGrainedAuthorization::class);
     }
 }

@@ -6,6 +6,7 @@ use Cbox\Id\Console\HealthChecks;
 use Cbox\Id\Directory\DirectoryConnectors;
 use Cbox\Id\Identity\Erasure\ErasureStepRegistry;
 use Cbox\Id\Identity\Hashing\HashVerifierRegistry;
+use Cbox\Id\Kernel\Authorization\DatabaseFineGrainedAuthorization;
 use Cbox\Id\Kernel\Crypto\SealedColumnRegistry;
 use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
@@ -304,6 +305,9 @@ function memoExemptSingletons(): array
         // expiry, keyed by connection, explicitly written to outlive a job. See the
         // property's docblock: a cache with NO expiry there is the bug it guards against.
         HttpScimClient::class => 'per-connection OAuth token cache, expiry-aware by construction',
+        // Parsed schemas keyed by the SHA-256 of their own JSON: content-addressed, so an
+        // entry can never answer for a different schema, in any request or environment.
+        DatabaseFineGrainedAuthorization::class => 'parsed authorization schemas, keyed by content hash',
     ];
 }
 

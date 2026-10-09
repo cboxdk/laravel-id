@@ -19,6 +19,9 @@ How the platform is put together and the ideas you build against:
   above organizations (staging/prod, white-label).
 - **[Authorization & the decision plane](authorization.md)** — live permission and
   entitlement decisions, the hot path, and the token hybrid.
+- **[Fine-grained authorization](fine-grained-authorization.md)** — an environment's own
+  relationship model: a schema, tuples, and cached checks and list queries with
+  consistency tokens.
 - **[APIs and scopes](apis-and-scopes.md)** — register the resource servers your
   tokens are for: who owns each scope, which organizations may request it, and how
   every token's audience, scope and roles are decided.
