@@ -1028,6 +1028,31 @@ return [
     ],
 
     /*
+     * Fine-grained authorization (src/Kernel/Authorization/) — an environment's own
+     * relationship model: a schema of resource types and relations, tuples written
+     * against it, and checks evaluated over both (Zanzibar-style).
+     *
+     * `max_depth` bounds how many relations deep one check may follow (nested groups,
+     * folder trees); past it the check is refused, never guessed. `max_expansion` bounds
+     * how many objects a list query may visit. `max_batch` caps a tuple batch and a
+     * batch check.
+     *
+     * Answers are cached under the environment's current revision: every write advances
+     * it, so the cache is never stale and never flushed. `cache.store` picks a store
+     * (null = the default); `cache.ttl` only bounds how long an unused answer occupies it.
+     */
+    'fga' => [
+        'max_depth' => env('CBOX_ID_FGA_MAX_DEPTH', 25),
+        'max_expansion' => env('CBOX_ID_FGA_MAX_EXPANSION', 50000),
+        'max_batch' => env('CBOX_ID_FGA_MAX_BATCH', 100),
+        'cache' => [
+            'enabled' => env('CBOX_ID_FGA_CACHE', true),
+            'store' => env('CBOX_ID_FGA_CACHE_STORE'),
+            'ttl' => env('CBOX_ID_FGA_CACHE_TTL', 3600),
+        ],
+    ],
+
+    /*
      * AI token vault (src/TokenVault/) — holds downstream third-party credentials
      * (API keys, OAuth tokens for services an AI agent calls) SEALED at rest via
      * the Crypto SecretBox, and brokers short-lived, deny-by-default leased access

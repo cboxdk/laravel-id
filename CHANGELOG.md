@@ -17,6 +17,10 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **Fine-grained authorization** — an environment's own relationship model, Zanzibar-style. `Kernel\Authorization\Contracts\FineGrainedAuthorization` (bound to `DatabaseFineGrainedAuthorization`) holds a per-environment **schema** written in a small language (`type folder` / `relation viewer: [user, group#member] or editor or viewer from parent`, with `and`, `but not` and parentheses), **tuples** (`document:readme#viewer@group:eng#member`) written and deleted in atomic, schema-checked batches, and **check**, **batch check**, **list-resources** and **list-subjects** evaluated over both. `Schema\SchemaParser` reports every error by line; `SchemaValidator` refuses unknown types and relations, tuple-to-userset through anything but a plain type list, and any exclusion that refers back to the relation it decides, while allowing cycles that only add access. A schema change that would strand existing tuples is refused (`SchemaConflict`). The evaluator (`Fga\Evaluator`, over a `Fga\TupleReader`) searches depth-first with cycle cut-off and a memo that never caches a "no" that leaned on a cut, refuses past `max_depth` rather than guessing (`ResolutionTooComplex`), and is tested against a stratified-fixpoint reference implementation on random graphs. Every write advances a per-environment **revision**; reads take and return a `ConsistencyToken` (at least as fresh as a given write, re-reading the write connection when a replica lags; another environment's token is refused) and are cached under the revision and a per-revision random tag, so a write invalidates instantly and an answer computed in a rolled-back transaction is never served. New tables `fga_stores` and `fga_tuples` (forward and reverse indexes), config `cbox-id.fga.*` (`max_depth`, `max_expansion`, `max_batch`, `cache.enabled|store|ttl`), and the `InteractsWithFineGrainedAuthorization` testing trait. See [Fine-grained authorization](docs/core-concepts/fine-grained-authorization.md), which includes a benchmark note.
+
 ## [1.23.1] - 2026-10-08
 
 ### Fixed

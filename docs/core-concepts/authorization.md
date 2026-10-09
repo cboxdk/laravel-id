@@ -42,7 +42,11 @@ $pdp->entitlement('org_x', 'feature.sso')?->bool();                             
 ```
 
 Relationships are stored as ReBAC tuples (`RelationshipStore`), supporting grants
-through group membership (e.g. `doc:1#viewer@group:eng#member`). Entitlement reads
+through group membership (e.g. `doc:1#viewer@group:eng#member`). That store is the
+platform's own, scoped to one organization with a fixed meaning; for a model your app
+defines — resource types, relations that inherit from each other, parent folders —
+use [fine-grained authorization](fine-grained-authorization.md), which is
+environment-wide and schema-checked. Entitlement reads
 are served from a per-org, version-invalidated cache, so a check on every request
 is cheap and a change is visible on the next read.
 

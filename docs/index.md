@@ -58,7 +58,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 | `Kernel\Crypto` | `KeyManager`, `TokenSigner`, `SecretBox` | Signing keys + JWKS + rotation; alg-allowlisted JWTs; AEAD envelope encryption. |
 | `Kernel\Audit` | `AuditLog` | Append-only, hash-chained trail; signed checkpoints. Built on `cboxdk/laravel-audit-chain`. |
 | `Kernel\Events` | `EventBus` | Transactional outbox; at-least-once relay. |
-| `Kernel\Authorization` | `PolicyDecisionPoint`, `RelationshipStore`, `EntitlementReader`/`EntitlementWriter` | Owned ReBAC engine, deny-by-default PDP, billing-fed entitlement projection. |
+| `Kernel\Authorization` | `PolicyDecisionPoint`, `RelationshipStore`, `FineGrainedAuthorization`, `EntitlementReader`/`EntitlementWriter` | Owned ReBAC engine, deny-by-default PDP, per-environment fine-grained authorization (schema, tuples, cached checks), billing-fed entitlement projection. |
 | `Organization` | `Organizations`, `OrganizationHierarchy`, `Memberships`, `EnvironmentResolver` | Environments, tenants, closure-tree hierarchy (reseller/parent), memberships. |
 | `Identity` | `Subjects`, `SessionManager` | Global users, federated identities, sessions, password auth. |
 | `AccessControl` | `Roles`, `AccessChecker` | RBAC with hierarchy-aware roll-down. |
@@ -96,6 +96,7 @@ them, and each SDK's own repository is the authority on what it currently suppor
 - [Architecture & patterns](core-concepts/architecture.md) — kernels vs domain, contracts-first DI, dogfooding
 - [Environments & the isolation model](core-concepts/environments.md) — the hard identity boundary above organizations; staging/prod and white-label
 - [Authorization & the decision plane](core-concepts/authorization.md) — live permission + entitlement decisions (`/oauth/decisions`), the hot path, and the token hybrid
+- [Fine-grained authorization](core-concepts/fine-grained-authorization.md) — an environment's own Zanzibar-style model: schema, tuples, checks, list queries, consistency tokens and the revision-keyed cache
 - [Customer API keys](core-concepts/customer-api-keys.md) — keys your app's customers mint for your API, verified by your app at `/oauth/api-keys/verify`
 - [Entitlements & billing](core-concepts/entitlements-and-billing.md) — capability gates fed by your billing engine (never billing state), so every product enforces the same "what may this org do"
 
