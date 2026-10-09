@@ -146,14 +146,17 @@ class PipeOAuthClient
                     'token' => $token,
                     'token_type_hint' => $token === $refreshToken ? 'refresh_token' : 'access_token',
                 ]),
-                RevocationStyle::BearerToken => $this->request($url = $provider->endpoint($revocation->endpoint, $pipe->parameterValues()))
+                RevocationStyle::JsonToken => $this->authenticated($provider, $pipe, $clientSecret, $provider->endpoint($revocation->endpoint, $pipe->parameterValues()), [
+                    'token' => $token,
+                ], json: true),
+                RevocationStyle::BearerToken => $this->request($url = $provider->endpoint($revocation->endpoint, $pipe->parameterValues()), $provider)
                     ->withToken($accessToken)
                     ->asForm()
                     ->post($url),
                 RevocationStyle::GitHubGrant => $this->githubGrant($provider, $pipe, $clientSecret, $revocation->endpoint, $accessToken),
                 RevocationStyle::RefreshTokenInPath => $refreshToken === null
                     ? null
-                    : $this->request($url = $provider->endpoint($revocation->endpoint, $pipe->parameterValues(), ['refresh_token' => $refreshToken]))->delete($url),
+                    : $this->request($url = $provider->endpoint($revocation->endpoint, $pipe->parameterValues(), ['refresh_token' => $refreshToken]), $provider)->delete($url),
             };
         } catch (Throwable) {
             return false;
@@ -173,7 +176,7 @@ class PipeOAuthClient
     {
         $url = $provider->endpoint($endpoint, $pipe->parameterValues(), ['client_id' => $pipe->client_id]);
 
-        return $this->request($url)
+        return $this->request($url, $provider)
             ->withHeaders([
                 'Accept' => 'application/vnd.github+json',
                 'Authorization' => TokenEndpointAuthMethod::basicCredentials($pipe->client_id, $clientSecret),
@@ -183,13 +186,14 @@ class PipeOAuthClient
     }
 
     /**
-     * A form POST authenticated the way the provider's token endpoint expects.
+     * A POST authenticated the way the provider's token endpoint expects: form-encoded,
+     * or JSON for a provider that accepts nothing else.
      *
      * @param  array<string, string>  $form
      */
-    private function authenticated(PipeProvider $provider, Pipe $pipe, string $clientSecret, string $url, array $form): Response
+    private function authenticated(PipeProvider $provider, Pipe $pipe, string $clientSecret, string $url, array $form, bool $json = false): Response
     {
-        $request = $this->request($url);
+        $request = $this->request($url, $provider);
 
         if ($provider->tokenEndpointAuthMethod === TokenEndpointAuthMethod::ClientSecretBasic) {
             $request = $request->withHeaders(['Authorization' => TokenEndpointAuthMethod::basicCredentials($pipe->client_id, $clientSecret)]);
@@ -198,7 +202,7 @@ class PipeOAuthClient
             $form['client_secret'] = $clientSecret;
         }
 
-        return $request->asForm()->post($url, $form);
+        return $json ? $request->asJson()->post($url, $form) : $request->asForm()->post($url, $form);
     }
 
     /**
@@ -211,7 +215,7 @@ class PipeOAuthClient
     private function tokenRequest(PipeProvider $provider, Pipe $pipe, string $clientSecret, array $body): array
     {
         $url = $provider->endpoint($provider->tokenEndpoint, $pipe->parameterValues());
-        $request = $this->request($url);
+        $request = $this->request($url, $provider);
 
         // ONE client authentication method, never both (RFC 6749 §2.3).
         if ($provider->tokenEndpointAuthMethod === TokenEndpointAuthMethod::ClientSecretBasic) {
@@ -343,7 +347,7 @@ class PipeOAuthClient
 
         try {
             $url = $provider->endpoint($provider->accountEndpoint, $pipe->parameterValues());
-            $response = $this->request($url)->withToken($accessToken)->get($url);
+            $response = $this->request($url, $provider)->withToken($accessToken)->get($url);
         } catch (Throwable) {
             return null;
         }
@@ -357,7 +361,7 @@ class PipeOAuthClient
         return is_string($label) && $label !== '' ? mb_substr($label, 0, 255) : null;
     }
 
-    private function request(string $url): PendingRequest
+    private function request(string $url, ?PipeProvider $provider = null): PendingRequest
     {
         $timeout = config('cbox-id.pipes.http_timeout', 10);
 
@@ -368,6 +372,7 @@ class PipeOAuthClient
                 // GitHub refuses requests without one, with a 403 that reads as a
                 // permissions problem.
                 'User-Agent' => 'cbox-id',
+                ...($provider === null ? [] : $provider->requestHeaders),
             ])
             ->timeout(is_numeric($timeout) ? (int) $timeout : 10);
     }

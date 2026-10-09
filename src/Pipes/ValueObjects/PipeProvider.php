@@ -78,6 +78,13 @@ readonly class PipeProvider
          * consent for the extra scopes" instead of treating them as unrelated.
          */
         public ?string $signInKey = null,
+        /**
+         * Headers every call to the provider's own endpoints must carry — token, revocation
+         * and account lookup. Notion refuses its OAuth endpoints without `Notion-Version`.
+         *
+         * @var array<string, string>
+         */
+        public array $requestHeaders = [],
     ) {}
 
     /**

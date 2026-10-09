@@ -316,10 +316,14 @@ class PipeProviderCatalog
             tokenEndpoint: 'https://api.notion.com/v1/oauth/token',
             defaultScopes: [],
             apiBaseUrl: 'https://api.notion.com/v1',
-            refreshable: false,
+            // Notion now issues a refresh token that rotates on every refresh, but its
+            // token response carries no `expires_in`: the access token is treated as
+            // lasting until refused, and the refresh token is kept for when it is.
+            refreshable: true,
             tokenEndpointAuthMethod: TokenEndpointAuthMethod::ClientSecretBasic,
             tokenRequestFormat: TokenRequestFormat::Json,
             authorizeParameters: ['owner' => 'user'],
+            revocation: new PipeRevocation('https://api.notion.com/v1/oauth/revoke', RevocationStyle::JsonToken),
             accountLabelTokenPath: 'workspace_name',
             metadataPaths: ['workspace_id', 'workspace_name', 'bot_id'],
             documentationUrl: 'https://developers.notion.com/docs/authorization',
@@ -328,6 +332,9 @@ class PipeProviderCatalog
                 'Add the redirect URI shown below under OAuth Domain & URIs.',
                 'Copy the OAuth client ID and client secret back here.',
             ],
+            // Notion refuses its OAuth endpoints without a version; this is the one its
+            // token, refresh and revoke references name.
+            requestHeaders: ['Notion-Version' => '2026-03-11'],
         );
     }
 }

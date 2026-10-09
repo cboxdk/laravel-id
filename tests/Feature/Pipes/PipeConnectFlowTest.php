@@ -60,9 +60,9 @@ function pipeProviderFlows(): array
             [],
             ['access' => 'lin_oauth_ACCESS', 'refresh' => 'lin_refresh_REFRESH', 'expires_in' => 86399, 'label' => null, 'scopes' => ['read'], 'metadata' => []]],
         'Notion (JSON body, Basic auth, no scopes)' => ['notion',
-            ['access_token' => 'secret_ACCESS', 'token_type' => 'bearer', 'bot_id' => 'b1', 'workspace_name' => 'Acme HQ', 'workspace_id' => 'w1'],
+            ['access_token' => 'secret_ACCESS', 'refresh_token' => 'nr_REFRESH', 'token_type' => 'bearer', 'bot_id' => 'b1', 'workspace_name' => 'Acme HQ', 'workspace_id' => 'w1'],
             [],
-            ['access' => 'secret_ACCESS', 'refresh' => null, 'expires_in' => null, 'label' => 'Acme HQ', 'scopes' => [], 'metadata' => ['workspace_id' => 'w1', 'workspace_name' => 'Acme HQ', 'bot_id' => 'b1']]],
+            ['access' => 'secret_ACCESS', 'refresh' => 'nr_REFRESH', 'expires_in' => null, 'label' => 'Acme HQ', 'scopes' => [], 'metadata' => ['workspace_id' => 'w1', 'workspace_name' => 'Acme HQ', 'bot_id' => 'b1']]],
     ];
 }
 
@@ -115,7 +115,8 @@ it('connects an account end to end', function (string $provider, array $tokenRes
             && $data['code_verifier'] === $authorization->state->codeVerifier
             && $data['redirect_uri'] === $authorization->state->redirectUri
             && ($entry?->tokenRequestFormat->value === 'json' ? $request->isJson() : $request->isForm())
-            && ($basic xor isset($data['client_secret']));
+            && ($basic xor isset($data['client_secret']))
+            && collect($entry->requestHeaders ?? [])->every(fn (string $value, string $name): bool => $request->header($name) === [$value]);
     });
 
     expect($connection->status)->toBe(PipeConnectionStatus::Active)

@@ -41,7 +41,7 @@ Three contracts:
 | `salesforce` | Salesforce | `api refresh_token` | no `expires_in`; 2 h assumed (the default session policy); domain parameter | RFC 7009, with the refresh token |
 | `hubspot` | HubSpot | `oauth crm.objects.contacts.read` | 30 min, refresh | `DELETE /oauth/v1/refresh-tokens/{token}` |
 | `linear` | Linear | `read` | expires, refresh | `POST /oauth/revoke` |
-| `notion` | Notion | — (pages chosen by the person) | does not expire | none — removed under Settings › Connections in Notion |
+| `notion` | Notion | — (pages chosen by the person) | no `expires_in`; a rotating refresh token is kept | `POST /v1/oauth/revoke` (JSON, `Notion-Version` header) |
 
 GitHub's endpoints and the vendor names shared with the
 [sign-in catalogue](sign-in-provider-catalogue.md) are read from it rather than restated.

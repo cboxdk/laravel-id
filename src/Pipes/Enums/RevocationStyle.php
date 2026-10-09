@@ -37,4 +37,10 @@ enum RevocationStyle: string
      * HubSpot: DELETE with the refresh token in the PATH. No body, no client auth.
      */
     case RefreshTokenInPath = 'refresh_token_in_path';
+
+    /**
+     * POST `{"token": …}` as JSON, with the client authenticating the way the token
+     * endpoint expects. RFC 7009's shape in a JSON body, which is all Notion accepts.
+     */
+    case JsonToken = 'json_token';
 }

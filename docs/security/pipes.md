@@ -32,8 +32,8 @@ person's access there, not just here. This page states what protects it.
 - **A leased token is the app's to protect.** Once leased it lives in the app's process and
   travels to the provider; the platform cannot claw it back. `leaseExpiresAt` is advisory.
   Revoking the app's grant stops future leases, not one in flight.
-- **Not every provider can revoke.** Microsoft and Notion have no revocation endpoint. A
-  disconnect forgets the tokens here; the person removes the app's consent at the provider.
+- **Not every provider can revoke.** Microsoft has no revocation endpoint. A disconnect
+  forgets the tokens here; the person removes the app's consent at the provider.
 - **Removing a pipe, and erasing a person, do not call the provider.** Both are local: the
   tokens are revoked or deleted in the vault, so nothing here can present them, but the
   provider's grant stays until it expires or is removed there. Disconnect first when it

@@ -42,6 +42,13 @@ it('revokes at the provider the way each provider wants it', function (string $p
         fn (Request $r): bool => $r->method() === 'DELETE' && $r->url() === 'https://api.hubapi.com/oauth/v1/refresh-tokens/na1-R%2Fx'],
     'Linear: bearer revoke' => ['linear', ['access_token' => 'lin_A', 'expires_in' => 3600],
         fn (Request $r): bool => $r->url() === 'https://api.linear.app/oauth/revoke' && $r->header('Authorization')[0] === 'Bearer lin_A'],
+    'Notion: JSON token, Basic client auth, versioned' => ['notion', ['access_token' => 'secret_A', 'refresh_token' => 'nr_R', 'workspace_name' => 'Acme'],
+        fn (Request $r): bool => $r->method() === 'POST'
+            && $r->url() === 'https://api.notion.com/v1/oauth/revoke'
+            && $r->isJson()
+            && $r->data() === ['token' => 'secret_A']
+            && $r->header('Authorization')[0] === 'Basic '.base64_encode('the-client:the-secret')
+            && $r->header('Notion-Version')[0] === '2026-03-11'],
 ]);
 
 it('forgets the tokens and announces the disconnect even where the provider cannot revoke', function (string $provider, array $tokens): void {
@@ -60,7 +67,6 @@ it('forgets the tokens and announces the disconnect even where the provider cann
     expect($emitted[0]->payload ?? null)->toBe(['connection_id' => $connection->id, 'user_id' => 'user_1', 'provider' => $provider, 'revoked_at_provider' => false]);
 })->with([
     'Microsoft 365' => ['microsoft', ['access_token' => 'eyJ', 'refresh_token' => 'M.R', 'expires_in' => 3600]],
-    'Notion' => ['notion', ['access_token' => 'secret_A', 'workspace_name' => 'Acme']],
 ]);
 
 it('still disconnects locally when the provider is down', function (): void {
