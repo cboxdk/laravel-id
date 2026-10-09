@@ -17,6 +17,10 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Auth0 SAML guide linked a page Auth0 retired.** `IdentityProviderGuides`' Auth0 entry pointed `documentationUrl` at `…/saml-sso-integrations/configure-auth0-saml-identity-provider`, which answers 404; a host's Admin Portal and generated IdP pages printed it as "Auth0's own guide". It now points at Auth0's *Enable SAML2 Web App Addon* page, which documents the steps the guide gives.
+
 ## [1.23.1] - 2026-10-08
 
 ### Fixed
