@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-10-09
+
 ### Added
 
 - **Feature flags** (`Cbox\Id\FeatureFlags\`). Environment-owned switches (`feature_flags`, `feature_flag_targets`, migration) with a key, a description, a kill switch (`enabled`) and a default, targeted by user rules and organization rules that each carry their own on/off, and a 0–100 rollout. Precedence, first match wins: switched off → user rule → organization rule → rollout bucket → default (`EvaluationReason`). The rollout bucket is `int(sha256(key + "/" + identity)[0:8], 16) % 100` over the user id (the organization id without one): stable across requests and replicas, monotonic as the percentage rises, salted per flag, and reproducible by an SDK. The `FeatureFlags` contract (`DatabaseFeatureFlags`) manages flags (`all`, `find`, `findByKey`, `create(NewFeatureFlag)`, `update(FeatureFlagChanges)`, `delete`, each taking an optional `AuditActor`) and evaluates them (`isEnabled`, `evaluate` → `FlagEvaluation`, `forSubject` → sorted keys that are on, `evaluateAll`). Rules may name only users and organizations of the current environment (`InvalidFeatureFlag` with a machine `reason`); `UnknownFeatureFlag` for an id not in it.
@@ -48,9 +50,6 @@ more trust than the wording it removes.
 - `FakeHrisProvider` for tests.
 - Config `cbox-id.directory.hris.*`: `pre_hire_days`, `full_sync_hours`, `deprovision_guard`, `max_attempts`, `max_backoff_seconds`, `max_reported_failures`, `workday_hosts`; `cbox-id.directory.lock_seconds`.
 - Docs: [Sync people from an HR system](docs/cookbook/sync-people-from-an-hr-system.md); feature support and the schedule table updated.
-
-### Changed
-
 - `Directory` hides `credentials` and `bearer_token_hash` from serialization (`toArray()`/JSON). Both were already sealed or hashed.
 - A pull that fails for a reason other than `DirectoryConnectionFailed` is now recorded on the directory as failed (with the exception's class, not its message) before it is rethrown, and a missing-credentials failure is recorded too.
 - **Pipes — connected third-party accounts** (`Cbox\Id\Pipes\`). A signed-in person connects their own account at GitHub, Google, Microsoft 365, Slack, Salesforce, HubSpot, Linear or Notion over OAuth 2.0 authorization code + PKCE (S256, always sent), and the environment's authorised apps lease a fresh access token for them. Built on the token vault: each connection's access and refresh tokens are **user-owned `SecretVault` secrets** (sealed, audited, rewrapped, erased with the person), read only through vault leases by the internal broker client `cbox-id:pipes` (`Support\PipeSecrets::BROKER_CLIENT_ID`).
