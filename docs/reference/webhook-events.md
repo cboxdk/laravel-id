@@ -173,4 +173,12 @@ own events can be subscribed to as well.
 | Event | Status | Description |
 |---|---|---|
 | `governance.access.revoked` | current | An access review took a grant away when its campaign closed. Payload: `campaign_id`, `user_id`, `access_type`, `access_ref`. |
+
+### Feature flags
+
+| Event | Status | Description |
+|---|---|---|
+| `feature_flag.created` | current | A feature flag was defined in the environment. Payload: `id`, `key`, `enabled`, `default_value`, `rollout_percentage`. |
+| `feature_flag.updated` | current | A feature flag's description, switch, default or targeting changed — who it is on for may have changed. Payload: `id`, `key`, `enabled`, `default_value`, `rollout_percentage`, `changed` (which of `description`, `enabled`, `default_value`, `targeting`). |
+| `feature_flag.deleted` | current | A feature flag was deleted; its key now evaluates to off. Payload: `id`, `key`. |
 <!-- catalogue:end -->

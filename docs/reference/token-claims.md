@@ -26,6 +26,7 @@ claim appears where; the notes below say when.
 | `permissions` | when held | — | when held | The union of those roles' permission keys. |
 | `groups` | — | with `groups` scope | — | The same role keys, under the name ID-token consumers (Kubernetes, Grafana, Vault) read. |
 | `organizations` | — | — | with `organizations` scope | Every active membership: `[{id, name, role}]`. |
+| `feature_flags` | with `feature_flags` scope | with `feature_flags` scope | with `feature_flags` scope | The keys of every [feature flag](../core-concepts/feature-flags.md) that is on for `sub` in `org`, sorted. An empty list when none is; absent without the scope. |
 | `ent`, `ent_ver` | when configured | — | — | Claims-mode entitlements and their version. See [Entitlements & billing](../core-concepts/entitlements-and-billing.md). |
 | `cnf` | DPoP-bound | — | — | `{"jkt": …}`, the RFC 9449 key thumbprint. |
 | `auth_time`, `acr` | user grants with a recorded login | yes | — | When the person signed in, and the assurance class reached. On the access token for RFC 9470 step-up; see the notes below. |
@@ -74,6 +75,21 @@ somebody with less, without a second call. It is the
 }
 ```
 
+## `feature_flags` — the features that are on
+
+A client that requests the `feature_flags` scope gets, on the access token, the ID token
+and UserInfo, the sorted keys of every flag that is on for the subject in the bound
+organization: `"feature_flags": ["acme-beta", "new-dashboard"]`.
+
+- **Only with the scope**, and then **always** — an empty list says "nothing is on", where
+  an absent claim says "this token does not say".
+- **Freshness.** The tokens carry the flags as they were at minting; a refresh re-reads
+  them, and UserInfo reads them live. For a decision that must see a flip at once, ask the
+  host's evaluation endpoint instead of the token.
+- **A machine token** (`client_credentials`) is evaluated for its organization alone.
+
+The rules that decide are in [Feature flags](../core-concepts/feature-flags.md).
+
 ## `auth_time` and `acr` — the login behind the token
 
 A resource server that needs a recent or second-factor login reads these two claims and,
@@ -101,3 +117,5 @@ challenge. See [Require step-up authentication](../cookbook/require-step-up-auth
 A token-minting hook can add claims but can never set or overwrite `iss`, `sub`,
 `client_id`, `jti`, `scope`, `org`, `org_name`, `org_role`, `iat`, `exp`, `nbf`, `aud`,
 `cnf`, `ent`, `ent_ver`, `typ`, `roles`, `permissions`, `act`, `acr` or `auth_time`.
+`feature_flags` is the issuer's whenever the grant holds the `feature_flags` scope; a hook
+cannot change it then. Without the scope the name is free, as it was before 1.24.

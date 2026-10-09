@@ -87,6 +87,11 @@ enum WebhookEventType: string
     // GDPR Art. 17 (1.22).
     case UserErased = 'user.erased';
 
+    // Feature flags (1.24).
+    case FeatureFlagCreated = 'feature_flag.created';
+    case FeatureFlagUpdated = 'feature_flag.updated';
+    case FeatureFlagDeleted = 'feature_flag.deleted';
+
     /** A subscription to every catalogued event, present and future. */
     public const WILDCARD = '*';
 
@@ -179,6 +184,7 @@ enum WebhookEventType: string
             self::EntitlementSet, self::EntitlementUpdated, self::EntitlementRevoked => WebhookEventGroup::Entitlements,
             self::VaultGrantCreated, self::VaultGrantRevoked, self::VaultSecretRevoked => WebhookEventGroup::TokenVault,
             self::GovernanceAccessRevoked => WebhookEventGroup::Governance,
+            self::FeatureFlagCreated, self::FeatureFlagUpdated, self::FeatureFlagDeleted => WebhookEventGroup::FeatureFlags,
         };
     }
 
@@ -269,6 +275,9 @@ enum WebhookEventType: string
             self::VaultGrantRevoked => 'An app\'s grant to a token-vault secret was revoked. Payload: `secret_id`, `client_id`.',
             self::VaultSecretRevoked => 'A token-vault secret was revoked and can no longer be leased. Payload: `secret_id`, `provider`.',
             self::GovernanceAccessRevoked => 'An access review took a grant away when its campaign closed. Payload: `campaign_id`, `user_id`, `access_type`, `access_ref`.',
+            self::FeatureFlagCreated => 'A feature flag was defined in the environment. Payload: `id`, `key`, `enabled`, `default_value`, `rollout_percentage`.',
+            self::FeatureFlagUpdated => 'A feature flag\'s description, switch, default or targeting changed — who it is on for may have changed. Payload: `id`, `key`, `enabled`, `default_value`, `rollout_percentage`, `changed` (which of `description`, `enabled`, `default_value`, `targeting`).',
+            self::FeatureFlagDeleted => 'A feature flag was deleted; its key now evaluates to off. Payload: `id`, `key`.',
         };
     }
 
@@ -303,6 +312,9 @@ enum WebhookEventType: string
             self::VaultGrantRevoked => 'A token-vault grant was revoked',
             self::VaultSecretRevoked => 'A token-vault secret was revoked',
             self::GovernanceAccessRevoked => 'A governance review revoked access',
+            self::FeatureFlagCreated => 'A feature flag was created',
+            self::FeatureFlagUpdated => 'A feature flag was updated',
+            self::FeatureFlagDeleted => 'A feature flag was deleted',
             self::MembershipCreated => 'A member joined an organization',
             self::MembershipUpdated => 'A member\'s role changed',
             self::MembershipDeleted => 'A member left or was removed from an organization',

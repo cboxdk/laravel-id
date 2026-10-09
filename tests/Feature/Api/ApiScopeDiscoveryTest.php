@@ -59,5 +59,5 @@ it('advertises the protocol scopes plus the scopes any client here may hold', fu
 
     $this->getJson('/.well-known/openid-configuration')
         ->assertOk()
-        ->assertJsonPath('scopes_supported', ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups', 'tax:read']);
+        ->assertJsonPath('scopes_supported', ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups', 'feature_flags', 'tax:read']);
 });

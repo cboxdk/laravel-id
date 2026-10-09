@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
+use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -78,6 +79,8 @@ class TokenController
         private readonly AccessChecker $access,
         private readonly Memberships $memberships,
         private readonly SupportSessions $supportSessions,
+        // Trailing and optional so existing constructions keep compiling.
+        private readonly ?FeatureFlagClaim $featureFlags = null,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -590,6 +593,14 @@ class TokenController
             if ($rbac->roles !== []) {
                 $claims['groups'] = $rbac->roles;
             }
+        }
+
+        // Feature flags (1.24), for a relying party that authenticates the ID token: the
+        // same claim, under the same scope, as the access token. See FeatureFlagClaim.
+        $flags = ($this->featureFlags ?? app(FeatureFlagClaim::class))->for($grant->scopes, $grant->userId, $grant->organizationId);
+
+        if ($flags !== null) {
+            $claims[FeatureFlagClaim::CLAIM] = $flags;
         }
 
         // RFC 8693 §4.1: a support session's ID Token names who is really holding it, the

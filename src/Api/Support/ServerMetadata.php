@@ -47,6 +47,7 @@ class ServerMetadata
         ProtocolScope::OfflineAccess->value,
         ProtocolScope::Organizations->value,
         ProtocolScope::Groups->value,
+        ProtocolScope::FeatureFlags->value,
     ];
 
     /**
@@ -163,7 +164,7 @@ class ServerMetadata
             'claims_supported' => [
                 'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr',
                 'at_hash', 'sid', 'email', 'email_verified', 'name', 'org', 'org_name', 'org_role',
-                'roles', 'permissions', 'organizations', 'groups',
+                'roles', 'permissions', 'organizations', 'groups', 'feature_flags',
             ],
             // The authentication context class references this IdP asserts: aal1 (a
             // single factor) and aal2 (a second factor was used at login). Read from
