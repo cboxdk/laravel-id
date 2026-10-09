@@ -131,6 +131,14 @@ reason audited, never returned) so the vault is no enumeration oracle. Every sto
 rotation, revocation, grant and lease is audited with actor and purpose — never the
 value. Honest scope: a lease TTL is advisory. See [Security: token vault](token-vault.md).
 
+## Pipes (connected accounts)
+
+A person's connected third-party tokens are user-owned token-vault secrets, so they are
+sealed, audited on every read and erased with the person. The connect flow carries a
+constant-time `state` and PKCE; an app leases only with a grant on the pipe, and a refusal
+is uniform. Refresh is single-flight so a rotating refresh token is never spent twice.
+See [Security: Pipes](pipes.md).
+
 ## Erasure (GDPR Art. 17)
 
 `SubjectEraser` erases a person in one transaction — credentials, sessions, grants,

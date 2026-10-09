@@ -57,6 +57,10 @@ enum WebhookEventType: string
     case VaultGrantRevoked = 'vault.grant.revoked';
     case VaultSecretRevoked = 'vault.secret.revoked';
 
+    case PipeConnectionConnected = 'pipe.connection.connected';
+    case PipeConnectionNeedsReauth = 'pipe.connection.needs_reauth';
+    case PipeConnectionDisconnected = 'pipe.connection.disconnected';
+
     case GovernanceAccessRevoked = 'governance.access.revoked';
 
     // Tenancy lifecycle (1.19). The `membership.*` / `invitation.*` names supersede the
@@ -178,6 +182,8 @@ enum WebhookEventType: string
             self::ConnectionActivated => WebhookEventGroup::Connections,
             self::EntitlementSet, self::EntitlementUpdated, self::EntitlementRevoked => WebhookEventGroup::Entitlements,
             self::VaultGrantCreated, self::VaultGrantRevoked, self::VaultSecretRevoked => WebhookEventGroup::TokenVault,
+            self::PipeConnectionConnected, self::PipeConnectionNeedsReauth,
+            self::PipeConnectionDisconnected => WebhookEventGroup::Pipes,
             self::GovernanceAccessRevoked => WebhookEventGroup::Governance,
         };
     }
@@ -268,6 +274,9 @@ enum WebhookEventType: string
             self::VaultGrantCreated => 'An app was granted (or re-granted) leases of a token-vault secret. Payload: `secret_id`, `client_id`, `max_ttl_seconds` — never the credential.',
             self::VaultGrantRevoked => 'An app\'s grant to a token-vault secret was revoked. Payload: `secret_id`, `client_id`.',
             self::VaultSecretRevoked => 'A token-vault secret was revoked and can no longer be leased. Payload: `secret_id`, `provider`.',
+            self::PipeConnectionConnected => 'A person connected (or reconnected) their account at a third-party provider through a pipe. Payload: `connection_id`, `user_id`, `provider`, `scopes` — never a token.',
+            self::PipeConnectionNeedsReauth => 'A connected account stopped working: the provider refused its refresh token, or it expired with none. The person must connect again. Payload: `connection_id`, `user_id`, `provider`, `reason`.',
+            self::PipeConnectionDisconnected => 'A connected account was disconnected and its tokens revoked. Payload: `connection_id`, `user_id`, `provider`, `revoked_at_provider`.',
             self::GovernanceAccessRevoked => 'An access review took a grant away when its campaign closed. Payload: `campaign_id`, `user_id`, `access_type`, `access_ref`.',
         };
     }
@@ -302,6 +311,9 @@ enum WebhookEventType: string
             self::VaultGrantCreated => 'A token-vault grant was created',
             self::VaultGrantRevoked => 'A token-vault grant was revoked',
             self::VaultSecretRevoked => 'A token-vault secret was revoked',
+            self::PipeConnectionConnected => 'An account was connected through a pipe',
+            self::PipeConnectionNeedsReauth => 'A connected account needs reconnecting',
+            self::PipeConnectionDisconnected => 'A connected account was disconnected',
             self::GovernanceAccessRevoked => 'A governance review revoked access',
             self::MembershipCreated => 'A member joined an organization',
             self::MembershipUpdated => 'A member\'s role changed',

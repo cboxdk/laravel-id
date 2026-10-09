@@ -16,6 +16,7 @@ use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Migration\Models\LegacyLoginDeclarationRecord;
+use Cbox\Id\Pipes\Models\Pipe;
 use Cbox\Id\Platform\Contracts\OperatorMfa;
 use Cbox\Id\Provisioning\Models\ProvisioningConnection;
 use Cbox\Id\TokenVault\Contracts\SecretVault;
@@ -67,6 +68,7 @@ it('registers every column the package seals', function (): void {
         'webhook_endpoints.secret_encrypted',
         'external_action_endpoints.secret_encrypted',
         'legacy_login_declarations.secret_encrypted',
+        'pipes.client_secret_encrypted',
     ]);
 });
 
@@ -89,6 +91,7 @@ it('describes the same context each owning model seals with', function (): void 
         new ProvisioningConnection,
         new ExternalActionEndpoint,
         new LegacyLoginDeclarationRecord,
+        new Pipe,
     ] as $model) {
         $model->forceFill(['id' => $id]);
 
