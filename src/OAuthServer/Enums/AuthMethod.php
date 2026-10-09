@@ -36,6 +36,9 @@ enum AuthMethod: string
     /** Vendor: a WebAuthn credential. The registry has nothing for this. */
     case Passkey = 'passkey';
 
+    /** RFC 8176: confirmation by a text message to the user's registered number. */
+    case Sms = 'sms';
+
     /**
      * The methods a passkey login used.
      *
@@ -77,5 +80,20 @@ enum AuthMethod: string
     public static function forRecoveryCode(): array
     {
         return [self::Password->value, self::MultiFactor->value];
+    }
+
+    /**
+     * The methods a password followed by a texted code used.
+     *
+     * `sms` rather than `otp`, deliberately: the registry has a value for exactly this, and
+     * an RP that treats `otp` as "an authenticator app" must be able to tell the weaker
+     * SIM-borne code apart and refuse it if it wants to. `mfa` is still true — it is a
+     * second factor — so the session reaches `aal2` like any other.
+     *
+     * @return list<string>
+     */
+    public static function forSmsCode(): array
+    {
+        return [self::Password->value, self::Sms->value, self::MultiFactor->value];
     }
 }

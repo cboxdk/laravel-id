@@ -29,16 +29,16 @@ use Illuminate\Contracts\Container\Container;
  * phone book. Pumping shows up as a pattern on these rows (a run of refusals for one
  * country, many distinct numbers from one IP) without the rows holding the numbers.
  *
- * The sender is resolved from the container AT SEND TIME rather than injected, so a test
- * that swaps in a fake after the OTP channel registry has cached its channels still
- * catches every message.
+ * The sender, the guard and the composer are resolved from the container AT SEND TIME
+ * rather than injected. The OTP channel registry builds its channels once and keeps them,
+ * so anything captured here would outlive a changed binding: a test's fake sender, a
+ * host's own guard bound after boot, a re-read config. Resolving per send costs nothing
+ * next to an HTTP call to a provider.
  */
 class SmsDispatcher
 {
     public function __construct(
         private readonly Container $container,
-        private readonly SmsSendGuard $guard,
-        private readonly SmsMessageComposer $composer,
         private readonly AuditLog $audit,
     ) {}
 
@@ -58,7 +58,7 @@ class SmsDispatcher
         ];
 
         try {
-            $this->guard->admit($to, $delivery->ip, $allowedCountries);
+            $this->container->make(SmsSendGuard::class)->admit($to, $delivery->ip, $allowedCountries);
         } catch (SmsSendRefused $refused) {
             $this->record('sms.refused', $delivery, [...$context, 'reason' => $refused->reason->value]);
 
@@ -66,7 +66,7 @@ class SmsDispatcher
         }
 
         $sender = $this->container->make(SmsSender::class);
-        $body = $this->composer->compose($delivery->code, $delivery->ttlMinutes(), $delivery->locale);
+        $body = $this->container->make(SmsMessageComposer::class)->compose($delivery->code, $delivery->ttlMinutes(), $delivery->locale);
 
         try {
             $receipt = $sender->send(new SmsMessage($to, $body));

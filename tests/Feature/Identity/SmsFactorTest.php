@@ -21,6 +21,8 @@ use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
 use Cbox\Id\Kernel\Crypto\Exceptions\DecryptionFailed;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
+use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
+use Cbox\Id\OAuthServer\Enums\AuthMethod;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Otp\Contracts\OtpService;
@@ -429,4 +431,13 @@ it('normalises the stored country list', function (): void {
     expect(app(SmsFactorPolicies::class)->forEnvironment()->allowedCountries)->toBe(['DK', 'SE'])
         ->and(app(SmsFactorPolicies::class)->forEnvironment()->allowsCountry('dk'))->toBeTrue()
         ->and((new SmsFactorPolicy(false, ['DK']))->allowsCountry('DK'))->toBeFalse();
+});
+
+it('names a texted second factor in the amr, apart from an authenticator code', function (): void {
+    $amr = AuthMethod::forSmsCode();
+
+    expect($amr)->toBe(['pwd', 'sms', 'mfa'])
+        ->and($amr)->not->toContain('otp')
+        ->and(AuthenticationContextClass::forAmr($amr))
+        ->toBe(AuthenticationContextClass::Aal2);
 });
