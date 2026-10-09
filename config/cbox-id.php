@@ -857,8 +857,9 @@ return [
      * `channels` is the DENY-BY-DEFAULT sender registry (`key => OtpChannel class`).
      * A key with no registered sender is refused, never a silent no-op. The package
      * ships `email` (framework mailer) and `log` (DEV-ONLY: writes the code to the
-     * log). SMS is a CONTRACT ONLY — register your provider's channel here (see
-     * docs/cookbook/add-an-sms-otp-channel.md); this package ships no SMS SDK.
+     * log). SMS ships as `Cbox\Id\Otp\Channels\SmsOtpChannel` over the `sms` block
+     * below — map it here to issue codes by text (see
+     * docs/cookbook/add-an-sms-otp-channel.md). No provider SDK is a dependency.
      *
      * `issue` throttles issuance: `max_per_window` per recipient+purpose+IP, and
      * `per_recipient_max` per recipient ACROSS all purposes and IPs — the latter is
@@ -889,8 +890,8 @@ return [
             'email' => EmailOtpChannel::class,
             // Local development only — logs the plaintext code. Never enable in prod.
             // 'log' => Cbox\Id\Otp\Channels\LogOtpChannel::class,
-            // Register your own channel wrapping an SMS provider (Twilio, etc.):
-            // 'sms' => App\Otp\SmsOtpChannel::class,
+            // Text messages through the `sms` block below (provider, toll-fraud caps):
+            // 'sms' => Cbox\Id\Otp\Channels\SmsOtpChannel::class,
         ],
 
         'email' => [
@@ -898,6 +899,87 @@ return [
             'from' => [
                 'address' => env('CBOX_ID_OTP_EMAIL_FROM_ADDRESS'),
                 'name' => env('CBOX_ID_OTP_EMAIL_FROM_NAME'),
+            ],
+        ],
+    ],
+
+    /*
+     * Text messages (src/Otp/Sms/) — one-time codes by SMS, for `SmsOtpChannel` and the
+     * SMS second factor. SMS costs money per message, which makes every "text me a code"
+     * form a target for SMS PUMPING (toll fraud): an attacker drives it at premium-rate
+     * ranges and shares the revenue. Every send passes the guard below first.
+     *
+     * `driver`: `twilio`, `messagebird` (legacy REST API), `bird` (Channels API),
+     * `46elks`, `log` (DEV-ONLY: writes the message, code included, to the log — refused
+     * when APP_ENV is production) or `array` (tests). A class implementing
+     * `Otp\Sms\Contracts\SmsSender` is accepted as a driver name for your own gateway.
+     *
+     * `allowed_countries`: ISO 3166-1 alpha-2 codes the DEPLOYMENT will text, comma
+     * separated in the env. Empty means no deployment-level restriction — then only an
+     * environment's own SMS policy narrows it. Set it. Non-geographic ranges (+881, +882,
+     * +979, …) are refused regardless: they have no country to allow.
+     *
+     * `limits`: `cooldown_seconds` between texts to one number; `per_number_per_day` and
+     * `per_ip_per_hour` per environment; `per_environment_per_day` so one tenant cannot
+     * spend the deployment's budget; `daily_cap` for the whole deployment — the circuit
+     * breaker that bounds the worst day's bill. 0 disables a limit. The counters live in
+     * the cache store, which must be shared between replicas.
+     *
+     * `messages`: per-locale overrides of the built-in templates (en, da, de, fr, nb, sv)
+     * with `:code`, `:app`, `:minutes`. Keep them GSM-7 and under 160 characters, or each
+     * text is billed as two or more.
+     */
+    'sms' => [
+        'driver' => env('CBOX_ID_SMS_DRIVER', 'log'),
+        'app_name' => env('CBOX_ID_SMS_APP_NAME', env('APP_NAME', 'Cbox ID')),
+        'timeout_seconds' => env('CBOX_ID_SMS_TIMEOUT', 10),
+
+        'allowed_countries' => array_values(array_filter(array_map(
+            static fn (string $country): string => strtoupper(trim($country)),
+            explode(',', (string) env('CBOX_ID_SMS_ALLOWED_COUNTRIES', '')),
+        ))),
+
+        'limits' => [
+            'cooldown_seconds' => env('CBOX_ID_SMS_COOLDOWN_SECONDS', 30),
+            'per_number_per_day' => env('CBOX_ID_SMS_PER_NUMBER_PER_DAY', 10),
+            'per_ip_per_hour' => env('CBOX_ID_SMS_PER_IP_PER_HOUR', 10),
+            'per_environment_per_day' => env('CBOX_ID_SMS_PER_ENVIRONMENT_PER_DAY', 1000),
+            'daily_cap' => env('CBOX_ID_SMS_DAILY_CAP', 5000),
+        ],
+
+        'messages' => [
+            // 'en' => ':code is your :app code. Valid for :minutes min.',
+        ],
+
+        'drivers' => [
+            'twilio' => [
+                'account_sid' => env('TWILIO_ACCOUNT_SID'),
+                'auth_token' => env('TWILIO_AUTH_TOKEN'),
+                // Optional: authenticate with an API key instead of the auth token.
+                'api_key' => env('TWILIO_API_KEY'),
+                'api_secret' => env('TWILIO_API_SECRET'),
+                // One of the two. A Messaging Service is preferred.
+                'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
+                'from' => env('TWILIO_FROM'),
+                'base_url' => env('TWILIO_BASE_URL'),
+            ],
+            'messagebird' => [
+                'access_key' => env('MESSAGEBIRD_ACCESS_KEY'),
+                'originator' => env('MESSAGEBIRD_ORIGINATOR'),
+                'base_url' => env('MESSAGEBIRD_BASE_URL'),
+            ],
+            'bird' => [
+                'access_key' => env('BIRD_ACCESS_KEY'),
+                'workspace_id' => env('BIRD_WORKSPACE_ID'),
+                'channel_id' => env('BIRD_CHANNEL_ID'),
+                'base_url' => env('BIRD_BASE_URL'),
+            ],
+            '46elks' => [
+                'username' => env('ELKS_API_USERNAME'),
+                'password' => env('ELKS_API_PASSWORD'),
+                'from' => env('ELKS_FROM'),
+                'dry_run' => env('ELKS_DRY_RUN', false),
+                'base_url' => env('ELKS_BASE_URL'),
             ],
         ],
     ],

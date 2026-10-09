@@ -19,10 +19,13 @@ use Cbox\Id\Identity\Contracts\Passkeys;
 use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
 use Cbox\Id\Identity\Contracts\PasswordReset;
+use Cbox\Id\Identity\Contracts\PrivilegedSubjects;
 use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\SignedInSession;
 use Cbox\Id\Identity\Contracts\SignedInSubject;
+use Cbox\Id\Identity\Contracts\SmsFactorPolicies;
+use Cbox\Id\Identity\Contracts\SmsFactors;
 use Cbox\Id\Identity\Contracts\SubjectEraser;
 use Cbox\Id\Identity\Contracts\SubjectPseudonymiser;
 use Cbox\Id\Identity\Contracts\Subjects;
@@ -44,6 +47,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Crypto\ValueObjects\SealedColumn;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Otp\Contracts\OtpChannels;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\ServiceProvider;
@@ -143,6 +147,18 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(PasswordPolicyGuard::class, PasswordPolicyEnforcer::class);
         $this->app->singleton(PasswordExpiry::class, DatabasePasswordExpiry::class);
         $this->app->singleton(MfaMandate::class, DatabaseMfaMandate::class);
+
+        // The SMS second factor: off per environment until its policy turns it on. Its codes
+        // go out through their own OTP channel, addressed to the factor rather than to a
+        // number, so the OTP tables never hold the number (see SmsFactorNumbers).
+        $this->app->singleton(SmsFactorPolicies::class, DatabaseSmsFactorPolicies::class);
+        $this->app->singleton(PrivilegedSubjects::class, MembershipPrivilegedSubjects::class);
+        $this->app->singleton(SmsFactors::class, SmsFactorService::class);
+        $this->callAfterResolving(OtpChannels::class, static function (OtpChannels $channels, Application $app): void {
+            if (! $channels->has(SmsFactors::CHANNEL)) {
+                $channels->register(SmsFactors::CHANNEL, $app->make(SmsFactorOtpChannel::class));
+            }
+        });
         $this->app->singleton(LoginAttempts::class, DatabaseLoginAttempts::class);
         // Inert by default: a breach lookup is a network call against a service the HOST
         // operates, so the library ships a do-nothing default rather than pretending to

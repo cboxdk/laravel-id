@@ -192,8 +192,9 @@ $result = app(OtpService::class)->verify($challenge->id, $code, request()->ip())
 $result->verified; // true once, then single-use
 ```
 
-Email works out of the box. To offer "text me a code", wire your SMS provider
-behind the channel contract: [Add an SMS OTP channel](add-an-sms-otp-channel.md).
+Email works out of the box. SMS ships too — pick a provider and map the channel:
+[Send one-time codes by SMS](add-an-sms-otp-channel.md). To use a phone number as a
+second factor: [Offer SMS as a second factor](offer-sms-as-a-second-factor.md).
 
 ## Vault a credential for an AI agent
 

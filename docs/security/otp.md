@@ -71,9 +71,22 @@ never placed in an exception message.
 - **The code's entropy is not the control.** Do not rely on length; rely on the TTL
   + attempt cap + verify throttle. Those are the invariants to protect in review.
 - **SMS is only as secure as SIM-swap resistance.** SMS OTPs can be intercepted via
-  SIM-swap, SS7, or device malware. Prefer a phishing-resistant primary factor
-  (passkey / authenticator TOTP) and treat SMS as step-up or recovery. This package
-  delivers the code; it cannot make the SMS bearer channel trustworthy.
+  SIM-swap, SS7, or device malware, and relayed by a phishing page within their
+  lifetime. Prefer a phishing-resistant primary factor (passkey / authenticator TOTP)
+  and treat SMS as step-up or recovery. This package delivers the code; it cannot make
+  the SMS bearer channel trustworthy. The SMS second factor is therefore OFF per
+  environment until its policy turns it on, admits only listed countries, and by
+  default cannot be an administrator's only factor.
+- **SMS pumping (toll fraud).** A public "text me a code" form is a revenue source for
+  whoever terminates premium-rate ranges. Every text passes `SmsSendGuard` first:
+  country allow-list (non-geographic ranges always refused), per-number cooldown and
+  daily cap, per-IP cap, per-environment and deployment daily caps — counted only when
+  all pass. Each send, refusal and provider failure is audited with the number masked.
+  The counters live in the cache, which must be shared between replicas; provider-side
+  spend limits remain the backstop.
+- **The SMS factor's number is sealed.** It sits in `mfa_factors.secret_encrypted`
+  under the person's AEAD context; its OTP challenges name the factor id, not the
+  number, so neither `otp_challenges` nor the audit log holds it.
 - **Email OTP inherits email's trust.** A code emailed to a compromised mailbox is
   compromised. Email OTP is a *possession-of-inbox* check, not a strong factor.
 - **This is a primitive.** Whether an OTP satisfies a given step-up policy is the
