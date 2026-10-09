@@ -101,6 +101,9 @@ rate-limited on both issue (anti-bomb / anti-SMS-cost) and verify (anti-brute-fo
 Verification is constant-time on every path — including the miss — and returns a
 uniform result, so there is no enumeration or timing oracle. Honest scope: SMS is
 only as secure as SIM-swap resistance; prefer a phishing-resistant primary factor.
+Every text passes a toll-fraud guard (country allow-list, cooldown, per-number,
+per-IP and daily caps) and is audited with the number masked; the SMS second factor
+is off per environment until its policy turns it on.
 See [Security: OTP](otp.md).
 
 ## Password policy

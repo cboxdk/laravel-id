@@ -17,6 +17,21 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **SMS one-time codes.** `Otp\Channels\SmsOtpChannel` texts a code through the new `Otp\Sms\Contracts\SmsSender` (`cbox-id.sms.driver`): `twilio` (Programmable Messaging; Messaging Service or From; auth token or API key), `messagebird` (legacy REST API), `bird` (Channels API), `46elks` (with `dry_run`), `log` (development; refuses when `APP_ENV=production`) and `array` (tests), or a host class implementing `SmsSender`. HTTP through Laravel's client with bounded timeouts and no retries — no provider SDK is a dependency. `SmsSenderFactory`, `SmsDeliveryFailed` (names the provider and status, never the number or body). Map it under `cbox-id.otp.channels` to use it; nothing changes until you do.
+- **E.164 normalisation** without a numbering-plan dependency: `Otp\Sms\PhoneNumberNormaliser` and the `PhoneNumber` value object (`e164()`, `masked()` as `+45 ******78`, `country`). Accepts common formatting, `00` prefixes, `(0)` trunk notation, and national format with a default country; assigns a country from `CallingCodes` (North American area codes that are not the US, Kazakhstan inside `+7`); refuses non-geographic ranges (`+881`, `+882`, `+883`, `+979`, …), letters, extensions and lengths outside the plan (`InvalidPhoneNumber`).
+- **Toll-fraud guard.** Every text passes `Otp\Sms\Contracts\SmsSendGuard` (`RateLimitedSmsSendGuard`) before the provider is called: deployment country allow-list (`cbox-id.sms.allowed_countries`) plus a caller's narrower list, per-number cooldown, per-number daily cap, per-IP hourly cap, per-environment daily cap and a deployment-wide daily circuit breaker (`cbox-id.sms.limits.*`). Nothing is counted when it refuses. `SmsSendRefused` carries a `SmsRefusalReason` and `retryAfterSeconds`.
+- **`Otp\Sms\SmsDispatcher`** — the single path for coded texts: guard, compose, send, and audit `sms.sent` / `sms.refused` / `sms.failed` with the number masked, the country, the purpose and the IP. Never the number, never the code.
+- **Localised SMS text.** `SmsMessageComposer` ships `en`, `da`, `de`, `fr`, `nb`, `sv`, code first, each a single GSM-7 segment at the worst case; `cbox-id.sms.messages` overrides per locale. `OtpDelivery` gains trailing optional `ip` and `locale`, which `DatabaseOtpService` fills from the issue call and the current locale.
+- **SMS as a second factor.** `Identity\Contracts\SmsFactors` (`SmsFactorService`): `beginEnrolment()` / `confirmEnrolment()`, `sendChallenge()` / `verifyChallenge()`, `isEnrolled()`, `isUsable()`, `needsStrongerFactor()`, `details()` and `remove()` (audited `user.mfa_sms_removed` with the actor). The number is sealed in `mfa_factors.secret_encrypted` (type `sms`, the person's AEAD context, so rewrap and erasure cover it); its OTP challenges are addressed to `mfa-sms:{factor id}` through the `sms_factor` channel (`SmsFactorOtpChannel`), so neither `otp_challenges` nor the audit log holds it. Code length, lifetime, attempts and verify throttles are the OTP module's. Recovery codes are unaffected. `SmsFactorRefused` / `SmsFactorRefusal`, `SmsCodeSent`, `SmsFactorDetails`.
+- **Per-environment SMS policy**, off by default: `Identity\Contracts\SmsFactorPolicies` (`DatabaseSmsFactorPolicies`, `sms_factor_policies` table, migration) storing `SmsFactorPolicy` — `enabled`, `allowedCountries` (an empty list admits none; re-checked at every send) and `privilegedNeedStrongerFactor` (default on: an administrator may add SMS only beside TOTP or a passkey). `Identity\Contracts\PrivilegedSubjects` decides who is an administrator (default `MembershipPrivilegedSubjects`: an owner or admin of any organization).
+- `InteractsWithSms::fakeSms()` test helper; `ArraySmsSender` with `assertSent()`, `latestCode()`, `failNext()`.
+
+### Changed
+
+- `DatabaseMfaMandate` counts a usable SMS factor as a second factor, and asks an administrator whose only factor is SMS to enrol a stronger one when the policy says SMS cannot stand alone (even where MFA is optional). The SMS dependency is a trailing optional constructor argument. No behaviour changes in an environment that has not turned SMS on.
+
 ## [1.23.1] - 2026-10-08
 
 ### Fixed

@@ -21,6 +21,7 @@ use Cbox\Id\Kernel\Tenancy\Testing\InteractsWithTenancy;
 use Cbox\Id\OAuthServer\Testing\InteractsWithOAuth;
 use Cbox\Id\Organization\Testing\InteractsWithAccess;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
+use Cbox\Id\Otp\Sms\Testing\InteractsWithSms;
 use Cbox\Id\Otp\Testing\InteractsWithOtp;
 use Cbox\Id\Provisioning\Testing\InteractsWithProvisioning;
 use Cbox\Id\SamlIdp\Testing\InteractsWithSamlIdp;
@@ -53,6 +54,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithOtp;
     use InteractsWithProvisioning;
     use InteractsWithSamlIdp;
+    use InteractsWithSms;
     use InteractsWithTenancy;
     use InteractsWithTokenVault;
     use InteractsWithWebhooks;

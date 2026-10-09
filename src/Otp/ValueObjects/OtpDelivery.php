@@ -12,6 +12,11 @@ use DateTimeImmutable;
  *
  * This is the ONLY place the plaintext code travels after generation; it is passed
  * to the channel and then discarded. The channel must not persist or log it.
+ *
+ * `$ip` is the requester's address when the issuer knew it (an SMS channel feeds it to
+ * its per-IP cap) and `$locale` the language the request was served in, so a channel can
+ * write the message in the recipient's language. Both are optional and trailing, so a
+ * host constructing deliveries itself is unaffected.
  */
 readonly class OtpDelivery
 {
@@ -23,6 +28,8 @@ readonly class OtpDelivery
         public string $channel,
         public DateTimeImmutable $expiresAt,
         public int $ttlSeconds,
+        public ?string $ip = null,
+        public ?string $locale = null,
     ) {}
 
     /**

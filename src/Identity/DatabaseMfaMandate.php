@@ -7,6 +7,7 @@ namespace Cbox\Id\Identity;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\MfaMandate;
+use Cbox\Id\Identity\Contracts\SmsFactors;
 use Cbox\Id\Identity\Enums\MfaRequirement;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Organization\Contracts\Memberships;
@@ -14,6 +15,13 @@ use Cbox\Id\Organization\Contracts\Memberships;
 /**
  * The default {@see MfaMandate}: the effective policy's `mfa` field against the
  * subject's enrolled factors.
+ *
+ * An SMS factor counts only while the environment's SMS policy accepts it — and never as
+ * an administrator's ONLY factor when the policy says so: such a person is asked to enrol
+ * an authenticator app or a passkey even where the second factor is otherwise optional,
+ * because that is what "SMS cannot be an administrator's only factor" means once they
+ * already hold it. The SMS dependency is optional so a host constructing this class
+ * itself is unaffected.
  */
 class DatabaseMfaMandate implements MfaMandate
 {
@@ -21,15 +29,26 @@ class DatabaseMfaMandate implements MfaMandate
         private readonly AuthPolicies $policies,
         private readonly Memberships $memberships,
         private readonly Mfa $mfa,
+        private readonly ?SmsFactors $sms = null,
     ) {}
 
     public function requiresEnrolment(string $subjectId, ?string $organizationId = null): bool
     {
-        if ($this->effectiveRequirement($subjectId, $organizationId) !== MfaRequirement::Required) {
+        $requirement = $this->effectiveRequirement($subjectId, $organizationId);
+
+        if ($requirement !== MfaRequirement::Off && $this->sms?->needsStrongerFactor($subjectId) === true) {
+            return true;
+        }
+
+        if ($requirement !== MfaRequirement::Required) {
             return false;
         }
 
         if ($this->mfa->hasConfirmedTotp($subjectId)) {
+            return false;
+        }
+
+        if ($this->sms?->isUsable($subjectId) === true) {
             return false;
         }
 

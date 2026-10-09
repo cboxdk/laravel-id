@@ -14,6 +14,13 @@ use Cbox\Id\Otp\Contracts\OtpChannels;
 use Cbox\Id\Otp\Contracts\OtpHasher;
 use Cbox\Id\Otp\Contracts\OtpService;
 use Cbox\Id\Otp\Erasure\OtpChallengesErasureStep;
+use Cbox\Id\Otp\Sms\Contracts\SmsSender;
+use Cbox\Id\Otp\Sms\Contracts\SmsSendGuard;
+use Cbox\Id\Otp\Sms\PhoneNumberNormaliser;
+use Cbox\Id\Otp\Sms\RateLimitedSmsSendGuard;
+use Cbox\Id\Otp\Sms\SmsDispatcher;
+use Cbox\Id\Otp\Sms\SmsMessageComposer;
+use Cbox\Id\Otp\Sms\SmsSenderFactory;
 use Cbox\Id\Support\PackageConfigMerger;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Foundation\Application;
@@ -64,6 +71,8 @@ class OtpServiceProvider extends ServiceProvider
             );
         });
 
+        $this->registerSms();
+
         $this->app->singleton(OtpService::class, function (Application $app): OtpService {
             return new DatabaseOtpService(
                 $app->make(OtpChannels::class),
@@ -81,6 +90,57 @@ class OtpServiceProvider extends ServiceProvider
                 $this->intConfig('cbox-id.otp.verify.window_seconds', 900),
             );
         });
+    }
+
+    /**
+     * Text messages: the provider driver, the toll-fraud guard in front of it, the
+     * localised message, and the dispatcher that ties them together and audits each send.
+     * Nothing here touches a provider or reads a credential until the first text is sent.
+     */
+    private function registerSms(): void
+    {
+        $this->app->singleton(PhoneNumberNormaliser::class);
+        $this->app->singleton(SmsSenderFactory::class);
+
+        $this->app->singleton(SmsSender::class, static function (Application $app): SmsSender {
+            $driver = config('cbox-id.sms.driver');
+
+            return $app->make(SmsSenderFactory::class)->make(is_string($driver) && $driver !== '' ? $driver : 'log');
+        });
+
+        $this->app->singleton(SmsSendGuard::class, function (Application $app): SmsSendGuard {
+            $countries = config('cbox-id.sms.allowed_countries');
+
+            return new RateLimitedSmsSendGuard(
+                $app->make(RateLimiter::class),
+                is_array($countries) ? array_values(array_filter(array_map(
+                    static fn (mixed $country): string => is_string($country) ? strtoupper(trim($country)) : '',
+                    $countries,
+                ))) : [],
+                $this->intConfig('cbox-id.sms.limits.cooldown_seconds', 30),
+                $this->intConfig('cbox-id.sms.limits.per_number_per_day', 10),
+                $this->intConfig('cbox-id.sms.limits.per_ip_per_hour', 10),
+                $this->intConfig('cbox-id.sms.limits.per_environment_per_day', 1000),
+                $this->intConfig('cbox-id.sms.limits.daily_cap', 5000),
+            );
+        });
+
+        $this->app->bind(SmsMessageComposer::class, static function (): SmsMessageComposer {
+            $name = config('cbox-id.sms.app_name');
+            $messages = config('cbox-id.sms.messages');
+
+            $overrides = [];
+
+            foreach (is_array($messages) ? $messages : [] as $locale => $template) {
+                if (is_string($locale) && is_string($template) && $template !== '') {
+                    $overrides[strtolower(str_replace('-', '_', $locale))] = $template;
+                }
+            }
+
+            return new SmsMessageComposer(is_string($name) && $name !== '' ? $name : 'Cbox ID', $overrides);
+        });
+
+        $this->app->singleton(SmsDispatcher::class);
     }
 
     /**

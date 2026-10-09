@@ -57,7 +57,7 @@ half are graded **Host-supplied** so you can see exactly what you still have to 
 | **SCIM 2.0 provisioning server** | Users and Groups CRUD, PATCH, filtering, pagination, Enterprise User extension, full discovery. No sorting, no ETags, no `/Bulk`, no `/Me`. |
 | **Outbound provisioning** | A generic SCIM 2.0 client with retries, circuit breaker and SSRF guard. **Users only — no group push**, and no vendor-specific connectors. |
 | **Directory sync (inbound)** | SCIM push, plus Google Workspace and Microsoft Entra pull connectors. Deprovision revokes sessions immediately. |
-| **Authentication factors** | Passwords with a real policy engine, TOTP, WebAuthn/passkeys, recovery codes, magic links, email OTP. No SMS channel ships; breach screening is contract-only. |
+| **Authentication factors** | Passwords with a real policy engine, TOTP, WebAuthn/passkeys, recovery codes, magic links, email and SMS OTP, and SMS as an opt-in second factor. Breach screening is contract-only. |
 | **Authorization** | RBAC scoped to the organization hierarchy, plus a relationship-based (ReBAC) engine with real graph traversal, plus billing-fed entitlements — surfaced together over `POST /oauth/decisions`. No wildcard permissions, no role-inherits-role. |
 | **Governance** | Access-certification campaigns and Segregation-of-Duties policies over roles and memberships. Entitlements and ReBAC tuples are out of scope for now. |
 | **Audit** | Append-only SHA-256 hash chain with signed checkpoints, and outbound streaming to Splunk HEC, Elastic ECS, GELF, CEF or generic JSON — all over HTTP. |

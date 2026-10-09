@@ -95,13 +95,19 @@ of these structural:
   *step-up*/recovery convenience, and prefer a phishing-resistant factor (a
   passkey, or authenticator-app TOTP) as the primary. This package delivers the
   code; it cannot make the SMS channel itself trustworthy.
+- **SMS costs money per message.** The shipped `SmsOtpChannel` puts every send
+  through a toll-fraud guard (country allow-list, cooldown, per-number, per-IP,
+  per-environment and deployment caps) — see
+  [Send one-time codes by SMS](../cookbook/add-an-sms-otp-channel.md).
 - **This is a primitive, not a policy.** Whether an emailed code counts as a
   sufficient second factor for a given action is the host's decision.
 
 ## Where to go next
 
-- [Add an SMS OTP channel](../cookbook/add-an-sms-otp-channel.md) — wire your
-  provider behind the contract.
+- [Send one-time codes by SMS](../cookbook/add-an-sms-otp-channel.md) — the
+  shipped SMS channel, its providers and its toll-fraud controls.
+- [Offer SMS as a second factor](../cookbook/offer-sms-as-a-second-factor.md) —
+  enrol a phone number, challenge with it, keep it sealed.
 - [Custom OTP channel](../extension-points/custom-otp-channel.md) — the extension
   point in detail.
 - [Security: OTP](../security/otp.md) — the threat model and crypto rationale.
