@@ -25,6 +25,7 @@ use Cbox\Id\Organization\Testing\InteractsWithAccess;
 use Cbox\Id\Organization\Testing\InteractsWithOrganizations;
 use Cbox\Id\Otp\Sms\Testing\InteractsWithSms;
 use Cbox\Id\Otp\Testing\InteractsWithOtp;
+use Cbox\Id\Pipes\Testing\InteractsWithPipes;
 use Cbox\Id\Provisioning\Testing\InteractsWithProvisioning;
 use Cbox\Id\SamlIdp\Testing\InteractsWithSamlIdp;
 use Cbox\Id\TokenVault\Testing\InteractsWithTokenVault;
@@ -56,6 +57,7 @@ abstract class TestCase extends Orchestra
     use InteractsWithOAuth;
     use InteractsWithOrganizations;
     use InteractsWithOtp;
+    use InteractsWithPipes;
     use InteractsWithProvisioning;
     use InteractsWithSamlIdp;
     use InteractsWithSms;

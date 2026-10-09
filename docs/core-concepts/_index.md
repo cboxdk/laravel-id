@@ -59,6 +59,9 @@ How the platform is put together and the ideas you build against:
   named organizations or a stable percentage, delivered in the `feature_flags` claim.
 - **[AI token vault](token-vault.md)** — seal downstream third-party credentials
   and broker short-lived, deny-by-default leased access to autonomous / AI agents.
+- **[Pipes (connected accounts)](pipes.md)** — people connect their own GitHub,
+  Google, Slack or Salesforce account; tokens are vaulted, refreshed and leased to the
+  apps you authorise.
 - **[OAuth clients (apps)](oauth-clients.md)** — registering apps, overlapping secret
   rotation, per-app access-token lifetimes, grants, blueprints, and the lifecycle the
   registry audits for you.

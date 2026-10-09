@@ -204,6 +204,12 @@ call — the agent never holds the long-lived secret. See the full recipe:
 to approve a high-risk agent action first, see
 [Approve agent actions with CIBA](approve-agent-actions-with-ciba.md).
 
+## Call a third-party API as a signed-in person
+
+Let a person connect their GitHub (or Google, Slack, Salesforce…) account and lease a
+fresh token from your app whenever you call that API. See the full recipe:
+[Connect a person's third-party account](connect-a-third-party-account.md).
+
 ## Require a person's approval for one action
 
 Hold a sensitive change a key or agent asked for until its owner approves it on their

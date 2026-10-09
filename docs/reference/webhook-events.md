@@ -168,6 +168,14 @@ own events can be subscribed to as well.
 | `vault.grant.revoked` | current | An app's grant to a token-vault secret was revoked. Payload: `secret_id`, `client_id`. |
 | `vault.secret.revoked` | current | A token-vault secret was revoked and can no longer be leased. Payload: `secret_id`, `provider`. |
 
+### Pipes (connected accounts)
+
+| Event | Status | Description |
+|---|---|---|
+| `pipe.connection.connected` | current | A person connected (or reconnected) their account at a third-party provider through a pipe. Payload: `connection_id`, `user_id`, `provider`, `scopes` — never a token. |
+| `pipe.connection.needs_reauth` | current | A connected account stopped working: the provider refused its refresh token, or it expired with none. The person must connect again. Payload: `connection_id`, `user_id`, `provider`, `reason`. |
+| `pipe.connection.disconnected` | current | A connected account was disconnected and its tokens revoked. Payload: `connection_id`, `user_id`, `provider`, `revoked_at_provider`. |
+
 ### Access governance
 
 | Event | Status | Description |

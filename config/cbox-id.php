@@ -1213,6 +1213,36 @@ return [
         'max_rules' => env('CBOX_ID_FEATURE_FLAGS_MAX_RULES', 1000),
     ],
 
+    /*
+     * Pipes (src/Pipes/) — people connect their own third-party accounts (GitHub,
+     * Google, Microsoft 365, Slack, Salesforce, HubSpot, Linear, Notion) over OAuth 2.0
+     * authorization code + PKCE, and the environment's authorised apps lease fresh
+     * access tokens for them. The tokens are user-owned token-vault secrets.
+     *
+     * `schedule` registers `cbox-id:pipes:refresh` every five minutes. It refreshes
+     * connections whose access token expires within `refresh_ahead_seconds`, at most
+     * `refresh_batch` per run. A lease also refreshes on its own when the token expires
+     * within `lease_refresh_skew_seconds`, so the sweep is latency, not correctness.
+     *
+     * A refresh is single-flight: it claims the connection for `refresh_claim_seconds`
+     * (a claim held by a process that died lapses after that), and a lease that finds
+     * another process refreshing waits up to `refresh_wait_milliseconds` for it.
+     *
+     * `verify_url` (SSRF guard) pins every call to the provider's resolved addresses
+     * and refuses private ranges. The endpoints come from the catalogue, but Microsoft's
+     * tenant and Salesforce's domain are an administrator's input. Keep it on.
+     */
+    'pipes' => [
+        'schedule' => env('CBOX_ID_PIPES_SCHEDULE', true),
+        'refresh_ahead_seconds' => env('CBOX_ID_PIPES_REFRESH_AHEAD', 600),
+        'refresh_batch' => env('CBOX_ID_PIPES_REFRESH_BATCH', 200),
+        'lease_refresh_skew_seconds' => env('CBOX_ID_PIPES_LEASE_SKEW', 60),
+        'refresh_claim_seconds' => env('CBOX_ID_PIPES_REFRESH_CLAIM', 30),
+        'refresh_wait_milliseconds' => env('CBOX_ID_PIPES_REFRESH_WAIT_MS', 5000),
+        'http_timeout' => env('CBOX_ID_PIPES_HTTP_TIMEOUT', 10),
+        'verify_url' => env('CBOX_ID_PIPES_VERIFY_URL', true),
+    ],
+
     'crypto' => [
 
         /*
