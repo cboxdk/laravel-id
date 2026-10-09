@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Pipes\Contracts;
 
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Pipes\Exceptions\PipeConnectFailed;
 use Cbox\Id\Pipes\Exceptions\PipeConnectionNotFound;
 use Cbox\Id\Pipes\Exceptions\PipeNotFound;
@@ -42,13 +43,14 @@ interface PipeConnections
     /**
      * Disconnect: revoke at the provider where it supports that, revoke the tokens in the
      * vault, and forget the connection. With `$userId`, the connection must be that
-     * person's — another person's answers exactly like a missing one.
+     * person's — another person's answers exactly like a missing one. The audit actor is
+     * `$actor` when given (an administrator, a key), else the person, else the system.
      *
      * @return bool whether the provider confirmed the revocation
      *
      * @throws PipeConnectionNotFound
      */
-    public function disconnect(string $connectionId, ?string $userId = null): bool;
+    public function disconnect(string $connectionId, ?string $userId = null, ?AuditActor $actor = null): bool;
 
     public function find(string $connectionId, ?string $userId = null): ?PipeConnection;
 

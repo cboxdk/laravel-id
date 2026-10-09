@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Pipes\Contracts;
 
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Pipes\Exceptions\InvalidPipeConfiguration;
 use Cbox\Id\Pipes\Exceptions\PipeNotFound;
 use Cbox\Id\Pipes\Models\Pipe;
@@ -16,6 +17,9 @@ use Cbox\Id\Pipes\Models\PipeGrant;
  *
  * Everything is environment-owned and every method requires an ambient environment. The
  * client secret goes in sealed and never comes back out through this contract.
+ *
+ * Every write takes the `$actor` it is recorded against on the audit trail — a console
+ * passes the person, an API the key. Left out, the system.
  */
 interface Pipes
 {
@@ -27,7 +31,7 @@ interface Pipes
      *
      * @throws InvalidPipeConfiguration for an unknown provider, a blank credential, a bad parameter, or a provider already configured
      */
-    public function configure(string $provider, string $clientId, string $clientSecret, ?array $scopes = null, array $parameters = []): Pipe;
+    public function configure(string $provider, string $clientId, string $clientSecret, ?array $scopes = null, array $parameters = [], ?AuditActor $actor = null): Pipe;
 
     /**
      * Change a pipe. Only what is passed changes; a null leaves the field alone. A new
@@ -40,7 +44,7 @@ interface Pipes
      * @throws PipeNotFound
      * @throws InvalidPipeConfiguration
      */
-    public function update(string $pipeId, ?string $clientId = null, ?string $clientSecret = null, ?array $scopes = null, ?array $parameters = null, ?bool $enabled = null): Pipe;
+    public function update(string $pipeId, ?string $clientId = null, ?string $clientSecret = null, ?array $scopes = null, ?array $parameters = null, ?bool $enabled = null, ?AuditActor $actor = null): Pipe;
 
     /**
      * Remove a pipe, every grant on it and every connection through it. The connections'
@@ -50,7 +54,7 @@ interface Pipes
      *
      * @throws PipeNotFound
      */
-    public function remove(string $pipeId): void;
+    public function remove(string $pipeId, ?AuditActor $actor = null): void;
 
     public function find(string $pipeId): ?Pipe;
 
@@ -64,10 +68,10 @@ interface Pipes
      *
      * @throws PipeNotFound
      */
-    public function grant(string $pipeId, string $clientId): PipeGrant;
+    public function grant(string $pipeId, string $clientId, ?AuditActor $actor = null): PipeGrant;
 
     /** Take an app's access away. A no-op when it had none. */
-    public function revokeGrant(string $pipeId, string $clientId): void;
+    public function revokeGrant(string $pipeId, string $clientId, ?AuditActor $actor = null): void;
 
     /** @return list<string> the client ids granted this pipe */
     public function grantedClients(string $pipeId): array;

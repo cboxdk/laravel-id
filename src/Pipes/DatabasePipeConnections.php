@@ -6,6 +6,7 @@ namespace Cbox\Id\Pipes;
 
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
@@ -135,7 +136,7 @@ class DatabasePipeConnections implements PipeConnections
         return $connection;
     }
 
-    public function disconnect(string $connectionId, ?string $userId = null): bool
+    public function disconnect(string $connectionId, ?string $userId = null, ?AuditActor $actor = null): bool
     {
         $this->environments()->requireEnvironment();
 
@@ -164,8 +165,8 @@ class DatabasePipeConnections implements PipeConnections
 
         $this->audit->record(new AuditEvent(
             action: 'pipe.connection.disconnected',
-            actorType: $userId === null ? ActorType::System : ActorType::User,
-            actorId: $userId,
+            actorType: $actor->type ?? ($userId === null ? ActorType::System : ActorType::User),
+            actorId: $actor !== null ? $actor->id : $userId,
             targetType: 'pipe_connection',
             targetId: $connection->id,
             context: ['provider' => $connection->provider, 'user_id' => $connection->user_id, 'revoked_at_provider' => $revoked],

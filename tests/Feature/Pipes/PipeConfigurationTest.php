@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Crypto\Contracts\SealedColumns;
 use Cbox\Id\Kernel\Crypto\Exceptions\DecryptionFailed;
 use Cbox\Id\Pipes\Contracts\Pipes;
@@ -43,6 +45,17 @@ it('registers the sealed client secret for the master-key rewrap', function (): 
 
     expect($columns)->toContain('pipes.client_secret_encrypted');
 });
+
+it('names the field each refusal is about', function (string $provider, string $clientId, string $secret, ?array $scopes, array $parameters, string $field): void {
+    expect(fn () => app(Pipes::class)->configure($provider, $clientId, $secret, $scopes, $parameters))
+        ->toThrow(fn (InvalidPipeConfiguration $e) => expect($e->field)->toBe($field));
+})->with([
+    'unknown provider' => ['myspace', 'a', 'b', null, [], 'provider'],
+    'blank client id' => ['github', ' ', 'b', null, [], 'client_id'],
+    'blank secret' => ['github', 'a', '', null, [], 'client_secret'],
+    'bad scope' => ['github', 'a', 'b', ['a b'], [], 'scopes'],
+    'bad parameter' => ['salesforce', 'a', 'b', null, ['domain' => 'evil.test'], 'parameters'],
+]);
 
 it('uses the catalogue scopes when the pipe names none', function (): void {
     expect(app(Pipes::class)->configure('microsoft', 'ms', 'secret')->scopes)->toBe(['offline_access', 'User.Read']);
@@ -120,4 +133,18 @@ it('keeps pipes inside their environment', function (): void {
 
     // The other environment can configure the same provider for itself.
     expect(app(Pipes::class)->configure('github', 'mine', 'mine')->id)->not->toBe($pipe->id);
+});
+
+it('records the actor a console or an API passes, and the system otherwise', function (): void {
+    $this->fakeAudit();
+    $pipes = app(Pipes::class);
+
+    $pipe = $pipes->configure('github', 'a', 'b', actor: AuditActor::user('admin_1'));
+    $pipes->grant($pipe->id, 'cid_x', AuditActor::service('key_1'));
+    $pipes->update($pipe->id, enabled: false);
+
+    $audit = app(AuditLog::class);
+    $audit->assertRecorded('pipe.configured', fn ($e): bool => $e->actorType === ActorType::User && $e->actorId === 'admin_1');
+    $audit->assertRecorded('pipe.grant.created', fn ($e): bool => $e->actorType === ActorType::Service && $e->actorId === 'key_1');
+    $audit->assertRecorded('pipe.updated', fn ($e): bool => $e->actorType === ActorType::System && $e->actorId === null);
 });

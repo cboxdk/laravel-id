@@ -28,6 +28,7 @@ more trust than the wording it removes.
   - Webhook events `pipe.connection.connected`, `pipe.connection.needs_reauth`, `pipe.connection.disconnected` (new `WebhookEventGroup::Pipes`), and audit actions `pipe.*`. No token or client secret reaches the audit trail, the outbox or the log.
   - Migration `create_pipes_tables` (`pipes`, `pipe_grants`, `pipe_connections`); the pipe's client secret is a sealed column registered for `cbox-id:crypto:rewrap`. Erasure step `pipes.connections`.
   - Config `cbox-id.pipes.*`: `schedule`, `refresh_ahead_seconds`, `refresh_batch`, `lease_refresh_skew_seconds`, `refresh_claim_seconds`, `refresh_wait_milliseconds`, `http_timeout`, `verify_url` (env `CBOX_ID_PIPES_*`).
+  - Every write (`Pipes::configure` / `update` / `remove` / `grant` / `revokeGrant`, `PipeConnections::disconnect`) takes an optional trailing `?AuditActor $actor`, recorded on the audit trail — a console passes the person, an API the key; left out, the system. `InvalidPipeConfiguration::$field` names the input a refusal is about.
   - `Testing\InteractsWithPipes` (`configurePipe`, `grantPipe`, `connectPipeAccount`, `leasePipeToken`) runs the real flow with only the provider faked.
   - Docs: `core-concepts/pipes.md`, `security/pipes.md`, `cookbook/connect-a-third-party-account.md`.
 

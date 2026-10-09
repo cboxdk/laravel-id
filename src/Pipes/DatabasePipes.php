@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\Pipes;
 
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\Pipes\Contracts\Pipes;
@@ -32,7 +34,7 @@ class DatabasePipes implements Pipes
         private readonly AuditLog $audit,
     ) {}
 
-    public function configure(string $provider, string $clientId, string $clientSecret, ?array $scopes = null, array $parameters = []): Pipe
+    public function configure(string $provider, string $clientId, string $clientSecret, ?array $scopes = null, array $parameters = [], ?AuditActor $actor = null): Pipe
     {
         $this->environments()->requireEnvironment();
 
@@ -47,15 +49,17 @@ class DatabasePipes implements Pipes
         $pipe->id = (string) Str::ulid();
         $pipe->fill([
             'provider' => $entry->key,
-            'client_id' => $this->required($clientId, 'client ID'),
+            'client_id' => $this->required($clientId, 'client_id'),
             'scopes' => $this->scopes($scopes ?? $entry->defaultScopes),
             'parameters' => $entry->parameterValues($parameters),
             'enabled' => true,
         ]);
-        $this->secrets->sealClientSecret($pipe, $this->required($clientSecret, 'client secret'));
+        $this->secrets->sealClientSecret($pipe, $this->required($clientSecret, 'client_secret'));
         $pipe->save();
 
         $this->audit->record(new AuditEvent(
+            actorType: $actor->type ?? ActorType::System,
+            actorId: $actor?->id,
             action: 'pipe.configured',
             targetType: 'pipe',
             targetId: $pipe->id,
@@ -65,7 +69,7 @@ class DatabasePipes implements Pipes
         return $pipe;
     }
 
-    public function update(string $pipeId, ?string $clientId = null, ?string $clientSecret = null, ?array $scopes = null, ?array $parameters = null, ?bool $enabled = null): Pipe
+    public function update(string $pipeId, ?string $clientId = null, ?string $clientSecret = null, ?array $scopes = null, ?array $parameters = null, ?bool $enabled = null, ?AuditActor $actor = null): Pipe
     {
         $this->environments()->requireEnvironment();
 
@@ -74,12 +78,12 @@ class DatabasePipes implements Pipes
         $changed = [];
 
         if ($clientId !== null) {
-            $pipe->client_id = $this->required($clientId, 'client ID');
+            $pipe->client_id = $this->required($clientId, 'client_id');
             $changed[] = 'client_id';
         }
 
         if ($clientSecret !== null) {
-            $this->secrets->sealClientSecret($pipe, $this->required($clientSecret, 'client secret'));
+            $this->secrets->sealClientSecret($pipe, $this->required($clientSecret, 'client_secret'));
             $changed[] = 'client_secret';
         }
 
@@ -101,6 +105,8 @@ class DatabasePipes implements Pipes
         $pipe->save();
 
         $this->audit->record(new AuditEvent(
+            actorType: $actor->type ?? ActorType::System,
+            actorId: $actor?->id,
             action: 'pipe.updated',
             targetType: 'pipe',
             targetId: $pipe->id,
@@ -111,7 +117,7 @@ class DatabasePipes implements Pipes
         return $pipe;
     }
 
-    public function remove(string $pipeId): void
+    public function remove(string $pipeId, ?AuditActor $actor = null): void
     {
         $this->environments()->requireEnvironment();
 
@@ -129,6 +135,8 @@ class DatabasePipes implements Pipes
         $pipe->delete();
 
         $this->audit->record(new AuditEvent(
+            actorType: $actor->type ?? ActorType::System,
+            actorId: $actor?->id,
             action: 'pipe.removed',
             targetType: 'pipe',
             targetId: $pipe->id,
@@ -157,12 +165,12 @@ class DatabasePipes implements Pipes
         return array_values(Pipe::query()->orderBy('provider')->get()->all());
     }
 
-    public function grant(string $pipeId, string $clientId): PipeGrant
+    public function grant(string $pipeId, string $clientId, ?AuditActor $actor = null): PipeGrant
     {
         $this->environments()->requireEnvironment();
 
         $pipe = $this->find($pipeId) ?? throw PipeNotFound::forId($pipeId);
-        $clientId = $this->required($clientId, 'client ID');
+        $clientId = $this->required($clientId, 'client_id');
 
         $existing = PipeGrant::query()->where('pipe_id', $pipe->id)->where('client_id', $clientId)->first();
 
@@ -173,6 +181,8 @@ class DatabasePipes implements Pipes
         $grant = PipeGrant::query()->create(['pipe_id' => $pipe->id, 'client_id' => $clientId]);
 
         $this->audit->record(new AuditEvent(
+            actorType: $actor->type ?? ActorType::System,
+            actorId: $actor?->id,
             action: 'pipe.grant.created',
             targetType: 'pipe',
             targetId: $pipe->id,
@@ -182,7 +192,7 @@ class DatabasePipes implements Pipes
         return $grant;
     }
 
-    public function revokeGrant(string $pipeId, string $clientId): void
+    public function revokeGrant(string $pipeId, string $clientId, ?AuditActor $actor = null): void
     {
         $this->environments()->requireEnvironment();
 
@@ -199,6 +209,8 @@ class DatabasePipes implements Pipes
         }
 
         $this->audit->record(new AuditEvent(
+            actorType: $actor->type ?? ActorType::System,
+            actorId: $actor?->id,
             action: 'pipe.grant.revoked',
             targetType: 'pipe',
             targetId: $pipe->id,
@@ -225,6 +237,7 @@ class DatabasePipes implements Pipes
         return $clientId !== '' && PipeGrant::query()->where('pipe_id', $pipeId)->where('client_id', $clientId)->exists();
     }
 
+    /** @param  'client_id'|'client_secret'  $field */
     private function required(string $value, string $field): string
     {
         $value = trim($value);
@@ -245,7 +258,7 @@ class DatabasePipes implements Pipes
 
         foreach ($scopes as $scope) {
             if (! is_string($scope)) {
-                throw InvalidPipeConfiguration::blank('scope');
+                throw InvalidPipeConfiguration::scope(get_debug_type($scope));
             }
 
             $scope = trim($scope);
@@ -257,7 +270,7 @@ class DatabasePipes implements Pipes
             // RFC 6749 §3.3: scope-token = 1*( %x21 / %x23-5B / %x5D-7E ). No spaces, no
             // quotes, no backslashes — and, since some providers split on them, no commas.
             if (preg_match('/^[\x21\x23-\x2B\x2D-\x5B\x5D-\x7E]+$/', $scope) !== 1) {
-                throw new InvalidPipeConfiguration("The scope [{$scope}] is not a valid OAuth scope.");
+                throw InvalidPipeConfiguration::scope($scope);
             }
 
             if (! in_array($scope, $clean, true)) {
