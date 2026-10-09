@@ -337,7 +337,8 @@ return [
     ],
 
     /*
-     * Directory sync (inbound, API-pull: Google Workspace, Microsoft Entra).
+     * Directory sync (inbound, API-pull: Google Workspace, Microsoft Entra, and the HR
+     * systems Workday, BambooHR, Rippling, HiBob and Personio).
      *
      * `schedule` is the whole feature working or not working. A pull connector reconciles
      * on a timer by definition — nobody pushes to it — and the ONE caller of
@@ -347,12 +348,53 @@ return [
      * the guide told them syncing is what "closes the gap where a leaver still has a
      * working account".
      *
-     * Hourly rather than every minute: this is a full pull of a customer's directory over
-     * somebody else's rate-limited API, and the thing it is racing is a person's notice
-     * period. Set the interval yourself by turning this off and scheduling the command.
+     * Hourly by default rather than every minute: this is a pull of a customer's directory
+     * over somebody else's rate-limited API, and the thing it is racing is a person's notice
+     * period. Each directory may set its own interval (15 minutes to a day); the scheduler
+     * ticks every fifteen minutes and pulls what is due. Turn this off to schedule
+     * `cbox-id:directory:sync` yourself.
      */
     'directory' => [
         'schedule' => env('CBOX_ID_DIRECTORY_SCHEDULE', true),
+
+        /*
+         * How often a pull directory with no interval of its own is pulled, in minutes. The
+         * scheduler ticks every fifteen and pulls whatever is due; a directory's own
+         * `sync_interval_minutes` (15..1440) overrides this.
+         */
+        'default_interval_minutes' => env('CBOX_ID_DIRECTORY_INTERVAL_MINUTES', 60),
+
+        /* The longest one directory's sync lock is held, in seconds. */
+        'lock_seconds' => env('CBOX_ID_DIRECTORY_LOCK_SECONDS', 3600),
+
+        /*
+         * HR systems (Workday, BambooHR, Rippling, HiBob, Personio).
+         *
+         * - `pre_hire_days`: how many days before their start date a new hire gets an
+         *   account. 0 is on the day.
+         * - `full_sync_hours`: an HR system that can answer "changed since" is asked that
+         *   between full pulls at most this far apart. Only a full pull deprovisions people
+         *   it did not see, so this bounds how long a deleted record lingers.
+         * - `deprovision_guard`: a full pull that would deprovision more than this share of
+         *   the active people (with at least ten active) deprovisions nobody and reports
+         *   why — an API key that lost its reach looks exactly like a mass layoff. 1 turns
+         *   the guard off.
+         * - `max_attempts` / `max_backoff_seconds`: retries on 429 and 502–504, honouring
+         *   Retry-After, and the longest single wait.
+         * - `max_reported_failures`: how many per-record failures one run keeps.
+         * - `workday_hosts`: the host suffixes a Workday report address may name. The address
+         *   is the customer's, so it is pinned to Workday's own domains — the credentials go
+         *   wherever it points.
+         */
+        'hris' => [
+            'pre_hire_days' => env('CBOX_ID_HRIS_PRE_HIRE_DAYS', 0),
+            'full_sync_hours' => env('CBOX_ID_HRIS_FULL_SYNC_HOURS', 24),
+            'deprovision_guard' => env('CBOX_ID_HRIS_DEPROVISION_GUARD', 0.5),
+            'max_attempts' => env('CBOX_ID_HRIS_MAX_ATTEMPTS', 5),
+            'max_backoff_seconds' => env('CBOX_ID_HRIS_MAX_BACKOFF_SECONDS', 60),
+            'max_reported_failures' => 50,
+            'workday_hosts' => ['.workday.com', '.myworkday.com'],
+        ],
     ],
 
     /*

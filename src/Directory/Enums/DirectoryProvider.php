@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory\Enums;
 
+use Cbox\Id\Directory\Hris\Contracts\HrisProvider;
+
 /**
  * How a directory's users arrive. `Scim` is push (the customer's IdP posts SCIM to
  * us); the rest are API-pull connectors (we fetch from the provider on a schedule).
@@ -34,13 +36,53 @@ enum DirectoryProvider: string
     case GoogleWorkspace = 'google_workspace';
     case MicrosoftEntra = 'microsoft_entra';
 
+    /*
+     * HR systems (HRIS). Pulled like the two above, but the source of truth is employment,
+     * not an account: a person exists because they were hired and stops existing because
+     * they were terminated. See {@see self::isHris()} and `Cbox\Id\Directory\Hris`.
+     */
+    case Workday = 'workday';
+    case BambooHr = 'bamboohr';
+    case Rippling = 'rippling';
+    case HiBob = 'hibob';
+    case Personio = 'personio';
+
     public function label(): string
     {
         return match ($this) {
             self::Scim => 'SCIM (push)',
             self::GoogleWorkspace => 'Google Workspace',
             self::MicrosoftEntra => 'Microsoft Entra ID',
+            self::Workday => 'Workday',
+            self::BambooHr => 'BambooHR',
+            self::Rippling => 'Rippling',
+            self::HiBob => 'HiBob',
+            self::Personio => 'Personio',
         };
+    }
+
+    /**
+     * Whether this provider is an HR system rather than an identity directory.
+     *
+     * Every HR system is also a pull provider, so {@see self::isPull()} stays true for them
+     * and everything that already treats "pull" as "we fetch on a schedule with sealed
+     * credentials" keeps working unchanged. What differs is what a record MEANS: an HR
+     * system reports employment — start and termination dates, departments, managers — and
+     * its connectors implement {@see HrisProvider}.
+     */
+    public function isHris(): bool
+    {
+        return in_array($this, self::hris(), true);
+    }
+
+    /**
+     * The HR-system providers, in the order a setup screen offers them.
+     *
+     * @return list<self>
+     */
+    public static function hris(): array
+    {
+        return [self::Workday, self::BambooHr, self::Rippling, self::HiBob, self::Personio];
     }
 
     /** Whether this provider is synced by pulling from its API (vs. SCIM push). */

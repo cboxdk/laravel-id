@@ -404,7 +404,7 @@ a config flag so a host can drive it from its own scheduler instead:
 | `cbox-id:prune` | daily at `prune.time` | `cbox-id.prune.schedule` |
 | `cbox-id:audit:checkpoint` | daily at `audit.checkpoint.time` | `cbox-id.audit.checkpoint.schedule` — **off by default**, see above |
 | `cbox-id:access-control:sync-manifests` | hourly | `cbox-id.access_control.schedule` |
-| `cbox-id:directory:sync` | hourly | `cbox-id.directory.schedule` |
+| `cbox-id:directory:sync --due` | every fifteen minutes; each directory is pulled at its own interval (hourly by default) | `cbox-id.directory.schedule` |
 
 Nothing here retires a signing key. `cbox-id:keys:rotate --retire-after=<hours>` is the
 only thing that does, and it is deliberately NOT scheduled — a host runs it on its own
