@@ -472,7 +472,7 @@ class IdentityProviderGuides
                 'In the settings JSON, set audience to our entity ID, nameIdentifierFormat to the email address format, signatureAlgorithm to rsa-sha256 and digestAlgorithm to sha256 — Auth0 signs with SHA-1 otherwise.',
                 'Save, then on the Usage tab download the Identity Provider Metadata (or copy https://<your-domain>/samlp/metadata/<client-id>).',
             ],
-            documentationUrl: 'https://auth0.com/docs/authenticate/protocols/saml/saml-sso-integrations/configure-auth0-saml-identity-provider',
+            documentationUrl: 'https://auth0.com/docs/authenticate/protocols/saml/saml-sso-integrations/enable-saml2-web-app-addon',
         );
     }
 

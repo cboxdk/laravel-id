@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:a6c7581c-36b9-44de-8ba3-6b891270982e",
+    "serialNumber": "urn:uuid:c92480f0-d08d-4beb-89b7-984c9974810c",
     "version": 1,
     "metadata": {
         "tools": [
@@ -69,12 +69,12 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/laravel-siem@v0.1.1",
+            "bom-ref": "pkg:composer/cboxdk/laravel-siem@v0.2.0",
             "group": "cboxdk",
             "name": "laravel-siem",
-            "version": "v0.1.1",
-            "purl": "pkg:composer/cboxdk/laravel-siem@v0.1.1",
-            "description": "The SIEM log-streaming delivery engine for Laravel \u2014 a durable transactional outbox, queued batched delivery with retry/backoff/dead-letter/circuit-breaker, SSRF-guarded HTTP egress, encrypted destination secrets, and PII redaction, on top of the framework-agnostic cboxdk/siem core.",
+            "version": "v0.2.0",
+            "purl": "pkg:composer/cboxdk/laravel-siem@v0.2.0",
+            "description": "The SIEM log-streaming delivery engine for Laravel \u2014 a durable transactional outbox, queued batched delivery with retry/backoff/dead-letter/circuit-breaker, SSRF-guarded egress to HTTP collectors, Datadog, Amazon S3 and Google Cloud Storage, encrypted destination secrets, and PII redaction, on top of the framework-agnostic cboxdk/siem core.",
             "licenses": [
                 {
                     "license": {

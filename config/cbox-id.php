@@ -337,7 +337,8 @@ return [
     ],
 
     /*
-     * Directory sync (inbound, API-pull: Google Workspace, Microsoft Entra).
+     * Directory sync (inbound, API-pull: Google Workspace, Microsoft Entra, and the HR
+     * systems Workday, BambooHR, Rippling, HiBob and Personio).
      *
      * `schedule` is the whole feature working or not working. A pull connector reconciles
      * on a timer by definition — nobody pushes to it — and the ONE caller of
@@ -347,12 +348,53 @@ return [
      * the guide told them syncing is what "closes the gap where a leaver still has a
      * working account".
      *
-     * Hourly rather than every minute: this is a full pull of a customer's directory over
-     * somebody else's rate-limited API, and the thing it is racing is a person's notice
-     * period. Set the interval yourself by turning this off and scheduling the command.
+     * Hourly by default rather than every minute: this is a pull of a customer's directory
+     * over somebody else's rate-limited API, and the thing it is racing is a person's notice
+     * period. Each directory may set its own interval (15 minutes to a day); the scheduler
+     * ticks every fifteen minutes and pulls what is due. Turn this off to schedule
+     * `cbox-id:directory:sync` yourself.
      */
     'directory' => [
         'schedule' => env('CBOX_ID_DIRECTORY_SCHEDULE', true),
+
+        /*
+         * How often a pull directory with no interval of its own is pulled, in minutes. The
+         * scheduler ticks every fifteen and pulls whatever is due; a directory's own
+         * `sync_interval_minutes` (15..1440) overrides this.
+         */
+        'default_interval_minutes' => env('CBOX_ID_DIRECTORY_INTERVAL_MINUTES', 60),
+
+        /* The longest one directory's sync lock is held, in seconds. */
+        'lock_seconds' => env('CBOX_ID_DIRECTORY_LOCK_SECONDS', 3600),
+
+        /*
+         * HR systems (Workday, BambooHR, Rippling, HiBob, Personio).
+         *
+         * - `pre_hire_days`: how many days before their start date a new hire gets an
+         *   account. 0 is on the day.
+         * - `full_sync_hours`: an HR system that can answer "changed since" is asked that
+         *   between full pulls at most this far apart. Only a full pull deprovisions people
+         *   it did not see, so this bounds how long a deleted record lingers.
+         * - `deprovision_guard`: a full pull that would deprovision more than this share of
+         *   the active people (with at least ten active) deprovisions nobody and reports
+         *   why — an API key that lost its reach looks exactly like a mass layoff. 1 turns
+         *   the guard off.
+         * - `max_attempts` / `max_backoff_seconds`: retries on 429 and 502–504, honouring
+         *   Retry-After, and the longest single wait.
+         * - `max_reported_failures`: how many per-record failures one run keeps.
+         * - `workday_hosts`: the host suffixes a Workday report address may name. The address
+         *   is the customer's, so it is pinned to Workday's own domains — the credentials go
+         *   wherever it points.
+         */
+        'hris' => [
+            'pre_hire_days' => env('CBOX_ID_HRIS_PRE_HIRE_DAYS', 0),
+            'full_sync_hours' => env('CBOX_ID_HRIS_FULL_SYNC_HOURS', 24),
+            'deprovision_guard' => env('CBOX_ID_HRIS_DEPROVISION_GUARD', 0.5),
+            'max_attempts' => env('CBOX_ID_HRIS_MAX_ATTEMPTS', 5),
+            'max_backoff_seconds' => env('CBOX_ID_HRIS_MAX_BACKOFF_SECONDS', 60),
+            'max_reported_failures' => 50,
+            'workday_hosts' => ['.workday.com', '.myworkday.com'],
+        ],
     ],
 
     /*
@@ -579,7 +621,9 @@ return [
             // Kubernetes case is the one that bites — `kubectl oidc-login` reads the
             // document, requests `openid groups`, and is refused at /authorize by the very
             // server that told it the scope exists.
-            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups'],
+            // `feature_flags` (1.24) likewise: advertised, and it emits a claim. It
+            // discloses only the keys of the flags on for the person who consented.
+            'allowed_scopes' => ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups', 'feature_flags'],
             /*
              * Grants a DYNAMICALLY registered client may ask for. device_code, CIBA and
              * token-exchange were advertised in discovery but absent here, so no
@@ -855,8 +899,9 @@ return [
      * `channels` is the DENY-BY-DEFAULT sender registry (`key => OtpChannel class`).
      * A key with no registered sender is refused, never a silent no-op. The package
      * ships `email` (framework mailer) and `log` (DEV-ONLY: writes the code to the
-     * log). SMS is a CONTRACT ONLY — register your provider's channel here (see
-     * docs/cookbook/add-an-sms-otp-channel.md); this package ships no SMS SDK.
+     * log). SMS ships as `Cbox\Id\Otp\Channels\SmsOtpChannel` over the `sms` block
+     * below — map it here to issue codes by text (see
+     * docs/cookbook/add-an-sms-otp-channel.md). No provider SDK is a dependency.
      *
      * `issue` throttles issuance: `max_per_window` per recipient+purpose+IP, and
      * `per_recipient_max` per recipient ACROSS all purposes and IPs — the latter is
@@ -887,8 +932,8 @@ return [
             'email' => EmailOtpChannel::class,
             // Local development only — logs the plaintext code. Never enable in prod.
             // 'log' => Cbox\Id\Otp\Channels\LogOtpChannel::class,
-            // Register your own channel wrapping an SMS provider (Twilio, etc.):
-            // 'sms' => App\Otp\SmsOtpChannel::class,
+            // Text messages through the `sms` block below (provider, toll-fraud caps):
+            // 'sms' => Cbox\Id\Otp\Channels\SmsOtpChannel::class,
         ],
 
         'email' => [
@@ -896,6 +941,87 @@ return [
             'from' => [
                 'address' => env('CBOX_ID_OTP_EMAIL_FROM_ADDRESS'),
                 'name' => env('CBOX_ID_OTP_EMAIL_FROM_NAME'),
+            ],
+        ],
+    ],
+
+    /*
+     * Text messages (src/Otp/Sms/) — one-time codes by SMS, for `SmsOtpChannel` and the
+     * SMS second factor. SMS costs money per message, which makes every "text me a code"
+     * form a target for SMS PUMPING (toll fraud): an attacker drives it at premium-rate
+     * ranges and shares the revenue. Every send passes the guard below first.
+     *
+     * `driver`: `twilio`, `messagebird` (legacy REST API), `bird` (Channels API),
+     * `46elks`, `log` (DEV-ONLY: writes the message, code included, to the log — refused
+     * when APP_ENV is production) or `array` (tests). A class implementing
+     * `Otp\Sms\Contracts\SmsSender` is accepted as a driver name for your own gateway.
+     *
+     * `allowed_countries`: ISO 3166-1 alpha-2 codes the DEPLOYMENT will text, comma
+     * separated in the env. Empty means no deployment-level restriction — then only an
+     * environment's own SMS policy narrows it. Set it. Non-geographic ranges (+881, +882,
+     * +979, …) are refused regardless: they have no country to allow.
+     *
+     * `limits`: `cooldown_seconds` between texts to one number; `per_number_per_day` and
+     * `per_ip_per_hour` per environment; `per_environment_per_day` so one tenant cannot
+     * spend the deployment's budget; `daily_cap` for the whole deployment — the circuit
+     * breaker that bounds the worst day's bill. 0 disables a limit. The counters live in
+     * the cache store, which must be shared between replicas.
+     *
+     * `messages`: per-locale overrides of the built-in templates (en, da, de, fr, nb, sv)
+     * with `:code`, `:app`, `:minutes`. Keep them GSM-7 and under 160 characters, or each
+     * text is billed as two or more.
+     */
+    'sms' => [
+        'driver' => env('CBOX_ID_SMS_DRIVER', 'log'),
+        'app_name' => env('CBOX_ID_SMS_APP_NAME', env('APP_NAME', 'Cbox ID')),
+        'timeout_seconds' => env('CBOX_ID_SMS_TIMEOUT', 10),
+
+        'allowed_countries' => array_values(array_filter(array_map(
+            static fn (string $country): string => strtoupper(trim($country)),
+            explode(',', (string) env('CBOX_ID_SMS_ALLOWED_COUNTRIES', '')),
+        ))),
+
+        'limits' => [
+            'cooldown_seconds' => env('CBOX_ID_SMS_COOLDOWN_SECONDS', 30),
+            'per_number_per_day' => env('CBOX_ID_SMS_PER_NUMBER_PER_DAY', 10),
+            'per_ip_per_hour' => env('CBOX_ID_SMS_PER_IP_PER_HOUR', 10),
+            'per_environment_per_day' => env('CBOX_ID_SMS_PER_ENVIRONMENT_PER_DAY', 1000),
+            'daily_cap' => env('CBOX_ID_SMS_DAILY_CAP', 5000),
+        ],
+
+        'messages' => [
+            // 'en' => ':code is your :app code. Valid for :minutes min.',
+        ],
+
+        'drivers' => [
+            'twilio' => [
+                'account_sid' => env('TWILIO_ACCOUNT_SID'),
+                'auth_token' => env('TWILIO_AUTH_TOKEN'),
+                // Optional: authenticate with an API key instead of the auth token.
+                'api_key' => env('TWILIO_API_KEY'),
+                'api_secret' => env('TWILIO_API_SECRET'),
+                // One of the two. A Messaging Service is preferred.
+                'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
+                'from' => env('TWILIO_FROM'),
+                'base_url' => env('TWILIO_BASE_URL'),
+            ],
+            'messagebird' => [
+                'access_key' => env('MESSAGEBIRD_ACCESS_KEY'),
+                'originator' => env('MESSAGEBIRD_ORIGINATOR'),
+                'base_url' => env('MESSAGEBIRD_BASE_URL'),
+            ],
+            'bird' => [
+                'access_key' => env('BIRD_ACCESS_KEY'),
+                'workspace_id' => env('BIRD_WORKSPACE_ID'),
+                'channel_id' => env('BIRD_CHANNEL_ID'),
+                'base_url' => env('BIRD_BASE_URL'),
+            ],
+            '46elks' => [
+                'username' => env('ELKS_API_USERNAME'),
+                'password' => env('ELKS_API_PASSWORD'),
+                'from' => env('ELKS_FROM'),
+                'dry_run' => env('ELKS_DRY_RUN', false),
+                'base_url' => env('ELKS_BASE_URL'),
             ],
         ],
     ],
@@ -1028,6 +1154,31 @@ return [
     ],
 
     /*
+     * Fine-grained authorization (src/Kernel/Authorization/) — an environment's own
+     * relationship model: a schema of resource types and relations, tuples written
+     * against it, and checks evaluated over both (Zanzibar-style).
+     *
+     * `max_depth` bounds how many relations deep one check may follow (nested groups,
+     * folder trees); past it the check is refused, never guessed. `max_expansion` bounds
+     * how many objects a list query may visit. `max_batch` caps a tuple batch and a
+     * batch check.
+     *
+     * Answers are cached under the environment's current revision: every write advances
+     * it, so the cache is never stale and never flushed. `cache.store` picks a store
+     * (null = the default); `cache.ttl` only bounds how long an unused answer occupies it.
+     */
+    'fga' => [
+        'max_depth' => env('CBOX_ID_FGA_MAX_DEPTH', 25),
+        'max_expansion' => env('CBOX_ID_FGA_MAX_EXPANSION', 50000),
+        'max_batch' => env('CBOX_ID_FGA_MAX_BATCH', 100),
+        'cache' => [
+            'enabled' => env('CBOX_ID_FGA_CACHE', true),
+            'store' => env('CBOX_ID_FGA_CACHE_STORE'),
+            'ttl' => env('CBOX_ID_FGA_CACHE_TTL', 3600),
+        ],
+    ],
+
+    /*
      * AI token vault (src/TokenVault/) — holds downstream third-party credentials
      * (API keys, OAuth tokens for services an AI agent calls) SEALED at rest via
      * the Crypto SecretBox, and brokers short-lived, deny-by-default leased access
@@ -1040,6 +1191,56 @@ return [
      */
     'token_vault' => [
         'default_lease_ttl_seconds' => env('CBOX_ID_VAULT_LEASE_TTL', 300),
+    ],
+
+    /*
+     * Feature flags: per-environment switches evaluated per user and organization, and
+     * delivered in the `feature_flags` claim to a client granted the `feature_flags`
+     * scope.
+     *
+     * `cache_ttl` (seconds) caches each environment's compiled flag set, which every
+     * evaluation reads instead of the database. Any change to a flag or one of its rules
+     * forgets the entry at once, so the TTL is a backstop for a cache the application
+     * does not share (a per-pod array or file store), not the mechanism. 0 always reads
+     * the database.
+     *
+     * `max_rules` caps the user and organization rules on one flag. Rules are evaluated
+     * in memory from the cached set, so a flag listing every user is a cache entry the
+     * size of the user table; target an organization or use a rollout instead.
+     */
+    'feature_flags' => [
+        'cache_ttl' => env('CBOX_ID_FEATURE_FLAGS_CACHE_TTL', 300),
+        'max_rules' => env('CBOX_ID_FEATURE_FLAGS_MAX_RULES', 1000),
+    ],
+
+    /*
+     * Pipes (src/Pipes/) — people connect their own third-party accounts (GitHub,
+     * Google, Microsoft 365, Slack, Salesforce, HubSpot, Linear, Notion) over OAuth 2.0
+     * authorization code + PKCE, and the environment's authorised apps lease fresh
+     * access tokens for them. The tokens are user-owned token-vault secrets.
+     *
+     * `schedule` registers `cbox-id:pipes:refresh` every five minutes. It refreshes
+     * connections whose access token expires within `refresh_ahead_seconds`, at most
+     * `refresh_batch` per run. A lease also refreshes on its own when the token expires
+     * within `lease_refresh_skew_seconds`, so the sweep is latency, not correctness.
+     *
+     * A refresh is single-flight: it claims the connection for `refresh_claim_seconds`
+     * (a claim held by a process that died lapses after that), and a lease that finds
+     * another process refreshing waits up to `refresh_wait_milliseconds` for it.
+     *
+     * `verify_url` (SSRF guard) pins every call to the provider's resolved addresses
+     * and refuses private ranges. The endpoints come from the catalogue, but Microsoft's
+     * tenant and Salesforce's domain are an administrator's input. Keep it on.
+     */
+    'pipes' => [
+        'schedule' => env('CBOX_ID_PIPES_SCHEDULE', true),
+        'refresh_ahead_seconds' => env('CBOX_ID_PIPES_REFRESH_AHEAD', 600),
+        'refresh_batch' => env('CBOX_ID_PIPES_REFRESH_BATCH', 200),
+        'lease_refresh_skew_seconds' => env('CBOX_ID_PIPES_LEASE_SKEW', 60),
+        'refresh_claim_seconds' => env('CBOX_ID_PIPES_REFRESH_CLAIM', 30),
+        'refresh_wait_milliseconds' => env('CBOX_ID_PIPES_REFRESH_WAIT_MS', 5000),
+        'http_timeout' => env('CBOX_ID_PIPES_HTTP_TIMEOUT', 10),
+        'verify_url' => env('CBOX_ID_PIPES_VERIFY_URL', true),
     ],
 
     'crypto' => [

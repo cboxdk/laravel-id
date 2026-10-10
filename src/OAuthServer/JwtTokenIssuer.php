@@ -10,6 +10,7 @@ use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\ExternalActions\Payloads\TokenMintingPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
+use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
@@ -69,6 +70,9 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
         private readonly Memberships $memberships,
         private readonly AudienceResolver $audiences,
         private readonly int $accessTokenTtl = self::DEFAULT_TTL_SECONDS,
+        // Trailing and optional so existing constructions keep compiling; the container
+        // always supplies it.
+        private readonly ?FeatureFlagClaim $featureFlags = null,
     ) {}
 
     public function issueClientCredentials(Client $client, array $scopes = [], ?string $resource = null, ?string $dpopJkt = null): IssuedToken
@@ -149,6 +153,14 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
         foreach ($enrichment as $key => $value) {
             // Keys are string-typed by contract; a reserved claim is never overwritten.
             if (in_array($key, self::RESERVED_CLAIMS, true)) {
+                continue;
+            }
+
+            // `feature_flags` is the issuer's once the grant asked for it: an app gates
+            // features on it, so a hook may not add to it or take from it. Without the
+            // scope the name stays free, as it was before 1.24, for a hook that already
+            // sets a claim of its own by that name.
+            if ($key === FeatureFlagClaim::CLAIM && array_key_exists(FeatureFlagClaim::CLAIM, $claims)) {
                 continue;
             }
 
@@ -295,6 +307,15 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
                 $claims['roles'] = $rbac->roles;
                 $claims['permissions'] = $rbac->permissions;
             }
+        }
+
+        // Feature flags (1.24): the keys of every flag on for this subject in this
+        // organization, behind the `feature_flags` scope — see FeatureFlagClaim for when it
+        // appears. Set before the hook runs, so a hook sees it and cannot rewrite it.
+        $flags = ($this->featureFlags ?? app(FeatureFlagClaim::class))->for($scopes, $userId, $organizationId);
+
+        if ($flags !== null) {
+            $claims[FeatureFlagClaim::CLAIM] = $flags;
         }
 
         // RFC 9470 §6.1: when and how strongly the person signed in, so a resource server

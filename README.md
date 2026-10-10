@@ -52,7 +52,7 @@ only** = you bind the implementation · **Host** = your app writes the interacti
 | **SCIM 2.0** | **Full** Users + Groups CRUD, Enterprise User extension (RFC 7643), the full RFC 7644 filter grammar, sorting, ETags (`If-Match` / `If-None-Match`), `/Bulk` with `bulkId` references, errors and discovery; held to Microsoft Entra ID's and Okta's published test cases · **Partial** PATCH (value-path filters; one stored email), attribute selection · **No** `/.search`, `/Me` |
 | **Provisioning out** | **Partial** generic SCIM 2.0 client with outbox, retries, circuit breaker, SSRF guard — **users only, no group push**, no vendor connectors |
 | **Directory in** | **Full** SCIM push, Google Workspace and Microsoft Entra pull; deprovision revokes sessions immediately |
-| **MFA & credentials** | **Full** recovery codes, magic links, password reset, password policy (length/reuse/expiry/lockout) · **Partial** TOTP (RFC 6238, SHA-1/6/30 fixed), WebAuthn/passkeys (ES256+RS256, `none` + self-attested `packed`), email OTP · **Contract only** breach screening, SMS OTP · **No** HOTP (RFC 4226), complexity classes |
+| **MFA & credentials** | **Full** recovery codes, magic links, password reset, password policy (length/reuse/expiry/lockout) · **Partial** TOTP (RFC 6238, SHA-1/6/30 fixed), WebAuthn/passkeys (ES256+RS256, `none` + self-attested `packed`), email OTP, SMS OTP (Twilio, MessageBird, Bird, 46elks over HTTP; toll-fraud guard) and an SMS second factor (off by default per environment) · **Contract only** breach screening · **No** HOTP (RFC 4226), complexity classes |
 | **Authorization** | **Full** org-scoped RBAC with hierarchy roll-down, entitlements, `POST /oauth/decisions` · **Partial** ReBAC engine (uncached), the PDP (ReBAC-only) · **No** wildcard permissions, role-inherits-role, XACML |
 | **Audit** | **Full** SHA-256 hash chain, query + pull stream, retention · **Partial** signed checkpoints (nothing schedules them), SIEM streaming (HTTP transport only: Splunk HEC / ECS / GELF / CEF / JSON) · **No** tamper-*proof* storage, OCSF |
 | **Governance** | **Full** access-certification campaigns · **Partial** Segregation of Duties — both cover roles and memberships only |
@@ -70,8 +70,8 @@ only** = you bind the implementation · **Host** = your app writes the interacti
 | Layer | Modules |
 |---|---|
 | Kernels | `Tenancy` · `Crypto` · `Audit` · `Events` · `Authorization` · `Usage` |
-| Domain | `Organization` · `Identity` · `Otp` · `AccessControl` · `Directory` (inbound SCIM + pull connectors) · `Provisioning` (outbound SCIM) · `Federation` (SSO relying party) · `SamlIdp` (SAML 2.0 IdP) · `OAuthServer` (OAuth 2.0 / OIDC) · `Governance` (access reviews, SoD) · `TokenVault` · `ExternalActions` (inline hooks) · `Webhooks` · `AuditQuery` · `AuditStreaming` |
-| HTTP & ops | `Api` (OAuth/OIDC/SCIM/SAML endpoints) · `Platform` (operators + the self-serve account/project plane) · `Maintenance` (retention) · `Console` (15 `cbox-id:*` commands) |
+| Domain | `Organization` · `Identity` · `Otp` · `AccessControl` · `Directory` (inbound SCIM + pull connectors) · `Provisioning` (outbound SCIM) · `Federation` (SSO relying party) · `SamlIdp` (SAML 2.0 IdP) · `OAuthServer` (OAuth 2.0 / OIDC) · `Governance` (access reviews, SoD) · `TokenVault` · `FeatureFlags` · `Pipes` (connected third-party accounts) · `ExternalActions` (inline hooks) · `Webhooks` · `AuditQuery` · `AuditStreaming` |
+| HTTP & ops | `Api` (OAuth/OIDC/SCIM/SAML endpoints) · `Platform` (operators + the self-serve account/project plane) · `Maintenance` (retention) · `Console` (17 `cbox-id:*` commands) |
 
 ## Documentation
 

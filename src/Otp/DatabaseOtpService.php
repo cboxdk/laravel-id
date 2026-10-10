@@ -108,6 +108,10 @@ class DatabaseOtpService implements OtpService
             channel: $channel,
             expiresAt: $expiresAt->toDateTimeImmutable(),
             ttlSeconds: $this->ttlSeconds,
+            ip: $ip,
+            // The language the request is being served in — a channel writes the message
+            // in it. A caller issuing for someone else wraps the call in `withLocale()`.
+            locale: app()->getLocale(),
         ));
 
         // The audit row records that a code was issued and to whom — never the code.

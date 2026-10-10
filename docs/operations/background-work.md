@@ -22,7 +22,7 @@ started by the package, and neither is optional.
 
 | Process | Command | What it drives | What breaks without it |
 |---|---|---|---|
-| Scheduler | `php artisan schedule:run` every minute (or `schedule:work` in dev) | the outbox relay, the webhook retry sweep, the provisioning drain, the SIEM pump, campaign auto-close, the nightly prune | Nothing is delivered at all. Domain events accumulate in `events`, so no webhook fires, no usage is metered, outbound SCIM never runs and no host listener is ever called. |
+| Scheduler | `php artisan schedule:run` every minute (or `schedule:work` in dev) | the outbox relay, the webhook retry sweep, the provisioning drain, the SIEM pump, campaign auto-close, the Pipes token refresh, the nightly prune | Nothing is delivered at all. Domain events accumulate in `events`, so no webhook fires, no usage is metered, outbound SCIM never runs and no host listener is ever called. Connected accounts (Pipes) are only refreshed when an app leases them, and dead ones are found late. |
 | Queue worker | `php artisan queue:work` | `DeliverWebhook`, `DrainProvisioningConnection`, `PumpAuditStream`, `SyncAppManifestJob`, `DeliverBackchannelLogout` | The scheduler still records and enqueues, but nothing performs the outbound HTTP. Webhooks sit `pending`, SCIM operations sit `pending`, SIEM batches are never shipped, and applications are never told a person signed out. |
 
 ```bash
@@ -404,7 +404,7 @@ a config flag so a host can drive it from its own scheduler instead:
 | `cbox-id:prune` | daily at `prune.time` | `cbox-id.prune.schedule` |
 | `cbox-id:audit:checkpoint` | daily at `audit.checkpoint.time` | `cbox-id.audit.checkpoint.schedule` — **off by default**, see above |
 | `cbox-id:access-control:sync-manifests` | hourly | `cbox-id.access_control.schedule` |
-| `cbox-id:directory:sync` | hourly | `cbox-id.directory.schedule` |
+| `cbox-id:directory:sync --due` | every fifteen minutes; each directory is pulled at its own interval (hourly by default) | `cbox-id.directory.schedule` |
 
 Nothing here retires a signing key. `cbox-id:keys:rotate --retire-after=<hours>` is the
 only thing that does, and it is deliberately NOT scheduled — a host runs it on its own
@@ -479,3 +479,15 @@ Any retention key set to an empty value disables that table's sweep — see
   empty, `verifyChain()` has no checkpoint to cross-check, and a trail truncated at the
   tail verifies clean. That is the honest state of the control, and the reason for the
   default is above.
+
+## Pipes token refresh
+
+`cbox-id:pipes:refresh` runs every five minutes when `cbox-id.pipes.schedule` is true (the
+default). It refreshes active connections whose access token expires within
+`pipes.refresh_ahead_seconds` (600), at most `pipes.refresh_batch` (200) per run, across
+every environment, each inside its own. It runs on the scheduler thread rather than the
+queue: each refresh is one short call to the provider, a connection another process is
+refreshing is skipped, and a provider outage is counted on the connection and retried on
+the next run. Without it nothing breaks — a lease refreshes on its own — but apps wait on
+the provider more often and a revoked refresh token is discovered only when an app needs
+the token. See [Pipes](../core-concepts/pipes.md#refresh).

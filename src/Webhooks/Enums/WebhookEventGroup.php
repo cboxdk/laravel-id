@@ -22,7 +22,9 @@ enum WebhookEventGroup: string
     case Connections = 'connections';
     case Entitlements = 'entitlements';
     case TokenVault = 'token_vault';
+    case Pipes = 'pipes';
     case Governance = 'governance';
+    case FeatureFlags = 'feature_flags';
 
     public function label(): string
     {
@@ -39,7 +41,9 @@ enum WebhookEventGroup: string
             self::Connections => 'SSO connections',
             self::Entitlements => 'Entitlements',
             self::TokenVault => 'Token vault',
+            self::Pipes => 'Pipes (connected accounts)',
             self::Governance => 'Access governance',
+            self::FeatureFlags => 'Feature flags',
         };
     }
 }

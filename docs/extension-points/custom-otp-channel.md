@@ -28,6 +28,8 @@ generation:
 | `channel`       | The channel key it was issued under                 |
 | `expiresAt`     | Absolute expiry (`DateTimeImmutable`)               |
 | `ttlSeconds`    | TTL in seconds; `ttlMinutes()` rounds up for prose  |
+| `ip`            | The requester's IP when the issuer knew it, or null |
+| `locale`        | The locale the request was served in, or null       |
 
 A channel **must not** persist, durably log, or echo the code anywhere it would
 outlive the message.
@@ -40,7 +42,7 @@ Two ways, both honouring deny-by-default:
 class must implement `OtpChannel`. Invalid entries are dropped, never trusted.
 
 ```php
-'otp' => ['channels' => ['sms' => \App\Otp\SmsOtpChannel::class]],
+'otp' => ['channels' => ['push' => \App\Otp\PushOtpChannel::class]],
 ```
 
 **At runtime.** Register a ready instance — useful for hosts wiring a pre-built
@@ -48,11 +50,16 @@ client, and how the test trait injects a fake:
 
 ```php
 app(Cbox\Id\Otp\Contracts\OtpChannels::class)
-    ->register('sms', new \App\Otp\SmsOtpChannel($client));
+    ->register('push', new \App\Otp\PushOtpChannel($client));
 ```
 
 ## Shipped channels
 
+- **`SmsOtpChannel`** — a text message through `cbox-id.sms.driver` (Twilio,
+  MessageBird, Bird, 46elks), behind the toll-fraud guard, audited with the number
+  masked. For your own SMS gateway implement `Otp\Sms\Contracts\SmsSender` instead of a
+  whole channel, so you keep the guard. See
+  [Send one-time codes by SMS](../cookbook/add-an-sms-otp-channel.md).
 - **`EmailOtpChannel`** — a plain-text email over the framework `Mailer` contract
   (no dependency forced; no marketing; the code appears only in that one message).
   Subject and from-address come from `cbox-id.otp.email.*`.

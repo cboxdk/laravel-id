@@ -79,6 +79,8 @@ only** — it is never persisted unsealed, logged, or written to an audit row.
 
 ## Where to go next
 
+- [Pipes (connected accounts)](pipes.md) — people's own third-party OAuth tokens,
+  stored here as user-owned secrets, refreshed and leased to authorised apps.
 - [Vault a downstream credential](../cookbook/vault-a-downstream-credential.md) — the
   store → grant → lease recipe end to end.
 - [Custom secret vault](../extension-points/custom-secret-vault.md) — swap the

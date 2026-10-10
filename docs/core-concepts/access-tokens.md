@@ -26,6 +26,7 @@ client credentials, device, CIBA and token exchange — mints through the same
 | `org` | always | The organization the grant is bound to, or `null`. |
 | `org_name` | when `org` is set | The organization's display name. |
 | `roles`, `permissions` | user tokens with any grant | The person's roles and their permissions for one app — the API's linked app when the token is for a [registered API](apis-and-scopes.md) that names one, otherwise the requesting client's. Environment-wide grants count when no organization is bound. Absent on `client_credentials`. |
+| `feature_flags` | with the `feature_flags` scope | The sorted keys of every [feature flag](feature-flags.md) on for the subject in `org`; an empty list when none is. A `client_credentials` token is evaluated for its organization. |
 | `ent`, `ent_ver` | when the org has Claims-mode entitlements | Embedded capability gates and the highest version among them. |
 | `cnf.jkt` | DPoP-bound tokens | RFC 9449 key thumbprint; `token_type` is then `DPoP`. |
 | `auth_time`, `acr` | user grants with a recorded login | RFC 9470 §6.1: when the person signed in, and the class reached (`urn:cbox-id:aal1`/`aal2`, derived from the login's `amr`). Authorization code and its refreshes carry both, always the original login's values. CIBA carries `auth_time` only. Device, token exchange, support-session and `client_credentials` tokens carry neither. See [Require step-up authentication](../cookbook/require-step-up-authentication.md). |
@@ -44,7 +45,7 @@ client credentials, device, CIBA and token exchange — mints through the same
 
 When a token is for a registered API its `scope` holds only that API's scopes plus the
 protocol scopes (`openid`, `profile`, `email`, `offline_access`, `organizations`,
-`groups`). The rules and the ownership model are in [APIs and scopes](apis-and-scopes.md).
+`groups`, `feature_flags`). The rules and the ownership model are in [APIs and scopes](apis-and-scopes.md).
 
 A refresh re-mints the scopes and audience the original token was granted, never more.
 

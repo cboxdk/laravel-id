@@ -53,7 +53,7 @@ it('keeps the root document, with scopes_supported read from the resolver', func
     $this->getJson('/.well-known/oauth-protected-resource')
         ->assertOk()
         ->assertJsonPath('resource', app(IssuerResolver::class)->issuer())
-        ->assertJsonPath('scopes_supported', ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups']);
+        ->assertJsonPath('scopes_supported', ['openid', 'profile', 'email', 'offline_access', 'organizations', 'groups', 'feature_flags']);
 });
 
 it('lets a host that rebinds the resolver change what the root document advertises', function (): void {

@@ -15,6 +15,7 @@ use Cbox\Id\Console\ImportUsersCommand;
 use Cbox\Id\Console\InstallCommand;
 use Cbox\Id\Directory\DirectoryServiceProvider;
 use Cbox\Id\ExternalActions\ExternalActionsServiceProvider;
+use Cbox\Id\FeatureFlags\FeatureFlagsServiceProvider;
 use Cbox\Id\Federation\FederationServiceProvider;
 use Cbox\Id\FrontendApi\FrontendApiServiceProvider;
 use Cbox\Id\Governance\GovernanceServiceProvider;
@@ -30,6 +31,7 @@ use Cbox\Id\Maintenance\MaintenanceServiceProvider;
 use Cbox\Id\OAuthServer\OAuthServerServiceProvider;
 use Cbox\Id\Organization\OrganizationServiceProvider;
 use Cbox\Id\Otp\OtpServiceProvider;
+use Cbox\Id\Pipes\PipesServiceProvider;
 use Cbox\Id\Platform\PlatformServiceProvider;
 use Cbox\Id\Provisioning\ProvisioningServiceProvider;
 use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
@@ -84,6 +86,13 @@ class IdServiceProvider extends ServiceProvider
         // Depends only on kernels (Crypto/Audit/Tenancy); placed alongside the
         // OAuth/agent machinery it serves.
         TokenVaultServiceProvider::class,
+        // Feature flags: per-environment switches evaluated per user and organization,
+        // carried in the token behind the `feature_flags` scope. Depends on kernels,
+        // Organization and Identity (its rules name their organizations and users).
+        FeatureFlagsServiceProvider::class,
+        // Pipes: people's connected third-party accounts, refreshed and leased to apps.
+        // After the token vault, whose contract holds every token it stores.
+        PipesServiceProvider::class,
         SamlIdpServiceProvider::class,
         WebhookServiceProvider::class,
         // Outbound SCIM 2.0 provisioning: the mirror of the Directory (inbound

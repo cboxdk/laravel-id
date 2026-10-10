@@ -6,7 +6,8 @@ namespace Cbox\Id\OAuthServer\Enums;
 
 /**
  * The scopes this authorization server itself defines — OpenID Connect's, plus the
- * identity extensions (`organizations`, `groups`) that UserInfo and the ID Token read.
+ * identity extensions (`organizations`, `groups`, `feature_flags`) that UserInfo and the
+ * tokens read.
  *
  * They belong to the issuer, not to any API, which gives them three rules:
  *
@@ -23,6 +24,8 @@ enum ProtocolScope: string
     case OfflineAccess = 'offline_access';
     case Organizations = 'organizations';
     case Groups = 'groups';
+    // The `feature_flags` claim on the access token, ID token and UserInfo (1.24).
+    case FeatureFlags = 'feature_flags';
 
     public static function isProtocol(string $scope): bool
     {
