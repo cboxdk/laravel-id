@@ -115,6 +115,14 @@ Everything needed to *draw* a sign-in box, and nothing that identifies anybody.
 }
 ```
 
+`social` lists the same buttons as the hosted sign-in page, resolved by
+`SignInProviders::offeredTo()`. Without a hint it is the environment's own providers. Add
+`?organization=` (an organization's id or slug) to get exactly what that organization's
+hosted page offers: its own providers in place of the environment's, without the ones it
+turned off. An organization the environment does not have is answered as if no hint were
+given, so the parameter does not reveal which organizations exist. Buttons are ordered by
+provider key.
+
 Cached privately for a minute — long enough that a page with several components fetches
 it once, short enough that flipping a provider on shows up while somebody is still
 looking at the console. Never in a shared cache: the document differs per environment.

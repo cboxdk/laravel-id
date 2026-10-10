@@ -26,6 +26,11 @@ use Illuminate\Database\Eloquent\Model;
  * @property MfaRequirement $mfa
  * @property SsoEnforcement $sso
  * @property int|null $lockout_threshold
+ * @property bool $passkeys
+ * @property bool $magic_link
+ * @property int|null $session_idle_minutes
+ * @property int|null $session_absolute_minutes
+ * @property bool $bot_challenge
  */
 class AuthPolicyRecord extends Model implements EnvironmentOwned
 {
@@ -43,6 +48,9 @@ class AuthPolicyRecord extends Model implements EnvironmentOwned
     {
         return [
             'require_breach_check' => 'boolean',
+            'passkeys' => 'boolean',
+            'magic_link' => 'boolean',
+            'bot_challenge' => 'boolean',
             'mfa' => MfaRequirement::class,
             'sso' => SsoEnforcement::class,
         ];
@@ -59,6 +67,11 @@ class AuthPolicyRecord extends Model implements EnvironmentOwned
             mfa: $this->mfa,
             sso: $this->sso,
             lockoutThreshold: $this->lockout_threshold,
+            passkeys: $this->passkeys,
+            magicLink: $this->magic_link,
+            sessionIdleMinutes: $this->session_idle_minutes,
+            sessionAbsoluteMinutes: $this->session_absolute_minutes,
+            botChallenge: $this->bot_challenge,
         );
     }
 
@@ -78,6 +91,11 @@ class AuthPolicyRecord extends Model implements EnvironmentOwned
             'mfa' => $policy->mfa,
             'sso' => $policy->sso,
             'lockout_threshold' => $policy->lockoutThreshold,
+            'passkeys' => $policy->passkeys,
+            'magic_link' => $policy->magicLink,
+            'session_idle_minutes' => $policy->sessionIdleMinutes,
+            'session_absolute_minutes' => $policy->sessionAbsoluteMinutes,
+            'bot_challenge' => $policy->botChallenge,
         ];
     }
 }

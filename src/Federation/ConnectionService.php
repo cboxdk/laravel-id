@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation;
 
 use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\SignInProviders;
 use Cbox\Id\Federation\Enums\ConnectionStatus;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
@@ -48,6 +49,11 @@ class ConnectionService implements Connections
         private readonly AuditLog $audit,
     ) {}
 
+    /**
+     * @param  string|null  $id  a reserved ULID to create the connection under — not on the
+     *                           contract, which hosts implement; reached through
+     *                           {@see SignInProviders::create()}. Null mints one.
+     */
     public function create(
         ?string $organizationId,
         ConnectionType $type,
@@ -55,6 +61,7 @@ class ConnectionService implements Connections
         array $config,
         array $mappings = [],
         ?string $provider = null,
+        ?string $id = null,
     ): Connection {
         // Same reason as `activate()`: creating a connection changes which one an
         // organization signs in with. The environment's own connection is memoised under
@@ -70,8 +77,15 @@ class ConnectionService implements Connections
             throw InvalidAssertion::make('unknown provider: '.$provider);
         }
 
+        if ($id !== null && (! Str::isUlid($id) || Connection::query()->withoutGlobalScopes()->whereKey($id)->exists())) {
+            // A reserved id is the caller's claim. One that is not a ULID, or one that already
+            // names a row — in ANY environment, hence no scope — is refused rather than
+            // overwritten: the primary key is also the secret's sealing context.
+            throw InvalidAssertion::make('that connection id cannot be used');
+        }
+
         $connection = new Connection;
-        $connection->id = (string) Str::ulid();
+        $connection->id = $id ?? (string) Str::ulid();
         $connection->fill([
             'organization_id' => $organizationId,
             'type' => $type,

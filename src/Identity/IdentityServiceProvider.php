@@ -24,6 +24,7 @@ use Cbox\Id\Identity\Contracts\RelyingParties;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\SignedInSession;
 use Cbox\Id\Identity\Contracts\SignedInSubject;
+use Cbox\Id\Identity\Contracts\SignInMethods;
 use Cbox\Id\Identity\Contracts\SmsFactorPolicies;
 use Cbox\Id\Identity\Contracts\SmsFactors;
 use Cbox\Id\Identity\Contracts\SubjectEraser;
@@ -144,6 +145,10 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(PasswordReset::class, PasswordResetService::class);
         $this->app->singleton(AdminPasswords::class, AdminPasswordService::class);
         $this->app->singleton(AuthPolicies::class, DatabaseAuthPolicies::class);
+        // Which methods and session lengths are in force: the deployment's ceiling with the
+        // environment's policy beneath it. Asked by the magic-link and passkey services and
+        // by the session manager, so a host's own door cannot forget to.
+        $this->app->singleton(SignInMethods::class, PolicySignInMethods::class);
         $this->app->singleton(PasswordPolicyGuard::class, PasswordPolicyEnforcer::class);
         $this->app->singleton(PasswordExpiry::class, DatabasePasswordExpiry::class);
         $this->app->singleton(MfaMandate::class, DatabaseMfaMandate::class);

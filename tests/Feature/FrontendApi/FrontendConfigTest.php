@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Federation\Contracts\Connections;
+use Cbox\Id\Federation\Contracts\SignInProviders;
+use Cbox\Id\Federation\Enums\ConnectionStatus;
+use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\FrontendApi\Contracts\FrontendConfigContributor;
 use Cbox\Id\FrontendApi\Contracts\PublishableKeys;
 use Cbox\Id\FrontendApi\Enums\KeyMode;
@@ -9,6 +13,8 @@ use Cbox\Id\FrontendApi\FrontendApiServiceProvider;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
+use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -255,4 +261,50 @@ it('refuses a sender-constrained token presented without its proof', function ()
         ->assertStatus(401);
 
     expect($response->headers->get('WWW-Authenticate'))->toStartWith('DPoP ');
+});
+
+/*
+ * THE SOCIAL BUTTONS ARE THE HOSTED PAGE'S — the same resolver, the same precedence. An
+ * embedded box that drew a different set from the hosted page would send a person to
+ * credentials their organization replaced, or offer a provider it turned off.
+ */
+function configSocial(?string $organization = null): array
+{
+    $url = '/frontend/v1/config'.($organization === null ? '' : '?organization='.$organization);
+
+    return array_column(test()->withHeaders(asBrowser())->getJson($url)->assertOk()->json('social'), 'name', 'provider');
+}
+
+function configProvider(?string $organizationId, string $key, bool $active = true): void
+{
+    $connection = app(SignInProviders::class)->create($organizationId, $key, ConnectionType::OAuth2, ucfirst($key).($organizationId === null ? '' : ' (own)'), [
+        'provider' => $key, 'client_id' => 'c', 'client_secret' => 's',
+    ]);
+
+    if ($active) {
+        app(Connections::class)->activate($organizationId, $connection->id);
+    } else {
+        $connection->forceFill(['status' => ConnectionStatus::Inactive])->save();
+    }
+}
+
+it('lists the environment\'s providers without an organization, and an organization\'s page with one', function (): void {
+    $acme = app(Organizations::class)->create(new NewOrganization('Acme', 'acme'));
+    $bank = app(Organizations::class)->create(new NewOrganization('Bank', 'bank'));
+    $quiet = app(Organizations::class)->create(new NewOrganization('Quiet', 'quiet'));
+
+    configProvider(null, 'github');
+    configProvider(null, 'discord');
+    configProvider($acme->id, 'github');                    // 1. its own replaces the environment's
+    configProvider($quiet->id, 'github', active: false);    // 1. its own, turned off: no button
+    app(SignInProviders::class)->stopInheriting($bank->id, 'discord'); // 2. opted out
+
+    expect(configSocial())->toBe(['discord' => 'Discord', 'github' => 'Github'])
+        ->and(configSocial($acme->id))->toBe(['discord' => 'Discord', 'github' => 'Github (own)'])
+        // By slug as well, the way a hosted page is addressed.
+        ->and(configSocial('acme'))->toBe(['discord' => 'Discord', 'github' => 'Github (own)'])
+        ->and(configSocial($bank->id))->toBe(['github' => 'Github'])
+        ->and(configSocial($quiet->id))->toBe(['discord' => 'Discord'])
+        // An organization this environment does not have is answered as no hint at all.
+        ->and(configSocial('no-such-organization'))->toBe(['discord' => 'Discord', 'github' => 'Github']);
 });

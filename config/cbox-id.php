@@ -52,10 +52,25 @@ return [
      * Session lifetimes. `ttl_minutes` is the absolute cap; `idle_minutes` (0 to
      * disable) expires a session after inactivity, with a sliding window that is
      * refreshed on use. Secure defaults for an admin console lean short.
+     *
+     * These are the DEPLOYMENT's ceiling. An environment may shorten either for its own
+     * people (AuthPolicy::$sessionIdleMinutes / $sessionAbsoluteMinutes), never lengthen
+     * them — see Contracts\SignInMethods.
      */
     'sessions' => [
         'ttl_minutes' => env('CBOX_ID_SESSION_TTL_MINUTES', 60 * 8),
         'idle_minutes' => env('CBOX_ID_SESSION_IDLE_MINUTES', 30),
+    ],
+
+    /*
+     * Sign-in methods the DEPLOYMENT offers at all. On by default; switching one off here
+     * removes it from every environment, whatever an environment's own policy says. An
+     * environment can switch off what the deployment offers, never switch on what it does
+     * not — see Contracts\SignInMethods.
+     */
+    'sign_in' => [
+        'passkeys' => env('CBOX_ID_PASSKEYS_ENABLED', true),
+        'magic_link' => env('CBOX_ID_MAGIC_LINK_ENABLED', true),
     ],
 
     /*
