@@ -38,7 +38,7 @@ class PasskeyService implements Passkeys
     ) {}
 
     /**
-     * @throws SignInMethodDisabled when passkeys are off here
+     * Refused with {@see SignInMethodDisabled} when passkeys are off here.
      */
     public function register(string $userId, string $challenge, string $clientResponseJson, ?string $name = null): WebAuthnCredential
     {
@@ -80,7 +80,7 @@ class PasskeyService implements Passkeys
     }
 
     /**
-     * @throws SignInMethodDisabled when passkeys are off here
+     * Refused with {@see SignInMethodDisabled} when passkeys are off here.
      */
     public function authenticate(string $credentialId, string $challenge, string $clientResponseJson): string
     {

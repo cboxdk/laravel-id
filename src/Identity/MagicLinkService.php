@@ -36,7 +36,7 @@ class MagicLinkService implements MagicLink
     ) {}
 
     /**
-     * @throws SignInMethodDisabled when magic links are off here
+     * Refused with {@see SignInMethodDisabled} when magic links are off here.
      */
     public function request(string $email): string
     {
@@ -61,7 +61,7 @@ class MagicLinkService implements MagicLink
     }
 
     /**
-     * @throws SignInMethodDisabled when magic links are off here
+     * Refused with {@see SignInMethodDisabled} when magic links are off here.
      */
     public function redeem(string $token): Session
     {
