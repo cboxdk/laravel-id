@@ -17,7 +17,7 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
-## [1.24.0] - 2026-10-09
+## [1.24.0] - 2026-10-10
 
 ### Added
 
