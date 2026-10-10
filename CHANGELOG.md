@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-10-10
+
 ### Added
 
 - **Environment-wide social sign-in, inherited by organizations.** `Federation\Contracts\SignInProviders` (bound to `DatabaseSignInProviders`) decides which catalogue providers a sign-in page offers: `offeredTo(?string $organizationId)`, `environmentProviders()`, `stopInheriting()` / `resumeInheriting()` / `notInheritedBy()` / `optOuts()`, and `create()`. An environment-owned provider (`organization_id` null) is offered on every organization's page. For one provider key, an organization's own connection (active or turned off, not a draft) replaces the environment's, then an organization's opt-out hides it, then the environment's active one is offered. New table `sign_in_provider_opt_outs` (migration). Nothing existing changes: organizations had no environment providers to inherit before. See [Sign-in provider catalogue](docs/core-concepts/sign-in-provider-catalogue.md#who-owns-a-provider-the-environment-or-one-organization).
