@@ -229,3 +229,15 @@ it('groups guides by protocol', function (): void {
         ->toBe(['keycloak', 'oidc'])
         ->and(GuideProtocol::Saml->connectionType()->value)->toBe('saml');
 });
+
+/*
+ * Auth0 retired the page the guide linked
+ * (`…/saml-sso-integrations/configure-auth0-saml-identity-provider`, a 404 from at least
+ * 2026-10), and the hosted Admin Portal and the generated IdP pages printed it as "Auth0's
+ * own guide". The steps above are Auth0's SAML2 Web App add-on, which is the page that
+ * documents them now.
+ */
+it('links Auth0 to the page that documents the add-on its steps use', function (): void {
+    expect(IdentityProviderGuides::find('auth0')->documentationUrl)
+        ->toBe('https://auth0.com/docs/authenticate/protocols/saml/saml-sso-integrations/enable-saml2-web-app-addon');
+});
