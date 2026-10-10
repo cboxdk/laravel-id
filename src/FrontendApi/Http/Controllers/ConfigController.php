@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Id\FrontendApi\Http\Controllers;
 
-use Cbox\Id\Federation\Enums\ConnectionStatus;
+use Cbox\Id\Federation\Contracts\SignInProviders;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\FrontendApi\Contracts\FrontendConfigContributor;
 use Cbox\Id\FrontendApi\Models\PublishableKey;
+use Cbox\Id\Organization\Models\Organization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,6 +37,15 @@ use Illuminate\Http\Request;
  *  - Anything an operator configured privately: webhook URLs, SCIM state, internal
  *    connection config. It is one array merge away and it must not be.
  *
+ * THE SOCIAL BUTTONS ARE THE HOSTED PAGE'S. They come from {@see SignInProviders::offeredTo()},
+ * the same resolver the hosted sign-in page draws from, so an embedded box and the hosted
+ * page can never disagree about which buttons an organization's people see. Without a hint
+ * that is the environment's own providers — the plain sign-in page. With `?organization=`
+ * (an organization's id or slug, the way a hosted page is addressed) it is exactly what that
+ * organization's page offers: its own in place of the environment's, minus the ones it turned
+ * off. An organization the environment does not have is answered as no hint at all, so the
+ * parameter cannot be used to learn which organizations exist.
+ *
  * Cached in the browser for a minute. Long enough that a multi-component page fetches it
  * once, short enough that flipping a provider on shows up while somebody is still looking
  * at the console.
@@ -59,7 +69,7 @@ class ConfigController
                 'end_session' => url('/oauth/logout'),
                 'jwks' => url('/.well-known/jwks.json'),
             ],
-            'social' => $this->socialButtons(),
+            'social' => $this->socialButtons($this->organizationHint($request)),
         ];
 
         foreach ($this->contributors as $contributor) {
@@ -78,29 +88,38 @@ class ConfigController
     }
 
     /**
-     * The social sign-in buttons to draw.
+     * The social sign-in buttons to draw, after inheritance.
      *
      * Name and provider only — never the connection's id, and never its config. The id is
      * an internal handle a page has no use for, and the config is secret by definition.
-     * A button needs a label and something to POST to, and that is what this gives.
      *
      * @return list<array{provider: string, name: string}>
      */
-    private function socialButtons(): array
+    private function socialButtons(?string $organizationId): array
     {
-        /** @var list<array{provider: string, name: string}> $buttons */
-        $buttons = Connection::query()
-            ->where('status', ConnectionStatus::Active->value)
-            ->whereNotNull('provider')
-            ->orderBy('name')
-            ->get(['provider', 'name'])
-            ->map(static fn (Connection $c): array => [
-                'provider' => (string) $c->provider,
-                'name' => $c->name,
-            ])
-            ->values()
-            ->all();
+        return array_map(static fn (Connection $c): array => [
+            'provider' => (string) $c->provider,
+            'name' => $c->name,
+        ], app(SignInProviders::class)->offeredTo($organizationId));
+    }
 
-        return $buttons;
+    /**
+     * The organization `?organization=` names — by id or slug — in the current environment,
+     * or null. An unknown one is null rather than an error: the answer is then the plain
+     * page's, indistinguishable from an organization that inherits everything.
+     */
+    private function organizationHint(Request $request): ?string
+    {
+        $hint = $request->query('organization');
+
+        if (! is_string($hint) || $hint === '' || strlen($hint) > 100) {
+            return null;
+        }
+
+        $id = Organization::query()
+            ->where(fn ($query) => $query->whereKey($hint)->orWhere('slug', $hint))
+            ->value('id');
+
+        return is_string($id) ? $id : null;
     }
 }

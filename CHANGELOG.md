@@ -28,6 +28,7 @@ more trust than the wording it removes.
 
 ### Changed
 
+- `GET /frontend/v1/config`'s `social` list is resolved by `SignInProviders::offeredTo()`, the hosted page's resolver: without a hint the environment's own providers, and with the new optional `?organization=` (id or slug) exactly what that organization's hosted page offers. It used to list every active catalogue connection in the environment, every organization's included, ordered by name; it is now ordered by provider key. An unknown organization is answered as no hint.
 - `DatabaseSessionManager` starts a session with the environment's absolute lifetime and applies its idle timeout, each bounded by the deployment's (its constructor values). Where an environment chose an absolute lifetime, `active()` also measures it from `created_at`, so shortening it ends sessions already running. With no environment choice, behaviour is unchanged.
 
 ## [1.24.0] - 2026-10-10
