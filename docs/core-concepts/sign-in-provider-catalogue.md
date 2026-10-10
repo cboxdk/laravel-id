@@ -71,6 +71,57 @@ the principal.
 endpoints, exchanges the code, fetches the profile, and reads the subject, name and
 address through the template's `ProviderProfileMap`.
 
+## Who owns a provider: the environment or one organization
+
+A catalogue connection belongs to the **environment** (`organization_id` null) or to one
+**organization**. An environment provider is what "turn on Google for my app" means: one
+set of credentials, offered on every sign-in page in the environment. An organization
+provider is that organization's own credentials, offered on its own page.
+
+`Federation\Contracts\SignInProviders` (bound to `DatabaseSignInProviders`) answers which
+buttons a page shows. For provider key K on organization O's page, the first match wins:
+
+1. **O has its own K**, active or turned off. O's decides: offered when active, and not at
+   all when turned off. The environment's credentials do not stand in for an organization
+   that switched its own off. A draft decides nothing.
+2. **O stopped inheriting K** (`stopInheriting($organizationId, 'google')`). Not offered.
+3. **The environment has an active K.** Offered.
+
+With no organization known, `offeredTo(null)` returns the environment's active providers.
+`offeredTo()` reads only the provider, owner and status columns, never sealed config.
+
+```php
+use Cbox\Id\Federation\Contracts\SignInProviders;
+
+$providers = app(SignInProviders::class);
+
+$providers->offeredTo(null);              // the plain sign-in page
+$providers->offeredTo($organizationId);   // after inheritance and overrides
+$providers->stopInheriting($organizationId, 'github');
+$providers->resumeInheriting($organizationId, 'github');
+$providers->notInheritedBy($organizationId); // ['github']
+```
+
+Signing in through an environment provider makes no membership, even when the button was
+on one organization's page: holding a Google account says nothing about belonging to that
+organization. Stopping inheritance only removes a button. It is not access control; an
+organization that must keep people out of every other way in requires SSO.
+
+### Showing the real redirect URI before saving
+
+The callback URL contains the connection's id (`/sso/oidc/{id}/callback`,
+`/sso/oauth2/{id}/callback`). `SignInProviders::create()` takes an optional reserved id, a
+ULID nobody has used, so a console can mint the id when it draws the setup form and show
+the real URI to copy into the provider's console. An id that is not a ULID, or that already
+names a connection in any environment, is refused with `InvalidAssertion`. Only the default
+`ConnectionService` can honour a reserved id; `Connections::create()` is unchanged.
+
+### Extra scopes
+
+An OIDC connection's config may carry `scopes`, as before. An OAuth 2.0 connection's config
+may now carry `scopes` too: they are requested in addition to the catalogue's own, which
+sign-in needs and which cannot be removed (`OAuth2ConnectionConfig::$scopes`).
+
 ## How a client secret is presented
 
 RFC 6749 §2.3.1 allows the secret in the request body (`client_secret_post`) or as HTTP

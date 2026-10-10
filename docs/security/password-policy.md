@@ -125,3 +125,54 @@ policy:
   intervenes is a denial-of-service tool — anyone who knows an email address can lock its
   owner out at will. NIST SP 800-63B prefers throttling to hard lockout for this reason:
   the threshold exists to make guessing impractical, not to punish.
+
+## The environment-wide fields
+
+Five fields on `AuthPolicy` are not about passwords and are never an organization's to
+change. They are decided where the organization is usually not known yet — the sign-in
+page before an address is typed, a session read on every request — so a per-organization
+answer could not be enforced honestly. `tightenedWith()` keeps the **baseline's** value for
+each of them, whatever an organization's override row holds; `AuthPolicy::environmentWide()`
+names them.
+
+| Field | Default | What it decides |
+|---|---|---|
+| `passkeys` | on | Whether a passkey may be used to sign in, or be added |
+| `magicLink` | on | Whether a one-time sign-in link may be emailed and redeemed |
+| `sessionIdleMinutes` | null (the deployment's) | How long a session may sit unused |
+| `sessionAbsoluteMinutes` | null (the deployment's) | How long a session lasts at most, however active |
+| `botChallenge` | on | Whether the host may put a human check in front of an attempt its risk scoring flagged |
+
+### The deployment is the ceiling
+
+Read them through `Identity\Contracts\SignInMethods` (bound to `PolicySignInMethods`), not
+from the policy directly. It combines the environment's choice with the deployment's
+configuration, and the deployment wins:
+
+- `cbox-id.sign_in.passkeys` and `cbox-id.sign_in.magic_link` (`CBOX_ID_PASSKEYS_ENABLED`,
+  `CBOX_ID_MAGIC_LINK_ENABLED`, both on by default). Off here means off in every
+  environment, whatever its policy says.
+- `cbox-id.sessions.ttl_minutes` and `cbox-id.sessions.idle_minutes` are the longest an
+  environment may choose. A longer choice is cut to the deployment's. Where the deployment
+  sets no idle timeout (`0`), an environment's idle timeout is bounded by the absolute
+  lifetime instead.
+
+`botChallenge` has no framework-side ceiling: the challenge itself (Turnstile, hCaptcha,
+whatever the host uses) is the host's, and so is the question of whether it is configured.
+
+### Enforced on the primitives
+
+`MagicLinkService::request()` and `redeem()`, and `PasskeyService::register()` and
+`authenticate()`, throw `SignInMethodDisabled` (with `$method` set to `magic_link` or
+`passkeys`) when the method is off. Redeeming refuses too, so a link minted before the
+switch was turned off no longer works. A passkey refusal comes before the credential is
+looked up, so a closed door answers the same for every credential id. Registered passkeys
+are kept, and come back when passkeys are switched on again.
+
+A host should ask `SignInMethods` first and not draw a method that is off; the exception is
+what holds when it did not.
+
+`DatabaseSessionManager` uses the environment's lengths. A new session's `expires_at` is
+written with the environment's absolute lifetime, and `active()` applies the environment's
+idle timeout. Where an environment has chosen an absolute lifetime, `active()` also measures
+it from `created_at`, so shortening it ends long sessions that are already running.

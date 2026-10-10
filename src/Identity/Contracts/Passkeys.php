@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Contracts;
 
+use Cbox\Id\Identity\Exceptions\SignInMethodDisabled;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 
 interface Passkeys
 {
+    /**
+     * @throws SignInMethodDisabled where passkeys are off
+     *                              ({@see SignInMethods})
+     */
     public function register(string $userId, string $challenge, string $clientResponseJson, ?string $name = null): WebAuthnCredential;
 
     /**
      * Verify an assertion and return the authenticated user's id. Rejects a
      * non-increasing signature counter as a possibly cloned authenticator.
+     *
+     * @throws SignInMethodDisabled where passkeys are off
      */
     public function authenticate(string $credentialId, string $challenge, string $clientResponseJson): string;
 

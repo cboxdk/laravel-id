@@ -9,15 +9,29 @@ use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\ExternalActions\Payloads\LoginPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
+use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\LogoutPropagator;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Models\Session;
+use Cbox\Id\Identity\ValueObjects\AuthPolicy;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 
+/**
+ * The default {@see SessionManager}: sessions are rows, ended by revocation, by their
+ * absolute lifetime, or by sitting idle.
+ *
+ * HOW LONG A SESSION LASTS is two levels. The constructor's `$ttlMinutes` and
+ * `$idleMinutes` are the DEPLOYMENT's (`cbox-id.sessions.*`) and are the ceiling; the
+ * current environment's authentication policy may shorten either for its own people
+ * ({@see AuthPolicy::$sessionAbsoluteMinutes}, {@see AuthPolicy::$sessionIdleMinutes}),
+ * never lengthen them. Both are read when a session is started AND when it is checked, so
+ * an environment that shortens its sessions ends the long ones already running at their
+ * new length rather than letting them run out the old one.
+ */
 class DatabaseSessionManager implements SessionManager
 {
     private const DEFAULT_TTL_MINUTES = 60 * 24;
@@ -81,7 +95,7 @@ class DatabaseSessionManager implements SessionManager
             'user_agent' => $userAgent,
             'amr' => $amr,
             'last_active_at' => now(),
-            'expires_at' => now()->addMinutes($this->ttlMinutes),
+            'expires_at' => now()->addMinutes($this->absoluteMinutes()),
         ]);
         $session->save();
 
@@ -107,16 +121,66 @@ class DatabaseSessionManager implements SessionManager
             return null;
         }
 
+        // The absolute lifetime as it is NOW: `expires_at` was written with the length in
+        // force when the session started, and an environment that has since shortened it
+        // means the shorter one for sessions already running too. Only asked where the
+        // environment chose a length — otherwise `expires_at` is already the answer.
+        if ($session->created_at !== null
+            && $this->environmentPolicy()?->sessionAbsoluteMinutes !== null
+            && $session->created_at->copy()->addMinutes($this->absoluteMinutes())->isPast()) {
+            return null;
+        }
+
         // Idle timeout: a session untouched for longer than the idle window is
         // treated as expired, independent of the absolute ttl.
-        if ($this->idleMinutes > 0 && $session->last_active_at !== null
-            && $session->last_active_at->copy()->addMinutes($this->idleMinutes)->isPast()) {
+        $idle = $this->idleMinutes();
+
+        if ($idle > 0 && $session->last_active_at !== null
+            && $session->last_active_at->copy()->addMinutes($idle)->isPast()) {
             return null;
         }
 
         $this->touch($session);
 
         return $session;
+    }
+
+    /**
+     * The absolute lifetime in force: the environment's choice, bounded by the deployment's.
+     */
+    private function absoluteMinutes(): int
+    {
+        $chosen = $this->environmentPolicy()?->sessionAbsoluteMinutes;
+
+        return $chosen === null || $chosen < 1 ? $this->ttlMinutes : min($chosen, $this->ttlMinutes);
+    }
+
+    /**
+     * The idle timeout in force, 0 for none: the environment's choice, bounded by the
+     * deployment's — or, where the deployment sets no idle timeout, by the absolute lifetime,
+     * past which an idle window could never fire anyway.
+     */
+    private function idleMinutes(): int
+    {
+        $chosen = $this->environmentPolicy()?->sessionIdleMinutes;
+
+        if ($chosen === null || $chosen < 1) {
+            return $this->idleMinutes;
+        }
+
+        return min($chosen, $this->idleMinutes > 0 ? $this->idleMinutes : $this->absoluteMinutes());
+    }
+
+    /**
+     * The current environment's policy, or null where none can be read.
+     *
+     * Resolved per call, not injected: a host may decorate {@see AuthPolicies} with something
+     * that revokes sessions — and therefore needs this class — so a constructor dependency
+     * would be a cycle. Memoised per request by the policy store itself.
+     */
+    private function environmentPolicy(): ?AuthPolicy
+    {
+        return app()->bound(AuthPolicies::class) ? app(AuthPolicies::class)->forEnvironment() : null;
     }
 
     /**

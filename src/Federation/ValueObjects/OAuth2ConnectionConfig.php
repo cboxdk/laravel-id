@@ -18,10 +18,16 @@ use Cbox\Id\Federation\ProviderCatalog;
  */
 readonly class OAuth2ConnectionConfig
 {
+    /**
+     * @param  list<string>  $scopes  ADDITIONAL scopes the administrator asked for, requested
+     *                                on top of the catalogue's own — which sign-in needs and
+     *                                which can therefore never be taken away here
+     */
     public function __construct(
         public string $provider,
         public string $clientId,
         public string $clientSecret,
+        public array $scopes = [],
     ) {}
 
     /**
@@ -41,7 +47,27 @@ readonly class OAuth2ConnectionConfig
             provider: $provider,
             clientId: self::require($config, 'client_id'),
             clientSecret: self::require($config, 'client_secret'),
+            scopes: self::scopes($config),
         );
+    }
+
+    /**
+     * The extra scopes, as a clean list: strings only, trimmed, without blanks or repeats.
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private static function scopes(array $config): array
+    {
+        $scopes = [];
+
+        foreach (is_array($config['scopes'] ?? null) ? $config['scopes'] : [] as $scope) {
+            if (is_string($scope) && trim($scope) !== '') {
+                $scopes[] = trim($scope);
+            }
+        }
+
+        return array_values(array_unique($scopes));
     }
 
     /**

@@ -44,7 +44,9 @@ class OAuth2Client
             'response_type' => 'code',
             'client_id' => $config->clientId,
             'redirect_uri' => $redirectUri,
-            'scope' => implode(' ', $template->scopes),
+            // The catalogue's scopes first — sign-in reads what they unlock — then whatever
+            // the administrator added, never in place of them.
+            'scope' => implode(' ', array_values(array_unique([...$template->scopes, ...$config->scopes]))),
             // Opaque, single-use, and checked by the caller on return. Without it the
             // callback is an unauthenticated endpoint that logs somebody in.
             'state' => $state,

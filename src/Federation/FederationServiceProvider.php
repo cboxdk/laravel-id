@@ -12,6 +12,7 @@ use Cbox\Id\Federation\Contracts\FederationFlow;
 use Cbox\Id\Federation\Contracts\OidcRelyingParty;
 use Cbox\Id\Federation\Contracts\OidcUserInfo;
 use Cbox\Id\Federation\Contracts\SamlSpSingleLogout;
+use Cbox\Id\Federation\Contracts\SignInProviders;
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Saml\SamlLogout;
 use Cbox\Id\Federation\Saml\SamlMetadataImporter;
@@ -34,6 +35,9 @@ class FederationServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(Connections::class, ConnectionService::class);
+        // The social sign-in buttons and how an organization inherits its environment's —
+        // see the contract for the precedence.
+        $this->app->singleton(SignInProviders::class, DatabaseSignInProviders::class);
         $this->app->singleton(FederationFlow::class, FederationLoginService::class);
         $this->app->singleton(DnsResolver::class, SystemDnsResolver::class);
         $this->app->singleton(DomainVerification::class, DatabaseDomainVerification::class);

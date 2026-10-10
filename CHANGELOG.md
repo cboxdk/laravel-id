@@ -17,6 +17,19 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **Environment-wide social sign-in, inherited by organizations.** `Federation\Contracts\SignInProviders` (bound to `DatabaseSignInProviders`) decides which catalogue providers a sign-in page offers: `offeredTo(?string $organizationId)`, `environmentProviders()`, `stopInheriting()` / `resumeInheriting()` / `notInheritedBy()` / `optOuts()`, and `create()`. An environment-owned provider (`organization_id` null) is offered on every organization's page. For one provider key, an organization's own connection (active or turned off, not a draft) replaces the environment's, then an organization's opt-out hides it, then the environment's active one is offered. New table `sign_in_provider_opt_outs` (migration). Nothing existing changes: organizations had no environment providers to inherit before. See [Sign-in provider catalogue](docs/core-concepts/sign-in-provider-catalogue.md#who-owns-a-provider-the-environment-or-one-organization).
+- `SignInProviders::create()` takes an optional reserved ULID, so a console can show the real redirect URI (which contains the connection id) before the provider is saved. `ConnectionService::create()` gains a trailing optional `?string $id`; the `Connections` contract is unchanged. A reserved id that is not a ULID or is already used in any environment is refused (`InvalidAssertion`).
+- `OAuth2ConnectionConfig::$scopes` (trailing, optional): extra scopes an OAuth 2.0 connection requests on top of the catalogue's. `OAuth2Client::authorizeUrl()` sends the union, catalogue scopes first.
+- **Environment-wide sign-in methods and session lengths on the authentication policy.** `AuthPolicy` gains trailing optional `passkeys` (true), `magicLink` (true), `sessionIdleMinutes` (null), `sessionAbsoluteMinutes` (null) and `botChallenge` (true), stored as new `auth_policies` columns whose defaults are today's behaviour (migration). They are environment-wide: `tightenedWith()` keeps the baseline's values and ignores an organization override's (`AuthPolicy::environmentWide()`, `isEnvironmentWide()`).
+- `Identity\Contracts\SignInMethods` (bound to `PolicySignInMethods`) combines them with the deployment's ceiling: `passkeysEnabled()`, `magicLinkEnabled()`, `sessionAbsoluteMinutes()`, `sessionIdleMinutes()` and the `deployment*()` readers. New config `cbox-id.sign_in.passkeys` and `cbox-id.sign_in.magic_link` (`CBOX_ID_PASSKEYS_ENABLED`, `CBOX_ID_MAGIC_LINK_ENABLED`, both on by default); `cbox-id.sessions.*` is now the most an environment may choose.
+- `Identity\Exceptions\SignInMethodDisabled` (with `$method`), thrown by `MagicLinkService::request()` / `redeem()` and `PasskeyService::register()` / `authenticate()` when the method is off here. A link minted before magic links were switched off no longer redeems; a passkey refusal comes before the credential lookup. See [Password policy](docs/security/password-policy.md#the-environment-wide-fields).
+
+### Changed
+
+- `DatabaseSessionManager` starts a session with the environment's absolute lifetime and applies its idle timeout, each bounded by the deployment's (its constructor values). Where an environment chose an absolute lifetime, `active()` also measures it from `created_at`, so shortening it ends sessions already running. With no environment choice, behaviour is unchanged.
+
 ## [1.24.0] - 2026-10-10
 
 ### Added

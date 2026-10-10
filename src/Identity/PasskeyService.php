@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\Passkeys;
+use Cbox\Id\Identity\Contracts\SignInMethods;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Exceptions\AccountInactive;
 use Cbox\Id\Identity\Exceptions\ClonedAuthenticator;
 use Cbox\Id\Identity\Exceptions\CredentialAlreadyRegistered;
+use Cbox\Id\Identity\Exceptions\SignInMethodDisabled;
 use Cbox\Id\Identity\Exceptions\UnknownCredential;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
@@ -21,6 +23,11 @@ use Illuminate\Support\Facades\DB;
  * Passkey ceremony orchestration + credential lifecycle. The cryptographic
  * verification is delegated to a {@see WebAuthnVerifier}; this service owns the
  * storage and the clone-detection / replay guard on the signature counter.
+ *
+ * REFUSED WHERE PASSKEYS ARE OFF ({@see SignInMethods::passkeysEnabled()}): no new passkey
+ * is registered and no assertion signs anybody in. Credentials already registered are kept —
+ * switching passkeys back on brings them back exactly as they were — and can still be
+ * listed and removed by their owner.
  */
 class PasskeyService implements Passkeys
 {
@@ -30,8 +37,13 @@ class PasskeyService implements Passkeys
         private readonly Subjects $subjects,
     ) {}
 
+    /**
+     * @throws SignInMethodDisabled when passkeys are off here
+     */
     public function register(string $userId, string $challenge, string $clientResponseJson, ?string $name = null): WebAuthnCredential
     {
+        $this->assertEnabled();
+
         $verified = $this->verifier->verifyRegistration($challenge, $clientResponseJson);
 
         // A registration response's credential_id is attacker-controllable (fmt=none
@@ -67,8 +79,15 @@ class PasskeyService implements Passkeys
         return $credential;
     }
 
+    /**
+     * @throws SignInMethodDisabled when passkeys are off here
+     */
     public function authenticate(string $credentialId, string $challenge, string $clientResponseJson): string
     {
+        // Before anything is looked up, so a switched-off method answers the same for every
+        // credential id and reveals nothing about which ones exist.
+        $this->assertEnabled();
+
         $credential = $this->credentialById($credentialId);
 
         if ($credential === null) {
@@ -131,6 +150,14 @@ class PasskeyService implements Passkeys
     {
         if (! $this->subjects->isActive($subjectId)) {
             throw AccountInactive::make($subjectId);
+        }
+    }
+
+    /** Resolved per call rather than injected, so the constructor stays what hosts build. */
+    private function assertEnabled(): void
+    {
+        if (app()->bound(SignInMethods::class) && ! app(SignInMethods::class)->passkeysEnabled()) {
+            throw SignInMethodDisabled::make('passkeys');
         }
     }
 
