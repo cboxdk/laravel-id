@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-10-13
+
+### Added
+
+- `identities.last_used_at` (nullable timestamp, migration): when a linked federated identity last signed somebody in. `DatabaseSubjects::resolveFederated()` stamps it when a returning identity resolves and when a first sign-in creates one; an explicit `link()` does not, so a link nobody has signed in with yet reads as never used. It is written by a direct column update, so `updated_at` still says when the link itself changed. No backfill: identities linked before this release read null until their next sign-in. `IdentityLink` casts it to `CarbonImmutable`. Nothing else changes; `LinkedIdentity` and the `Subjects` contract are untouched.
+
 ## [1.25.0] - 2026-10-10
 
 ### Added

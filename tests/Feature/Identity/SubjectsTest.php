@@ -295,3 +295,31 @@ it('leaves other people\'s grants alone when one account is disabled', function 
 
     expect($refresh->rotate($client->client_id, $kept))->not->toBeNull();
 })->group('security');
+
+it('records when a linked identity last signed somebody in, and only when it did', function (): void {
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create('dana@corp.com', 'Dana');
+    $principal = new FederatedPrincipal('social:github', 'gh|used', 'dana@corp.com');
+
+    // Linking is not signing in: a link nobody has used yet says so.
+    $subjects->link($subject->id, $principal);
+
+    $link = static fn (): IdentityLink => IdentityLink::query()->where('subject', 'gh|used')->sole();
+
+    expect($link()->last_used_at)->toBeNull();
+
+    $this->travelTo(now()->addDay()->startOfSecond());
+    $subjects->resolveFederated($principal);
+
+    expect($link()->last_used_at?->equalTo(now()))->toBeTrue()
+        // The link itself did not change, so neither does the time it last did.
+        ->and($link()->updated_at?->lessThan(now()))->toBeTrue();
+});
+
+it('stamps an identity a first sign-in creates as used at that sign-in', function (): void {
+    $this->travelTo(now()->startOfSecond());
+
+    app(Subjects::class)->resolveFederated(new FederatedPrincipal('social:google', 'google|first', 'new@corp.com'));
+
+    expect(IdentityLink::query()->where('subject', 'google|first')->sole()->last_used_at?->equalTo(now()))->toBeTrue();
+});
