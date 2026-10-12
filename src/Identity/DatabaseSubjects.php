@@ -203,6 +203,8 @@ class DatabaseSubjects implements Subjects
                 $existing = $this->find($link->user_id);
 
                 if ($existing !== null) {
+                    $this->stampUsed($link);
+
                     return new FederatedProvisioning($existing, created: false);
                 }
             }
@@ -230,7 +232,7 @@ class DatabaseSubjects implements Subjects
                 $subject = $this->find($subject->id) ?? $subject;
             }
 
-            $this->writeLink($subject->id, $principal);
+            $this->stampUsed($this->writeLink($subject->id, $principal));
 
             return new FederatedProvisioning($subject, created: true);
         });
@@ -302,9 +304,26 @@ class DatabaseSubjects implements Subjects
             : $query->where('connection_id', $principal->connectionId);
     }
 
-    private function writeLink(string $subjectId, FederatedPrincipal $principal): void
+    /**
+     * Record that this identity just resolved a sign-in.
+     *
+     * A direct column update rather than `save()`: `updated_at` says when the LINK changed,
+     * and a sign-in does not change it. Quiet for the same reason — this is bookkeeping
+     * about use, not a mutation of the identity, and observers of `IdentityLink` would
+     * otherwise be told about every federated sign-in in the environment.
+     *
+     * Only ever called from {@see resolveFederated()}, which is the one place a federated
+     * identity is turned into a signed-in subject. An explicit {@see link()} is not a
+     * sign-in, so a freshly linked identity has not been "used" until it is.
+     */
+    private function stampUsed(IdentityLink $link): void
     {
-        IdentityLink::query()->create([
+        IdentityLink::query()->whereKey($link->getKey())->toBase()->update(['last_used_at' => now()]);
+    }
+
+    private function writeLink(string $subjectId, FederatedPrincipal $principal): IdentityLink
+    {
+        $link = IdentityLink::query()->create([
             'user_id' => $subjectId,
             'provider' => $principal->provider,
             'subject' => $principal->subject,
@@ -323,6 +342,8 @@ class DatabaseSubjects implements Subjects
             targetId: $subjectId,
             context: ['provider' => $principal->provider, 'subject' => $principal->subject],
         ));
+
+        return $link;
     }
 
     public function verifyPassword(string $subjectId, string $password): bool

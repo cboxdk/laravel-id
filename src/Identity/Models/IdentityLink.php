@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Identity\Models;
 
+use Carbon\CarbonImmutable;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -19,6 +20,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $subject
  * @property string|null $connection_id
  * @property array<string, mixed> $raw
+ * @property CarbonImmutable|null $last_used_at When this identity last signed somebody in;
+ *                                              null when it never has since the column
+ *                                              existed (see the migration).
  */
 class IdentityLink extends Model implements EnvironmentOwned
 {
@@ -36,6 +40,7 @@ class IdentityLink extends Model implements EnvironmentOwned
     {
         return [
             'raw' => 'array',
+            'last_used_at' => 'immutable_datetime',
         ];
     }
 }
