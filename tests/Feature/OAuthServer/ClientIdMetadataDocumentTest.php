@@ -423,3 +423,13 @@ it('refuses an oversized, non-JSON, redirecting or failing response through the 
     'redirect' => ['', 302, ['Location' => 'http://169.254.169.254/'], 'fetch_failed'],
     'server error' => ['', 500, [], 'fetch_failed'],
 ]);
+
+it('fetches through the real cURL handler with only the request options it accepts', function (): void {
+    // No Http::fake: the request goes through Guzzle's own cURL handler, which refuses curl
+    // options outside its allow-list (Guzzle 8) before anything is sent. A refused option
+    // surfaced as an uncaught exception, a 500 at /authorize for every document client.
+    // Port 9 on loopback answers nothing, so the fetch fails as an ordinary fetch failure.
+    config(['cbox-id.oauth.client_id_metadata_documents.verify_url' => false]);
+
+    expect(cimdReason(fn () => app(HttpMetadataDocumentFetcher::class)->fetch('https://127.0.0.1:9/oauth/metadata.json')))->toBe('fetch_failed');
+});
