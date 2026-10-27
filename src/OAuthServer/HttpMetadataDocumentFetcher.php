@@ -10,6 +10,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadataDocument;
 use Cbox\Id\OAuthServer\ValueObjects\FetchedDocument;
 use Cbox\Ssrf\Contracts\UrlGuard;
 use Cbox\Ssrf\Exceptions\BlockedUrl;
+use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Http;
 use JsonException;
 use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
+use Throwable;
 
 /**
  * The default {@see MetadataDocumentFetcher}: an https GET through `cboxdk/laravel-ssrf`.
@@ -29,9 +31,12 @@ use RuntimeException;
  *    check and the connect cannot steer the request inward. https only, no credentials.
  *  - NO REDIRECTS, ever — even with host verification switched off for development. A
  *    document URL that 302s to the metadata service would otherwise be followed.
- *  - SIZE. The declared `Content-Length` is checked as the headers arrive, curl is told the
- *    ceiling, and the body is measured again before it is parsed — a few kilobytes is all
- *    a client's metadata ever needs (`max_bytes`, 5120 by default).
+ *  - SIZE. The declared `Content-Length` is checked as the headers arrive, the transfer is
+ *    stopped once more than the ceiling has arrived (a chunked body declares no length),
+ *    and the body is measured again before it is parsed — a few kilobytes is all a
+ *    client's metadata ever needs (`max_bytes`, 5120 by default). Through Guzzle's own
+ *    `progress` option, never a raw curl option: Guzzle 8 refuses curl options outside its
+ *    allow-list (CURLOPT_MAXFILESIZE among them) with an exception before sending.
  *  - TIME. A short connect and total timeout, so a slow host stalls one request briefly
  *    rather than holding a worker.
  *
@@ -48,15 +53,13 @@ class HttpMetadataDocumentFetcher implements MetadataDocumentFetcher
 
         $options = $this->pinned($url);
 
-        // The guard owns the `curl` options it returned (the DNS pin); the size ceiling is
-        // added beside them, never instead of them.
-        // (Guarded like the SSRF package guards CURLOPT_RESOLVE: the curl extension is not a
-        // hard requirement, and without it the header check and the final measure remain.)
-        if (defined('CURLOPT_MAXFILESIZE')) {
-            $curl = isset($options['curl']) && is_array($options['curl']) ? $options['curl'] : [];
-            $curl[constant('CURLOPT_MAXFILESIZE')] = $limit;
-            $options['curl'] = $curl;
-        }
+        // The guard owns the `curl` options it returned (the DNS pin); nothing is added to
+        // them. A body still arriving past the ceiling stops the transfer here.
+        $options['progress'] = static function (mixed $downloadTotal, mixed $downloaded) use ($limit): void {
+            if (is_int($downloaded) && $downloaded > $limit) {
+                throw new RuntimeException('too_large');
+            }
+        };
 
         $options['on_headers'] = static function (ResponseInterface $response) use ($limit): void {
             $length = $response->getHeaderLine('Content-Length');
@@ -72,12 +75,19 @@ class HttpMetadataDocumentFetcher implements MetadataDocumentFetcher
                 ->timeout($this->integer('timeout', 5))
                 ->accept('application/json')
                 ->get($url);
-        } catch (ConnectionException|RequestException $e) {
-            if (str_contains($e->getMessage(), 'too_large') || str_contains($e->getMessage(), 'Maximum file size')) {
+        } catch (ConnectionException|RequestException|TransferException $e) {
+            if ($this->stoppedForSize($e)) {
                 throw InvalidClientMetadataDocument::tooLarge($limit);
             }
 
             throw InvalidClientMetadataDocument::fetchFailed($e->getMessage());
+        } catch (RuntimeException $e) {
+            // A callback's refusal can also surface unwrapped, straight out of the handler.
+            if ($this->stoppedForSize($e)) {
+                throw InvalidClientMetadataDocument::tooLarge($limit);
+            }
+
+            throw $e;
         }
 
         if ($response->status() !== 200) {
@@ -113,6 +123,18 @@ class HttpMetadataDocumentFetcher implements MetadataDocumentFetcher
         } catch (BlockedUrl $e) {
             throw InvalidClientMetadataDocument::unsafeUrl($e->getMessage());
         }
+    }
+
+    /** The size callbacks' own refusal, however many layers Guzzle and Laravel wrapped it in. */
+    private function stoppedForSize(Throwable $e): bool
+    {
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if (str_contains($current->getMessage(), 'too_large')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
