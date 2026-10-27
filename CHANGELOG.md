@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.26.1] - 2026-10-27
+
 ### Fixed
 
 - **Client ID metadata documents work again on Guzzle 8.** `HttpMetadataDocumentFetcher` passed `CURLOPT_MAXFILESIZE` in the `curl` request option; Guzzle 8's cURL handler refuses curl options outside its allow-list with an `InvalidArgumentException` before sending, which nothing caught, so every `/authorize` with a document `client_id` (Claude's MCP connector among them) answered 500. The size ceiling is now enforced through Guzzle's own `progress` option (the transfer stops once more than `max_bytes` has arrived), beside the existing `Content-Length` check and the final measure; any Guzzle transfer failure reads as `fetch_failed`. A test now fetches through the real cURL handler, which the faked HTTP tests never reached.
