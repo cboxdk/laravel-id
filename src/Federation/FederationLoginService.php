@@ -64,7 +64,7 @@ class FederationLoginService implements FederationFlow
                 $this->memberships->add($connection->organization_id, $subject->id, MembershipRole::Member);
             }
 
-            $session = $this->sessions->start($subject->id, $connection->organization_id, ['sso']);
+            $session = $this->sessions->start($subject->id, $connection->organization_id, self::amr($connection));
 
             $this->events->emit(new DomainEvent(
                 'user.login',
@@ -83,5 +83,20 @@ class FederationLoginService implements FederationFlow
 
             return $session;
         });
+    }
+
+    /**
+     * How the session says it was signed in. A catalogue provider — Google, GitHub, Okta —
+     * is a button on the sign-in page, so it is recorded the way the operator's own social
+     * door records one, `['social', 'google']`, and the page can tell which button was
+     * pressed. A hand-configured connection is single sign-on and nothing more specific.
+     *
+     * @return list<string>
+     */
+    private static function amr(Connection $connection): array
+    {
+        $provider = $connection->provider;
+
+        return is_string($provider) && $provider !== '' ? ['social', $provider] : ['sso'];
     }
 }

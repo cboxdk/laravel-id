@@ -117,6 +117,16 @@ it('completes an SSO login: provisions user, membership and session', function (
         ->and(app(Memberships::class)->of($org->id, (string) $user?->id))->not->toBeNull();
 });
 
+it('records a catalogue provider as the social button it is, not as single sign-on', function (): void {
+    $org = $this->makeOrganization();
+    $connection = $this->makeConnection($org->id, ConnectionType::Oidc, 'Google', [], provider: 'google');
+
+    $principal = new FederatedPrincipal('oidc', 'google|dana', 'dana@corp.com', 'Dana', $connection->id);
+    $session = app(FederationFlow::class)->completeLogin($connection, $principal);
+
+    expect($session->amr)->toBe(['social', 'google']);
+});
+
 it('refuses to complete login on an inactive connection', function (): void {
     $org = $this->makeOrganization();
     $connection = $this->makeConnection($org->id, ConnectionType::Saml, active: false);
