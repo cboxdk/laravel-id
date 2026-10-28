@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.26.2] - 2026-10-28
+
+### Fixed
+
+- **A catalogue provider's sign-in now says which provider it was.** `FederationLoginService::completeLogin()` started every federated session with `amr` `['sso']`, so a sign-in with an environment's or organization's Google, GitHub or other catalogue connection read exactly like enterprise single sign-on, and a sign-in page could not mark the button that was pressed. A connection with a catalogue `provider` now starts the session with `['social', '<provider>']`, the same `amr` an operator's own social sign-in records; a hand-configured connection (no `provider`) still records `['sso']`. A `pre_authentication` hook or token consumer that treated `sso` as "federated" should also accept `social`.
+
 ## [1.26.1] - 2026-10-27
 
 ### Fixed

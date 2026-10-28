@@ -77,8 +77,9 @@ overwritten.
 }
 ```
 
-`amr` is how the user authenticated — `pwd`, `mfa`, `sso`, `magic_link`, … — which makes
-"SSO logins skip the check, password logins do not" expressible without any other lookup.
+`amr` is how the user authenticated — `pwd`, `mfa`, `sso`, `magic_link`, `['social', 'google']`
+for a catalogue provider, … — which makes "SSO logins skip the check, password logins do not"
+expressible without any other lookup.
 
 The hook fires from `SessionManager::start()`, the one primitive every login path funnels
 through, so it covers magic links, SSO and a host's own password form without any of them
