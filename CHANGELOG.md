@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.26.3] - 2026-11-02
+
 ### Fixed
 
 - **A client ID metadata document client may sign in from any loopback port.** `AuthorizationClient::allowsRedirectUri()` matched a document client's `redirect_uris` exactly, loopback included, so a native client whose document lists `http://localhost/callback` and binds a free port at sign-in time (Claude Code does exactly this) was refused at `/authorize` with a redirect mismatch on every attempt. A loopback redirect (`127.0.0.1`, `[::1]`, `localhost`) now matches when it differs only in port, the rule a registered client already had (RFC 8252 §7.3; OAuth 2.1 §8.4.2 requires the server to allow any port there). Non-loopback redirects still match exactly.
