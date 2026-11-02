@@ -59,11 +59,12 @@ readonly class AuthorizationClient
     /**
      * Whether `$redirectUri` is one this client may be sent back to.
      *
-     * A metadata document client: EXACT string match against the document's
-     * `redirect_uris`, loopback included — the document is the publisher's whole claim,
-     * and there is no registration step at which a looser rule could have been agreed.
-     * A registered client: exact match, or a loopback redirect differing only in port
-     * (RFC 8252 §7.3, for native apps that bind an ephemeral port).
+     * Exact string match against the client's `redirect_uris`, or a loopback redirect
+     * differing only in port (RFC 8252 §7.3; OAuth 2.1 §8.4.2 makes the port exception a
+     * MUST for the server). The same rule for a registered client and a metadata document
+     * client: a native MCP client publishes `http://localhost/callback` in its document and
+     * binds whatever port is free when it signs in, so an exact match on loopback would
+     * refuse every such client after the first port.
      */
     public function allowsRedirectUri(string $redirectUri): bool
     {
@@ -71,10 +72,6 @@ readonly class AuthorizationClient
 
         if (in_array($redirectUri, $registered, true)) {
             return true;
-        }
-
-        if ($this->isMetadataDocumentClient()) {
-            return false;
         }
 
         $candidate = self::withoutLoopbackPort($redirectUri);

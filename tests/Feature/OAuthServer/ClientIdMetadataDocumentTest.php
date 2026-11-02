@@ -160,9 +160,14 @@ it('resolves a document client for /authorize with the consent facts the host sh
         ->and($authorizing->client->scopes)->toBe(['mcp:tools', 'offline_access'])
         ->and($authorizing->client->isDynamicallyRegistered())->toBeTrue();
 
-    // Redirect URIs match EXACTLY — a loopback URI on another port is not the same one.
+    // Redirect URIs match exactly, except that a loopback URI may differ in port (RFC 8252
+    // §7.3, OAuth 2.1 §8.4.2): a native client binds whatever port is free when it signs in.
     expect($authorizing->allowsRedirectUri('http://127.0.0.1:33418/callback'))->toBeTrue()
-        ->and($authorizing->allowsRedirectUri('http://127.0.0.1:40000/callback'))->toBeFalse()
+        ->and($authorizing->allowsRedirectUri('http://127.0.0.1:40000/callback'))->toBeTrue()
+        ->and($authorizing->allowsRedirectUri('http://127.0.0.1/callback'))->toBeTrue()
+        ->and($authorizing->allowsRedirectUri('http://127.0.0.1:40000/other'))->toBeFalse()
+        ->and($authorizing->allowsRedirectUri('http://localhost:40000/callback'))->toBeFalse()
+        ->and($authorizing->allowsRedirectUri('https://client.example.test:8443/callback'))->toBeFalse()
         ->and($authorizing->allowsRedirectUri('https://client.example.test/callback/'))->toBeFalse();
 
     // Never persisted.

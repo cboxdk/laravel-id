@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:c92480f0-d08d-4beb-89b7-984c9974810c",
+    "serialNumber": "urn:uuid:3793ec36-01c2-4884-9ea9-f644f29bb50c",
     "version": 1,
     "metadata": {
         "tools": [
@@ -69,12 +69,12 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/cboxdk/laravel-siem@v0.2.0",
+            "bom-ref": "pkg:composer/cboxdk/laravel-siem@v0.1.1",
             "group": "cboxdk",
             "name": "laravel-siem",
-            "version": "v0.2.0",
-            "purl": "pkg:composer/cboxdk/laravel-siem@v0.2.0",
-            "description": "The SIEM log-streaming delivery engine for Laravel \u2014 a durable transactional outbox, queued batched delivery with retry/backoff/dead-letter/circuit-breaker, SSRF-guarded egress to HTTP collectors, Datadog, Amazon S3 and Google Cloud Storage, encrypted destination secrets, and PII redaction, on top of the framework-agnostic cboxdk/siem core.",
+            "version": "v0.1.1",
+            "purl": "pkg:composer/cboxdk/laravel-siem@v0.1.1",
+            "description": "The SIEM log-streaming delivery engine for Laravel \u2014 a durable transactional outbox, queued batched delivery with retry/backoff/dead-letter/circuit-breaker, SSRF-guarded HTTP egress, encrypted destination secrets, and PII redaction, on top of the framework-agnostic cboxdk/siem core.",
             "licenses": [
                 {
                     "license": {
@@ -945,11 +945,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/symfony/mime@v8.1.7",
+            "bom-ref": "pkg:composer/symfony/mime@v8.1.10",
             "group": "symfony",
             "name": "mime",
-            "version": "v8.1.7",
-            "purl": "pkg:composer/symfony/mime@v8.1.7",
+            "version": "v8.1.10",
+            "purl": "pkg:composer/symfony/mime@v8.1.10",
             "description": "Allows manipulating MIME messages",
             "licenses": [
                 {
