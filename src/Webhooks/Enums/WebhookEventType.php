@@ -241,7 +241,7 @@ enum WebhookEventType: string
             self::UserErased => 'A user was erased (GDPR Art. 17): credentials, sessions, grants and memberships removed, and their email and name replaced with placeholders. The id stays. Erase your own copy of them. Payload: `user_id`.',
             self::UserLogin => 'A user signed in through a federated (SSO) connection. Payload: `user_id`, `connection_id`.',
             self::IdentityLinked => 'An external identity (a social or enterprise login) was linked to a user. Payload: `user_id`, `provider`.',
-            self::OrganizationCreated => 'An organization was created. Payload: `id`, `slug`.',
+            self::OrganizationCreated => 'An organization was created. Payload: `id`, `name`, `slug`.',
             self::OrganizationUpdated => 'An organization\'s name, slug or settings changed. Payload: `id`, `name`, `slug`, `changed` (which of `name`, `slug`, `settings`), and `settings_keys` for a settings change.',
             self::OrganizationSuspended => 'An organization was suspended; its members are refused until it is reactivated. Payload: `id`, `status`.',
             self::OrganizationReactivated => 'A suspended organization was reactivated. Payload: `id`, `status`.',

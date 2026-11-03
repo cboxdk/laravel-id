@@ -17,6 +17,10 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`organization.created` now carries the organization's `name`.** The event (and the webhook built from it) said only `id` and `slug`, so a receiver mirroring organizations had to read the name back over the management API or show the id until the first `organization.updated` arrived; Cbox Engage showed ids on its Companies page for exactly that reason. The payload is now `id`, `name`, `slug`, the shape `organization.updated` already had.
+
 ## [1.26.3] - 2026-11-02
 
 ### Fixed

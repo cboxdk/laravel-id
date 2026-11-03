@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Kernel\Tenancy\Contracts\Tenant;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\OrganizationStatus;
@@ -42,6 +43,14 @@ it('emits an event and records audit on creation', function (): void {
 
     $events->assertEmitted('organization.created');
     $audit->assertRecorded('organization.created');
+});
+
+it('carries the name in organization.created so a receiver can mirror it without a read back', function (): void {
+    $events = $this->fakeEvents();
+
+    $org = $this->makeOrganization('Acme');
+
+    $events->assertEmitted('organization.created', fn (DomainEvent $e): bool => $e->payload === ['id' => $org->id, 'name' => 'Acme', 'slug' => $org->slug]);
 });
 
 it('merges and persists organization settings', function (): void {

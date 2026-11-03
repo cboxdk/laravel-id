@@ -78,7 +78,7 @@ own events can be subscribed to as well.
 
 | Event | Status | Description |
 |---|---|---|
-| `organization.created` | current | An organization was created. Payload: `id`, `slug`. |
+| `organization.created` | current | An organization was created. Payload: `id`, `name`, `slug`. |
 | `organization.suspended` | current | An organization was suspended; its members are refused until it is reactivated. Payload: `id`, `status`. |
 | `organization.reactivated` | current | A suspended organization was reactivated. Payload: `id`, `status`. |
 | `organization.settings_updated` | legacy → `organization.updated` | Legacy name for a settings change; emitted alongside organization.updated. Payload: `id`, `keys` (the settings keys written). |

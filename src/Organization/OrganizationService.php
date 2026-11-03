@@ -59,7 +59,7 @@ class OrganizationService implements Organizations
 
             $this->events->emit(new DomainEvent(
                 'organization.created',
-                ['id' => $organization->id, 'slug' => $organization->slug],
+                ['id' => $organization->id, 'name' => $organization->name, 'slug' => $organization->slug],
                 $organization->id,
             ));
 
