@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.26.6] - 2026-11-04
+
+### Fixed
+
+- Run the release SBOM dependency-set check with PHP, which is available in every CI matrix container. The previous check failed because `jq` was missing, before comparing dependencies. Includes all security fixes from 1.26.5.
+
 ## [1.26.5] - 2026-11-04
 
 ### Security
