@@ -26,6 +26,8 @@ enum ProtocolScope: string
     case Groups = 'groups';
     // The `feature_flags` claim on the access token, ID token and UserInfo (1.24).
     case FeatureFlags = 'feature_flags';
+    case UserPropertiesRead = 'user_properties:read';
+    case UserPropertiesWrite = 'user_properties:write';
 
     public static function isProtocol(string $scope): bool
     {

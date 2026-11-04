@@ -6,6 +6,7 @@ namespace Cbox\Id\Webhooks;
 
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\Webhooks\Contracts\WebhookDeliveryPolicy;
 use Cbox\Id\Webhooks\Contracts\WebhookDispatcher;
 use Cbox\Id\Webhooks\Contracts\WebhookRegistry;
 use Cbox\Id\Webhooks\Enums\DeliveryStatus;
@@ -46,6 +47,9 @@ class HttpWebhookDispatcher implements WebhookDispatcher
     public function dispatch(string $eventType, array $payload, ?string $organizationId = null): void
     {
         foreach ($this->registry->matching($organizationId, $eventType) as $endpoint) {
+            if (! app(WebhookDeliveryPolicy::class)->allows($endpoint, $eventType, $payload)) {
+                continue;
+            }
             $sequence = $this->nextSequence($endpoint);
 
             $delivery = new WebhookDelivery;
@@ -232,6 +236,15 @@ class HttpWebhookDispatcher implements WebhookDispatcher
 
     private function attempt(WebhookEndpoint $endpoint, WebhookDelivery $delivery): void
     {
+        // Recheck at send time too: grants can be revoked while a delivery is queued.
+        if (! app(WebhookDeliveryPolicy::class)->allows($endpoint, $delivery->event_type, $delivery->payload)) {
+            $delivery->status = DeliveryStatus::Exhausted;
+            $delivery->next_retry_at = null;
+            $delivery->save();
+
+            return;
+        }
+
         // Circuit breaker: an endpoint that has just tripped is left alone until its
         // cooldown elapses. The delivery keeps its attempt count — the trip is the
         // endpoint's fault, not this delivery's — and simply waits, so a blackholing

@@ -48,6 +48,8 @@ class ServerMetadata
         ProtocolScope::Organizations->value,
         ProtocolScope::Groups->value,
         ProtocolScope::FeatureFlags->value,
+        ProtocolScope::UserPropertiesRead->value,
+        ProtocolScope::UserPropertiesWrite->value,
     ];
 
     /**

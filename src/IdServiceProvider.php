@@ -37,6 +37,7 @@ use Cbox\Id\Provisioning\ProvisioningServiceProvider;
 use Cbox\Id\SamlIdp\SamlIdpServiceProvider;
 use Cbox\Id\Support\PackageConfigMerger;
 use Cbox\Id\TokenVault\TokenVaultServiceProvider;
+use Cbox\Id\UserProperties\UserPropertiesServiceProvider;
 use Cbox\Id\Webhooks\WebhookServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -95,6 +96,7 @@ class IdServiceProvider extends ServiceProvider
         PipesServiceProvider::class,
         SamlIdpServiceProvider::class,
         WebhookServiceProvider::class,
+        UserPropertiesServiceProvider::class,
         // Outbound SCIM 2.0 provisioning: the mirror of the Directory (inbound
         // SCIM server) module — pushes user/membership changes OUT to downstream
         // apps. Registered after the domain modules whose events it subscribes to.

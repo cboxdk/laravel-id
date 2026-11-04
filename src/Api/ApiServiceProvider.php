@@ -46,6 +46,7 @@ use Cbox\Id\Api\Http\Middleware\ScimContentType;
 use Cbox\Id\Api\Scim\DefaultScimBulkProcessor;
 use Cbox\Id\Api\Scim\DirectoryScimGroupResources;
 use Cbox\Id\Api\Scim\DirectoryScimUserResources;
+use Cbox\Id\UserProperties\Http\UserPropertiesController;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
@@ -195,6 +196,11 @@ class ApiServiceProvider extends ServiceProvider
 
             // UserInfo (OIDC §5.3) — bearer-authenticated, called per session.
             Route::middleware('throttle:120,1')->match(['get', 'post'], '/oauth/userinfo', UserInfoController::class);
+
+            Route::middleware(['throttle:120,1', NoStore::class])->group(function (): void {
+                Route::get('/oauth/users/{user}/properties/{namespace}', [UserPropertiesController::class, 'show']);
+                Route::patch('/oauth/users/{user}/properties/{namespace}', [UserPropertiesController::class, 'update']);
+            });
 
             // Authorization decision endpoint (hot path): permission + entitlement
             // checks resolved live. Generously throttled — resource servers call it per

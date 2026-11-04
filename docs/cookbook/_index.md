@@ -322,3 +322,5 @@ $checkpoint = app(AuditLog::class)->checkpoint($org->id);
 Mirror one environment's hash-chained trail to Splunk, Elastic, Graylog or a CEF
 collector — isolation intact, dedup by the entry hash. See the full recipe:
 [Stream audit events to a SIEM](enable-an-audit-stream.md).
+
+- [Shared user preferences and metadata](user-properties.md)

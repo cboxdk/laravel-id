@@ -290,7 +290,7 @@ it('advertises no sign-in scope a self-registering client cannot ask for', funct
     // sign-in scopes are the ones a relying party discovers and asks for.
     $signIn = array_values(array_filter(
         $advertised,
-        static fn (string $scope): bool => ! str_contains($scope, '.'),
+        static fn (string $scope): bool => ! str_contains($scope, '.') && ! str_contains($scope, ':'),
     ));
 
     expect(array_values(array_diff($signIn, $registerable)))->toBe([]);

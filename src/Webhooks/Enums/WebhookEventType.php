@@ -24,6 +24,8 @@ enum WebhookEventType: string
 {
     case UserCreated = 'user.created';
     case UserUpdated = 'user.updated';
+    case UserPreferencesUpdated = 'user.preferences.updated';
+    case UserMetadataUpdated = 'user.metadata.updated';
     case UserDeactivated = 'user.deactivated';
 
     case OrganizationCreated = 'organization.created';
@@ -167,7 +169,7 @@ enum WebhookEventType: string
     public function group(): WebhookEventGroup
     {
         return match ($this) {
-            self::UserCreated, self::UserUpdated, self::UserDeactivated, self::UserReactivated,
+            self::UserCreated, self::UserUpdated, self::UserPreferencesUpdated, self::UserMetadataUpdated, self::UserDeactivated, self::UserReactivated,
             self::UserLogin, self::IdentityLinked, self::UserErased => WebhookEventGroup::Users,
             self::OrganizationCreated, self::OrganizationUpdated, self::OrganizationSuspended,
             self::OrganizationReactivated, self::OrganizationDeleted, self::OrganizationArchived,
@@ -234,6 +236,7 @@ enum WebhookEventType: string
     public function description(): string
     {
         return match ($this) {
+            self::UserPreferencesUpdated, self::UserMetadataUpdated => 'User properties changed. Payload: event_id, user_id, namespace, changed_keys, version, client_id, occurred_at. Delivered only to explicitly granted namespace endpoints; fetch the current document.',
             self::UserCreated => 'A user account was created in the environment. Payload: `user_id`, `email`.',
             self::UserUpdated => 'A user\'s profile changed. Payload: `user_id`, `changed` (the fields that changed).',
             self::UserDeactivated => 'A user was deactivated and can no longer sign in. Payload: `user_id`.',
@@ -293,6 +296,8 @@ enum WebhookEventType: string
     public function label(): string
     {
         return match ($this) {
+            self::UserPreferencesUpdated => 'User preferences changed',
+            self::UserMetadataUpdated => 'User metadata changed',
             self::UserCreated => 'A user was created',
             self::UserUpdated => 'A user was updated',
             self::UserDeactivated => 'A user was deactivated',

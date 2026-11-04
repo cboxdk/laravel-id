@@ -68,6 +68,8 @@ own events can be subscribed to as well.
 |---|---|---|
 | `user.created` | current | A user account was created in the environment. Payload: `user_id`, `email`. |
 | `user.updated` | current | A user's profile changed. Payload: `user_id`, `changed` (the fields that changed). |
+| `user.preferences.updated` | current | User properties changed. Payload: event_id, user_id, namespace, changed_keys, version, client_id, occurred_at. Delivered only to explicitly granted namespace endpoints; fetch the current document. |
+| `user.metadata.updated` | current | User properties changed. Payload: event_id, user_id, namespace, changed_keys, version, client_id, occurred_at. Delivered only to explicitly granted namespace endpoints; fetch the current document. |
 | `user.deactivated` | current | A user was deactivated and can no longer sign in. Payload: `user_id`. |
 | `user.login` | current | A user signed in through a federated (SSO) connection. Payload: `user_id`, `connection_id`. |
 | `user.reactivated` | current | A deactivated user was reactivated. Payload: `user_id`. |

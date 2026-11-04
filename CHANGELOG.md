@@ -17,6 +17,14 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-11-04
+
+### Added
+
+- Shared user preferences (language, locale, timezone, date/time formats, week start and system/light/dark theme) and custom JSON namespaces with explicit app reader/writer grants.
+- OAuth user-properties read/patch endpoints, optimistic versions, explicit key removal and namespace-scoped webhook notifications through the transactional outbox. Queued deliveries recheck grants before sending; an after-commit wake-up reduces relay latency.
+- Erasure support, public host contracts, integration test helpers and a complete integration recipe. User data stays within its environment; custom values are never copied into tokens or change events.
+
 ## [1.26.6] - 2026-11-04
 
 ### Fixed
