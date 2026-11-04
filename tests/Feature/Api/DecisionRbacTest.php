@@ -6,6 +6,8 @@ use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Models\Role;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\Organization\Contracts\Memberships;
@@ -15,6 +17,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+    User::query()->create(['id' => 'agent', 'email' => 'agent@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * `POST /oauth/decisions` in RBAC mode: "may X do `feature:action` in org T", answered for

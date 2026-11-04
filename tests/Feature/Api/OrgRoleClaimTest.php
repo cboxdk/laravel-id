@@ -6,6 +6,8 @@ use Cbox\Id\ExternalActions\Contracts\ActionPipeline;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\ExternalActions\ValueObjects\PipelineOutcome;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\Kernel\Tenancy\Contracts\TenantContext;
 use Cbox\Id\Kernel\Tenancy\GenericTenant;
@@ -23,6 +25,12 @@ use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+    User::query()->create(['id' => 'stranger', 'email' => 'stranger@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * `org_role` — the subject's membership tier in the bound organization — on every token

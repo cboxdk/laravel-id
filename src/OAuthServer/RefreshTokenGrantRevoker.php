@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer;
 use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Models\AccessToken;
+use Cbox\Id\OAuthServer\Models\AuthorizationCode;
 
 /**
  * The default {@see SubjectGrantRevoker}: a subject's grants are their outstanding
@@ -22,6 +23,9 @@ class RefreshTokenGrantRevoker implements SubjectGrantRevoker
         // Withdrawn, not merely revoked: this runs when the person's access is over
         // (deactivation, an administrator's password reset), so the applications their
         // grants signed them in to are told to end those sessions too.
+        AuthorizationCode::query()->where('user_id', $userId)->whereNull('consumed_at')
+            ->update(['consumed_at' => now()]);
+
         $this->refreshTokens->withdrawAccess($userId);
 
         // AND THE ACCESS TOKENS ALREADY IN FLIGHT. Cutting the refresh grant stops the

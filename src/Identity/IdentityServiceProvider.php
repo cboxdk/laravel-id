@@ -15,6 +15,7 @@ use Cbox\Id\Identity\Contracts\LoginAttempts;
 use Cbox\Id\Identity\Contracts\MagicLink;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\MfaMandate;
+use Cbox\Id\Identity\Contracts\MfaVerification;
 use Cbox\Id\Identity\Contracts\Passkeys;
 use Cbox\Id\Identity\Contracts\PasswordExpiry;
 use Cbox\Id\Identity\Contracts\PasswordPolicyGuard;
@@ -152,6 +153,7 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(PasswordPolicyGuard::class, PasswordPolicyEnforcer::class);
         $this->app->singleton(PasswordExpiry::class, DatabasePasswordExpiry::class);
         $this->app->singleton(MfaMandate::class, DatabaseMfaMandate::class);
+        $this->app->singleton(MfaVerification::class, DatabaseMfaMandate::class);
 
         // The SMS second factor: off per environment until its policy turns it on. Its codes
         // go out through their own OTP channel, addressed to the factor rather than to a

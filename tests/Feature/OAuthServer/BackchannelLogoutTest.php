@@ -6,6 +6,8 @@ use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\SignedInSession;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Audit\Models\AuditEntry;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
@@ -45,6 +47,11 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_42', 'email' => 'user_42@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * OpenID Connect Back-Channel Logout 1.0.

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementWriter;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
@@ -12,6 +14,10 @@ use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /**
  * @return array<string, mixed>

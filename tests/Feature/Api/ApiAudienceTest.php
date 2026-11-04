@@ -6,6 +6,8 @@ use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Models\Role;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\Apis;
@@ -25,6 +27,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * APIs (resource servers) own their scopes, and the audience of every access token is

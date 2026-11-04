@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Identity\Models\Session;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -25,6 +27,15 @@ use Illuminate\Http\Request;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_42', 'email' => 'user_42@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * RFC 9470 end to end, with the test standing in for the two pieces a host writes — the

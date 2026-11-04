@@ -114,6 +114,8 @@ class TokenController
                 'urn:ietf:params:oauth:grant-type:token-exchange' => $this->tokenExchange($request, $jkt, $resource),
                 default => $this->error('unsupported_grant_type', 400),
             };
+        } catch (InvalidGrant $e) {
+            return $this->error('invalid_grant', 400, $e->getMessage());
         } catch (ActionDenied) {
             // A TokenMinting inline hook vetoed issuance (fires on every grant).
             return $this->error('access_denied', 400);

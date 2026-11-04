@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -39,6 +41,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'customer-1', 'email' => 'customer-1@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * SUPPORT SESSIONS: the vendor's staff signing in to ONE app AS a customer's user.

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
@@ -23,6 +25,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class, InteractsWithSsrf::class);
+
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * Client ID Metadata Documents: an https `client_id` whose JSON document is the client's

@@ -18,6 +18,29 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.26.5 — active subjects and verified local MFA
+
+User-token issuance and authorization-code/refresh redemption now require
+`Subjects::isActive()` to return true. Hosts using external identities must bind a
+`Subjects` implementation that resolves their real subjects and current status;
+unknown IDs are no longer accepted as user-token subjects. Tests must create users.
+Client-credentials tokens do not require a user.
+
+`MfaVerification::requiresVerification()` is distinct from
+`MfaMandate::requiresEnrolment()`: an enrolled passkey does not prove that a password
+login used it. Hosts must challenge weak local sessions before granting account or
+OAuth access, and pass the actual authentication methods to
+`AuthenticationAwareTokenIssuer`. Cbox ID includes those host-side changes. Federated
+logins retain their upstream assurance policy.
+
+Deactivation consumes pending authorization codes and revokes existing grants in one
+transaction. The default database subject resolver locks the subject during issuance;
+custom resolvers must provide equivalent coordination with their own status changes.
+No schema migration is required. Publish the fixed package, update the host's Composer
+lock to that release, and deploy both changes together. Old weak local sessions will
+need second-factor verification; already issued offline JWTs still follow the resource
+server's expiry/revocation policy.
+
 ## 1.23.0 — SCIM completeness, Standard Webhooks, step-up, more providers
 
 **Run `php artisan migrate`.** Two additive migrations: `webhook_endpoints.signature_scheme`

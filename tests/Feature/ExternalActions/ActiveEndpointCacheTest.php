@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 use Cbox\Id\ExternalActions\Contracts\ExternalActions;
 use Cbox\Id\ExternalActions\Enums\HookPoint;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 beforeEach(fn () => config()->set('cbox-id.external_actions.verify_url', false));
 

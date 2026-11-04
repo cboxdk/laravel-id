@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Enums\ClientType;
@@ -10,6 +12,11 @@ use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user-1', 'email' => 'user-1@tokens.test', 'status' => UserStatus::Active]);
+});
 
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 

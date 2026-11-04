@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Enums\ClientType;
@@ -14,6 +16,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /**
  * What the registry accepts as a client's settings, on register and on update — the one

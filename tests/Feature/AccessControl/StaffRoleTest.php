@@ -12,6 +12,8 @@ use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
@@ -22,6 +24,11 @@ use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'staff-1', 'email' => 'staff-1@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /*
  * STAFF ROLES: an app vendor's own support people and administrators.

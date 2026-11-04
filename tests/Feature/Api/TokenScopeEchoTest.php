@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
@@ -9,6 +11,11 @@ use Cbox\Id\OAuthServer\Enums\ClientType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_42', 'email' => 'user_42@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /**
  * RFC 6749 §5.1: `scope` is OPTIONAL only "if identical to the scope requested by the

@@ -11,12 +11,15 @@ use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\ExternalActions\Payloads\TokenMintingPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
+use Cbox\Id\Identity\Contracts\MfaVerification;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareTokenIssuer;
+use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
@@ -222,6 +225,23 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
     {
         // What this token is FOR — scopes, audience, and whose roles it carries — decided
         // once, here, for every grant type. See AudienceResolver.
+        return DB::transaction(function () use ($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication): IssuedToken {
+            if ($userId !== null && ! app(Subjects::class)->isActive($userId)) {
+                throw InvalidGrant::make('the subject is no longer active');
+            }
+
+            if ($userId !== null && $authentication !== null
+                && app(MfaVerification::class)->requiresVerification($userId, $authentication->amr, $organizationId)) {
+                throw InvalidGrant::make('a second factor is required');
+            }
+
+            return $this->mint($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication);
+        });
+    }
+
+    /** @param list<string> $scopes */
+    private function mint(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource, ?string $dpopJkt, ?ActingParty $actor, ?DateTimeInterface $notAfter, ?AuthenticationEvent $authentication): IssuedToken
+    {
         $audience = $this->audiences->resolve($client, $scopes, $resource);
         $scopes = $audience->scopes;
 

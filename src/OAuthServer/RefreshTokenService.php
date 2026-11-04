@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer;
 
 use Carbon\CarbonInterface;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
@@ -56,6 +57,13 @@ class RefreshTokenService implements RefreshTokens
     {
         try {
             return DB::transaction(function () use ($clientId, $rawToken, $presentedJkt, $resource): RefreshGrant {
+                // Match deactivation's subject-before-grant lock order. The locked
+                // read below still decides revocation, consumption and reuse.
+                $candidate = RefreshToken::query()->where('token_hash', hash('sha256', $rawToken))->first();
+                if ($candidate === null || ($candidate->user_id !== null && ! app(Subjects::class)->isActive($candidate->user_id))) {
+                    throw InvalidGrant::make('refresh token invalid, expired or revoked');
+                }
+
                 $token = RefreshToken::query()
                     ->where('token_hash', hash('sha256', $rawToken))
                     ->lockForUpdate()
@@ -337,24 +345,30 @@ class RefreshTokenService implements RefreshTokens
      */
     private function mint(string $familyId, string $clientId, ?string $userId, ?string $organizationId, array $scopes, ?string $audience, ?string $dpopJkt = null, ?int $authTime = null, array $amr = [], ?string $sessionId = null): string
     {
-        $raw = 'rt_'.bin2hex(random_bytes(32));
+        return DB::transaction(function () use ($familyId, $clientId, $userId, $organizationId, $scopes, $audience, $dpopJkt, $authTime, $amr, $sessionId): string {
+            if ($userId !== null && ! app(Subjects::class)->isActive($userId)) {
+                throw InvalidGrant::make('the subject is no longer active');
+            }
 
-        RefreshToken::query()->create([
-            'token_hash' => hash('sha256', $raw),
-            'family_id' => $familyId,
-            'client_id' => $clientId,
-            'user_id' => $userId,
-            'organization_id' => $organizationId,
-            'scopes' => $scopes,
-            'audience' => $audience,
-            'auth_time' => $authTime,
-            'amr' => $amr === [] ? null : $amr,
-            'jkt' => $dpopJkt,
-            'session_id' => $sessionId,
-            'expires_at' => now()->addDays(self::TTL_DAYS),
-        ]);
+            $raw = 'rt_'.bin2hex(random_bytes(32));
 
-        return $raw;
+            RefreshToken::query()->create([
+                'token_hash' => hash('sha256', $raw),
+                'family_id' => $familyId,
+                'client_id' => $clientId,
+                'user_id' => $userId,
+                'organization_id' => $organizationId,
+                'scopes' => $scopes,
+                'audience' => $audience,
+                'auth_time' => $authTime,
+                'amr' => $amr === [] ? null : $amr,
+                'jkt' => $dpopJkt,
+                'session_id' => $sessionId,
+                'expires_at' => now()->addDays(self::TTL_DAYS),
+            ]);
+
+            return $raw;
+        });
     }
 
     private function revokeFamily(string $familyId): void

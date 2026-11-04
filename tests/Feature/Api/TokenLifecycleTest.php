@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\Api\Support\ServerMetadata;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -15,6 +17,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_42', 'email' => 'user_42@tokens.test', 'status' => UserStatus::Active]);
+    User::query()->create(['id' => 'user-public-revoke', 'email' => 'user-public-revoke@tokens.test', 'status' => UserStatus::Active]);
+    User::query()->create(['id' => 'user-no-openid', 'email' => 'user-no-openid@tokens.test', 'status' => UserStatus::Active]);
+    User::query()->create(['id' => 'user-openid', 'email' => 'user-openid@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /** The PKCE verifier every test in this file uses. */
 const VERIFIER = 'a-sufficiently-long-code-verifier-1234567890';

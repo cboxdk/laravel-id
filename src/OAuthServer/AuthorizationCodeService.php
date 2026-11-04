@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
@@ -93,6 +94,13 @@ class AuthorizationCodeService implements AuthorizationCodes
     public function exchange(string $clientId, string $code, string $redirectUri, string $codeVerifier): AuthorizedGrant
     {
         return DB::transaction(function () use ($clientId, $code, $redirectUri, $codeVerifier): AuthorizedGrant {
+            // Lock the subject before the grant, as deactivation does, to avoid a
+            // user/code lock inversion. Re-read the code under its own lock afterward.
+            $candidate = AuthorizationCode::query()->where('code_hash', hash('sha256', $code))->first();
+            if ($candidate === null || ! app(Subjects::class)->isActive($candidate->user_id)) {
+                throw InvalidGrant::make('code invalid, expired or already used');
+            }
+
             $record = $this->locked($code);
 
             if ($record === null || $record->consumed_at !== null || $record->expires_at->isPast()) {

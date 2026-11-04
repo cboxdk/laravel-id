@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementWriter;
 use Cbox\Id\Kernel\Authorization\Contracts\RelationshipStore;
 use Cbox\Id\Kernel\Authorization\Enums\EntitlementSource;
@@ -11,6 +13,11 @@ use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 function decisionToken(string $userId = 'alice', string $org = 'org_x'): string
 {

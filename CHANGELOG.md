@@ -17,6 +17,13 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.26.5] - 2026-11-04
+
+### Security
+
+- Reject authorization-code redemption, refresh rotation and direct user-token issuance for inactive or missing subjects. Deactivation invalidates pending authorization codes as well as existing grants; database subject locking serializes issuance with deactivation.
+- Add `MfaVerification` to distinguish an enrolled factor from a verified login. Authenticated local password and magic-link events cannot mint tokens while their second factor is still required. Federated authentication keeps its upstream assurance policy.
+
 ## [1.26.4] - 2026-11-03
 
 ### Fixed

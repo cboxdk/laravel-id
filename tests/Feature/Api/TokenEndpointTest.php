@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -11,6 +13,11 @@ use Cbox\Id\OAuthServer\Models\AuthorizationCode;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_42', 'email' => 'user_42@tokens.test', 'status' => UserStatus::Active]);
+});
 
 it('issues an access token via client_credentials', function (): void {
     $registered = $this->makeClient(['api.read', 'api.write'], grantTypes: ['authorization_code', 'refresh_token', 'client_credentials']);

@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_1', 'email' => 'user_1@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /**
  * @return array{verifier: string, challenge: string}

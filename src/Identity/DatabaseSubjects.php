@@ -415,29 +415,23 @@ class DatabaseSubjects implements Subjects
 
     public function isActive(string $subjectId): bool
     {
-        $model = $this->query()->whereKey($subjectId)->first();
+        // Grant issuance calls this inside its transaction. Locking the subject makes
+        // status changes and issuance serialize on the same row on server databases.
+        $query = $this->query()->whereKey($subjectId);
+        if ($query->getConnection()->transactionLevel() > 0) {
+            $query->lockForUpdate();
+        }
+        $model = $query->first();
 
         return $model !== null && $model->getAttribute('status') === UserStatus::Active;
     }
 
     public function deactivate(string $subjectId): void
     {
-        $this->transitionStatus($subjectId, UserStatus::Disabled, 'user.deactivated');
-
-        // AND EVERY GRANT THEY HOLD, which is the half that outlives them.
-        //
-        // Deprovisioning revoked sessions and left the OAuth grants alone, and nothing on
-        // the refresh path asks whether the person still exists — `UserStatus` appears
-        // nowhere in `src/OAuthServer`. So a leaver's connected application went on
-        // exchanging its refresh token indefinitely: the account was disabled, they could
-        // not sign in, and the CLI on their laptop kept working. That is the exact case
-        // deprovisioning is bought for.
-        //
-        // Here rather than at each caller — SCIM, directory sync, an administrator in the
-        // console — because "this person no longer has access" has to mean the same thing
-        // however it is said, and a caller that forgets is a caller that leaves a door
-        // open. The revoker is a no-op when they hold none.
-        app(SubjectGrantRevoker::class)->revokeGrantsForUser($subjectId);
+        DB::transaction(function () use ($subjectId): void {
+            $this->transitionStatus($subjectId, UserStatus::Disabled, 'user.deactivated');
+            app(SubjectGrantRevoker::class)->revokeGrantsForUser($subjectId);
+        });
     }
 
     public function reactivate(string $subjectId): void
@@ -447,7 +441,7 @@ class DatabaseSubjects implements Subjects
 
     private function transitionStatus(string $subjectId, UserStatus $status, string $action): void
     {
-        $model = $this->query()->whereKey($subjectId)->first();
+        $model = $this->query()->whereKey($subjectId)->lockForUpdate()->first();
 
         if ($model === null || $model->getAttribute('status') === $status) {
             return;

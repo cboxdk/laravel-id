@@ -2,12 +2,20 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token issuance requires an existing, active subject, not just an opaque fixture id.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'user_1', 'email' => 'user_1@tokens.test', 'status' => UserStatus::Active]);
+    User::query()->create(['id' => 'user_2', 'email' => 'user_2@tokens.test', 'status' => UserStatus::Active]);
+});
 
 it('honours a configured access-token lifetime', function (): void {
     config()->set('cbox-id.oauth.access_token_ttl', 120);

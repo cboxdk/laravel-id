@@ -7,9 +7,11 @@ namespace Cbox\Id\Identity;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\MfaMandate;
+use Cbox\Id\Identity\Contracts\MfaVerification;
 use Cbox\Id\Identity\Contracts\SmsFactors;
 use Cbox\Id\Identity\Enums\MfaRequirement;
 use Cbox\Id\Identity\Models\WebAuthnCredential;
+use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
 use Cbox\Id\Organization\Contracts\Memberships;
 
 /**
@@ -23,7 +25,7 @@ use Cbox\Id\Organization\Contracts\Memberships;
  * already hold it. The SMS dependency is optional so a host constructing this class
  * itself is unaffected.
  */
-class DatabaseMfaMandate implements MfaMandate
+class DatabaseMfaMandate implements MfaMandate, MfaVerification
 {
     public function __construct(
         private readonly AuthPolicies $policies,
@@ -53,6 +55,18 @@ class DatabaseMfaMandate implements MfaMandate
         }
 
         return ! WebAuthnCredential::query()->where('user_id', $subjectId)->exists();
+    }
+
+    public function requiresVerification(string $subjectId, array $amr, ?string $organizationId = null): bool
+    {
+        if (AuthenticationContextClass::Aal2->isSatisfiedBy($amr)
+            || array_intersect($amr, ['pwd', 'magic_link']) === []) {
+            return false;
+        }
+
+        return $this->effectiveRequirement($subjectId, $organizationId) === MfaRequirement::Required
+            || $this->mfa->hasConfirmedTotp($subjectId)
+            || $this->sms?->isUsable($subjectId) === true;
     }
 
     public function offersEnrolment(string $subjectId, ?string $organizationId = null): bool

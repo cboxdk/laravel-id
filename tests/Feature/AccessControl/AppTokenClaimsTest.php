@@ -6,6 +6,8 @@ use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Models\Role;
+use Cbox\Id\Identity\Enums\UserStatus;
+use Cbox\Id\Identity\Models\User;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Enums\MembershipRole;
@@ -13,6 +15,11 @@ use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+// Token grants belong to existing, active subjects.
+beforeEach(function (): void {
+    User::query()->create(['id' => 'alice', 'email' => 'alice@tokens.test', 'status' => UserStatus::Active]);
+});
 
 /**
  * @return array<string, mixed>
