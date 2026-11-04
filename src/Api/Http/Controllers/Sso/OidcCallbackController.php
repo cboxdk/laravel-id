@@ -22,9 +22,9 @@ use Illuminate\Http\Request;
 
 /**
  * `GET /sso/oidc/{connection}/callback` — the OIDC redirect URI. Verifies `state`
- * against the session (CSRF), exchanges the code for an id_token, validates it
+ * against the browser-bound flow (CSRF), exchanges the code for an id_token, validates it
  * (signature/iss/aud via the {@see AssertionValidator}), checks the `nonce`
- * against the session (replay defense), then completes the login. Like the SAML
+ * against that same single-use flow (replay defense), then completes the login. Like the SAML
  * ACS it returns the session identifiers for the hosting app to turn into a cookie.
  */
 class OidcCallbackController

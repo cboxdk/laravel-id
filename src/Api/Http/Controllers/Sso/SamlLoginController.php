@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Models\SamlAuthRequest;
 use Cbox\Id\Federation\Saml\SamlSettings;
 use Cbox\Id\Federation\Support\BrowserStartUrl;
+use Cbox\Id\Federation\Support\SamlBrowserBinding;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -21,10 +22,9 @@ use Throwable;
  * The IdP authenticates the user and POSTs a `SAMLResponse` back to the ACS.
  *
  * The AuthnRequest id is persisted in `saml_auth_requests` so the ACS can
- * enforce `InResponseTo` (defeating unsolicited-response injection). We can't
- * rely on the session for this: the ACS is a cross-site POST from the IdP where
- * the SameSite=Lax session cookie is absent. `RelayState` carries the post-login
- * destination back through the round-trip.
+ * enforce `InResponseTo`, expiry and single use. A separate host-only cookie binds
+ * the response to the initiating browser and survives the cross-site ACS POST.
+ * `RelayState` carries the post-login destination back through the round-trip.
  */
 class SamlLoginController
 {
@@ -34,7 +34,10 @@ class SamlLoginController
     /** Outstanding SP-initiated AuthnRequests live this long before expiring. */
     private const REQUEST_TTL_MINUTES = 10;
 
-    public function __construct(private readonly Connections $connections) {}
+    public function __construct(
+        private readonly Connections $connections,
+        private readonly SamlBrowserBinding $browserBinding,
+    ) {}
 
     public function __invoke(Request $request, string $connection): RedirectResponse|Response
     {
@@ -62,13 +65,15 @@ class SamlLoginController
 
         // Record the request id (connection-scoped, short-lived) so the ACS can
         // reject responses whose InResponseTo we never issued. The store — not the
-        // session — is authoritative: the ACS POST carries no session cookie.
+        // session — enforces expiry and single use. A separate host-only cookie
+        // binds this request to its initiating browser across the cross-site POST.
         SamlAuthRequest::query()->create([
             'request_id' => $authn->getId(),
             'connection_id' => $model->id,
             'expires_at' => now()->addMinutes(self::REQUEST_TTL_MINUTES),
         ]);
         $request->session()->put(self::REQUEST_ID_KEY, $authn->getId());
+        $this->browserBinding->remember($model->id, $authn->getId());
 
         $params = ['SAMLRequest' => $authn->getRequest()];
 

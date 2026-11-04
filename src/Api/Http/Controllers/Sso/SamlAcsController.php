@@ -7,8 +7,10 @@ namespace Cbox\Id\Api\Http\Controllers\Sso;
 use Cbox\Id\Federation\Contracts\AssertionValidator;
 use Cbox\Id\Federation\Contracts\Connections;
 use Cbox\Id\Federation\Contracts\FederationFlow;
+use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\ConnectionInactive;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Federation\Support\SamlBrowserBinding;
 use Cbox\Id\Identity\Exceptions\AccountExistsForEmail;
 use Cbox\Id\OAuthServer\Support\SessionIdentifier;
 use Illuminate\Http\JsonResponse;
@@ -30,13 +32,14 @@ class SamlAcsController
         private readonly Connections $connections,
         private readonly AssertionValidator $validator,
         private readonly FederationFlow $flow,
+        private readonly SamlBrowserBinding $browserBinding,
     ) {}
 
     public function __invoke(Request $request, string $connection): JsonResponse
     {
         $model = $this->connections->byId($connection);
 
-        if ($model === null || ! $model->isActive()) {
+        if ($model === null || ! $model->isActive() || $model->type !== ConnectionType::Saml) {
             return $this->error(404, 'Unknown or inactive connection.');
         }
 
@@ -47,7 +50,9 @@ class SamlAcsController
         }
 
         try {
+            $this->browserBinding->assertMatches($request, $model->id, $samlResponse);
             $principal = $this->validator->validate($model, $samlResponse);
+            $this->browserBinding->forget($model->id);
             $session = $this->flow->completeLogin($model, $principal);
         } catch (InvalidAssertion|ConnectionInactive $exception) {
             return $this->error(401, 'SSO assertion rejected.');

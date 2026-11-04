@@ -68,8 +68,9 @@ class SamlSingleLogoutService implements SamlSingleLogout
     public function process(LogoutMessage $message): SamlLogoutOutcome
     {
         $xml = $this->decode($message->samlRequest);
+        $document = $this->document($xml);
 
-        $spEntityId = $this->parse(static fn (): ?string => LogoutRequest::getIssuer($xml));
+        $spEntityId = $this->parse(static fn (): ?string => LogoutRequest::getIssuer($document));
 
         if ($spEntityId === null || $spEntityId === '') {
             throw InvalidLogoutRequest::make('the LogoutRequest has no Issuer');
@@ -86,7 +87,7 @@ class SamlSingleLogoutService implements SamlSingleLogout
         // mechanism its binding uses. A failure surfaces as InvalidAuthnRequest from
         // the shared verifiers; normalize it.
         try {
-            $this->verifySignature($message, $serviceProvider, $xml);
+            $this->verifySignature($message, $serviceProvider, $document);
         } catch (InvalidLogoutRequest $exception) {
             throw $exception;
         } catch (Throwable $exception) {
@@ -99,18 +100,20 @@ class SamlSingleLogoutService implements SamlSingleLogout
             throw InvalidLogoutRequest::make('service provider '.$spEntityId.' has no SingleLogoutService endpoint on file');
         }
 
-        $nameId = $this->parse(static fn () => LogoutRequest::getNameId($xml));
-        $requestId = $this->parse(static fn () => LogoutRequest::getID($xml));
+        $nameId = $this->parse(static fn () => LogoutRequest::getNameId($document));
+        $requestId = $this->parse(static fn () => LogoutRequest::getID($document));
 
         if ($nameId === null || $requestId === null || $requestId === '') {
             throw InvalidLogoutRequest::make('the LogoutRequest is missing a NameID or ID');
         }
 
-        $this->assertAddressedToUs($xml);
+        $this->assertAddressedToUs($document);
 
         // Even a validly-signed request must be FRESH and used ONCE — otherwise a
         // captured LogoutRequest could be replayed to force a logout at any later time.
-        if (! $this->guard->fresh($this->issueInstant($xml), self::FRESHNESS_SECONDS)) {
+        // Read the signed root: POST signatures do not cover comments outside it,
+        // so a timestamp scraped from raw XML can be replaced without invalidating them.
+        if (! $this->guard->fresh($document->documentElement?->getAttribute('IssueInstant'), self::FRESHNESS_SECONDS)) {
             throw InvalidLogoutRequest::make('the LogoutRequest is stale or its IssueInstant is unparseable');
         }
 
@@ -140,7 +143,7 @@ class SamlSingleLogoutService implements SamlSingleLogout
      * detached signature over the query octets (HTTP-Redirect), or an enveloped
      * XML-DSig bound to the LogoutRequest root (HTTP-POST).
      */
-    private function verifySignature(LogoutMessage $message, ServiceProvider $serviceProvider, string $xml): void
+    private function verifySignature(LogoutMessage $message, ServiceProvider $serviceProvider, DOMDocument $document): void
     {
         if ($message->binding === SamlBinding::Redirect) {
             $this->inboundSignature->verify(
@@ -160,7 +163,7 @@ class SamlSingleLogoutService implements SamlSingleLogout
             throw InvalidLogoutRequest::make('service provider has no certificate on file to verify a signed LogoutRequest');
         }
 
-        $this->embeddedSignature->verify($this->document($xml), $certificate, 'LogoutRequest');
+        $this->embeddedSignature->verify($document, $certificate, 'LogoutRequest');
     }
 
     /**
@@ -179,6 +182,11 @@ class SamlSingleLogoutService implements SamlSingleLogout
 
         if (! $loaded instanceof DOMDocument) {
             throw InvalidLogoutRequest::make('the LogoutRequest could not be parsed');
+        }
+
+        if ($loaded->documentElement?->localName !== 'LogoutRequest'
+            || $loaded->documentElement->namespaceURI !== 'urn:oasis:names:tc:SAML:2.0:protocol') {
+            throw InvalidLogoutRequest::make('the message root must be a SAML LogoutRequest');
         }
 
         return $loaded;
@@ -220,9 +228,9 @@ class SamlSingleLogoutService implements SamlSingleLogout
      * Matched the way {@see ReceivedEndpoint} explains: the location the message was
      * received at, or the published SingleLogoutService endpoint.
      */
-    private function assertAddressedToUs(string $xml): void
+    private function assertAddressedToUs(DOMDocument $document): void
     {
-        $destination = trim($this->document($xml)->documentElement?->getAttribute('Destination') ?? '');
+        $destination = trim($document->documentElement?->getAttribute('Destination') ?? '');
 
         if ($destination === '') {
             throw InvalidLogoutRequest::make('a signed LogoutRequest must carry a Destination');
@@ -231,12 +239,6 @@ class SamlSingleLogoutService implements SamlSingleLogout
         if (! ReceivedEndpoint::addresses($destination, IdpDescriptor::sloUrl())) {
             throw InvalidLogoutRequest::make('Destination does not address this SingleLogoutService endpoint');
         }
-    }
-
-    /** The LogoutRequest's `IssueInstant`, or null when it carries none. */
-    private function issueInstant(string $xml): ?string
-    {
-        return preg_match('/IssueInstant="([^"]+)"/', $xml, $matches) === 1 ? $matches[1] : null;
     }
 
     /** Inflate the payload to XML, tolerating an already-decoded (POST-binding) value. */

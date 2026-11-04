@@ -17,6 +17,19 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.27.2] - 2026-11-04
+
+### Security
+
+- Bind OIDC and SP-initiated SAML callbacks to secure host-only browser cookies. OIDC flow state expires server-side and is consumed atomically once.
+- Read SAML logout freshness and replay identifiers from the verified message root, ignoring unsigned comments.
+- Restrict the SAML ACS to SAML connections and reject logout requests without a signed protocol message.
+
+### Upgrade notes
+
+- Restart pending federated logins after upgrading. Both legs must use the same HTTPS host. OIDC flow storage requires a shared cache with atomic add support.
+- Custom SAML callback controllers must enforce `SamlBrowserBinding`; see `UPGRADING.md`.
+
 ## [1.27.1] - 2026-11-04
 
 ### Fixed

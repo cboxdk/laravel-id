@@ -48,6 +48,8 @@ use Cbox\Id\Api\Scim\DirectoryScimGroupResources;
 use Cbox\Id\Api\Scim\DirectoryScimUserResources;
 use Cbox\Id\UserProperties\Http\UserPropertiesController;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -351,7 +353,7 @@ class ApiServiceProvider extends ServiceProvider
             Route::middleware('throttle:300,1')->get('/sso/saml/{connection}/metadata', SamlMetadataController::class);
 
             // SAML ACS — unauthenticated; the assertion's XML signature is the auth.
-            Route::middleware(['throttle:30,1', NoStore::class])
+            Route::middleware([EncryptCookies::class, AddQueuedCookiesToResponse::class, 'throttle:30,1', NoStore::class])
                 ->post('/sso/saml/{connection}/acs', SamlAcsController::class);
 
             // Browser redirect flows, so they need a session for state/nonce and for the

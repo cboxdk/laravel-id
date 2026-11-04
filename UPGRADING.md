@@ -18,6 +18,32 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 1.27.2 — federation browser binding
+
+OIDC and SP-initiated SAML callbacks now require a `__Host-` flow cookie with
+`Secure`, `HttpOnly`, `SameSite=None`, `Path=/`, and no Domain attribute. Serve both
+legs on the same HTTPS host, including local federation testing. Host overrides
+of the SAML ACS must call `SamlBrowserBinding::assertMatches()` before validation
+and `forget()` after successful validation, as the package and Cbox ID controllers do.
+Keep cookie encryption and queued-cookie response middleware on both legs.
+
+In-progress logins started before this upgrade must be restarted. Old OIDC stash
+cookies and session-only state are not accepted. Existing authenticated sessions
+are not invalidated. Explicitly enabled IdP-initiated SAML remains unsolicited and
+retains its existing login-CSRF tradeoff; leave it disabled unless required.
+
+OIDC flow state now uses the application's cache for a ten-minute lifetime and
+atomic single-use claims. All web workers must share a cache store supporting
+atomic `add`; process-local array storage is only suitable for tests. Clearing the
+cache cancels pending logins. No schema migration is needed.
+
+`/sso/saml/idp/slo` now rejects requests without a SAML message. Local sign-out must
+use the host's CSRF-protected logout route. The SAML ACS also refuses non-SAML
+connections. Deploy the package and custom callback updates together; update the
+host's Composer lock to the fixed package release before deployment.
+
+
+
 ## 1.26.5 — active subjects and verified local MFA
 
 User-token issuance and authorization-code/refresh redemption now require

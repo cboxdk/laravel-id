@@ -152,6 +152,54 @@ it('rejects an unsigned LogoutRequest at the SLO endpoint', function (): void {
     expect(Session::query()->where('user_id', $userId)->whereNull('revoked_at')->count())->toBe(1);
 });
 
+it('rejects an XML comment inserted after a redirect LogoutRequest was signed', function (): void {
+    $idp = new SamlIdp;
+    $connectionId = samlConnectionFor($idp, $this->makeOrganization()->id);
+    $login = $this->post('http://localhost/sso/saml/'.$connectionId.'/acs', [
+        'SAMLResponse' => $idp->signedResponse('alice@corp.com', SP_ENTITY_ID, SP_ACS),
+    ])->assertOk();
+
+    $slo = $idp->signedLogoutRequest('alice@corp.com', SLO_DESTINATION);
+    $xml = (string) gzinflate((string) base64_decode($slo['SAMLRequest'], true));
+    $xml = '<!-- IssueInstant="'.gmdate('Y-m-d\TH:i:s\Z').'" ID="_injected" -->'.$xml;
+    $slo['SAMLRequest'] = base64_encode((string) gzdeflate($xml));
+
+    $this->get('http://localhost/sso/saml/'.$connectionId.'/slo?'.http_build_query($slo))
+        ->assertStatus(400);
+
+    expect(Session::query()->where('user_id', $login->json('user_id'))->whereNull('revoked_at')->count())->toBe(1);
+});
+
+it('reads freshness from the signed redirect root with either XML quote style', function (int $age, int $commentAge, string $quote, int $status): void {
+    $idp = new SamlIdp;
+    $connectionId = samlConnectionFor($idp, $this->makeOrganization()->id);
+    $login = $this->post('http://localhost/sso/saml/'.$connectionId.'/acs', [
+        'SAMLResponse' => $idp->signedResponse('alice@corp.com', SP_ENTITY_ID, SP_ACS),
+    ])->assertOk();
+
+    $slo = $idp->signedLogoutRequest('alice@corp.com', SLO_DESTINATION);
+    $document = new DOMDocument;
+    $document->loadXML((string) gzinflate((string) base64_decode($slo['SAMLRequest'], true)));
+    $document->documentElement?->setAttribute('IssueInstant', gmdate('Y-m-d\TH:i:s\Z', time() - $age));
+    $xml = str_replace('"', $quote, (string) $document->saveXML($document->documentElement));
+    $xml = '<!-- IssueInstant="'.gmdate('Y-m-d\TH:i:s\Z', time() - $commentAge).'" -->'.$xml;
+    $slo['SAMLRequest'] = base64_encode((string) gzdeflate($xml));
+
+    // This is signed by the IdP, so the comment cannot fail at signature verification.
+    openssl_sign('SAMLRequest='.urlencode($slo['SAMLRequest']).'&SigAlg='.urlencode($slo['SigAlg']), $signature, $idp->privatePem, OPENSSL_ALGO_SHA256);
+    $slo['Signature'] = base64_encode((string) $signature);
+
+    $this->get('http://localhost/sso/saml/'.$connectionId.'/slo?'.http_build_query($slo))
+        ->assertStatus($status);
+
+    expect(Session::query()->where('user_id', $login->json('user_id'))->whereNull('revoked_at')->count())
+        ->toBe($status === 302 ? 0 : 1);
+})->with([
+    'stale root with a fresh comment' => [3600, 0, '"', 400],
+    'fresh root with a stale comment' => [0, 3600, '"', 302],
+    'single-quoted attributes' => [0, 3600, "'", 302],
+]);
+
 /**
  * A captured LogoutRequest must not work twice.
  *

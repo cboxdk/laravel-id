@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Models\Connection;
+use Cbox\Id\Federation\ValueObjects\FederationFlowState;
 use Cbox\Id\Identity\Models\Session;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -90,8 +91,10 @@ it('completes login on a valid callback (code exchange + id_token + nonce)', fun
     $nonce = 'nonce-xyz';
     Http::fake(['idp.corp/token' => Http::response(['id_token' => oidcFlowIdToken($setup['private'], $nonce)])]);
 
-    $response = $this->withSession(['oidc.'.$connection->id => ['state' => $state, 'nonce' => $nonce]])
-        ->get('/sso/oidc/'.$connection->id.'/callback?code=auth-code&state='.$state);
+    $cookie = $this->stashFederationFlow($connection->id, new FederationFlowState($state, $nonce));
+    $this->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    $response = $this->get('/sso/oidc/'.$connection->id.'/callback?code=auth-code&state='.$state);
 
     $response->assertOk()->assertJsonMissingPath('session_id');
     $sid = $response->json('sid');
@@ -107,8 +110,10 @@ it('rejects a callback whose state does not match (CSRF)', function (): void {
     $setup = oidcFlowSetup();
     $connection = $this->makeConnection($this->makeOrganization()->id, ConnectionType::Oidc, 'Corp OIDC', $setup['config']);
 
-    $this->withSession(['oidc.'.$connection->id => ['state' => 'real-state', 'nonce' => 'n']])
-        ->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=forged-state')
+    $cookie = $this->stashFederationFlow($connection->id, new FederationFlowState('real-state', 'n'));
+    $this->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    $this->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=forged-state')
         ->assertStatus(400);
 });
 
@@ -125,8 +130,10 @@ it('refuses a code exchange whose token_endpoint resolves to an internal address
     // must instead be rejected as a failed exchange (401), never dispatched.
     Http::fake(['169.254.169.254/*' => Http::response(['id_token' => 'should-never-be-requested'])]);
 
-    $this->withSession(['oidc.'.$connection->id => ['state' => 's', 'nonce' => 'n']])
-        ->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=s')
+    $cookie = $this->stashFederationFlow($connection->id, new FederationFlowState('s', 'n'));
+    $this->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    $this->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=s')
         ->assertStatus(401);
 
     Http::assertNothingSent();
@@ -138,8 +145,10 @@ it('rejects a callback whose id_token nonce does not match (replay)', function (
 
     Http::fake(['idp.corp/token' => Http::response(['id_token' => oidcFlowIdToken($setup['private'], 'a-different-nonce')])]);
 
-    $this->withSession(['oidc.'.$connection->id => ['state' => 's', 'nonce' => 'expected-nonce']])
-        ->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=s')
+    $cookie = $this->stashFederationFlow($connection->id, new FederationFlowState('s', 'expected-nonce'));
+    $this->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    $this->get('/sso/oidc/'.$connection->id.'/callback?code=x&state=s')
         ->assertStatus(401);
 });
 
@@ -160,8 +169,10 @@ it('completes login on a form_post callback', function (): void {
     $nonce = 'nonce-posted';
     Http::fake(['idp.corp/token' => Http::response(['id_token' => oidcFlowIdToken($setup['private'], $nonce)])]);
 
-    $response = $this->withSession(['oidc.'.$connection->id => ['state' => $state, 'nonce' => $nonce]])
-        ->post('/sso/oidc/'.$connection->id.'/callback', ['code' => 'auth-code', 'state' => $state]);
+    $cookie = $this->stashFederationFlow($connection->id, new FederationFlowState($state, $nonce));
+    $this->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    $response = $this->post('/sso/oidc/'.$connection->id.'/callback', ['code' => 'auth-code', 'state' => $state]);
 
     $response->assertOk();
 
@@ -172,8 +183,10 @@ it('rejects a form_post callback whose state does not match (CSRF)', function ()
     $setup = oidcFlowSetup();
     $connection = $this->makeConnection($this->makeOrganization()->id, ConnectionType::Oidc, 'Corp OIDC', $setup['config']);
 
-    $this->withSession(['oidc.'.$connection->id => ['state' => 'real-state', 'nonce' => 'n']])
-        ->post('/sso/oidc/'.$connection->id.'/callback', ['code' => 'x', 'state' => 'forged-state'])
+    $cookie = $this->stashFederationFlow($connection->id, new FederationFlowState('real-state', 'n'));
+    $this->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    $this->post('/sso/oidc/'.$connection->id.'/callback', ['code' => 'x', 'state' => 'forged-state'])
         ->assertStatus(400);
 });
 
@@ -192,9 +205,11 @@ it('completes a form_post callback carrying no session, on the flow cookie alone
     // stopped setting it.
     $started = $this->get('/sso/oidc/'.$connection->id.'/redirect');
     $cookie = collect($started->headers->getCookies())
-        ->first(fn ($c): bool => str_starts_with($c->getName(), 'cbox_fed_'));
+        ->first(fn ($c): bool => str_starts_with($c->getName(), '__Host-cbox_fed_'));
 
     expect($cookie)->not->toBeNull()
+        ->and($cookie->getDomain())->toBeNull()
+        ->and($cookie->getPath())->toBe('/')
         ->and($cookie->getSameSite())->toBe('none')
         ->and($cookie->isSecure())->toBeTrue()
         ->and($cookie->isHttpOnly())->toBeTrue();
@@ -236,3 +251,36 @@ it('will not send a browser to a plaintext authorization endpoint', function ():
     $response->assertStatus(502);
     expect($response->headers->get('Location'))->toBeNull();
 })->group('security');
+
+it('rejects copied legacy cookies and sessions before exchanging an authorization code', function (): void {
+    $setup = oidcFlowSetup();
+    $connection = $this->makeConnection($this->makeOrganization()->id, ConnectionType::Oidc, 'Corp OIDC', $setup['config']);
+    $flow = ['state' => 'attacker-state', 'nonce' => 'attacker-nonce'];
+    Http::fake();
+
+    // A validly encrypted old cookie and session can be copied from the attacker's
+    // browser. Neither is sufficient without the host-scoped browser secret.
+    $this->withCookie('cbox_fed_'.$connection->id, (string) json_encode($flow))
+        ->withSession(['oidc.'.$connection->id => $flow])
+        ->post('/sso/oidc/'.$connection->id.'/callback', ['code' => 'attacker-code', 'state' => 'attacker-state'])
+        ->assertStatus(400);
+
+    Http::assertNothingSent();
+});
+
+it('rejects a reused encrypted browser flow cookie before a second code exchange', function (): void {
+    $setup = oidcFlowSetup();
+    $connection = $this->makeConnection($this->makeOrganization()->id, ConnectionType::Oidc, 'Corp OIDC', $setup['config']);
+    $started = $this->get('/sso/oidc/'.$connection->id.'/redirect');
+    $cookie = collect($started->headers->getCookies())
+        ->first(fn ($c): bool => str_starts_with($c->getName(), '__Host-cbox_fed_'));
+    parse_str((string) parse_url((string) $started->headers->get('Location'), PHP_URL_QUERY), $query);
+    Http::fake(['idp.corp/token' => Http::response([
+        'id_token' => oidcFlowIdToken($setup['private'], (string) $query['nonce']),
+    ])]);
+    $this->flushSession()->withUnencryptedCookie($cookie->getName(), (string) $cookie->getValue());
+    $callback = '/sso/oidc/'.$connection->id.'/callback';
+    $this->post($callback, ['code' => 'first-code', 'state' => $query['state']])->assertOk();
+    $this->post($callback, ['code' => 'second-code', 'state' => $query['state']])->assertStatus(400);
+    Http::assertSentCount(1);
+});

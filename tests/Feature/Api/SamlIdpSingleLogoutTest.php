@@ -13,6 +13,8 @@ use Cbox\Id\SamlIdp\ValueObjects\NewServiceProvider;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use OneLogin\Saml2\Utils as SamlUtils;
+use RobRichards\XMLSecLibs\XMLSecurityDSig;
+use RobRichards\XMLSecLibs\XMLSecurityKey;
 
 uses(RefreshDatabase::class);
 
@@ -144,6 +146,59 @@ it('refuses a stale LogoutRequest (IssueInstant outside the freshness window)', 
     $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
 });
 
+it('uses the signed POST LogoutRequest attributes instead of unsigned XML comments', function (int $age, int $commentAge, int $status): void {
+    [$spPrivate, $spCert] = spKeypair();
+    $entityId = 'https://sp.example/metadata';
+    registerSp($entityId, $spCert);
+
+    $alice = $this->makeUser('alice@example.test');
+    $sessions = app(SessionManager::class);
+    $session = $sessions->start($alice->id, null, ['pwd']);
+    SamlIdpSession::query()->create([
+        'sp_entity_id' => $entityId,
+        'subject_id' => $alice->id,
+        'name_id' => 'alice@example.test',
+        'session_index' => '_'.bin2hex(random_bytes(16)),
+        'expires_at' => now()->addDay(),
+    ]);
+
+    $signed = SamlUtils::addSign(
+        logoutRequestXml($entityId, '_'.bin2hex(random_bytes(16)), gmdate('Y-m-d\TH:i:s\Z', time() - $age)),
+        $spPrivate,
+        $spCert,
+        XMLSecurityKey::RSA_SHA256,
+        XMLSecurityDSig::SHA256,
+    );
+    $document = new DOMDocument;
+    $document->loadXML($signed);
+    $document->insertBefore(
+        $document->createComment(' IssueInstant="'.gmdate('Y-m-d\TH:i:s\Z', time() - $commentAge).'" ID="_attacker" '),
+        $document->documentElement,
+    );
+
+    // The attacker only adds an unsigned comment; the captured signature remains valid.
+    expect(SamlUtils::validateSign($document, $spCert))->toBeTrue();
+    $this->post(IDP_SLO_ENDPOINT, ['SAMLRequest' => base64_encode((string) $document->saveXML())])
+        ->assertStatus($status);
+
+    expect($sessions->active($session->id) === null)->toBe($status === 200);
+
+    if ($status === 200) {
+        $newSession = $sessions->start($alice->id, null, ['pwd']);
+        $document->insertBefore(
+            $document->createComment(' IssueInstant="'.gmdate('Y-m-d\TH:i:s\Z').'" ID="_another_attacker_id" '),
+            $document->firstChild,
+        );
+
+        $this->post(IDP_SLO_ENDPOINT, ['SAMLRequest' => base64_encode((string) $document->saveXML())])
+            ->assertStatus(400);
+        expect($sessions->active($newSession->id))->not->toBeNull();
+    }
+})->with([
+    'stale signed root with fresh comment' => [3600, 0, 400],
+    'fresh signed root with stale comment' => [0, 3600, 200],
+]);
+
 it('does NOT terminate the session when the LogoutRequest is invalid (no forced logout)', function (): void {
     $subject = $this->makeUser('victim@example.test');
     $sessions = app(SessionManager::class);
@@ -228,8 +283,8 @@ it('refuses when the SP registered no SLO endpoint to answer', function (): void
     $this->get(IDP_SLO_ENDPOINT.'?'.http_build_query($query))->assertStatus(400);
 });
 
-it('does a plain local logout when no SAMLRequest is present', function (): void {
-    $this->get(IDP_SLO_ENDPOINT)->assertOk()->assertSee('Signed out', false);
+it('rejects a logout when no SAMLRequest is present', function (): void {
+    $this->get(IDP_SLO_ENDPOINT)->assertStatus(400);
 });
 
 /**

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Identity\Contracts\SessionManager;
-use Cbox\Id\Identity\Contracts\SignedInSubject;
 use Cbox\Id\SamlIdp\Contracts\SamlSingleLogout;
 use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Exceptions\InvalidLogoutRequest;
@@ -17,20 +16,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
- * The IdP SingleLogoutService endpoint (SAML 2.0 Single Logout, HTTP-Redirect
- * binding). Two shapes arrive here:
- *
- *  - **SP-initiated SLO** — a signed `LogoutRequest` (`SAMLRequest`). The
- *    {@see SamlSingleLogout} service verifies its signature against the SP's
- *    registered certificate, and we tear down the local session and 302 a signed
- *    `LogoutResponse` back to the SP's SLO endpoint so the SP completes its logout.
- *  - **Plain logout** — no `SAMLRequest`. We simply revoke the subject's local
- *    sessions so the next SSO handshake re-authenticates.
- *
- * The endpoint only ever REVOKES a session; it never mints or elevates one, so an
- * unauthenticated or unsigned request can gain nothing. An invalid `LogoutRequest`
- * (unknown SP, bad signature, no SLO endpoint) is refused with 400 — never processed
- * on trust.
+ * The IdP SingleLogoutService accepts signed protocol messages only.
+ * Local browser logout belongs on the host's CSRF-protected logout route.
  */
 class SamlIdpLogoutController
 {
@@ -43,11 +30,10 @@ class SamlIdpLogoutController
     {
         $samlRequest = $this->param($request, 'SAMLRequest');
 
-        // A plain logout with no SAML message: revoke and done.
+        // This protocol endpoint is CSRF-exempt, so ambient authentication must
+        // never authorize a logout in the absence of a signed SAML message.
         if ($samlRequest === null) {
-            $this->terminate();
-
-            return new Response('Signed out.', 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
+            return new Response('SLO rejected.', 400, ['Content-Type' => 'text/plain; charset=UTF-8']);
         }
 
         // SP-initiated SLO: VALIDATE the (signed) LogoutRequest BEFORE touching the
@@ -74,18 +60,6 @@ class SamlIdpLogoutController
             ? ($outcome->postBinding?->toResponse()
                 ?? new Response($outcome->postForm, 200, ['Content-Type' => 'text/html; charset=UTF-8']))
             : new RedirectResponse($outcome->redirectUrl);
-    }
-
-    /** Revoke every session for the currently-authenticated subject (plain logout). */
-    private function terminate(): void
-    {
-        // Same reason as the OIDC end-session endpoint: a host with its own session
-        // answers null to Laravel's guard, and this branch then tore nothing down.
-        $subjectId = app(SignedInSubject::class)->id();
-
-        if ($subjectId !== null) {
-            $this->sessions->revokeAllForUser($subjectId);
-        }
     }
 
     /**

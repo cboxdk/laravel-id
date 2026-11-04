@@ -12,6 +12,7 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\OAuth2Client;
 use Cbox\Id\Federation\OidcDiscovery;
 use Cbox\Id\Federation\ProviderCatalog;
+use Cbox\Id\Federation\ValueObjects\FederationFlowState;
 use Cbox\Id\Federation\ValueObjects\OAuth2ConnectionConfig;
 use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
 use Cbox\Id\Identity\Models\IdentityLink;
@@ -89,8 +90,10 @@ function socialConnection(string $provider, string $organizationId, string $clie
 
 function socialCallback(Connection $connection, string $nonce): TestResponse
 {
-    return test()->withSession(['oidc.'.$connection->id => ['state' => 'state-1', 'nonce' => $nonce]])
-        ->get('/sso/oidc/'.$connection->id.'/callback?code=the-code&state=state-1');
+    $cookie = test()->stashFederationFlow($connection->id, new FederationFlowState('state-1', $nonce));
+    test()->withCookie($cookie->getName(), (string) $cookie->getValue());
+
+    return test()->get('/sso/oidc/'.$connection->id.'/callback?code=the-code&state=state-1');
 }
 
 /** @return array<string, string> the form body of the faked request */

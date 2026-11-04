@@ -10,6 +10,7 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\SamlIdp\Support\MessageGuard;
+use DOMDocument;
 use OneLogin\Saml2\Auth;
 use OneLogin\Saml2\LogoutRequest;
 use OneLogin\Saml2\Utils;
@@ -83,6 +84,12 @@ class SamlLogout implements SamlSpSingleLogout
 
             // On an inbound LogoutRequest, revoke every session for that subject.
             if (isset($query['SAMLRequest'])) {
+                $document = $this->document($query['SAMLRequest']);
+
+                if ($document === null) {
+                    return SamlLogoutResult::error('The LogoutRequest could not be parsed.');
+                }
+
                 // Signed is not the same as fresh, and not the same as unused.
                 //
                 // A LogoutRequest travels to us as a query string in the user's browser:
@@ -97,44 +104,39 @@ class SamlLogout implements SamlSpSingleLogout
                 // Scoped to the CONNECTION rather than the IdP EntityID: two tenants may
                 // federate to the same identity provider, and a replay key they share is
                 // one tenant able to burn the other's message ids.
-                if (! $this->guard->fresh($this->issueInstantOf($query['SAMLRequest']), self::FRESHNESS_SECONDS)) {
+                if (! $this->guard->fresh($document->documentElement?->getAttribute('IssueInstant'), self::FRESHNESS_SECONDS)) {
                     return SamlLogoutResult::error('The LogoutRequest is stale or its IssueInstant is unparseable.');
                 }
 
-                $messageId = $this->messageIdOf($query['SAMLRequest']);
+                $messageId = $document->documentElement?->getAttribute('ID');
 
-                if ($messageId === null || ! $this->guard->consume($connection->id, $messageId, self::FRESHNESS_SECONDS)) {
+                if ($messageId === null || $messageId === '' || ! $this->guard->consume($connection->id, $messageId, self::FRESHNESS_SECONDS)) {
                     return SamlLogoutResult::error('The LogoutRequest has already been processed (replay).');
                 }
 
-                $revoked = $this->revokeSessionsForRequest($connection, $query['SAMLRequest']);
+                $revoked = $this->revokeSessionsForRequest($connection, $document);
             }
 
             return SamlLogoutResult::ok($redirect !== '' ? $redirect : null, $revoked);
         });
     }
 
-    /**
-     * `IssueInstant` off the root element, read from the raw payload.
-     *
-     * Attribute-scraped rather than DOM-parsed on purpose: this runs BEFORE the
-     * decision to trust anything, so it must not hand attacker-supplied XML to a
-     * parser. The value only ever feeds a freshness comparison — a wrong one fails
-     * closed.
-     */
-    private function issueInstantOf(string $samlRequest): ?string
+    /** Read the verified message through onelogin's XXE-guarded XML loader. */
+    private function document(string $samlRequest): ?DOMDocument
     {
-        return preg_match('/IssueInstant="([^"]+)"/', $this->inflate($samlRequest), $matches) === 1
-            ? $matches[1]
-            : null;
-    }
+        try {
+            $document = Utils::loadXML(new DOMDocument, $this->inflate($samlRequest));
+        } catch (Throwable) {
+            return null;
+        }
 
-    /** The message `ID`, which is what makes the replay key unique. */
-    private function messageIdOf(string $samlRequest): ?string
-    {
-        return preg_match('/\sID="([^"]+)"/', $this->inflate($samlRequest), $matches) === 1
-            ? $matches[1]
-            : null;
+        if (! $document instanceof DOMDocument
+            || $document->documentElement?->localName !== 'LogoutRequest'
+            || $document->documentElement->namespaceURI !== 'urn:oasis:names:tc:SAML:2.0:protocol') {
+            return null;
+        }
+
+        return $document;
     }
 
     /** Inflate the payload to XML, tolerating an already-decoded (POST-binding) value. */
@@ -149,15 +151,10 @@ class SamlLogout implements SamlSpSingleLogout
      * Resolve the LogoutRequest's NameID to a local user and revoke all their
      * sessions. Returns the number of users whose sessions were revoked (0 or 1).
      */
-    private function revokeSessionsForRequest(Connection $connection, string $samlRequest): int
+    private function revokeSessionsForRequest(Connection $connection, DOMDocument $document): int
     {
-        // The redirect binding deflates the request; getNameId() wants the plain
-        // XML. Inflate, falling back to a non-deflated (POST-binding) payload.
-        $decoded = base64_decode($samlRequest, true);
-        $xml = is_string($decoded) ? (@gzinflate($decoded) ?: $decoded) : $samlRequest;
-
         try {
-            $nameId = LogoutRequest::getNameId($xml);
+            $nameId = LogoutRequest::getNameId($document);
         } catch (Throwable) {
             return 0;
         }
