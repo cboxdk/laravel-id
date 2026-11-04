@@ -30,12 +30,14 @@ it('announces a new membership as membership.created', function (): void {
     $events = $this->fakeEvents();
     $org = $this->makeOrganization();
 
-    app(Memberships::class)->add($org->id, 'bob', MembershipRole::Developer, invitedBy: 'alice');
+    $membership = app(Memberships::class)->add($org->id, 'bob', MembershipRole::Developer, invitedBy: 'alice');
 
     $events->assertEmitted(WebhookEventType::MembershipCreated->value, fn (DomainEvent $e): bool => $e->organizationId === $org->id
         && $e->payload === [
             'organization_id' => $org->id,
             'user_id' => 'bob',
+            'directory_revision' => 1,
+            'membership_id' => $membership->id,
             'role' => 'developer',
             'status' => 'active',
             'invited_by' => 'alice',
@@ -61,6 +63,7 @@ it('announces a role change with the previous role, and a no-op change not at al
     app(Memberships::class)->changeRole($org->id, 'bob', MembershipRole::Admin);
 
     $events->assertEmitted(WebhookEventType::MembershipUpdated->value, fn (DomainEvent $e): bool => $e->payload['role'] === 'admin'
+        && $e->payload['directory_revision'] === 2
         && $e->payload['previous_role'] === 'member'
         && $e->payload['reason'] === 'role_changed');
 

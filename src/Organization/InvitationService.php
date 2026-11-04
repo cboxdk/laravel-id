@@ -109,6 +109,8 @@ class InvitationService implements Invitations
 
             $this->events->emit(new DomainEvent('organization.invitation_accepted', ['user_id' => $subjectId], $invitation->organization_id));
             $this->events->emit(new DomainEvent('invitation.accepted', [
+                'directory_revision' => MembershipDirectoryRevision::advance($invitation->organization_id),
+                'membership_id' => $membership->id,
                 'invitation_id' => $invitation->id,
                 'organization_id' => $invitation->organization_id,
                 'user_id' => $subjectId,

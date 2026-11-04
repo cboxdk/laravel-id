@@ -94,3 +94,5 @@ Full docs live in [`docs/`](docs/index.md):
 MIT. Published on Packagist as a 1.x release under semantic versioning — installable via
 `composer require cboxdk/laravel-id`. Breaking changes wait for a major; every one that
 has happened is written up in [UPGRADING.md](UPGRADING.md).
+
+Membership creation, role change, removal and invitation acceptance publish a positive `directory_revision` and the affected `membership_id` in the domain event. The revision advances in the same database transaction as the mutation and is local to the organization. Relays can deliver those mutations out of order. Consumers can compare their revisions with the revision of a complete organization roster to prevent an older grant from restoring access.
