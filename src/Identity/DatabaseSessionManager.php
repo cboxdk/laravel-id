@@ -9,11 +9,14 @@ use Cbox\Id\ExternalActions\Enums\HookPoint;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\ExternalActions\Payloads\LoginPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
+use Cbox\Id\Identity\Contracts\AuthenticationAssessment;
 use Cbox\Id\Identity\Contracts\AuthPolicies;
 use Cbox\Id\Identity\Contracts\LogoutPropagator;
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Enums\AuthenticationIssuance;
 use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Identity\ValueObjects\AuthPolicy;
+use Cbox\Id\Identity\ValueObjects\VerifiedAuthentication;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -87,6 +90,13 @@ class DatabaseSessionManager implements SessionManager
             throw ActionDenied::because($outcome->reason);
         }
 
+        if (app()->bound(AuthenticationAssessment::class)) {
+            app(AuthenticationAssessment::class)->assertAllowed(new VerifiedAuthentication(
+                $userId, $organizationId, $amr, now()->getTimestamp(),
+                AuthenticationIssuance::Session, $ip, $userAgent,
+            ));
+        }
+
         $session = new Session;
         $session->fill([
             'user_id' => $userId,
@@ -99,7 +109,7 @@ class DatabaseSessionManager implements SessionManager
         ]);
         $session->save();
 
-        $this->events->emit(new DomainEvent('user.session_started', ['user_id' => $userId], $organizationId));
+        $this->events->emit(new DomainEvent('user.session_started', ['user_id' => $userId, 'session_id' => $session->id, 'amr' => $amr], $organizationId));
         $this->audit->record(new AuditEvent(
             action: 'user.session_started',
             actorType: ActorType::User,

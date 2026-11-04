@@ -125,3 +125,5 @@ The kernel contracts are pluggable too:
 - `RelationshipStore` — replace the Postgres ReBAC engine if you ever outgrow it.
 
 All keep the same contract, so the modules above them don't change.
+
+- [Authentication assessment](authentication-assessment.md): host policy before session and user-token issuance.
