@@ -49,14 +49,21 @@ class RedirectBindingResponseSigner
         $key = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
         $key->loadKey($privateKeyPem, false);
 
-        $signature = $key->signData($signedQuery);
-
-        if (! is_string($signature)) {
-            throw new RuntimeException('failed to sign the SAML redirect binding');
-        }
+        $signature = $this->signature($key->signData($signedQuery));
 
         $query = $signedQuery.'&Signature='.urlencode(base64_encode($signature));
 
         return $destination.(str_contains($destination, '?') ? '&' : '?').$query;
+    }
+
+    // xmlseclibs 3 leaves this return untyped; 4 guarantees a string. Keep the
+    // runtime guard for both supported majors without relying on their PHPDoc.
+    private function signature(mixed $signature): string
+    {
+        if (! is_string($signature)) {
+            throw new RuntimeException('failed to sign the SAML redirect binding');
+        }
+
+        return $signature;
     }
 }

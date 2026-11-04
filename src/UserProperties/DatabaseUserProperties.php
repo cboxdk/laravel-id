@@ -51,7 +51,7 @@ class DatabaseUserProperties implements UserProperties
             $data = clone $old;
             $changed = [];
             foreach (get_object_vars($patch->set) as $key => $value) {
-                if (! property_exists($data, $key) || json_encode($data->{$key}, JSON_THROW_ON_ERROR) !== json_encode($value, JSON_THROW_ON_ERROR)) {
+                if (! property_exists($data, $key) || json_encode($this->canonicalize($data->{$key}), JSON_THROW_ON_ERROR) !== json_encode($this->canonicalize($value), JSON_THROW_ON_ERROR)) {
                     $data->{$key} = $value;
                     $changed[] = $key;
                 }
@@ -94,6 +94,20 @@ class DatabaseUserProperties implements UserProperties
 
             return new PropertySnapshot($userId, $namespace, $data, $record->version);
         });
+    }
+
+    // JSON objects are unordered; MySQL may reorder their keys on persistence.
+    // Arrays retain their order, and objects must stay distinct from arrays.
+    private function canonicalize(mixed $value): mixed
+    {
+        if ($value instanceof stdClass) {
+            $properties = get_object_vars($value);
+            ksort($properties);
+
+            return (object) array_map($this->canonicalize(...), $properties);
+        }
+
+        return is_array($value) ? array_map($this->canonicalize(...), $value) : $value;
     }
 
     private function authorize(string $clientId, string $namespace, bool $write): void

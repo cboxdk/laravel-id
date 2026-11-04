@@ -17,6 +17,13 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.27.1] - 2026-11-04
+
+### Fixed
+
+- Compare custom JSON objects independently of key order, including after MySQL persistence, so unchanged metadata does not generate extra versions or webhooks.
+- Keep the SAML Redirect signing guard compatible with both xmlseclibs 3 and 4 under current static analysis.
+
 ## [1.27.0] - 2026-11-04
 
 ### Added

@@ -47,7 +47,8 @@ it('patches keys atomically, preserves null and JSON shapes, detects conflicts a
     $this->properties->patch($client, $user, 'private', new PropertyPatch(1, (object) ['second' => 7]));
     expect(fn () => $this->properties->patch($client, $user, 'private', new PropertyPatch(1, (object) ['second' => 8])))->toThrow(ConflictHttpException::class);
     $result = $this->properties->patch($client, $user, 'private', new PropertyPatch(2, remove: ['second']));
-    expect($result->version)->toBe(3)->and(json_encode($result->data))->toBe('{"first":null,"nested":{},"list":[]}');
+    expect($result->version)->toBe(3)->and($result->data)->toEqual((object) ['first' => null, 'nested' => (object) [], 'list' => []])
+        ->and($result->data->nested)->toBeInstanceOf(stdClass::class)->and($result->data->list)->toBe([]);
     $this->properties->patch($client, $user, 'private', new PropertyPatch(3, (object) ['first' => null]));
     expect(Event::query()->where('type', 'user.metadata.updated')->count())->toBe(3);
     expect(Event::query()->where('type', 'user.metadata.updated')->first()->payload)->not->toHaveKey('data');
@@ -156,4 +157,18 @@ it('does not allow a grant to bridge environment or organization ownership', fun
     expect(fn () => $this->makePropertyNamespace('leak', [$other->client_id]))->toThrow(ValidationException::class);
     $this->actingAsEnvironment('another-environment');
     expect(fn () => $this->makePropertyNamespace('leak', [$this->appClient->client_id]))->toThrow(ValidationException::class);
+});
+
+it('ignores nested object key order while retaining array order and value types', function (): void {
+    $client = $this->appClient->client_id;
+    $user = $this->person->id;
+    $initial = (object) ['nested' => (object) ['longer' => true, 'x' => 1], 'items' => [1, 2]];
+    $this->properties->patch($client, $user, 'private', new PropertyPatch(0, (object) ['custom' => $initial]));
+    $reordered = (object) ['items' => [1, 2], 'nested' => (object) ['x' => 1, 'longer' => true]];
+    expect($this->properties->patch($client, $user, 'private', new PropertyPatch(1, (object) ['custom' => $reordered]))->version)->toBe(1);
+    $reordered->items = [2, 1];
+    expect($this->properties->patch($client, $user, 'private', new PropertyPatch(1, (object) ['custom' => $reordered]))->version)->toBe(2);
+    $reordered->nested->x = '1';
+    expect($this->properties->patch($client, $user, 'private', new PropertyPatch(2, (object) ['custom' => $reordered]))->version)->toBe(3);
+    expect(Event::query()->where('type', 'user.metadata.updated')->count())->toBe(3);
 });
