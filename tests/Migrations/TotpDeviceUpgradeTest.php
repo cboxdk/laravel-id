@@ -42,4 +42,4 @@ it('adds slots and names without changing an existing TOTP or SMS credential', f
         Schema::clearResolvedInstance('db.schema');
         $cleanup();
     }
-});
+})->group('migrations-rollback');
