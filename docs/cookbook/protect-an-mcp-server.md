@@ -81,6 +81,18 @@ The endpoint is now described at `https://{host}/.well-known/oauth-protected-res
 When the list depends on more than config — a plan, a feature flag — bind your own
 `Cbox\Id\OAuthServer\Contracts\ProtectedResources` instead.
 
+When a registration or client metadata document omits `scope`, the client's registered
+set includes the open resources' scopes and the allowed `openid`, `profile` and `email`
+scopes, plus `offline_access` if it supports refresh. ChatGPT requests advertised OIDC
+identity scopes at authorization, even when its client document omits them. The operator's
+`dynamic_registration.allowed_scopes` still limits those identity scopes; other identity
+extensions require an explicit request. Registration itself grants no access: the person
+must consent to the requested scopes.
+
+A stored DCR client created before these defaults changed keeps its registered scopes.
+Update its registration or recreate the MCP connection so it registers a new client.
+Metadata-document clients are described afresh against the current defaults.
+
 ## 2. Guard the MCP endpoint
 
 Accept a token only if it is live **and audienced to this endpoint**. Every refusal is a 401

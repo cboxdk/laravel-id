@@ -15,7 +15,16 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
-## [Unreleased]
+## [1.27.3] - 2026-11-05
+
+### Added
+
+- An optional host authentication assessment before session and user-token issuance, with a step-up refusal when additional verification is required.
+
+### Fixed
+
+- Include allowed `openid`, `profile` and `email` scopes in the default MCP client registration ceiling, including client metadata documents without `scope`. ChatGPT requests advertised OIDC scopes during authorization; omitting them from the registered set caused `invalid_scope`. Explicit scope registrations and operator restrictions still apply.
+- Advance membership directory revisions in the same transaction as membership changes.
 
 ## [1.27.2] - 2026-11-04
 

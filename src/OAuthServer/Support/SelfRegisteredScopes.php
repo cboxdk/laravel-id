@@ -48,9 +48,10 @@ class SelfRegisteredScopes
 
     /**
      * What a client that asked for nothing in particular is registered for: every scope
-     * of every resource open to it, plus `offline_access` when it may refresh — an MCP
-     * client registers once and asks for scopes at `/authorize`, where the registered set
-     * is the ceiling.
+     * of every resource open to it, the allowed OIDC identity scopes, and `offline_access`
+     * when it may refresh. ChatGPT adds the advertised OIDC scopes at /authorize even
+     * when its registration or metadata document named no scope. This set is only the
+     * registration ceiling: the person still consents to the scopes actually requested.
      *
      * @return list<string>
      */
@@ -59,6 +60,7 @@ class SelfRegisteredScopes
         $allowed = $this->allowed();
 
         return array_values(array_filter($allowed, static fn (string $scope): bool => ! ProtocolScope::isProtocol($scope)
+            || in_array($scope, [ProtocolScope::OpenId->value, ProtocolScope::Profile->value, ProtocolScope::Email->value], true)
             || ($refreshes && $scope === ProtocolScope::OfflineAccess->value)));
     }
 

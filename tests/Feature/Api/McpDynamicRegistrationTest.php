@@ -64,9 +64,9 @@ it('registers a public client with the MCP defaults and advertises the endpoint'
     expect($response->json('token_endpoint_auth_method'))->toBe('none')
         ->and($response->json('client_secret'))->toBeNull()
         ->and($response->json('grant_types'))->toBe(['authorization_code', 'refresh_token'])
-        // Every scope of every resource open to self-registered clients, and offline_access
-        // because it may refresh. Never the closed resource's scope.
-        ->and(explode(' ', (string) $response->json('scope')))->toEqualCanonicalizing(['mcp:tools', 'mcp:admin', 'offline_access']);
+        // Open resources, allowed OIDC identity scopes, and offline_access for refresh.
+        // Never the closed resource's scope or the other identity extensions.
+        ->and(explode(' ', (string) $response->json('scope')))->toEqualCanonicalizing(['mcp:tools', 'mcp:admin', 'openid', 'profile', 'email', 'offline_access']);
 
     $this->getJson('/.well-known/oauth-authorization-server')->assertJsonPath('registration_endpoint', app(IssuerResolver::class)->issuer().'/oauth/register');
 });

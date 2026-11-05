@@ -161,9 +161,8 @@ it('resolves a document client for /authorize with the consent facts the host sh
         ->and($authorizing->client)->toBeInstanceOf(MetadataDocumentClient::class)
         ->and($authorizing->client->type)->toBe(ClientType::Public)
         ->and($authorizing->client->name)->toBe('Example MCP Client')
-        // The scopes a self-registered client may hold here: the open resource's, plus
-        // offline_access because it may refresh.
-        ->and($authorizing->client->scopes)->toBe(['mcp:tools', 'offline_access'])
+        // Open resource scopes, allowed OIDC identity scopes, and refresh access.
+        ->and($authorizing->client->scopes)->toBe(['mcp:tools', 'openid', 'profile', 'email', 'offline_access'])
         ->and($authorizing->client->isDynamicallyRegistered())->toBeTrue();
 
     // Redirect URIs match exactly, except that a loopback URI may differ in port (RFC 8252
@@ -354,7 +353,7 @@ it('keeps only the grants a document client may use', function (): void {
 
     expect($client->grant_types)->toBe(['authorization_code'])
         // No refresh grant, so no offline_access either.
-        ->and($client->scopes)->toBe(['mcp:tools']);
+        ->and($client->scopes)->toBe(['mcp:tools', 'openid', 'profile', 'email']);
 });
 
 it('refuses a client_id that is not a metadata document URL, without fetching', function (string $clientId): void {
