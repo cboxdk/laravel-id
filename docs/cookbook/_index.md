@@ -8,6 +8,8 @@ weight: 6
 
 Practical, copy-pasteable recipes. Each assumes you resolve contracts from the container.
 
+For independent TOTP credentials, see [Manage authenticator apps](manage-authenticator-apps.md).
+
 ## Central login across your products
 
 Your products don't embed the package — they log in against the running instance and reconcile

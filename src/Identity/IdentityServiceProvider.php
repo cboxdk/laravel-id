@@ -31,6 +31,7 @@ use Cbox\Id\Identity\Contracts\SmsFactors;
 use Cbox\Id\Identity\Contracts\SubjectEraser;
 use Cbox\Id\Identity\Contracts\SubjectPseudonymiser;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Contracts\TotpDevices;
 use Cbox\Id\Identity\Contracts\UserImport;
 use Cbox\Id\Identity\Contracts\WebAuthnVerifier;
 use Cbox\Id\Identity\Erasure\DatabaseSubjectPseudonymiser;
@@ -142,6 +143,7 @@ class IdentityServiceProvider extends ServiceProvider
 
         $this->app->singleton(TotpAuthenticator::class);
         $this->app->singleton(Mfa::class, MfaService::class);
+        $this->app->singleton(TotpDevices::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);
         $this->app->singleton(PasswordReset::class, PasswordResetService::class);
         $this->app->singleton(AdminPasswords::class, AdminPasswordService::class);

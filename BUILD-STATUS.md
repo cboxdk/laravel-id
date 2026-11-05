@@ -4,6 +4,18 @@ Living record of what is implemented, verified, and pending — built in depende
 "Verified" means: real tests green + PHPStan max clean + Pint clean. Nothing is marked done
 on inspection alone. This file exists so the build is auditable: no hidden gaps.
 
+## Named authenticator apps — unreleased
+
+Independent TOTP enrolment, confirmation, metadata listing, renaming and removal are
+implemented through `TotpDevices`. Existing credentials and replay counters survive
+the migration; SMS remains on slot zero. Setup expires after ten minutes, at most ten
+credentials can be pending or confirmed, and the last confirmed app cannot be removed.
+Recovery codes remain account-wide. See the [integration recipe](docs/cookbook/manage-authenticator-apps.md).
+
+The tests cover owner/environment isolation, replay and colliding codes, migration
+preservation, and real concurrent enrolment, removal and verification on server databases.
+Publication and the host-app dependency upgrade are separate release steps.
+
 Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dependency) · ⬜ not started
 
 **Current (2026-09-24, 1.19.0): kernels (5/5) and every domain module below are complete and
