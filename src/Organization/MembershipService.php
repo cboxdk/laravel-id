@@ -122,6 +122,7 @@ class MembershipService implements Memberships
             $this->emitAndAudit($organizationId, $userId, 'organization.member_added', ['role' => $role->value]);
 
             $this->announce('membership.created', $organizationId, $userId, [
+                'membership_id' => $membership->id,
                 'role' => $role->value,
                 'status' => MembershipStatus::Active->value,
                 'invited_by' => $invitedBy,
@@ -152,6 +153,7 @@ class MembershipService implements Memberships
             // and a write that changed nothing is not an update.
             if ($previous !== $role) {
                 $this->announce('membership.updated', $organizationId, $userId, [
+                    'membership_id' => $membership->id,
                     'role' => $role->value,
                     'previous_role' => $previous->value,
                     'reason' => 'role_changed',
@@ -259,11 +261,13 @@ class MembershipService implements Memberships
             $this->emitAndAudit($organizationId, $fromUserId, 'organization.member_role_changed', ['role' => MembershipRole::Admin->value]);
 
             $this->announce('membership.updated', $organizationId, $toUserId, [
+                'membership_id' => $to->id,
                 'role' => MembershipRole::Owner->value,
                 'previous_role' => $toPrevious->value,
                 'reason' => 'ownership_transferred',
             ]);
             $this->announce('membership.updated', $organizationId, $fromUserId, [
+                'membership_id' => $from->id,
                 'role' => MembershipRole::Admin->value,
                 'previous_role' => MembershipRole::Owner->value,
                 'reason' => 'ownership_transferred',
@@ -359,6 +363,7 @@ class MembershipService implements Memberships
         // the new one reports a membership that existed, with the role it had.
         if ($membership !== null) {
             $this->announce('membership.deleted', $organizationId, $userId, [
+                'membership_id' => $membership->id,
                 'role' => $membership->role->value,
                 'reason' => $reason,
             ]);
@@ -660,7 +665,7 @@ class MembershipService implements Memberships
     {
         $this->events->emit(new DomainEvent(
             $type,
-            ['organization_id' => $organizationId, 'user_id' => $userId] + $payload,
+            ['organization_id' => $organizationId, 'user_id' => $userId, 'directory_revision' => MembershipDirectoryRevision::advance($organizationId)] + $payload,
             $organizationId,
         ));
     }

@@ -11,8 +11,12 @@ use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\ExternalActions\Payloads\TokenMintingPayload;
 use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
+use Cbox\Id\Identity\Contracts\AuthenticationAssessment;
 use Cbox\Id\Identity\Contracts\MfaVerification;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Enums\AuthenticationIssuance;
+use Cbox\Id\Identity\Exceptions\AuthenticationStepUpRequired;
+use Cbox\Id\Identity\ValueObjects\VerifiedAuthentication;
 use Cbox\Id\Kernel\Authorization\Contracts\EntitlementReader;
 use Cbox\Id\Kernel\Authorization\Enums\EnforcementMode;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
@@ -223,6 +227,20 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
      */
     private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null, ?AuthenticationEvent $authentication = null): IssuedToken
     {
+        // The host may consult a remote risk service. Do that before opening our
+        // mint transaction, and include legacy/user grants with unknown AMR too.
+        // Machine credentials have no user authentication to assess.
+        if ($userId !== null && app()->bound(AuthenticationAssessment::class)) {
+            try {
+                app(AuthenticationAssessment::class)->assertAllowed(new VerifiedAuthentication(
+                    $userId, $organizationId, $authentication->amr ?? [],
+                    $authentication?->authTime, AuthenticationIssuance::Token,
+                ));
+            } catch (AuthenticationStepUpRequired) {
+                throw InvalidGrant::make('stronger authentication is required');
+            }
+        }
+
         // What this token is FOR — scopes, audience, and whose roles it carries — decided
         // once, here, for every grant type. See AudienceResolver.
         return DB::transaction(function () use ($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication): IssuedToken {
