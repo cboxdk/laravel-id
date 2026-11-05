@@ -4,7 +4,7 @@ Living record of what is implemented, verified, and pending — built in depende
 "Verified" means: real tests green + PHPStan max clean + Pint clean. Nothing is marked done
 on inspection alone. This file exists so the build is auditable: no hidden gaps.
 
-## Named authenticator apps — unreleased
+## Named authenticator apps — 1.28.0
 
 Independent TOTP enrolment, confirmation, metadata listing, renaming and removal are
 implemented through `TotpDevices`. Existing credentials and replay counters survive
@@ -14,7 +14,7 @@ Recovery codes remain account-wide. See the [integration recipe](docs/cookbook/m
 
 The tests cover owner/environment isolation, replay and colliding codes, migration
 preservation, and real concurrent enrolment, removal and verification on server databases.
-Publication and the host-app dependency upgrade are separate release steps.
+Released in 1.28.0; host apps must upgrade and run the migration before using the new contract.
 
 Legend: ✅ done & verified · 🔨 in progress · ⏳ pending (blocked by a dependency) · ⬜ not started
 

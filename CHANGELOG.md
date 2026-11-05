@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-11-05
+
 ### Added
 
 - Independently named TOTP credentials through `TotpDevices`: enrol, confirm, list,
