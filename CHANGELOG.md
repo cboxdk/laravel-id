@@ -15,6 +15,23 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Added
+
+- Independently named TOTP credentials through `TotpDevices`: enrol, confirm, list,
+  rename and remove up to ten apps per person, with ten-minute setup expiry.
+- A migration preserving existing credentials, replay counters and SMS enrolments;
+  refuse rollback while multiple credentials would violate the old unique constraint.
+
+### Fixed
+
+- Encode TOTP provisioning query parameters using RFC 3986 so an issuer with spaces
+  matches its QR label in strict authenticator apps.
+- Refuse legacy TOTP re-enrolment that would replace an already confirmed key.
+- Keep replay protection across all confirmed apps, including coinciding codes, and
+  prevent removal of the last confirmed authenticator.
+
 ## [1.27.3] - 2026-11-05
 
 ### Added

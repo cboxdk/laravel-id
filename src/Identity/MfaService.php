@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\Mfa;
+use Cbox\Id\Identity\Contracts\TotpDevices;
+use Cbox\Id\Identity\Exceptions\TotpDeviceRefused;
 use Cbox\Id\Identity\Models\MfaFactor;
 use Cbox\Id\Identity\Models\MfaRecoveryCode;
+use Cbox\Id\Identity\ValueObjects\TotpDevice;
+use Cbox\Id\Identity\ValueObjects\TotpDeviceEnrollment;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -14,8 +18,10 @@ use Cbox\Id\Kernel\Crypto\Concerns\FormatsRecoveryCodes;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\TotpAuthenticator;
 use Cbox\Id\Kernel\Crypto\ValueObjects\TotpEnrollment;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 
-class MfaService implements Mfa
+class MfaService implements Mfa, TotpDevices
 {
     use FormatsRecoveryCodes;
 
@@ -27,81 +33,187 @@ class MfaService implements Mfa
 
     public function enrollTotp(string $userId, string $account, string $issuer = 'Cbox ID'): TotpEnrollment
     {
-        $secret = $this->totp->generateSecret();
+        return DB::transaction(function () use ($userId, $account, $issuer): TotpEnrollment {
+            $factors = MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')
+                ->orderBy('id')->lockForUpdate()->get();
+            if ($factors->whereNotNull('confirmed_at')->isNotEmpty()) {
+                throw new TotpDeviceRefused('already_enrolled');
+            }
+            $factor = $factors->firstWhere('slot', 0);
+            if ($factor !== null && $factor->name !== '') {
+                throw new TotpDeviceRefused('enrolment_busy');
+            }
+            $secret = $this->totp->generateSecret();
+            $factor ??= new MfaFactor(['user_id' => $userId, 'type' => 'totp', 'slot' => 0]);
+            $factor->forceFill([
+                'secret_encrypted' => $this->secretBox->seal($secret, $this->context($userId)),
+                'confirmed_at' => null, 'last_used_step' => null, 'created_at' => now(),
+            ])->save();
 
-        MfaFactor::query()->updateOrCreate(
-            ['user_id' => $userId, 'type' => 'totp'],
-            ['secret_encrypted' => $this->secretBox->seal($secret, $this->context($userId)), 'confirmed_at' => null],
-        );
-
-        return new TotpEnrollment($secret, $this->totp->provisioningUri($secret, $account, $issuer));
+            return new TotpEnrollment($secret, $this->totp->provisioningUri($secret, $account, $issuer));
+        }, 3);
     }
 
     public function confirmTotp(string $userId, string $code): bool
     {
         $factor = $this->totpFactor($userId);
 
+        return $factor !== null && $this->confirmDevice($userId, $factor->id, $code);
+    }
+
+    public function verifyTotp(string $userId, string $code): bool
+    {
+        return DB::transaction(function () use ($userId, $code): bool {
+            $factors = MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')
+                ->whereNotNull('confirmed_at')->orderBy('id')->lockForUpdate()->get();
+            $matches = [];
+            foreach ($factors as $factor) {
+                $secret = $this->secretBox->open($factor->secret_encrypted, $this->context($userId));
+                $step = $this->totp->matchStep($secret, $code);
+                if ($step === null) {
+                    continue;
+                }
+                if ($factor->last_used_step !== null && $step <= $factor->last_used_step) {
+                    return false;
+                }
+                $matches[$factor->id] = $step;
+            }
+            // Consume every matching step: two apps can exceptionally show the same
+            // six digits. That collision must never make one code reusable.
+            foreach ($matches as $id => $step) {
+                $advanced = MfaFactor::query()->whereKey($id)->whereNotNull('confirmed_at')
+                    ->where(fn ($query) => $query->whereNull('last_used_step')->orWhere('last_used_step', '<', $step))
+                    ->update(['last_used_step' => $step]);
+                if ($advanced !== 1) {
+                    return false;
+                }
+            }
+
+            return $matches !== [];
+        }, 3);
+    }
+
+    public function hasConfirmedTotp(string $userId): bool
+    {
+        return MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')->whereNotNull('confirmed_at')->exists();
+    }
+
+    public function devices(string $userId): array
+    {
+        return array_values(MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')
+            ->whereNotNull('confirmed_at')->orderBy('created_at')->orderBy('id')->get()
+            ->map(fn (MfaFactor $factor): TotpDevice => new TotpDevice(
+                $factor->id, $factor->name, $factor->confirmed_at?->toDateTimeImmutable(),
+            ))->all());
+    }
+
+    public function enrollDevice(string $userId, string $account, string $name, string $issuer = 'Cbox ID'): TotpDeviceEnrollment
+    {
+        $name = $this->deviceName($name);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                return DB::transaction(function () use ($userId, $account, $name, $issuer): TotpDeviceEnrollment {
+                    // Ordered locks serialize changes to an existing set. The unique slot
+                    // constraint also bounds concurrent first enrolments to ten secrets.
+                    $factors = MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')->orderBy('id')->lockForUpdate()->get();
+                    $used = [];
+                    foreach ($factors as $factor) {
+                        if ($factor->confirmed_at === null && $factor->created_at?->lt(now()->subMinutes(10))) {
+                            $factor->delete();
+                        } else {
+                            $used[] = $factor->slot;
+                        }
+                    }
+                    $slots = array_values(array_diff(range(0, 9), $used));
+                    if ($slots === []) {
+                        throw new TotpDeviceRefused('limit_reached');
+                    }
+                    $secret = $this->totp->generateSecret();
+                    $factor = MfaFactor::query()->create([
+                        'user_id' => $userId, 'type' => 'totp', 'slot' => $slots[0], 'name' => $name,
+                        'secret_encrypted' => $this->secretBox->seal($secret, $this->context($userId)),
+                    ]);
+
+                    return new TotpDeviceEnrollment($factor->id, $secret, $this->totp->provisioningUri($secret, $account, $issuer));
+                }, 3);
+            } catch (UniqueConstraintViolationException) {
+                // Another first enrolment claimed this slot. Retry after its transaction.
+            }
+        }
+
+        throw new TotpDeviceRefused('enrolment_busy');
+    }
+
+    public function confirmDevice(string $userId, string $deviceId, string $code): bool
+    {
+        return DB::transaction(function () use ($userId, $deviceId, $code): bool {
+            $factor = MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')
+                ->whereKey($deviceId)->lockForUpdate()->first();
+            if ($factor === null || $factor->confirmed_at !== null || $factor->created_at?->lt(now()->subMinutes(10))) {
+                return false;
+            }
+            $secret = $this->secretBox->open($factor->secret_encrypted, $this->context($userId));
+            $step = $this->totp->matchStep($secret, $code);
+            if ($step === null) {
+                return false;
+            }
+            $factor->forceFill(['confirmed_at' => now(), 'last_used_step' => $step])->save();
+            $this->audit->record(new AuditEvent(
+                action: 'user.mfa_enrolled', actorType: ActorType::User, actorId: $userId,
+                targetType: 'user', targetId: $userId, context: ['type' => 'totp', 'factor_id' => $factor->id],
+            ));
+
+            return true;
+        });
+    }
+
+    public function renameDevice(string $userId, string $deviceId, string $name): bool
+    {
+        $name = $this->deviceName($name);
+        $factor = MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')
+            ->whereNotNull('confirmed_at')->whereKey($deviceId)->first();
         if ($factor === null) {
             return false;
         }
-
-        $secret = $this->secretBox->open($factor->secret_encrypted, $this->context($userId));
-
-        $step = $this->totp->matchStep($secret, $code);
-
-        if ($step === null) {
-            return false;
-        }
-
-        $factor->forceFill(['confirmed_at' => now(), 'last_used_step' => $step])->save();
-
+        $factor->forceFill(['name' => $name])->save();
         $this->audit->record(new AuditEvent(
-            action: 'user.mfa_enrolled',
-            actorType: ActorType::User,
-            actorId: $userId,
-            targetType: 'user',
-            targetId: $userId,
-            context: ['type' => 'totp'],
+            action: 'user.mfa_renamed', actorType: ActorType::User, actorId: $userId,
+            targetType: 'user', targetId: $userId, context: ['type' => 'totp', 'factor_id' => $deviceId],
         ));
 
         return true;
     }
 
-    public function verifyTotp(string $userId, string $code): bool
+    public function removeDevice(string $userId, string $deviceId): bool
     {
-        $factor = $this->totpFactor($userId);
+        return DB::transaction(function () use ($userId, $deviceId): bool {
+            $factors = MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')
+                ->orderBy('id')->lockForUpdate()->get();
+            $factor = $factors->firstWhere('id', $deviceId);
+            if ($factor === null) {
+                return false;
+            }
+            if ($factor->confirmed_at !== null && $factors->whereNotNull('confirmed_at')->count() <= 1) {
+                throw new TotpDeviceRefused('last_device');
+            }
+            $factor->delete();
+            $this->audit->record(new AuditEvent(
+                action: 'user.mfa_removed', actorType: ActorType::User, actorId: $userId,
+                targetType: 'user', targetId: $userId, context: ['type' => 'totp', 'factor_id' => $deviceId],
+            ));
 
-        if ($factor === null || $factor->confirmed_at === null) {
-            return false;
-        }
-
-        $secret = $this->secretBox->open($factor->secret_encrypted, $this->context($userId));
-
-        $step = $this->totp->matchStep($secret, $code);
-
-        // Reject a code that matched no step, and one at or before the last step we
-        // already accepted — that is a replay within the still-valid skew window.
-        if ($step === null || ($factor->last_used_step !== null && $step <= $factor->last_used_step)) {
-            return false;
-        }
-
-        // Advance the step with a conditional update, not a read-then-write: two requests
-        // presenting the SAME intercepted code at once would both have passed the replay
-        // check above and both been accepted. Only the update that still sees the earlier
-        // step wins, so one code admits exactly one sign-in.
-        $advanced = MfaFactor::query()
-            ->whereKey($factor->id)
-            ->where(fn ($query) => $query->whereNull('last_used_step')->orWhere('last_used_step', '<', $step))
-            ->update(['last_used_step' => $step]);
-
-        return $advanced === 1;
+            return true;
+        }, 3);
     }
 
-    public function hasConfirmedTotp(string $userId): bool
+    private function deviceName(string $name): string
     {
-        $factor = $this->totpFactor($userId);
+        $name = trim($name);
+        if ($name === '' || mb_strlen($name) > 120 || preg_match('/[\\p{C}]/u', $name) !== 0) {
+            throw new TotpDeviceRefused('invalid_name');
+        }
 
-        return $factor !== null && $factor->confirmed_at !== null;
+        return $name;
     }
 
     public function generateRecoveryCodes(string $userId, int $count = 10): array
@@ -206,7 +318,7 @@ class MfaService implements Mfa
 
     private function totpFactor(string $userId): ?MfaFactor
     {
-        return MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')->first();
+        return MfaFactor::query()->where('user_id', $userId)->where('type', 'totp')->where('slot', 0)->first();
     }
 
     private function context(string $userId): string

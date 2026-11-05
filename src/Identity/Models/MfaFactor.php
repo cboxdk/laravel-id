@@ -14,10 +14,14 @@ use Illuminate\Support\Carbon;
  * A second-factor enrolment. The TOTP secret is stored sealed (Crypto SecretBox)
  * and only opened to verify a code.
  *
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property string $id
  * @property string $environment_id
  * @property string $user_id
  * @property string $type
+ * @property int $slot
+ * @property string $name
  * @property string $secret_encrypted
  * @property Carbon|null $confirmed_at
  * @property int|null $last_used_step
@@ -39,6 +43,7 @@ class MfaFactor extends Model implements EnvironmentOwned
         return [
             'confirmed_at' => 'datetime',
             'last_used_step' => 'integer',
+            'slot' => 'integer',
         ];
     }
 }

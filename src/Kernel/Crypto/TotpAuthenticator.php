@@ -82,7 +82,7 @@ class TotpAuthenticator
             'algorithm' => 'SHA1',
             'digits' => self::DIGITS,
             'period' => self::PERIOD,
-        ]);
+        ], '', '&', PHP_QUERY_RFC3986);
     }
 
     private function hotp(string $key, int $counter): string
