@@ -8,6 +8,7 @@ use Cbox\Id\Federation\Exceptions\SamlMetadataImportFailed;
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Federation\ValueObjects\ImportedIdpMetadata;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Support\Facades\Http;
 use OneLogin\Saml2\IdPMetadataParser;
 use Throwable;
@@ -30,40 +31,27 @@ class SamlMetadataImporter
     public function fromXml(string $xml): ImportedIdpMetadata
     {
         if (trim($xml) === '') {
-            throw SamlMetadataImportFailed::make('the metadata document was empty.');
+            throw SamlMetadataImportFailed::make('the metadata document was empty.')->withSourceMessage(new SourceMessage('Could not import SAML metadata: the metadata document was empty.', []));
         }
-
         try {
             $parsed = IdPMetadataParser::parseXML($xml);
         } catch (Throwable $e) {
-            throw SamlMetadataImportFailed::make($e->getMessage());
+            throw SamlMetadataImportFailed::make($e->getMessage())->withSourceMessage(new SourceMessage('Could not import SAML metadata: :value1', ['value1' => $e->getMessage()]));
         }
-
         $rawIdp = $parsed['idp'] ?? null;
-
         if (! is_array($rawIdp)) {
-            throw SamlMetadataImportFailed::make('no IDPSSODescriptor was found in the document.');
+            throw SamlMetadataImportFailed::make('no IDPSSODescriptor was found in the document.')->withSourceMessage(new SourceMessage('Could not import SAML metadata: no IDPSSODescriptor was found in the document.', []));
         }
-
         $idp = [];
         foreach ($rawIdp as $key => $value) {
             if (is_string($key)) {
                 $idp[$key] = $value;
             }
         }
-
         $certificates = $this->certificates($idp);
-
-        $metadata = new ImportedIdpMetadata(
-            entityId: $this->string($idp, 'entityId'),
-            ssoUrl: $this->nestedUrl($idp, 'singleSignOnService'),
-            x509cert: $certificates[0] ?? '',
-            sloUrl: $this->optionalNestedUrl($idp, 'singleLogoutService'),
-            extraCertificates: array_slice($certificates, 1),
-        );
-
+        $metadata = new ImportedIdpMetadata(entityId: $this->string($idp, 'entityId'), ssoUrl: $this->nestedUrl($idp, 'singleSignOnService'), x509cert: $certificates[0] ?? '', sloUrl: $this->optionalNestedUrl($idp, 'singleLogoutService'), extraCertificates: array_slice($certificates, 1));
         if (! $metadata->isComplete()) {
-            throw SamlMetadataImportFailed::make('the metadata is missing an entity id, SSO URL, or signing certificate.');
+            throw SamlMetadataImportFailed::make('the metadata is missing an entity id, SSO URL, or signing certificate.')->withSourceMessage(new SourceMessage('Could not import SAML metadata: the metadata is missing an entity id, SSO URL, or signing certificate.', []));
         }
 
         return $metadata;
@@ -77,15 +65,13 @@ class SamlMetadataImporter
     public function fromUrl(string $url): ImportedIdpMetadata
     {
         $pinned = SafeFederationUrl::pinnedOptions($url);
-
         try {
             $response = Http::withOptions($pinned)->timeout(10)->get($url);
         } catch (Throwable $e) {
-            throw SamlMetadataImportFailed::make('could not fetch the metadata URL: '.$e->getMessage());
+            throw SamlMetadataImportFailed::make('could not fetch the metadata URL: '.$e->getMessage())->withSourceMessage(new SourceMessage('Could not import SAML metadata: could not fetch the metadata URL: :value1', ['value1' => $e->getMessage()]));
         }
-
         if (! $response->successful()) {
-            throw SamlMetadataImportFailed::make("the metadata URL returned HTTP {$response->status()}.");
+            throw SamlMetadataImportFailed::make("the metadata URL returned HTTP {$response->status()}.")->withSourceMessage(new SourceMessage('Could not import SAML metadata: the metadata URL returned HTTP :value1.', ['value1' => $response->status()]));
         }
 
         return $this->fromXml($response->body());
@@ -109,7 +95,6 @@ class SamlMetadataImporter
     private function nestedUrl(array $idp, string $key): string
     {
         $node = $idp[$key] ?? null;
-
         if (is_array($node) && isset($node['url']) && is_string($node['url'])) {
             return $node['url'];
         }
@@ -141,18 +126,13 @@ class SamlMetadataImporter
     private function certificates(array $idp): array
     {
         $certificates = [];
-
         $single = $idp['x509cert'] ?? null;
-
         if (is_string($single) && $single !== '') {
             $certificates[] = $single;
         }
-
         $multi = $idp['x509certMulti'] ?? null;
-
         if (is_array($multi)) {
             $signing = $multi['signing'] ?? null;
-
             if (is_array($signing)) {
                 foreach ($signing as $certificate) {
                     if (is_string($certificate) && $certificate !== '' && ! in_array($certificate, $certificates, true)) {

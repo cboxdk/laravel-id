@@ -241,6 +241,9 @@ return [
     ],
 
     'webhooks' => [
+        // Operator-only exact HTTPS endpoint => fixed IP pins for internal services.
+        // Customer URLs still use the normal public-address SSRF guard. No wildcards.
+        'trusted_endpoints' => [],
         'verify_url' => env('CBOX_ID_WEBHOOKS_VERIFY_URL', true),
         'max_attempts' => env('CBOX_ID_WEBHOOKS_MAX_ATTEMPTS', 12),
         'schedule_retries' => env('CBOX_ID_WEBHOOKS_SCHEDULE_RETRIES', true),
@@ -815,6 +818,17 @@ return [
          */
         'client_secrets' => [
             'max_rotation_grace' => env('CBOX_ID_CLIENT_SECRET_MAX_ROTATION_GRACE', 2592000),
+        ],
+
+        /*
+         * Explicit resource-server introspection grants: confidential client IDs
+         * mapped to exact resource audience URIs. Empty means own tokens only.
+         * Never inferred from oauth_apis.client_id (that is RBAC linkage).
+         * No wildcards and no issuer-audience tokens. This is host configuration,
+         * not a client-editable registration attribute.
+         */
+        'introspection' => [
+            'resource_servers' => [],
         ],
 
         /*

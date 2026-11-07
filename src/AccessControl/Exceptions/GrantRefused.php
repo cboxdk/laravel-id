@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl\Exceptions;
 
 use Cbox\Id\AccessControl\Contracts\GrantGuard;
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
 use RuntimeException;
 
 /**
@@ -16,8 +18,10 @@ use RuntimeException;
  * should catch it per user, audit the refusal and carry on: one person's conflicting
  * mapping must not abandon everyone else's sync.
  */
-class GrantRefused extends RuntimeException
+class GrantRefused extends RuntimeException implements HasSourceMessage
 {
+    use CarriesSourceMessage;
+
     public function __construct(
         public readonly string $organizationId,
         public readonly string $userId,

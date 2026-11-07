@@ -12,6 +12,7 @@ use Cbox\Id\Directory\Hris\ValueObjects\HrisDepartment;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisEmployee;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisSyncOptions;
 use Cbox\Id\Directory\Support\JsonObjectList;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
@@ -74,7 +75,7 @@ class HiBobConnector extends HrisConnector
     {
         $client = $this->client($credentials);
 
-        $response = $this->http()->send(fn () => $client()->get(self::BASE.'/company/named-lists/department'), 'The department list request');
+        $response = $this->http()->send(fn () => $client()->get(self::BASE.'/company/named-lists/department'), new SourceMessage('The department list request'));
 
         yield from $this->items(JsonObjectList::from($response->json('items')), null);
     }
@@ -83,7 +84,7 @@ class HiBobConnector extends HrisConnector
     {
         $client = $this->client($credentials);
 
-        $this->http()->send(fn () => $client()->get(self::BASE.'/company/named-lists/department'), 'The department list request');
+        $this->http()->send(fn () => $client()->get(self::BASE.'/company/named-lists/department'), new SourceMessage('The department list request'));
     }
 
     /**

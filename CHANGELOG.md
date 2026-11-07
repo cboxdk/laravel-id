@@ -15,7 +15,28 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
-## [Unreleased]
+## [2.0.0] — prepared candidate, not published
+
+### Upgrade
+
+Run all framework migrations before the matching app rollout, including role_grant_subject_locks; drain old workers. Custom Invitations implementations must accept optional clientId. Existing role holders change permissions only after explicit definition activation. See UPGRADING.md for lock ordering and source promotion.
+
+### Added
+
+- Publish role definitions without automatically expanding existing assignments. Changed role permissions remain pending until an administrator explicitly activates the version. Publication and activation serialize conflicting updates.
+- Record the exact accepting subject on invitations and scope pending-invitation replacement to the originating app, preserving invitations for other apps.
+- Explicit resource-server introspection grants through `ResourceIntrospectionAccess`. Configure exact caller-client IDs and resource audiences in `oauth.introspection.resource_servers`; the default grants no cross-client access. The existing own-token introspection path is unchanged.
+- Resource-server introspection checks current organization status and active membership, and refuses issuer audiences, wrong callers, multiple audiences, revoked tokens and cross-organization use. No deployment grants are created by installing this release.
+
+### Fixed
+
+- Serialize built-in grants and revocations per environment and subject, then lock
+  role policy through the assignment write. Concurrent staff-only edits, definition
+  activation, role deletion and conflicting-role grants can no longer act on stale
+  policy. Requires the new built-in subject-lock migration before application rollout.
+- Promote a directory-pushed grant to manual when an administrator explicitly grants
+  it. Directory reconciliation shares the subject lock and preserves that manual
+  decision; repeating it remains silent. Subject erasure removes the lock record.
 
 ## [1.28.0] - 2026-11-05
 

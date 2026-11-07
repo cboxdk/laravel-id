@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation\Support;
 
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * The shape a federation START URL must have before this platform will send a person's
@@ -39,21 +40,17 @@ class BrowserStartUrl
     public static function assert(string $url, string $field): string
     {
         $parts = parse_url($url);
-
         if ($parts === false || ! isset($parts['host']) || $parts['host'] === '') {
-            throw UnsafeFederationUrl::make("[{$field}] is not a valid absolute URL");
+            throw UnsafeFederationUrl::make("[{$field}] is not a valid absolute URL")->withSourceMessage(new SourceMessage('Unsafe federation URL: [:field] is not a valid absolute URL', ['field' => $field]));
         }
-
         if (($parts['scheme'] ?? null) !== 'https') {
-            throw UnsafeFederationUrl::make("[{$field}] must be an https URL");
+            throw UnsafeFederationUrl::make("[{$field}] must be an https URL")->withSourceMessage(new SourceMessage('Unsafe federation URL: [:field] must be an https URL', ['field' => $field]));
         }
-
         if (isset($parts['user']) || isset($parts['pass'])) {
-            throw UnsafeFederationUrl::make("[{$field}] must not carry credentials");
+            throw UnsafeFederationUrl::make("[{$field}] must not carry credentials")->withSourceMessage(new SourceMessage('Unsafe federation URL: [:field] must not carry credentials', ['field' => $field]));
         }
-
         if (isset($parts['fragment'])) {
-            throw UnsafeFederationUrl::make("[{$field}] must not carry a fragment");
+            throw UnsafeFederationUrl::make("[{$field}] must not carry a fragment")->withSourceMessage(new SourceMessage('Unsafe federation URL: [:field] must not carry a fragment', ['field' => $field]));
         }
 
         return $url;

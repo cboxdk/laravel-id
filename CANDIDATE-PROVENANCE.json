@@ -1,0 +1,12 @@
+{
+  "upstream_head": "1b316ef74e78a84792fb0c0e057d88a9fb39685f",
+  "upstream_branch": "sd/domains-i01-resource-introspection",
+  "target_version": "2.0.0",
+  "status": "unpublished candidate based on actual upstream history",
+  "source_manifest": "evidence/laravel-id-final-source-hashes.json",
+  "publication_parent": "20116136bd212254f2892ca20530fa6705ed6e0b",
+  "restored_public_files": [
+    "BUILD-STATUS.md",
+    "dev/rfc-environments.md"
+  ]
+}

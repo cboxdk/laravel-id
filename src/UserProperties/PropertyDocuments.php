@@ -1,0 +1,112 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Cbox\Id\UserProperties;
+
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Events\Contracts\EventBus;
+use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\UserProperties\Jobs\RelayPropertyChanges;
+use Cbox\Id\UserProperties\Models\PropertyDocument;
+use Cbox\Id\UserProperties\ValueObjects\PropertyPatch;
+use Cbox\Id\UserProperties\ValueObjects\PropertySnapshot;
+use Illuminate\Support\Str;
+use stdClass;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+/** Internal persistence shared by app-granted properties and subject-owned preferences. */
+class PropertyDocuments
+{
+    use ResolvesEnvironment;
+
+    public function __construct(private readonly Subjects $subjects, private readonly EventBus $events) {}
+
+    public function read(string $userId, string $namespace): PropertySnapshot
+    {
+        $this->subject($userId);
+        $record = PropertyDocument::query()->where('user_id', $userId)->where('namespace', $namespace)->first();
+
+        return new PropertySnapshot($userId, $namespace, $record->data ?? new stdClass, $record->version ?? 0);
+    }
+
+    /** Caller holds the namespace lock within a transaction. */
+    public function patch(?string $clientId, string $userId, string $namespace, PropertyPatch $patch): PropertySnapshot
+    {
+        $this->subject($userId);
+        $record = PropertyDocument::query()->where('user_id', $userId)->where('namespace', $namespace)->first();
+        if (($record->version ?? 0) !== $patch->version) {
+            throw new ConflictHttpException('The properties changed. Read the latest version and retry your patch.');
+        }
+        $old = $record->data ?? new stdClass;
+        $data = clone $old;
+        $changed = [];
+        foreach (get_object_vars($patch->set) as $key => $value) {
+            if (! property_exists($data, $key) || json_encode($this->canonicalize($data->{$key}), JSON_THROW_ON_ERROR) !== json_encode($this->canonicalize($value), JSON_THROW_ON_ERROR)) {
+                $data->{$key} = $value;
+                $changed[] = $key;
+            }
+        }
+        foreach ($patch->remove as $key) {
+            if (property_exists($data, $key)) {
+                unset($data->{$key});
+                $changed[] = $key;
+            }
+        }
+        PropertyPatch::validateDocument($data);
+        if ($namespace === 'preferences') {
+            PreferenceSchema::validate($data);
+        }
+        if ($changed === []) {
+            return new PropertySnapshot($userId, $namespace, $data, $patch->version);
+        }
+        $record ??= new PropertyDocument;
+        $record->fill(['user_id' => $userId, 'namespace' => $namespace, 'data' => $data, 'version' => $patch->version + 1]);
+        $record->save();
+        // Invalidation only: no custom values are copied into outbox/audit/webhooks.
+        $this->events->emit(new DomainEvent($namespace === 'preferences' ? 'user.preferences.updated' : 'user.metadata.updated', [
+            'event_id' => (string) Str::ulid(),
+            'user_id' => $userId,
+            'namespace' => $namespace,
+            'changed_keys' => $changed,
+            'version' => $record->version,
+            'client_id' => $clientId,
+            'occurred_at' => now()->toIso8601String(),
+        ]));
+        $pending = RelayPropertyChanges::dispatch()->afterCommit();
+        $connection = config('cbox-id.webhooks.queue_connection');
+        $queue = config('cbox-id.webhooks.queue');
+        if (is_string($connection) && $connection !== '') {
+            $pending->onConnection($connection);
+        }
+        if (is_string($queue) && $queue !== '') {
+            $pending->onQueue($queue);
+        }
+
+        return new PropertySnapshot($userId, $namespace, $data, $record->version);
+    }
+
+    // JSON objects are unordered; MySQL may reorder their keys on persistence.
+    // Arrays retain their order, and objects must stay distinct from arrays.
+    private function canonicalize(mixed $value): mixed
+    {
+        if ($value instanceof stdClass) {
+            $properties = get_object_vars($value);
+            ksort($properties);
+
+            return (object) array_map($this->canonicalize(...), $properties);
+        }
+
+        return is_array($value) ? array_map($this->canonicalize(...), $value) : $value;
+    }
+
+    private function subject(string $userId): void
+    {
+        $this->environments()->requireEnvironment();
+        if (! $this->subjects->isActive($userId)) {
+            throw new NotFoundHttpException('User not found.');
+        }
+    }
+}

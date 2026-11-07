@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\AccessControl\Contracts\AppManifests;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
+use Cbox\Id\AccessControl\Contracts\RoleDefinitions;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Exceptions\InvalidManifest;
 use Cbox\Id\AccessControl\Exceptions\RoleNotTenantAssignable;
@@ -14,6 +15,7 @@ use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
 use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Identity\Models\User;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
@@ -120,7 +122,12 @@ it('re-syncs when a role becomes staff-only, and hashes an ordinary manifest as 
     $result = app(AppManifests::class)->sync('app_cadastre', $staff);
 
     expect($result->unchanged)->toBeFalse()
-        ->and(Role::query()->where('key', 'support')->value('tenant_assignable'))->toBeFalse();
+        ->and(Role::query()->where('key', 'support')->value('tenant_assignable'))->toBeTrue();
+
+    $pending = Role::query()->where('key', 'support')->sole();
+    expect($pending->pending_tenant_assignable)->toBeFalse();
+    app(RoleDefinitions::class)->activate($pending->id, $pending->pending_definition_version, AuditActor::user('operator'));
+    expect($pending->refresh()->tenant_assignable)->toBeFalse();
 });
 
 it('lists only what a tenant may grant: its own and shared roles, never staff, orphaned or foreign ones', function (): void {

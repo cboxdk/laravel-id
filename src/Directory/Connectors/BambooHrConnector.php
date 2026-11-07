@@ -14,6 +14,7 @@ use Cbox\Id\Directory\Hris\ValueObjects\HrisDepartment;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisEmployee;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisSyncOptions;
 use Cbox\Id\Directory\Support\JsonObjectList;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
@@ -40,11 +41,7 @@ use Illuminate\Support\Facades\Http;
  */
 class BambooHrConnector extends HrisConnector
 {
-    private const array FIELDS = [
-        'firstName', 'lastName', 'preferredName', 'displayName', 'workEmail', 'status',
-        'hireDate', 'terminationDate', 'departmentId', 'departmentName', 'reportsToId',
-        'employeeNumber', 'jobTitleName',
-    ];
+    private const array FIELDS = ['firstName', 'lastName', 'preferredName', 'displayName', 'workEmail', 'status', 'hireDate', 'terminationDate', 'departmentId', 'departmentName', 'reportsToId', 'employeeNumber', 'jobTitleName'];
 
     private const int PAGE = 500;
 
@@ -72,9 +69,8 @@ class BambooHrConnector extends HrisConnector
         $value = (string) preg_replace('#^https?://#', '', $value);
         $value = explode('/', $value)[0];
         $value = (string) preg_replace('/\.bamboohr\.com$/', '', $value);
-
         if (preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/', $value) !== 1) {
-            throw IncompleteHrisCredentials::invalid('BambooHR', 'subdomain', 'The company subdomain is the part before .bamboohr.com in your BambooHR address.');
+            throw IncompleteHrisCredentials::invalid('BambooHR', 'subdomain', 'The company subdomain is the part before .bamboohr.com in your BambooHR address.')->withSourceMessage(new SourceMessage('BambooHR: The company subdomain is the part before .bamboohr.com in your BambooHR address.', []));
         }
 
         return $value;
@@ -85,13 +81,11 @@ class BambooHrConnector extends HrisConnector
         $base = $this->base($credentials);
         $client = $this->client($credentials);
         $fields = implode(',', array_values(array_unique([...self::FIELDS, ...$options->customAttributes])));
-
         if ($options->changedSince !== null) {
             yield from $this->changed($base, $client, $fields, $options);
 
             return;
         }
-
         foreach (['active', 'inactive'] as $status) {
             yield from $this->pages($base, $client, ['fields' => $fields, 'filter[status]' => $status], $options);
         }
@@ -101,18 +95,14 @@ class BambooHrConnector extends HrisConnector
     {
         $base = $this->base($credentials);
         $client = $this->client($credentials);
-
-        $response = $this->http()->send(fn () => $client()->get($base.'/meta/lists'), 'The department list request');
-
+        $response = $this->http()->send(fn () => $client()->get($base.'/meta/lists'), new SourceMessage('The department list request'));
         foreach (JsonObjectList::from($response->json()) as $list) {
             if (HrisValues::string($list, 'alias') !== 'department') {
                 continue;
             }
-
             foreach (JsonObjectList::from($list['options'] ?? null) as $option) {
                 $id = HrisValues::string($option, 'id');
                 $name = HrisValues::string($option, 'name');
-
                 if ($id !== null && $name !== null && HrisValues::string($option, 'archived') !== 'yes') {
                     yield new HrisDepartment($id, $name);
                 }
@@ -124,8 +114,7 @@ class BambooHrConnector extends HrisConnector
     {
         $base = $this->base($credentials);
         $client = $this->client($credentials);
-
-        $this->http()->send(fn () => $client()->get($base.'/employees', ['fields' => 'workEmail', 'page[limit]' => 1]), 'The employee list request');
+        $this->http()->send(fn () => $client()->get($base.'/employees', ['fields' => 'workEmail', 'page[limit]' => 1]), new SourceMessage('The employee list request'));
     }
 
     /**
@@ -136,7 +125,7 @@ class BambooHrConnector extends HrisConnector
         try {
             $subdomain = self::subdomain($this->credential($credentials, 'subdomain'));
         } catch (IncompleteHrisCredentials $e) {
-            throw $this->failure($e->getMessage());
+            throw $this->failure($e->getMessage())->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: :value2', ['value1' => $this->name(), 'value2' => $e->getMessage()]));
         }
 
         return 'https://'.$subdomain.'.bamboohr.com/api/v1';
@@ -161,19 +150,15 @@ class BambooHrConnector extends HrisConnector
     private function pages(string $base, \Closure $client, array $query, HrisSyncOptions $options): iterable
     {
         $after = null;
-
         do {
-            $page = [...$query, 'page[limit]' => self::PAGE, ...($after === null ? [] : ['page[after]' => $after])];
-            $response = $this->http()->send(fn () => $client()->get($base.'/employees', $page), 'The employee list request');
-
+            $page = [...$query, 'page[limit]' => self::PAGE, ...$after === null ? [] : ['page[after]' => $after]];
+            $response = $this->http()->send(fn () => $client()->get($base.'/employees', $page), new SourceMessage('The employee list request'));
             foreach (JsonObjectList::from($response->json('data')) as $row) {
                 $employee = $this->employee($row, $options->customAttributes);
-
                 if ($employee !== null) {
                     yield $employee;
                 }
             }
-
             $after = HrisValues::stringOf($response->json('meta.page.nextCursor'));
         } while ($after !== null);
     }
@@ -186,32 +171,22 @@ class BambooHrConnector extends HrisConnector
     {
         /** @var CarbonImmutable $since */
         $since = $options->changedSince;
-
-        $response = $this->http()->send(
-            fn () => $client()->get($base.'/employees/changed', ['since' => $since->toIso8601String(), 'type' => 'all']),
-            'The changed-employees request',
-        );
-
+        $response = $this->http()->send(fn () => $client()->get($base.'/employees/changed', ['since' => $since->toIso8601String(), 'type' => 'all']), new SourceMessage('The changed-employees request'));
         $changed = $response->json('employees');
         $ids = [];
-
         foreach (is_array($changed) ? $changed : [] as $key => $entry) {
-            $id = is_array($entry) ? (HrisValues::string($entry, 'id') ?? HrisValues::stringOf($key)) : HrisValues::stringOf($key);
-
+            $id = is_array($entry) ? HrisValues::string($entry, 'id') ?? HrisValues::stringOf($key) : HrisValues::stringOf($key);
             if ($id === null) {
                 continue;
             }
-
             if (is_array($entry) && strtolower((string) HrisValues::string($entry, 'action')) === 'deleted') {
                 // Gone from BambooHR altogether: nothing to read, somebody to deactivate.
                 yield new HrisEmployee(id: $id, email: null, status: EmploymentStatus::Terminated);
 
                 continue;
             }
-
             $ids[] = $id;
         }
-
         foreach (array_chunk($ids, self::IDS_PER_REQUEST) as $chunk) {
             yield from $this->pages($base, $client, ['fields' => $fields, 'filter[ids]' => implode(',', $chunk)], $options);
         }
@@ -224,35 +199,17 @@ class BambooHrConnector extends HrisConnector
     private function employee(array $row, array $custom): ?HrisEmployee
     {
         $id = HrisValues::string($row, 'employeeId') ?? HrisValues::string($row, 'id');
-
         if ($id === null) {
             return null;
         }
-
         $terminated = HrisValues::date($row, 'terminationDate');
         $status = match (strtolower((string) HrisValues::string($row, 'status'))) {
             'inactive' => $terminated !== null ? EmploymentStatus::Terminated : EmploymentStatus::Inactive,
             default => EmploymentStatus::Active,
         };
-
         $preferred = HrisValues::string($row, 'preferredName');
         $first = HrisValues::string($row, 'firstName');
 
-        return new HrisEmployee(
-            id: $id,
-            email: HrisValues::string($row, 'workEmail'),
-            status: $status,
-            firstName: $first,
-            lastName: HrisValues::string($row, 'lastName'),
-            displayName: HrisValues::string($row, 'displayName') ?? ($preferred === null ? null : trim($preferred.' '.HrisValues::string($row, 'lastName'))),
-            startDate: HrisValues::date($row, 'hireDate'),
-            terminationDate: $terminated,
-            departmentId: HrisValues::string($row, 'departmentId'),
-            departmentName: HrisValues::string($row, 'departmentName'),
-            managerId: HrisValues::string($row, 'reportsToId'),
-            jobTitle: HrisValues::string($row, 'jobTitleName'),
-            employeeNumber: HrisValues::string($row, 'employeeNumber'),
-            customAttributes: HrisValues::custom($row, $custom),
-        );
+        return new HrisEmployee(id: $id, email: HrisValues::string($row, 'workEmail'), status: $status, firstName: $first, lastName: HrisValues::string($row, 'lastName'), displayName: HrisValues::string($row, 'displayName') ?? ($preferred === null ? null : trim($preferred.' '.HrisValues::string($row, 'lastName'))), startDate: HrisValues::date($row, 'hireDate'), terminationDate: $terminated, departmentId: HrisValues::string($row, 'departmentId'), departmentName: HrisValues::string($row, 'departmentName'), managerId: HrisValues::string($row, 'reportsToId'), jobTitle: HrisValues::string($row, 'jobTitleName'), employeeNumber: HrisValues::string($row, 'employeeNumber'), customAttributes: HrisValues::custom($row, $custom));
     }
 }

@@ -19,6 +19,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Illuminate\Support\Str;
 
@@ -43,61 +44,37 @@ class ConnectionService implements Connections
 
     private ?RequestLifetime $memoLifetime = null;
 
-    public function __construct(
-        private readonly SecretBox $secretBox,
-        private readonly EventBus $events,
-        private readonly AuditLog $audit,
-    ) {}
+    public function __construct(private readonly SecretBox $secretBox, private readonly EventBus $events, private readonly AuditLog $audit) {}
 
     /**
      * @param  string|null  $id  a reserved ULID to create the connection under — not on the
      *                           contract, which hosts implement; reached through
      *                           {@see SignInProviders::create()}. Null mints one.
      */
-    public function create(
-        ?string $organizationId,
-        ConnectionType $type,
-        string $name,
-        array $config,
-        array $mappings = [],
-        ?string $provider = null,
-        ?string $id = null,
-    ): Connection {
+    public function create(?string $organizationId, ConnectionType $type, string $name, array $config, array $mappings = [], ?string $provider = null, ?string $id = null): Connection
+    {
         // Same reason as `activate()`: creating a connection changes which one an
         // organization signs in with. The environment's own connection is memoised under
         // a key of its own — `null` cannot be an array key, and using `''` for it would
         // collide with nothing today and with the first empty-string caller tomorrow.
         unset($this->memo[$this->memoKey($organizationId)]);
-
         if ($provider !== null && ProviderCatalog::find($provider) === null) {
             // Refused rather than stored. A connection labelled with a key the catalogue
             // does not have would render a sign-in button nobody can complete, and the
             // failure would land on the person clicking it rather than on whoever typed
             // it — hours later, with no way to tell the two apart.
-            throw InvalidAssertion::make('unknown provider: '.$provider);
+            throw InvalidAssertion::make('unknown provider: '.$provider)->withSourceMessage(new SourceMessage('invalid assertion: unknown provider: :provider', ['provider' => $provider]));
         }
-
         if ($id !== null && (! Str::isUlid($id) || Connection::query()->withoutGlobalScopes()->whereKey($id)->exists())) {
             // A reserved id is the caller's claim. One that is not a ULID, or one that already
             // names a row — in ANY environment, hence no scope — is refused rather than
             // overwritten: the primary key is also the secret's sealing context.
-            throw InvalidAssertion::make('that connection id cannot be used');
+            throw InvalidAssertion::make('that connection id cannot be used')->withSourceMessage(new SourceMessage('invalid assertion: that connection id cannot be used', []));
         }
-
         $connection = new Connection;
         $connection->id = $id ?? (string) Str::ulid();
-        $connection->fill([
-            'organization_id' => $organizationId,
-            'type' => $type,
-            'name' => $name,
-            'status' => ConnectionStatus::Draft,
-            'mappings' => $mappings,
-            'provider' => $provider,
-        ]);
-        $connection->config_encrypted = $this->secretBox->seal(
-            json_encode($config, JSON_THROW_ON_ERROR),
-            $connection->secretContext(),
-        );
+        $connection->fill(['organization_id' => $organizationId, 'type' => $type, 'name' => $name, 'status' => ConnectionStatus::Draft, 'mappings' => $mappings, 'provider' => $provider]);
+        $connection->config_encrypted = $this->secretBox->seal(json_encode($config, JSON_THROW_ON_ERROR), $connection->secretContext());
         $connection->save();
 
         return $connection;
@@ -111,49 +88,21 @@ class ConnectionService implements Connections
     public function forOrganization(?string $organizationId): ?Connection
     {
         $lifetime = RequestLifetime::current(app());
-
         if ($this->memoLifetime !== $lifetime) {
             $this->memo = [];
             $this->memoLifetime = $lifetime;
         }
-
         $key = $this->memoKey($organizationId);
-
         if (array_key_exists($key, $this->memo)) {
             return $this->memo[$key];
         }
 
-        return $this->memo[$key] = Connection::query()
-            ->when(
-                $organizationId === null,
-                fn ($query) => $query->whereNull('organization_id'),
-                fn ($query) => $query->where('organization_id', $organizationId),
-            )
-            ->where('status', ConnectionStatus::Active->value)
-            // Catalogue providers are offered as buttons, not as the way an organization
-            // signs in. Without this clause, enabling Google could become an
-            // organization's enterprise SSO purely by being the first active row back.
-            ->whereNull('provider')
-            ->first();
+        return $this->memo[$key] = Connection::query()->when($organizationId === null, fn ($query) => $query->whereNull('organization_id'), fn ($query) => $query->where('organization_id', $organizationId))->where('status', ConnectionStatus::Active->value)->whereNull('provider')->first();
     }
 
     public function catalogueProvidersFor(?string $organizationId): array
     {
-        return array_values(
-            Connection::query()
-                ->when(
-                    $organizationId === null,
-                    fn ($query) => $query->whereNull('organization_id'),
-                    fn ($query) => $query->where('organization_id', $organizationId),
-                )
-                ->where('status', ConnectionStatus::Active->value)
-                ->whereNotNull('provider')
-                // Ordered by the column rather than by insertion, so the buttons do not
-                // rearrange themselves between page loads or between replicas.
-                ->orderBy('provider')
-                ->get()
-                ->all()
-        );
+        return array_values(Connection::query()->when($organizationId === null, fn ($query) => $query->whereNull('organization_id'), fn ($query) => $query->where('organization_id', $organizationId))->where('status', ConnectionStatus::Active->value)->whereNotNull('provider')->orderBy('provider')->get()->all());
     }
 
     public function activate(?string $organizationId, string $id): void
@@ -162,45 +111,20 @@ class ConnectionService implements Connections
         // this is the method that changes it. A memo that survives its own write is the
         // bug memoising introduces.
         unset($this->memo[$this->memoKey($organizationId)]);
-
         // Scope to the owning org so an admin can't flip another tenant's draft — and
         // null scopes to the environment's own, which is not a wildcard: a caller naming
         // no organization must not be able to activate a tenant's draft either.
-        $connection = Connection::query()
-            ->whereKey($id)
-            ->when(
-                $organizationId === null,
-                fn ($query) => $query->whereNull('organization_id'),
-                fn ($query) => $query->where('organization_id', $organizationId),
-            )
-            ->first();
-
+        $connection = Connection::query()->whereKey($id)->when($organizationId === null, fn ($query) => $query->whereNull('organization_id'), fn ($query) => $query->where('organization_id', $organizationId))->first();
         // Announced once, on the change: activating a live connection again is a no-op,
         // not a second "your SSO is live" to every subscriber.
         if ($connection === null || $connection->status === ConnectionStatus::Active) {
             return;
         }
-
         $connection->update(['status' => ConnectionStatus::Active]);
-
-        $payload = [
-            'id' => $connection->id,
-            'type' => $connection->type->value,
-            'provider' => $connection->provider,
-            'name' => $connection->name,
-        ];
-
+        $payload = ['id' => $connection->id, 'type' => $connection->type->value, 'provider' => $connection->provider, 'name' => $connection->name];
         // Catalogued as a webhook event for releases, and neither emitted nor audited.
         $this->events->emit(new DomainEvent('connection.activated', $payload, $connection->organization_id));
-
-        $this->audit->record(new AuditEvent(
-            action: 'connection.activated',
-            actorType: ActorType::System,
-            organizationId: $connection->organization_id,
-            targetType: 'connection',
-            targetId: $connection->id,
-            context: $payload,
-        ));
+        $this->audit->record(new AuditEvent(action: 'connection.activated', actorType: ActorType::System, organizationId: $connection->organization_id, targetType: 'connection', targetId: $connection->id, context: $payload));
     }
 
     /**
@@ -210,7 +134,7 @@ class ConnectionService implements Connections
      */
     private function memoKey(?string $organizationId): string
     {
-        return $organizationId ?? "\0environment";
+        return $organizationId ?? "\x00environment";
     }
 
     public function samlConfig(Connection $connection): SamlConnectionConfig
@@ -245,9 +169,7 @@ class ConnectionService implements Connections
     private function assertType(Connection $connection, ConnectionType $expected): void
     {
         if ($connection->type !== $expected) {
-            throw InvalidAssertion::make(
-                "connection [{$connection->id}] is {$connection->type->value}, not {$expected->value}"
-            );
+            throw InvalidAssertion::make("connection [{$connection->id}] is {$connection->type->value}, not {$expected->value}")->withSourceMessage(new SourceMessage('invalid assertion: connection [:value1] is :value2, not :value3', ['value1' => $connection->id, 'value2' => $connection->type->value, 'value3' => $expected->value]));
         }
     }
 
@@ -255,9 +177,7 @@ class ConnectionService implements Connections
     {
         $json = $this->secretBox->open($connection->config_encrypted, $connection->secretContext());
         $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-
         $config = [];
-
         if (is_array($decoded)) {
             foreach ($decoded as $key => $value) {
                 $config[(string) $key] = $value;

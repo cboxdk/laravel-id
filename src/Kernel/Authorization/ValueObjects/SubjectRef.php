@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Authorization\ValueObjects;
 
 use Cbox\Id\Kernel\Authorization\Exceptions\InvalidTuple;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * The subject side of a fine-grained tuple or check: one object (`user:alice`), or every
@@ -18,11 +19,7 @@ final readonly class SubjectRef
     /** Ids are what an app already calls things: anything printable up to 128 characters, except the notation's `#` and `@`. */
     public const string ID_PATTERN = '/^[^\s#@\x00-\x1F\x7F]{1,128}$/u';
 
-    public function __construct(
-        public string $type,
-        public string $id,
-        public ?string $relation = null,
-    ) {}
+    public function __construct(public string $type, public string $id, public ?string $relation = null) {}
 
     public static function of(string $type, string $id, ?string $relation = null): self
     {
@@ -42,7 +39,7 @@ final readonly class SubjectRef
     public static function parse(string $text): self
     {
         if (preg_match('/^([^:#@\s]+):([^#@]+?)(?:#([^:#@\s]+))?$/u', $text, $match) !== 1) {
-            throw new InvalidTuple("`{$text}` is not a subject: write `type:id` or `type:id#relation`.", field: 'subject');
+            throw (new InvalidTuple("`{$text}` is not a subject: write `type:id` or `type:id#relation`.", field: 'subject'))->withSourceMessage(new SourceMessage('`:text` is not a subject: write `type:id` or `type:id#relation`.', ['text' => $text]));
         }
 
         return new self($match[1], $match[2], ($match[3] ?? '') === '' ? null : $match[3]);

@@ -34,6 +34,10 @@ use Illuminate\Support\Carbon;
  * @property bool $tenant_assignable
  * @property RoleSource $source
  * @property Carbon|null $orphaned_at
+ * @property string|null $active_definition_version
+ * @property string|null $pending_definition_version
+ * @property list<string>|null $pending_permission_keys
+ * @property bool|null $pending_tenant_assignable
  */
 class Role extends Model implements EnvironmentOwned
 {
@@ -78,6 +82,8 @@ class Role extends Model implements EnvironmentOwned
             'source' => RoleSource::class,
             'tenant_assignable' => 'boolean',
             'orphaned_at' => 'datetime',
+            'pending_permission_keys' => 'array',
+            'pending_tenant_assignable' => 'boolean',
         ];
     }
 }

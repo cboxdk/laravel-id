@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl\Manifest;
 
 use Cbox\Id\AccessControl\Exceptions\InvalidManifest;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Migration\ValueObjects\LegacyLoginDeclaration;
 
 /**
@@ -24,16 +25,12 @@ class ManifestParser
     public function parse(array $data): Manifest
     {
         $version = $data['version'] ?? '';
-
         if (! is_string($version) || $version === '') {
-            throw InvalidManifest::make('a non-empty "version" string is required.');
+            throw InvalidManifest::make('a non-empty "version" string is required.')->withSourceMessage(new SourceMessage('Invalid app manifest: a non-empty "version" string is required.', []));
         }
-
         $permissions = $this->parsePermissions($data['permissions'] ?? []);
         $declaredKeys = array_map(static fn (DeclaredPermission $p): string => $p->key, $permissions);
-
         $roles = $this->parseRoles($data['roles'] ?? [], $declaredKeys);
-
         /** @var array<string, mixed>|null $legacyLogin */
         $legacyLogin = is_array($raw = $data['legacy_login'] ?? null) ? $raw : null;
 
@@ -44,7 +41,7 @@ class ManifestParser
             // Throws on a half-declaration rather than ignoring it: an app that declared
             // something we refused should fail its deploy, not believe it is migrating
             // when it is not.
-            $legacyLogin !== null ? LegacyLoginDeclaration::fromArray($legacyLogin) : null,
+            $legacyLogin !== null ? LegacyLoginDeclaration::fromArray($legacyLogin) : null
         );
     }
 
@@ -55,24 +52,19 @@ class ManifestParser
     private function parsePermissions($raw): array
     {
         if (! is_array($raw)) {
-            throw InvalidManifest::make('"permissions" must be a list.');
+            throw InvalidManifest::make('"permissions" must be a list.')->withSourceMessage(new SourceMessage('Invalid app manifest: "permissions" must be a list.', []));
         }
-
         $permissions = [];
         $seen = [];
-
         foreach ($raw as $entry) {
             if (! is_array($entry)) {
-                throw InvalidManifest::make('each permission must be an object.');
+                throw InvalidManifest::make('each permission must be an object.')->withSourceMessage(new SourceMessage('Invalid app manifest: each permission must be an object.', []));
             }
-
             $key = $this->requireKey($entry['key'] ?? null, 'permission');
-
             if (isset($seen[$key])) {
-                throw InvalidManifest::make("duplicate permission \"{$key}\".");
+                throw InvalidManifest::make("duplicate permission \"{$key}\".")->withSourceMessage(new SourceMessage('Invalid app manifest: duplicate permission ":key".', ['key' => $key]));
             }
             $seen[$key] = true;
-
             $permissions[] = new DeclaredPermission(
                 $key,
                 $this->optionalString($entry['description'] ?? null),
@@ -80,7 +72,7 @@ class ManifestParser
                 // the app explicitly declares "tenant_assignable": true. An omitted or
                 // non-true value keeps it internal. As apps become third-party-authored,
                 // an unset field must narrow access, not widen it — the opt-IN model.
-                ($entry['tenant_assignable'] ?? false) === true,
+                ($entry['tenant_assignable'] ?? false) === true
             );
         }
 
@@ -95,47 +87,33 @@ class ManifestParser
     private function parseRoles($raw, array $declaredPermissionKeys): array
     {
         if (! is_array($raw)) {
-            throw InvalidManifest::make('"roles" must be a list.');
+            throw InvalidManifest::make('"roles" must be a list.')->withSourceMessage(new SourceMessage('Invalid app manifest: "roles" must be a list.', []));
         }
-
         $roles = [];
         $seen = [];
         $seenNames = [];
-
         foreach ($raw as $entry) {
             if (! is_array($entry)) {
-                throw InvalidManifest::make('each role must be an object.');
+                throw InvalidManifest::make('each role must be an object.')->withSourceMessage(new SourceMessage('Invalid app manifest: each role must be an object.', []));
             }
-
             $key = $this->requireKey($entry['key'] ?? null, 'role');
-
             if (isset($seen[$key])) {
-                throw InvalidManifest::make("duplicate role \"{$key}\".");
+                throw InvalidManifest::make("duplicate role \"{$key}\".")->withSourceMessage(new SourceMessage('Invalid app manifest: duplicate role ":key".', ['key' => $key]));
             }
             $seen[$key] = true;
-
             $name = $entry['name'] ?? null;
             if (! is_string($name) || $name === '') {
-                throw InvalidManifest::make("role \"{$key}\" needs a non-empty name.");
+                throw InvalidManifest::make("role \"{$key}\" needs a non-empty name.")->withSourceMessage(new SourceMessage('Invalid app manifest: role ":key" needs a non-empty name.', ['key' => $key]));
             }
-
             // Names must be distinct too — a person picking a role sees the name, and
             // two roles sharing one would be ambiguous (and collide in storage).
             $nameKey = mb_strtolower($name);
             if (isset($seenNames[$nameKey])) {
-                throw InvalidManifest::make("duplicate role name \"{$name}\".");
+                throw InvalidManifest::make("duplicate role name \"{$name}\".")->withSourceMessage(new SourceMessage('Invalid app manifest: duplicate role name ":name".', ['name' => $name]));
             }
             $seenNames[$nameKey] = true;
-
             $permissions = $this->parseRolePermissions($entry['permissions'] ?? [], $key, $declaredPermissionKeys);
-
-            $roles[] = new DeclaredRole(
-                $key,
-                $name,
-                $this->optionalString($entry['description'] ?? null),
-                $permissions,
-                array_key_exists('tenant_assignable', $entry) ? $this->roleTenantAssignable($entry['tenant_assignable'], $key) : true,
-            );
+            $roles[] = new DeclaredRole($key, $name, $this->optionalString($entry['description'] ?? null), $permissions, array_key_exists('tenant_assignable', $entry) ? $this->roleTenantAssignable($entry['tenant_assignable'], $key) : true);
         }
 
         return $roles;
@@ -158,7 +136,7 @@ class ManifestParser
     private function roleTenantAssignable($value, string $roleKey): bool
     {
         if (! is_bool($value)) {
-            throw InvalidManifest::make("role \"{$roleKey}\" tenant_assignable must be true or false.");
+            throw InvalidManifest::make("role \"{$roleKey}\" tenant_assignable must be true or false.")->withSourceMessage(new SourceMessage('Invalid app manifest: role ":roleKey" tenant_assignable must be true or false.', ['roleKey' => $roleKey]));
         }
 
         return $value;
@@ -172,22 +150,18 @@ class ManifestParser
     private function parseRolePermissions($raw, string $roleKey, array $declaredPermissionKeys): array
     {
         if (! is_array($raw)) {
-            throw InvalidManifest::make("role \"{$roleKey}\" permissions must be a list.");
+            throw InvalidManifest::make("role \"{$roleKey}\" permissions must be a list.")->withSourceMessage(new SourceMessage('Invalid app manifest: role ":roleKey" permissions must be a list.', ['roleKey' => $roleKey]));
         }
-
         $permissions = [];
-
         foreach ($raw as $permission) {
             if (! is_string($permission)) {
-                throw InvalidManifest::make("role \"{$roleKey}\" has a non-string permission.");
+                throw InvalidManifest::make("role \"{$roleKey}\" has a non-string permission.")->withSourceMessage(new SourceMessage('Invalid app manifest: role ":roleKey" has a non-string permission.', ['roleKey' => $roleKey]));
             }
-
             // A role may only grant permissions the same manifest declares — no
             // dangling references.
             if (! in_array($permission, $declaredPermissionKeys, true)) {
-                throw InvalidManifest::make("role \"{$roleKey}\" references undeclared permission \"{$permission}\".");
+                throw InvalidManifest::make("role \"{$roleKey}\" references undeclared permission \"{$permission}\".")->withSourceMessage(new SourceMessage('Invalid app manifest: role ":roleKey" references undeclared permission ":permission".', ['roleKey' => $roleKey, 'permission' => $permission]));
             }
-
             if (! in_array($permission, $permissions, true)) {
                 $permissions[] = $permission;
             }
@@ -202,7 +176,7 @@ class ManifestParser
     private function requireKey($value, string $what): string
     {
         if (! is_string($value) || preg_match(self::KEY_PATTERN, $value) !== 1) {
-            throw InvalidManifest::make("each {$what} needs a valid lowercase key (e.g. invoices:create).");
+            throw InvalidManifest::make("each {$what} needs a valid lowercase key (e.g. invoices:create).")->withSourceMessage(new SourceMessage($what === 'permission' ? 'Invalid app manifest: each permission needs a valid lowercase key (e.g. invoices:create).' : 'Invalid app manifest: each role needs a valid lowercase key (e.g. invoices:create).'));
         }
 
         return $value;

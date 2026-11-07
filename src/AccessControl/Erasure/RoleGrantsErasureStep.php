@@ -6,9 +6,12 @@ namespace Cbox\Id\AccessControl\Erasure;
 
 use Cbox\Id\AccessControl\Models\EnvironmentRoleAssignment;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
+use Cbox\Id\AccessControl\RoleGrantLock;
 use Cbox\Id\Identity\Contracts\ErasureStep;
 use Cbox\Id\Identity\ValueObjects\ErasureRequest;
 use Cbox\Id\Identity\ValueObjects\ErasureStepResult;
+use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -33,9 +36,14 @@ class RoleGrantsErasureStep implements ErasureStep
             return ErasureStepResult::of($this->name(), [], 'built-in RBAC not installed; erase role grants in your own authorization system');
         }
 
-        return ErasureStepResult::of($this->name(), [
-            'role_assignments' => RoleAssignment::query()->where('user_id', $request->subjectId)->toBase()->delete(),
-            'environment_role_assignments' => EnvironmentRoleAssignment::query()->where('user_id', $request->subjectId)->toBase()->delete(),
-        ]);
+        return DB::transaction(function () use ($request): ErasureStepResult {
+            RoleGrantLock::forSubject($request->subjectId);
+
+            return ErasureStepResult::of($this->name(), [
+                'role_assignments' => RoleAssignment::query()->where('user_id', $request->subjectId)->toBase()->delete(),
+                'environment_role_assignments' => EnvironmentRoleAssignment::query()->where('user_id', $request->subjectId)->toBase()->delete(),
+                'role_grant_subject_locks' => DB::table('role_grant_subject_locks')->where('environment_id', app(EnvironmentContext::class)->requireEnvironment()->environmentKey())->where('subject_id', $request->subjectId)->delete(),
+            ]);
+        });
     }
 }

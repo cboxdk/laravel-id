@@ -12,6 +12,7 @@ use Cbox\Id\Directory\Hris\Support\HrisValues;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisEmployee;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisSyncOptions;
 use Cbox\Id\Directory\Support\JsonObjectList;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
@@ -49,21 +50,7 @@ class WorkdayConnector extends HrisConnector
     private const string REPORT_PATH = '/ccx/service/customreport2/';
 
     /** Our field => the report column alias the setup guide asks for. */
-    public const array COLUMNS = [
-        'id' => 'Employee_ID',
-        'email' => 'Work_Email',
-        'first_name' => 'Legal_First_Name',
-        'last_name' => 'Legal_Last_Name',
-        'display_name' => 'Preferred_Name',
-        'active' => 'Active_Status',
-        'on_leave' => 'On_Leave',
-        'hire_date' => 'Hire_Date',
-        'termination_date' => 'Termination_Date',
-        'department_id' => 'Supervisory_Organization_ID',
-        'department' => 'Supervisory_Organization',
-        'manager_id' => 'Manager_Employee_ID',
-        'title' => 'Business_Title',
-    ];
+    public const array COLUMNS = ['id' => 'Employee_ID', 'email' => 'Work_Email', 'first_name' => 'Legal_First_Name', 'last_name' => 'Legal_Last_Name', 'display_name' => 'Preferred_Name', 'active' => 'Active_Status', 'on_leave' => 'On_Leave', 'hire_date' => 'Hire_Date', 'termination_date' => 'Termination_Date', 'department_id' => 'Supervisory_Organization_ID', 'department' => 'Supervisory_Organization', 'manager_id' => 'Manager_Employee_ID', 'title' => 'Business_Title'];
 
     public function provider(): DirectoryProvider
     {
@@ -73,10 +60,8 @@ class WorkdayConnector extends HrisConnector
     public function fetchEmployees(array $credentials, HrisSyncOptions $options): iterable
     {
         $columns = [...self::COLUMNS, ...array_intersect_key($options->fieldMap, self::COLUMNS)];
-
         foreach ($this->report($credentials) as $row) {
             $employee = $this->employee($row, $columns, $options->customAttributes);
-
             if ($employee !== null) {
                 yield $employee;
             }
@@ -108,38 +93,27 @@ class WorkdayConnector extends HrisConnector
         $parts = parse_url(trim($url));
         $host = is_array($parts) ? strtolower((string) ($parts['host'] ?? '')) : '';
         $path = is_array($parts) ? (string) ($parts['path'] ?? '') : '';
-
         if (! is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || isset($parts['user']) || isset($parts['port'])) {
-            throw IncompleteHrisCredentials::invalid('Workday', 'report_url', 'The report URL must be an https:// address with no port or credentials in it.');
+            throw IncompleteHrisCredentials::invalid('Workday', 'report_url', 'The report URL must be an https:// address with no port or credentials in it.')->withSourceMessage(new SourceMessage('Workday: The report URL must be an https:// address with no port or credentials in it.', []));
         }
-
         $suffixes = config('cbox-id.directory.hris.workday_hosts', ['.workday.com', '.myworkday.com']);
         $allowed = false;
-
         foreach (is_array($suffixes) ? $suffixes : [] as $suffix) {
             if (is_string($suffix) && $suffix !== '' && str_ends_with($host, strtolower($suffix))) {
                 $allowed = true;
             }
         }
-
         if (! $allowed) {
-            throw IncompleteHrisCredentials::invalid('Workday', 'report_url', 'The report URL must be on your Workday host (…workday.com or …myworkday.com).');
+            throw IncompleteHrisCredentials::invalid('Workday', 'report_url', 'The report URL must be on your Workday host (…workday.com or …myworkday.com).')->withSourceMessage(new SourceMessage('Workday: The report URL must be on your Workday host (…workday.com or …myworkday.com).', []));
         }
-
         $segments = explode('/', trim(substr($path, strlen(self::REPORT_PATH) - 1), '/'));
-
         if (! str_starts_with($path, self::REPORT_PATH) || count($segments) < 3 || in_array('', $segments, true) || in_array('..', $segments, true)) {
-            throw IncompleteHrisCredentials::invalid('Workday', 'report_url', 'The report URL must be the report\'s web-service address: …/ccx/service/customreport2/{tenant}/{owner}/{report}.');
+            throw IncompleteHrisCredentials::invalid('Workday', 'report_url', 'The report URL must be the report\'s web-service address: …/ccx/service/customreport2/{tenant}/{owner}/{report}.')->withSourceMessage(new SourceMessage('Workday: The report URL must be the report\'s web-service address: …/ccx/service/customreport2/{tenant}/{owner}/{report}.', []));
         }
-
         parse_str((string) ($parts['query'] ?? ''), $query);
         $query['format'] = 'json';
 
-        return [
-            'url' => 'https://'.$host.$path.'?'.http_build_query($query),
-            'host' => $host,
-            'tenant' => $segments[0],
-        ];
+        return ['url' => 'https://'.$host.$path.'?'.http_build_query($query), 'host' => $host, 'tenant' => $segments[0]];
     }
 
     /**
@@ -151,17 +125,13 @@ class WorkdayConnector extends HrisConnector
         try {
             $address = self::reportAddress($this->credential($credentials, 'report_url'));
         } catch (IncompleteHrisCredentials $e) {
-            throw $this->failure($e->getMessage());
+            throw $this->failure($e->getMessage())->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: :value2', ['value1' => $this->name(), 'value2' => $e->getMessage()]));
         }
-
         $request = $this->authorized($credentials, $address);
-
-        $response = $this->http()->send(fn () => $request()->acceptJson()->get($address['url']), 'The report request');
-
+        $response = $this->http()->send(fn () => $request()->acceptJson()->get($address['url']), new SourceMessage('The report request'));
         $body = $response->json();
-
         if (! is_array($body) || ! array_key_exists('Report_Entry', $body)) {
-            throw $this->failure('The report did not answer as a JSON report (no Report_Entry) — check that it is enabled as a web service.');
+            throw $this->failure('The report did not answer as a JSON report (no Report_Entry) — check that it is enabled as a web service.')->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: The report did not answer as a JSON report (no Report_Entry) — check that it is enabled as a web service.', ['value1' => $this->name()]));
         }
 
         return JsonObjectList::from($body['Report_Entry']);
@@ -178,32 +148,19 @@ class WorkdayConnector extends HrisConnector
     {
         // Any part of an API client means the API client: half of one is a mistake to
         // name, not a reason to fall back to a user name nobody gave.
-        $oauth = $this->optional($credentials, 'refresh_token') !== null
-            || $this->optional($credentials, 'client_id') !== null
-            || $this->optional($credentials, 'client_secret') !== null;
-
+        $oauth = $this->optional($credentials, 'refresh_token') !== null || $this->optional($credentials, 'client_id') !== null || $this->optional($credentials, 'client_secret') !== null;
         if ($oauth) {
             $clientId = $this->credential($credentials, 'client_id');
             $secret = $this->credential($credentials, 'client_secret');
             $refresh = $this->credential($credentials, 'refresh_token');
-
-            $response = $this->http()->send(
-                fn () => Http::asForm()->withBasicAuth($clientId, $secret)->post(
-                    'https://'.$address['host'].'/ccx/oauth2/'.rawurlencode($address['tenant']).'/token',
-                    ['grant_type' => 'refresh_token', 'refresh_token' => $refresh],
-                ),
-                'The token request',
-            );
-
+            $response = $this->http()->send(fn () => Http::asForm()->withBasicAuth($clientId, $secret)->post('https://'.$address['host'].'/ccx/oauth2/'.rawurlencode($address['tenant']).'/token', ['grant_type' => 'refresh_token', 'refresh_token' => $refresh]), new SourceMessage('The token request'));
             $token = $response->json('access_token');
-
             if (! is_string($token) || $token === '') {
-                throw $this->failure('Could not obtain an access token.');
+                throw $this->failure('Could not obtain an access token.')->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: Could not obtain an access token.', ['value1' => $this->name()]));
             }
 
             return static fn () => Http::withToken($token);
         }
-
         $username = $this->credential($credentials, 'username');
         $password = $this->credential($credentials, 'password');
 
@@ -218,35 +175,17 @@ class WorkdayConnector extends HrisConnector
     private function employee(array $row, array $columns, array $custom): ?HrisEmployee
     {
         $id = HrisValues::string($row, $columns['id']);
-
         if ($id === null) {
             return null;
         }
-
         $terminated = HrisValues::date($row, $columns['termination_date']);
         $active = HrisValues::bool($row, $columns['active']);
-
         $status = match (true) {
             $active === false => $terminated !== null ? EmploymentStatus::Terminated : EmploymentStatus::Inactive,
             HrisValues::bool($row, $columns['on_leave']) === true => EmploymentStatus::OnLeave,
             default => EmploymentStatus::Active,
         };
 
-        return new HrisEmployee(
-            id: $id,
-            email: HrisValues::string($row, $columns['email']),
-            status: $status,
-            firstName: HrisValues::string($row, $columns['first_name']),
-            lastName: HrisValues::string($row, $columns['last_name']),
-            displayName: HrisValues::string($row, $columns['display_name']),
-            startDate: HrisValues::date($row, $columns['hire_date']),
-            terminationDate: $terminated,
-            departmentId: HrisValues::string($row, $columns['department_id']),
-            departmentName: HrisValues::string($row, $columns['department']),
-            managerId: HrisValues::string($row, $columns['manager_id']),
-            jobTitle: HrisValues::string($row, $columns['title']),
-            employeeNumber: $id,
-            customAttributes: HrisValues::custom($row, $custom),
-        );
+        return new HrisEmployee(id: $id, email: HrisValues::string($row, $columns['email']), status: $status, firstName: HrisValues::string($row, $columns['first_name']), lastName: HrisValues::string($row, $columns['last_name']), displayName: HrisValues::string($row, $columns['display_name']), startDate: HrisValues::date($row, $columns['hire_date']), terminationDate: $terminated, departmentId: HrisValues::string($row, $columns['department_id']), departmentName: HrisValues::string($row, $columns['department']), managerId: HrisValues::string($row, $columns['manager_id']), jobTitle: HrisValues::string($row, $columns['title']), employeeNumber: $id, customAttributes: HrisValues::custom($row, $custom));
     }
 }

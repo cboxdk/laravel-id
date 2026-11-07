@@ -12,6 +12,7 @@ use Cbox\Id\Directory\Hris\ValueObjects\HrisDepartment;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisEmployee;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisSyncOptions;
 use Cbox\Id\Directory\Support\JsonObjectList;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
@@ -54,7 +55,7 @@ class RipplingConnector extends HrisConnector
             $query['order_by'] = 'updated_at';
         }
 
-        foreach ($this->collection($credentials, '/workers/', $query, 'The workers request') as $worker) {
+        foreach ($this->collection($credentials, '/workers/', $query, new SourceMessage('The workers request')) as $worker) {
             $employee = $this->employee($worker, $options->customAttributes);
 
             if ($employee !== null) {
@@ -65,7 +66,7 @@ class RipplingConnector extends HrisConnector
 
     public function fetchDepartments(array $credentials, HrisSyncOptions $options): iterable
     {
-        foreach ($this->collection($credentials, '/departments/', ['limit' => 100], 'The departments request') as $department) {
+        foreach ($this->collection($credentials, '/departments/', ['limit' => 100], new SourceMessage('The departments request')) as $department) {
             $id = HrisValues::string($department, 'id');
             $name = HrisValues::string($department, 'name');
 
@@ -79,7 +80,7 @@ class RipplingConnector extends HrisConnector
     {
         $client = $this->client($credentials);
 
-        $this->http()->send(fn () => $client()->get(self::BASE.'/workers/', ['limit' => 1]), 'The workers request');
+        $this->http()->send(fn () => $client()->get(self::BASE.'/workers/', ['limit' => 1]), new SourceMessage('The workers request'));
     }
 
     /**
@@ -89,7 +90,7 @@ class RipplingConnector extends HrisConnector
      * @param  array<string, string|int>  $query
      * @return iterable<array<string, mixed>>
      */
-    private function collection(array $credentials, string $path, array $query, string $what): iterable
+    private function collection(array $credentials, string $path, array $query, string|SourceMessage $what): iterable
     {
         $client = $this->client($credentials);
         $url = self::BASE.$path;

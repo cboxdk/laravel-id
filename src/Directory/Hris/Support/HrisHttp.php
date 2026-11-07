@@ -6,6 +6,7 @@ namespace Cbox\Id\Directory\Hris\Support;
 
 use Carbon\CarbonImmutable;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
@@ -55,8 +56,10 @@ final class HrisHttp
      *
      * @throws DirectoryConnectionFailed
      */
-    public function send(Closure $send, string $what): Response
+    public function send(Closure $send, string|SourceMessage $what): Response
     {
+        $sourceWhat = $what instanceof SourceMessage ? $what : new SourceMessage(':message', ['message' => $what]);
+        $what = $sourceWhat->english();
         $attempt = 0;
 
         while (true) {
@@ -66,7 +69,7 @@ final class HrisHttp
                 $response = $send();
             } catch (ConnectionException) {
                 if ($attempt >= $this->maxAttempts) {
-                    throw DirectoryConnectionFailed::make($this->provider, "{$what}: could not connect after {$attempt} attempts.");
+                    throw DirectoryConnectionFailed::make($this->provider, "{$what}: could not connect after {$attempt} attempts.")->withSourceMessage(new SourceMessage('Directory sync with :provider failed: :request could not connect after :attempt attempts.', ['provider' => $this->provider, 'request' => $sourceWhat, 'attempt' => $attempt]));
                 }
 
                 Sleep::for($this->exponential($attempt))->seconds();
@@ -80,7 +83,7 @@ final class HrisHttp
                 if ($attempt >= $this->maxAttempts) {
                     $why = $status === 429 ? 'rate limited' : 'unavailable';
 
-                    throw DirectoryConnectionFailed::make($this->provider, "{$what} was {$why} ({$status}) after {$attempt} attempts.");
+                    throw DirectoryConnectionFailed::make($this->provider, "{$what} was {$why} ({$status}) after {$attempt} attempts.")->withSourceMessage(new SourceMessage($status === 429 ? 'Directory sync with :provider failed: :request was rate limited (HTTP :status) after :attempt attempts.' : 'Directory sync with :provider failed: :request was unavailable (HTTP :status) after :attempt attempts.', ['provider' => $this->provider, 'request' => $sourceWhat, 'status' => $status, 'attempt' => $attempt]));
                 }
 
                 Sleep::for($this->delay($response, $attempt))->seconds();
@@ -89,7 +92,9 @@ final class HrisHttp
             }
 
             if (! $response->successful()) {
-                throw DirectoryConnectionFailed::make($this->provider, "{$what} failed ({$status}){$this->hint($status)}.");
+                throw DirectoryConnectionFailed::make($this->provider, "{$what} failed ({$status}){$this->hint($status)}.")->withSourceMessage(new SourceMessage(match ($status) {
+                    401 => 'Directory sync with :provider failed: :request failed (HTTP :status): the credentials were refused.', 403 => 'Directory sync with :provider failed: :request failed (HTTP :status): the credentials lack permission to read employees.', 404 => 'Directory sync with :provider failed: :request failed (HTTP :status): not found — check the account, subdomain or report address.', default => 'Directory sync with :provider failed: :request failed (HTTP :status).',
+                }, ['provider' => $this->provider, 'request' => $sourceWhat, 'status' => $status]));
             }
 
             return $response;

@@ -25,7 +25,7 @@ claim appears where; the notes below say when.
 | `roles` | when held | — | when held | The app's role keys the subject holds (this app's roles plus organization-wide roles). |
 | `permissions` | when held | — | when held | The union of those roles' permission keys. |
 | `groups` | — | with `groups` scope | — | The same role keys, under the name ID-token consumers (Kubernetes, Grafana, Vault) read. |
-| `organizations` | — | — | with `organizations` scope | Every active membership: `[{id, name, role}]`. |
+| `organizations` | — | — | with `organizations` scope | Every active membership: `[{id, name, role}]`. An explicitly granted scope returns `[]` when none remain; without the scope the claim is omitted. |
 | `feature_flags` | with `feature_flags` scope | with `feature_flags` scope | with `feature_flags` scope | The keys of every [feature flag](../core-concepts/feature-flags.md) that is on for `sub` in `org`, sorted. An empty list when none is; absent without the scope. |
 | `ent`, `ent_ver` | when configured | — | — | Claims-mode entitlements and their version. See [Entitlements & billing](../core-concepts/entitlements-and-billing.md). |
 | `cnf` | DPoP-bound | — | — | `{"jkt": …}`, the RFC 9449 key thumbprint. |

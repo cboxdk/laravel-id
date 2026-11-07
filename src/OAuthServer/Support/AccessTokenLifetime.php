@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Support;
 
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
 
@@ -28,7 +29,7 @@ class AccessTokenLifetime
     public const MIN_SECONDS = 60;
 
     /** The ceiling when none is configured: one day. */
-    public const DEFAULT_MAX_SECONDS = 86_400;
+    public const DEFAULT_MAX_SECONDS = 86400;
 
     private const DEFAULT_SECONDS = 900;
 
@@ -40,7 +41,6 @@ class AccessTokenLifetime
     public static function for(Client $client, ?int $default = null): int
     {
         $ttl = $client->access_token_ttl;
-
         if ($ttl === null || $ttl <= 0) {
             return $default ?? self::deploymentDefault();
         }
@@ -59,16 +59,9 @@ class AccessTokenLifetime
         if ($ttl === null) {
             return;
         }
-
         $max = self::max();
-
         if ($ttl < self::MIN_SECONDS || $ttl > $max) {
-            throw InvalidClientMetadata::metadata(sprintf(
-                'access_token_ttl must be between %d and %d seconds (or null for the deployment default); %d was given',
-                self::MIN_SECONDS,
-                $max,
-                $ttl,
-            ));
+            throw InvalidClientMetadata::metadata(sprintf('access_token_ttl must be between %d and %d seconds (or null for the deployment default); %d was given', self::MIN_SECONDS, $max, $ttl))->withSourceMessage(new SourceMessage('access_token_ttl must be between :value1 and :max seconds (or null for the deployment default); :ttl was given', ['value1' => self::MIN_SECONDS, 'max' => $max, 'ttl' => $ttl]));
         }
     }
 

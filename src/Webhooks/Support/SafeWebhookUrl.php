@@ -42,6 +42,9 @@ class SafeWebhookUrl
 
     public static function assert(string $url): void
     {
+        if (TrustedWebhookEndpoint::options($url) !== null) {
+            return;
+        }
         // A single-tenant/on-prem deployment can disable enforcement to deliver
         // to internal hosts (also disabled in the delivery tests). Keep it true in
         // any multi-tenant deployment.
@@ -68,6 +71,10 @@ class SafeWebhookUrl
      */
     public static function pinnedOptions(string $url): array
     {
+        $trusted = TrustedWebhookEndpoint::options($url);
+        if ($trusted !== null) {
+            return $trusted;
+        }
         if (! UrlVerification::enforced('cbox-id.webhooks.verify_url')) {
             // REDIRECTS STAY REFUSED even when host verification is switched off.
             //

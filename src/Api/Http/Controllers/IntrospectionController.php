@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api\Http\Controllers;
 
+use Cbox\Id\Api\Contracts\ResourceIntrospectionAccess;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\ValueObjects\Introspection;
@@ -19,7 +20,7 @@ class IntrospectionController
 {
     public function __construct(private readonly ClientAuthenticator $clientAuth) {}
 
-    public function __invoke(Request $request, TokenIntrospector $introspector): JsonResponse
+    public function __invoke(Request $request, TokenIntrospector $introspector, ResourceIntrospectionAccess $resources): JsonResponse
     {
         $caller = $this->clientAuth->authenticateConfidential($request);
 
@@ -31,10 +32,9 @@ class IntrospectionController
 
         $result = $introspector->introspect($request->string('token')->toString());
 
-        // Ownership (RFC 7662 §2.1): a client may only introspect its own tokens.
-        // Anything else answers `active: false` so the endpoint isn't an oracle
-        // for probing other clients' tokens.
-        if (! $result->active || $result->clientId !== $callerId) {
+        // Own-token behavior is unchanged. Cross-client access additionally requires
+        // an explicit resource-server grant; denials disclose no token details.
+        if (! $result->active || ($result->clientId !== $callerId && ! $resources->allows($caller, $result))) {
             return response()->json(['active' => false]);
         }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Authorization\ValueObjects;
 
 use Cbox\Id\Kernel\Authorization\Exceptions\InvalidTuple;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * One fine-grained relationship tuple, environment-wide:
@@ -20,11 +21,7 @@ use Cbox\Id\Kernel\Authorization\Exceptions\InvalidTuple;
  */
 final readonly class Tuple
 {
-    public function __construct(
-        public ResourceRef $resource,
-        public string $relation,
-        public SubjectRef $subject,
-    ) {}
+    public function __construct(public ResourceRef $resource, public string $relation, public SubjectRef $subject) {}
 
     public static function of(string $resourceType, string $resourceId, string $relation, SubjectRef $subject): self
     {
@@ -39,7 +36,7 @@ final readonly class Tuple
     public static function parse(string $text): self
     {
         if (preg_match('/^([^:#@\s]+):([^#@]+)#([^:#@\s]+)@(.+)$/u', $text, $match) !== 1) {
-            throw new InvalidTuple("`{$text}` is not a tuple: write `type:id#relation@type:id` or `…@type:id#relation`.");
+            throw (new InvalidTuple("`{$text}` is not a tuple: write `type:id#relation@type:id` or `…@type:id#relation`."))->withSourceMessage(new SourceMessage('`:text` is not a tuple: write `type:id#relation@type:id` or `…@type:id#relation`.', ['text' => $text]));
         }
 
         return new self(ResourceRef::of($match[1], $match[2]), $match[3], SubjectRef::parse($match[4]));
@@ -60,11 +57,6 @@ final readonly class Tuple
      */
     public function toArray(): array
     {
-        return [
-            'resource_type' => $this->resource->type,
-            'resource_id' => $this->resource->id,
-            'relation' => $this->relation,
-            'subject' => $this->subject->toArray(),
-        ];
+        return ['resource_type' => $this->resource->type, 'resource_id' => $this->resource->id, 'relation' => $this->relation, 'subject' => $this->subject->toArray()];
     }
 }

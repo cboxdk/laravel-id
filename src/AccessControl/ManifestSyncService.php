@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Id\AccessControl;
 
 use Cbox\Id\AccessControl\Contracts\AppManifests;
+use Cbox\Id\AccessControl\Contracts\RoleDefinitions;
 use Cbox\Id\AccessControl\Enums\RoleSource;
-use Cbox\Id\AccessControl\Manifest\DeclaredRole;
 use Cbox\Id\AccessControl\Manifest\Manifest;
 use Cbox\Id\AccessControl\Manifest\ManifestSyncResult;
 use Cbox\Id\AccessControl\Models\AppManifest;
@@ -23,7 +23,6 @@ use Cbox\Id\Migration\Enums\LegacyLoginChange;
 use Cbox\Id\Migration\Models\LegacyLoginDeclarationRecord;
 use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -40,6 +39,7 @@ class ManifestSyncService implements AppManifests
         private readonly AuditLog $audit,
         // Sealing the legacy-login secret an app declares. See recordLegacyLogin().
         private readonly SecretBox $secrets,
+        private readonly RoleDefinitions $definitions,
     ) {}
 
     public function sync(string $clientId, Manifest $manifest): ManifestSyncResult
@@ -181,11 +181,6 @@ class ManifestSyncService implements AppManifests
 
     private function syncRoles(string $clientId, Manifest $manifest): void
     {
-        // Resolve declared permission keys → ids once for the pivot wiring.
-        $permissionIds = Permission::query()
-            ->where('client_id', $clientId)
-            ->pluck('id', 'name');
-
         foreach ($manifest->roles as $role) {
             $model = Role::query()->updateOrCreate(
                 ['client_id' => $clientId, 'key' => $role->key],
@@ -193,41 +188,12 @@ class ManifestSyncService implements AppManifests
                     'organization_id' => null,
                     'name' => $role->name,
                     'description' => $role->description,
-                    // The app owns this flag like it owns the name: a later manifest that
-                    // marks a role staff-only narrows it on the next sync, and one that
-                    // stops marking it widens it again. Existing MANUAL grants of a role
-                    // that becomes staff-only are kept, not revoked — the rule orphaning
-                    // follows, so a bad deploy cannot silently strip access — but no tenant
-                    // can make a new one, and directory-pushed grants are withdrawn on the
-                    // next reconcile, again exactly as for an orphaned role.
-                    'tenant_assignable' => $role->tenantAssignable,
                     'source' => RoleSource::Manifest->value,
                     'orphaned_at' => null,
                 ],
             );
 
-            $this->wireRolePermissions($model->id, $role, $permissionIds);
-        }
-    }
-
-    /**
-     * @param  Collection<array-key, mixed>  $permissionIds  permission key => id
-     */
-    private function wireRolePermissions(string $roleId, DeclaredRole $role, Collection $permissionIds): void
-    {
-        $desired = [];
-        foreach ($role->permissions as $permissionKey) {
-            $permissionId = $permissionIds->get($permissionKey);
-            if (is_string($permissionId)) {
-                $desired[$permissionId] = ['role_id' => $roleId, 'permission_id' => $permissionId];
-            }
-        }
-
-        // Replace the role's grants with exactly the declared set.
-        DB::table('role_permission')->where('role_id', $roleId)->delete();
-
-        if ($desired !== []) {
-            DB::table('role_permission')->insertOrIgnore(array_values($desired));
+            $this->definitions->stage($model, $role);
         }
     }
 

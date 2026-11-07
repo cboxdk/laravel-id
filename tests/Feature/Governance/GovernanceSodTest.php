@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\GrantRefused;
 use Cbox\Id\Governance\Contracts\SegregationOfDuties;
+use Cbox\Id\Governance\SodGrantGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -174,4 +176,25 @@ it('scans an organization in a flat number of queries', function (): void {
 
     expect($violations)->toHaveCount(40)
         ->and($queries)->toBeLessThan(6);
+});
+
+it('keeps a consumer override of the grant veto authoritative when presentation metadata is available', function (): void {
+    $guard = new class extends SodGrantGuard
+    {
+        public int $calls = 0;
+
+        public function refuse(string $organizationId, string $userId, string $roleId, GrantSource $source = GrantSource::Manual): string
+        {
+            $this->calls++;
+
+            return 'A consumer-specific policy refused this grant.';
+        }
+    };
+    app()->instance(GrantGuard::class, $guard);
+    app()->forgetInstance(Roles::class);
+    $roles = app(Roles::class);
+    $role = $roles->define('acme', 'custom');
+    expect(fn () => $roles->assign('acme', 'user-1', $role->id))
+        ->toThrow(GrantRefused::class, 'A consumer-specific policy refused this grant.');
+    expect($guard->calls)->toBe(1);
 });

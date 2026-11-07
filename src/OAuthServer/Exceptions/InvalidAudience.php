@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Exceptions;
 
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use RuntimeException;
 
 /**
@@ -12,8 +15,10 @@ use RuntimeException;
  * (RFC 8707 §2) when the audience is missing or ambiguous, `invalid_scope` (RFC 6749 §5.2)
  * when nothing requested may be granted for the audience.
  */
-class InvalidAudience extends RuntimeException
+class InvalidAudience extends RuntimeException implements HasSourceMessage
 {
+    use CarriesSourceMessage;
+
     public function __construct(public readonly string $error, string $message)
     {
         parent::__construct($message);
@@ -24,15 +29,12 @@ class InvalidAudience extends RuntimeException
      */
     public static function ambiguous(array $identifiers): self
     {
-        return new self('invalid_target', sprintf(
-            'The requested scopes belong to more than one API (%s). Name the one this token is for with the resource parameter.',
-            implode(', ', $identifiers),
-        ));
+        return (new self('invalid_target', sprintf('The requested scopes belong to more than one API (%s). Name the one this token is for with the resource parameter.', implode(', ', $identifiers))))->withSourceMessage(new SourceMessage('The requested scopes belong to more than one API (:value1). Name the one this token is for with the resource parameter.', ['value1' => implode(', ', $identifiers)]));
     }
 
     public static function nothingGrantable(): self
     {
-        return new self('invalid_scope', 'None of the requested scopes may be granted to this client for the requested audience.');
+        return (new self('invalid_scope', 'None of the requested scopes may be granted to this client for the requested audience.'))->withSourceMessage(new SourceMessage('None of the requested scopes may be granted to this client for the requested audience.', []));
     }
 
     /**
@@ -42,7 +44,7 @@ class InvalidAudience extends RuntimeException
      */
     public static function malformedResource(): self
     {
-        return new self('invalid_target', 'The resource parameter must be an absolute URI with a host and no fragment.');
+        return (new self('invalid_target', 'The resource parameter must be an absolute URI with a host and no fragment.'))->withSourceMessage(new SourceMessage('The resource parameter must be an absolute URI with a host and no fragment.', []));
     }
 
     /**
@@ -56,7 +58,7 @@ class InvalidAudience extends RuntimeException
      */
     public static function multipleResources(): self
     {
-        return new self('invalid_target', 'Only one resource may be requested per token. Request a separate token for each resource server.');
+        return (new self('invalid_target', 'Only one resource may be requested per token. Request a separate token for each resource server.'))->withSourceMessage(new SourceMessage('Only one resource may be requested per token. Request a separate token for each resource server.', []));
     }
 
     /**
@@ -66,7 +68,7 @@ class InvalidAudience extends RuntimeException
      */
     public static function unknownResource(string $resource): self
     {
-        return new self('invalid_target', "The resource [{$resource}] is not served by this authorization server.");
+        return (new self('invalid_target', "The resource [{$resource}] is not served by this authorization server."))->withSourceMessage(new SourceMessage('The resource [:resource] is not served by this authorization server.', ['resource' => $resource]));
     }
 
     /**
@@ -75,7 +77,7 @@ class InvalidAudience extends RuntimeException
      */
     public static function notOfferedToDynamicClients(string $resource): self
     {
-        return new self('invalid_target', "The resource [{$resource}] does not accept dynamically registered clients.");
+        return (new self('invalid_target', "The resource [{$resource}] does not accept dynamically registered clients."))->withSourceMessage(new SourceMessage('The resource [:resource] does not accept dynamically registered clients.', ['resource' => $resource]));
     }
 
     /**
@@ -85,6 +87,6 @@ class InvalidAudience extends RuntimeException
      */
     public static function boundToAnotherResource(): self
     {
-        return new self('invalid_target', 'This refresh token is bound to a different resource than the one requested.');
+        return (new self('invalid_target', 'This refresh token is bound to a different resource than the one requested.'))->withSourceMessage(new SourceMessage('This refresh token is bound to a different resource than the one requested.', []));
     }
 }

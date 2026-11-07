@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Support;
 
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 
 /**
@@ -34,36 +35,28 @@ class BackchannelLogoutUri
     public static function assertValid(string $uri): void
     {
         if (strlen($uri) > self::MAX_LENGTH) {
-            throw InvalidClientMetadata::metadata('backchannel_logout_uri must be at most '.self::MAX_LENGTH.' characters');
+            throw InvalidClientMetadata::metadata('backchannel_logout_uri must be at most '.self::MAX_LENGTH.' characters')->withSourceMessage(new SourceMessage('backchannel_logout_uri must be at most :value1 characters', ['value1' => self::MAX_LENGTH]));
         }
-
         $parts = parse_url($uri);
-
         if ($parts === false || ! isset($parts['scheme'], $parts['host']) || $parts['host'] === '') {
-            throw InvalidClientMetadata::metadata("backchannel_logout_uri is not an absolute URI: {$uri}");
+            throw InvalidClientMetadata::metadata("backchannel_logout_uri is not an absolute URI: {$uri}")->withSourceMessage(new SourceMessage('backchannel_logout_uri is not an absolute URI: :uri', ['uri' => $uri]));
         }
-
         if (isset($parts['fragment']) || str_contains($uri, '#')) {
-            throw InvalidClientMetadata::metadata("backchannel_logout_uri must not contain a fragment: {$uri}");
+            throw InvalidClientMetadata::metadata("backchannel_logout_uri must not contain a fragment: {$uri}")->withSourceMessage(new SourceMessage('backchannel_logout_uri must not contain a fragment: :uri', ['uri' => $uri]));
         }
-
         // Credentials in the authority are a way to smuggle a second host past a reader
         // (`https://trusted.example@evil.example/`), and a logout endpoint has no use for them.
         if (isset($parts['user']) || isset($parts['pass'])) {
-            throw InvalidClientMetadata::metadata("backchannel_logout_uri must not contain credentials: {$uri}");
+            throw InvalidClientMetadata::metadata("backchannel_logout_uri must not contain credentials: {$uri}")->withSourceMessage(new SourceMessage('backchannel_logout_uri must not contain credentials: :uri', ['uri' => $uri]));
         }
-
         $scheme = strtolower($parts['scheme']);
         $host = strtolower(trim($parts['host'], '[]'));
-
         if ($scheme === 'https') {
             return;
         }
-
         if ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
             return;
         }
-
-        throw InvalidClientMetadata::metadata("backchannel_logout_uri must use https (or http on localhost): {$uri}");
+        throw InvalidClientMetadata::metadata("backchannel_logout_uri must use https (or http on localhost): {$uri}")->withSourceMessage(new SourceMessage('backchannel_logout_uri must use https (or http on localhost): :uri', ['uri' => $uri]));
     }
 }

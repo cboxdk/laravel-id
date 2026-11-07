@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation;
 
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Firebase\JWT\JWT;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Throwable;
@@ -55,17 +56,12 @@ class AppleClientSecret
         // Keyed by the connection AND by the material, so rotating the key or correcting
         // a mistyped team id takes effect immediately rather than after the cache
         // expires. Hashed, because the cache key is not a place to put a private key.
-        $cacheKey = 'cbox-id:apple-client-secret:'.$connectionId.':'
-            .hash('sha256', $teamId."\0".$keyId."\0".$privateKey."\0".$clientId);
-
+        $cacheKey = 'cbox-id:apple-client-secret:'.$connectionId.':'.hash('sha256', $teamId."\x00".$keyId."\x00".$privateKey."\x00".$clientId);
         $cached = $this->cache->get($cacheKey);
-
         if (is_string($cached) && $cached !== '') {
             return $cached;
         }
-
         $secret = $this->sign($teamId, $keyId, $privateKey, $clientId);
-
         // Expire the cache entry BEFORE the token does. An entry that outlived its token
         // would serve an expired credential, and Apple's refusal for that looks exactly
         // like a misconfigured client — sending whoever debugs it to the wrong place.
@@ -77,30 +73,22 @@ class AppleClientSecret
     private function sign(string $teamId, string $keyId, string $privateKey, string $clientId): string
     {
         $now = time();
-
         try {
-            return JWT::encode(
-                [
-                    // The team, not the client: Apple identifies the ISSUER of this
-                    // assertion as the developer account, and the SUBJECT as the
-                    // Services ID acting as the OAuth client.
-                    'iss' => $teamId,
-                    'iat' => $now,
-                    'exp' => $now + self::TTL_SECONDS,
-                    'aud' => self::AUDIENCE,
-                    'sub' => $clientId,
-                ],
-                $privateKey,
-                'ES256',
-                $keyId,
-            );
+            return JWT::encode([
+                // The team, not the client: Apple identifies the ISSUER of this
+                // assertion as the developer account, and the SUBJECT as the
+                // Services ID acting as the OAuth client.
+                'iss' => $teamId,
+                'iat' => $now,
+                'exp' => $now + self::TTL_SECONDS,
+                'aud' => self::AUDIENCE,
+                'sub' => $clientId,
+            ], $privateKey, 'ES256', $keyId);
         } catch (Throwable $e) {
             // The overwhelmingly common cause is a .p8 pasted with its newlines eaten by
             // a form field, which openssl reports as an unhelpful parse failure. Say
             // what it usually is, without echoing any of the key material.
-            throw InvalidAssertion::make(
-                'could not sign the Apple client secret — check that the .p8 key was pasted whole, including its BEGIN and END lines: '.$e->getMessage()
-            );
+            throw InvalidAssertion::make('could not sign the Apple client secret — check that the .p8 key was pasted whole, including its BEGIN and END lines: '.$e->getMessage())->withSourceMessage(new SourceMessage('invalid assertion: could not sign the Apple client secret — check that the .p8 key was pasted whole, including its BEGIN and END lines: :value1', ['value1' => $e->getMessage()]));
         }
     }
 }

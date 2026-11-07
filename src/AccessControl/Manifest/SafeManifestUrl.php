@@ -6,6 +6,7 @@ namespace Cbox\Id\AccessControl\Manifest;
 
 use Cbox\Id\AccessControl\Exceptions\UnsafeManifestUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Ssrf\Contracts\UrlGuard;
 use Cbox\Ssrf\Exceptions\BlockedUrl;
@@ -46,11 +47,10 @@ class SafeManifestUrl
             // four did not.
             return ['allow_redirects' => false];
         }
-
         try {
             return app(UrlGuard::class)->pinnedOptions($url);
         } catch (BlockedUrl $e) {
-            throw UnsafeManifestUrl::make($e->getMessage());
+            throw UnsafeManifestUrl::make($e->getMessage())->withSourceMessage(new SourceMessage('Refused to fetch manifest from an unsafe URL: :value1', ['value1' => $e->getMessage()]));
         }
     }
 }

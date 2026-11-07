@@ -9,6 +9,7 @@ use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
 use Cbox\Id\Federation\Support\SafeFederationUrl;
 use Cbox\Id\Federation\ValueObjects\DiscoveredOidcProvider;
 use Cbox\Id\Federation\ValueObjects\ProviderTemplate;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -42,49 +43,33 @@ class OidcDiscovery
     public function fromIssuer(string $issuer, ?string $discoveryUrl = null): DiscoveredOidcProvider
     {
         $issuer = rtrim(trim($issuer), '/');
-
         if ($issuer === '') {
-            throw OidcDiscoveryFailed::make('the issuer was empty.');
+            throw OidcDiscoveryFailed::make('the issuer was empty.')->withSourceMessage(new SourceMessage('Could not discover the OpenID Provider: the issuer was empty.', []));
         }
-
         $discoveryUrl = $discoveryUrl === null ? '' : trim($discoveryUrl);
         $url = $discoveryUrl !== '' ? $discoveryUrl : $issuer.'/.well-known/openid-configuration';
         $pinned = SafeFederationUrl::pinnedOptions($url);
-
         try {
             $response = Http::withOptions($pinned)->timeout(10)->get($url);
         } catch (Throwable $e) {
-            throw OidcDiscoveryFailed::make('could not fetch the discovery document: '.$e->getMessage());
+            throw OidcDiscoveryFailed::make('could not fetch the discovery document: '.$e->getMessage())->withSourceMessage(new SourceMessage('Could not discover the OpenID Provider: could not fetch the discovery document: :value1', ['value1' => $e->getMessage()]));
         }
-
         if (! $response->successful()) {
-            throw OidcDiscoveryFailed::make("the discovery URL returned HTTP {$response->status()}.");
+            throw OidcDiscoveryFailed::make("the discovery URL returned HTTP {$response->status()}.")->withSourceMessage(new SourceMessage('Could not discover the OpenID Provider: the discovery URL returned HTTP :value1.', ['value1' => $response->status()]));
         }
-
         $document = $response->json();
-
         if (! is_array($document)) {
-            throw OidcDiscoveryFailed::make('the discovery document was not a JSON object.');
+            throw OidcDiscoveryFailed::make('the discovery document was not a JSON object.')->withSourceMessage(new SourceMessage('Could not discover the OpenID Provider: the discovery document was not a JSON object.', []));
         }
-
         // OIDC Discovery §4.3: `issuer` is REQUIRED and must match. Fail closed when it
         // is absent rather than accepting the document's endpoints unchecked.
         $documentIssuer = rtrim($this->string($document, 'issuer'), '/');
         if ($documentIssuer === '' || $documentIssuer !== $issuer) {
-            throw OidcDiscoveryFailed::make('the discovery document issuer is missing or does not match the configured issuer.');
+            throw OidcDiscoveryFailed::make('the discovery document issuer is missing or does not match the configured issuer.')->withSourceMessage(new SourceMessage('Could not discover the OpenID Provider: the discovery document issuer is missing or does not match the configured issuer.', []));
         }
-
-        $provider = new DiscoveredOidcProvider(
-            issuer: $issuer,
-            authorizationEndpoint: $this->string($document, 'authorization_endpoint'),
-            tokenEndpoint: $this->string($document, 'token_endpoint'),
-            jwksUri: $this->optionalString($document, 'jwks_uri'),
-            userinfoEndpoint: $this->optionalString($document, 'userinfo_endpoint'),
-            tokenEndpointAuthMethods: $this->stringList($document, 'token_endpoint_auth_methods_supported'),
-        );
-
+        $provider = new DiscoveredOidcProvider(issuer: $issuer, authorizationEndpoint: $this->string($document, 'authorization_endpoint'), tokenEndpoint: $this->string($document, 'token_endpoint'), jwksUri: $this->optionalString($document, 'jwks_uri'), userinfoEndpoint: $this->optionalString($document, 'userinfo_endpoint'), tokenEndpointAuthMethods: $this->stringList($document, 'token_endpoint_auth_methods_supported'));
         if (! $provider->isComplete()) {
-            throw OidcDiscoveryFailed::make('the discovery document is missing the authorization or token endpoint.');
+            throw OidcDiscoveryFailed::make('the discovery document is missing the authorization or token endpoint.')->withSourceMessage(new SourceMessage('Could not discover the OpenID Provider: the discovery document is missing the authorization or token endpoint.', []));
         }
 
         return $provider;
@@ -107,7 +92,6 @@ class OidcDiscovery
     private function stringList(array $document, string $key): array
     {
         $value = $document[$key] ?? null;
-
         if (! is_array($value)) {
             return [];
         }

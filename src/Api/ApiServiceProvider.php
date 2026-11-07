@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Api;
 
+use Cbox\Id\Api\Authorization\ConfiguredResourceIntrospectionAccess;
+use Cbox\Id\Api\Contracts\ResourceIntrospectionAccess;
 use Cbox\Id\Api\Contracts\ScimBulkProcessor;
 use Cbox\Id\Api\Contracts\ScimGroupResources;
 use Cbox\Id\Api\Contracts\ScimUserResources;
@@ -85,6 +87,7 @@ class ApiServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->bind(ResourceIntrospectionAccess::class, ConfiguredResourceIntrospectionAccess::class);
         // The SCIM resource operations, shared by the single-resource controllers and
         // `/Bulk` so the two run one code path. Rebind either to change how this
         // server provisions, without touching HTTP.

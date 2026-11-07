@@ -7,6 +7,7 @@ namespace Cbox\Id\Platform;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\Kernel\Crypto\Contracts\KeyManager;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
@@ -19,6 +20,7 @@ use Cbox\Id\Organization\Models\Organization;
 use Cbox\Id\Organization\ValueObjects\NewOrganization;
 use Cbox\Id\Platform\Contracts\Projects;
 use Cbox\Id\Platform\Exceptions\EnvironmentLimitReached;
+use Cbox\Id\Platform\Exceptions\InvalidTenantProvisioning;
 use Cbox\Id\Platform\Exceptions\OrganizationSuspended;
 use Cbox\Id\Platform\Exceptions\ProjectSuspended;
 use Cbox\Id\Platform\Models\Project;
@@ -26,7 +28,6 @@ use Cbox\Id\Platform\ValueObjects\ProvisionedTenant;
 use Cbox\Id\Platform\ValueObjects\TenantBlueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use InvalidArgumentException;
 
 /**
  * Self-serve provisioning of a whole customer — the organization they are, the owner who
@@ -51,21 +52,12 @@ use InvalidArgumentException;
  */
 class TenantProvisioner
 {
-    public function __construct(
-        private readonly EnvironmentContext $context,
-        private readonly KeyManager $keys,
-        private readonly Subjects $subjects,
-        private readonly Memberships $memberships,
-        private readonly Projects $projects,
-        private readonly Organizations $organizations,
-        private readonly PlatformRoot $platformRoot,
-    ) {}
+    public function __construct(private readonly EnvironmentContext $context, private readonly KeyManager $keys, private readonly Subjects $subjects, private readonly Memberships $memberships, private readonly Projects $projects, private readonly Organizations $organizations, private readonly PlatformRoot $platformRoot) {}
 
     public function provision(TenantBlueprint $blueprint): ProvisionedTenant
     {
         return DB::transaction(function () use ($blueprint): ProvisionedTenant {
             $platformRoot = $this->platformRoot->model();
-
             if ($platformRoot === null) {
                 // Refused rather than worked around. There used to be a bootstrap window
                 // here — an account provisioned before the deployment had a root, whose
@@ -73,74 +65,46 @@ class TenantProvisioner
                 // caller downstream grew a null check for a state only the installer could
                 // produce. The installer stamps the root first; if it has not, this is a
                 // broken install and saying so is more useful than half a customer.
-                throw new InvalidArgumentException(
-                    'No platform-root environment exists. Run the installer before provisioning a tenant.',
-                );
+                throw (new InvalidTenantProvisioning('No platform-root environment exists. Run the installer before provisioning a tenant.'))->withSourceMessage(new SourceMessage('No platform-root environment exists. Run the installer before provisioning a tenant.', []));
             }
-
             // THE CUSTOMER, and the only row that stands for them. Created in the platform
             // root, which is the environment the platform's own people and its customers'
             // organizations live in — a tenant's END USERS live in that tenant's own
             // environments instead, which is the whole distinction the root draws.
-            [$organization, $owner, $membership] = $this->context->runAs(
-                $platformRoot,
-                function () use ($blueprint): array {
-                    $organization = $this->organizations->create(new NewOrganization(
-                        name: $blueprint->organizationName,
-                        slug: $this->uniqueOrganizationSlug($blueprint->organizationName),
-                    ));
+            [$organization, $owner, $membership] = $this->context->runAs($platformRoot, function () use ($blueprint): array {
+                $organization = $this->organizations->create(new NewOrganization(name: $blueprint->organizationName, slug: $this->uniqueOrganizationSlug($blueprint->organizationName)));
+                // One credential of record. The owner is an ordinary subject — the same
+                // row shape a tenant's own user occupies — rather than a member row with
+                // its own password column, which is what the account plane had and what
+                // made "who is signed in" a question with two answers.
+                //
+                // REUSED IF THE ADDRESS ALREADY HAS ONE, and that is not a convenience.
+                // `users` is unique on (environment_id, email), so creating
+                // unconditionally makes provisioning fail outright for anybody who
+                // already holds a Cbox ID in the root — including the OPERATOR running
+                // the installer, whose email is also the first customer's owner. The
+                // account plane never met this: a member lived in its own table, so the
+                // same person could be an operator and an owner without either row
+                // knowing. One identity means the second caller attaches to it.
+                //
+                // The password is only set when the subject is being created. Handing a
+                // blueprint's password to an existing subject would let anyone who can
+                // provision reset the credential of anyone whose address they can guess.
+                $owner = $this->subjects->findByEmail($blueprint->ownerEmail) ?? $this->subjects->create($blueprint->ownerEmail, $blueprint->ownerName, $blueprint->ownerPassword);
+                // …and the authority is the MEMBERSHIP, held separately, because it is
+                // true here and nowhere else. The same person may own this
+                // organization and be a viewer in another.
+                $membership = $this->memberships->add($organization->id, $owner->id, MembershipRole::Owner);
 
-                    // One credential of record. The owner is an ordinary subject — the same
-                    // row shape a tenant's own user occupies — rather than a member row with
-                    // its own password column, which is what the account plane had and what
-                    // made "who is signed in" a question with two answers.
-                    //
-                    // REUSED IF THE ADDRESS ALREADY HAS ONE, and that is not a convenience.
-                    // `users` is unique on (environment_id, email), so creating
-                    // unconditionally makes provisioning fail outright for anybody who
-                    // already holds a Cbox ID in the root — including the OPERATOR running
-                    // the installer, whose email is also the first customer's owner. The
-                    // account plane never met this: a member lived in its own table, so the
-                    // same person could be an operator and an owner without either row
-                    // knowing. One identity means the second caller attaches to it.
-                    //
-                    // The password is only set when the subject is being created. Handing a
-                    // blueprint's password to an existing subject would let anyone who can
-                    // provision reset the credential of anyone whose address they can guess.
-                    $owner = $this->subjects->findByEmail($blueprint->ownerEmail)
-                        ?? $this->subjects->create(
-                            $blueprint->ownerEmail,
-                            $blueprint->ownerName,
-                            $blueprint->ownerPassword,
-                        );
-
-                    // …and the authority is the MEMBERSHIP, held separately, because it is
-                    // true here and nowhere else. The same person may own this
-                    // organization and be a viewer in another.
-                    $membership = $this->memberships->add($organization->id, $owner->id, MembershipRole::Owner);
-
-                    return [$organization, $owner, $membership];
-                },
-            );
-
+                return [$organization, $owner, $membership];
+            });
             // The customer's first IdP product. Named after them by default; its plan
             // allowance is the blueprint's limit, because billing lives on the product.
-            $project = $this->projects->createForOrganization(
-                $organization->id,
-                $blueprint->organizationName,
-                $blueprint->environmentLimit,
-            );
-
+            $project = $this->projects->createForOrganization($organization->id, $blueprint->organizationName, $blueprint->environmentLimit);
             // The routing slug (subdomain) derives from the PRODUCT's identity, not the
             // stage name — so "Acme" gets acme.example rather than a generic
             // "production.example" every customer would collide on.
-            $environment = $this->createEnvironment(
-                $project,
-                $blueprint->environmentName,
-                $blueprint->domain,
-                slugSeed: $project->name,
-                type: EnvironmentType::Production,
-            );
+            $environment = $this->createEnvironment($project, $blueprint->environmentName, $blueprint->domain, slugSeed: $project->name, type: EnvironmentType::Production);
 
             return new ProvisionedTenant($organization, $owner, $membership, $project, $environment);
         });
@@ -155,11 +119,7 @@ class TenantProvisioner
         return DB::transaction(function () use ($organization, $name, $environmentLimit): Project {
             $locked = $this->lockedActiveOrganization($organization->id);
 
-            return $this->projects->createForOrganization(
-                $locked->id,
-                $name,
-                $environmentLimit ?? 2,
-            );
+            return $this->projects->createForOrganization($locked->id, $name, $environmentLimit ?? 2);
         });
     }
 
@@ -169,20 +129,16 @@ class TenantProvisioner
             // Re-check under the row lock so two concurrent adds can't both slip past
             // a limit-of-one.
             $locked = Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
-
             // THE OWNER FIRST, then the product. Both were checked when the owner was an
             // account; only the project check survived the move, so a suspended customer
             // could still add environments to a product that was itself still active.
             $this->lockedActiveOrganization($locked->organization_id);
-
             if (! $locked->isActive()) {
                 throw ProjectSuspended::make($locked->id);
             }
-
             if ($this->projects->remainingEnvironments($locked) < 1) {
                 throw EnvironmentLimitReached::make($locked->id, $locked->environment_limit);
             }
-
             // The project's FIRST environment routes off the bare project name
             // (product.example); every additional stage adds its own name to stay
             // distinct (product-staging.example).
@@ -207,25 +163,13 @@ class TenantProvisioner
         // EnvironmentDomainService's DNS proof. A domain already owned by another env is
         // refused rather than silently colliding.
         $domain = $domain !== null && $domain !== '' ? strtolower(trim($domain)) : null;
-
         if ($domain !== null) {
             $owner = Environment::query()->where('domain', $domain)->value('id');
-
             if ($owner !== null) {
-                throw new InvalidArgumentException("The domain [{$domain}] is already in use by another environment.");
+                throw (new InvalidTenantProvisioning("The domain [{$domain}] is already in use by another environment."))->withSourceMessage(new SourceMessage('The domain [:domain] is already in use by another environment.', ['domain' => $domain]));
             }
         }
-
-        $environment = Environment::query()->create([
-            'project_id' => $project->id,
-            'name' => $name,
-            'slug' => $this->uniqueSlug($slugSeed),
-            'type' => $type,
-            'domain' => $domain,
-            'domain_verified_at' => $domain !== null ? now() : null,
-            'status' => EnvironmentStatus::Active,
-        ]);
-
+        $environment = Environment::query()->create(['project_id' => $project->id, 'name' => $name, 'slug' => $this->uniqueSlug($slugSeed), 'type' => $type, 'domain' => $domain, 'domain_verified_at' => $domain !== null ? now() : null, 'status' => EnvironmentStatus::Active]);
         $this->context->runAs($environment, function (): void {
             $this->keys->activeSigningKey();
         });
@@ -249,10 +193,7 @@ class TenantProvisioner
      */
     private function lockedActiveOrganization(string $organizationId): Organization
     {
-        $organization = $this->platformRoot->run(
-            fn (): ?Organization => Organization::query()->whereKey($organizationId)->lockForUpdate()->first(),
-        );
-
+        $organization = $this->platformRoot->run(fn (): ?Organization => Organization::query()->whereKey($organizationId)->lockForUpdate()->first());
         if (! $organization instanceof Organization || $organization->status->revokesAccess()) {
             throw OrganizationSuspended::make($organizationId);
         }
@@ -273,9 +214,8 @@ class TenantProvisioner
         $base = $this->slug($name);
         $slug = $base;
         $suffix = 1;
-
         while (Organization::query()->where('slug', $slug)->exists()) {
-            $slug = $base.'-'.(++$suffix);
+            $slug = $base.'-'.++$suffix;
         }
 
         return $slug;
@@ -286,9 +226,8 @@ class TenantProvisioner
         $base = $this->slug($name);
         $slug = $base;
         $suffix = 1;
-
         while (Environment::query()->where('slug', $slug)->exists()) {
-            $slug = $base.'-'.(++$suffix);
+            $slug = $base.'-'.++$suffix;
         }
 
         return $slug;

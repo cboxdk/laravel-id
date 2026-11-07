@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation\Exceptions;
 
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
 use RuntimeException;
 
 /**
@@ -12,8 +14,10 @@ use RuntimeException;
  * requests to loopback, private, link-local or reserved addresses (SSRF defense,
  * e.g. cloud metadata at 169.254.169.254).
  */
-class UnsafeFederationUrl extends RuntimeException
+class UnsafeFederationUrl extends RuntimeException implements HasSourceMessage
 {
+    use CarriesSourceMessage;
+
     public static function make(string $reason): self
     {
         return new self('Unsafe federation URL: '.$reason);

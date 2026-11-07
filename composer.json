@@ -56,7 +56,10 @@
     "scripts": {
         "lint": "pint --test",
         "analyse": "phpstan analyse --no-progress --memory-limit=1G",
-        "test": "@php -d memory_limit=1G vendor/bin/pest",
+        "test": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php -d memory_limit=1G vendor/bin/pest"
+        ],
         "license-check": "@php bin/check-licenses.php",
         "sbom": "@php bin/generate-sbom.php",
         "sbom-check": "@php bin/generate-sbom.php --check",

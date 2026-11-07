@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\AccessControl;
 
+use Cbox\Id\AccessControl\Contracts\DescribesGrantRefusal;
 use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
@@ -42,103 +43,109 @@ class RoleService implements Roles
 
     public function grantPermission(?string $organizationId, string $roleId, string $permission): void
     {
-        // The role must belong to the caller's org — never grant onto another
-        // tenant's role.
-        //
-        // NULL NAMES THE ENVIRONMENT PLANE, the same thing it means to requireRole() and
-        // attachPermission(). This took a non-nullable organization and matched on it, so
-        // an environment-wide role — the only kind that can be granted across every
-        // tenant — could never be given a permission through this method at all. The gap
-        // only showed once environment-wide GRANTS existed and a global role with no
-        // permissions turned out to be a name and nothing else.
-        $role = Role::query()
-            ->whereKey($roleId)
-            ->when(
-                $organizationId === null,
-                fn ($query) => $query->whereNull('organization_id'),
-                fn ($query) => $query->where('organization_id', $organizationId),
-            )
-            ->first();
+        DB::transaction(function () use ($organizationId, $roleId, $permission): void {
+            // The role must belong to the caller's org — never grant onto another
+            // tenant's role.
+            //
+            // NULL NAMES THE ENVIRONMENT PLANE, the same thing it means to requireRole() and
+            // attachPermission(). This took a non-nullable organization and matched on it, so
+            // an environment-wide role — the only kind that can be granted across every
+            // tenant — could never be given a permission through this method at all. The gap
+            // only showed once environment-wide GRANTS existed and a global role with no
+            // permissions turned out to be a name and nothing else.
+            $role = Role::query()
+                ->whereKey($roleId)
+                ->when(
+                    $organizationId === null,
+                    fn ($query) => $query->whereNull('organization_id'),
+                    fn ($query) => $query->where('organization_id', $organizationId),
+                )
+                ->lockForUpdate()->first();
 
-        if ($role === null) {
-            throw UnknownRole::make($roleId);
-        }
+            if ($role === null) {
+                throw UnknownRole::make($roleId);
+            }
 
-        // Resolve the permission WITHIN the role's own scope. An app-scoped role's
-        // permissions live under that app's client_id; an org-wide role's under
-        // client_id null. Matching on (client_id, name) — the table's unique key —
-        // means we reuse the app's declared permission instead of minting a stray
-        // client_id-null duplicate of it (the old firstOrCreate(['name']) bug).
-        $model = Permission::query()->firstOrCreate([
-            'client_id' => $role->client_id,
-            'name' => $permission,
-        ]);
+            // Resolve the permission WITHIN the role's own scope. An app-scoped role's
+            // permissions live under that app's client_id; an org-wide role's under
+            // client_id null. Matching on (client_id, name) — the table's unique key —
+            // means we reuse the app's declared permission instead of minting a stray
+            // client_id-null duplicate of it (the old firstOrCreate(['name']) bug).
+            $model = Permission::query()->firstOrCreate([
+                'client_id' => $role->client_id,
+                'name' => $permission,
+            ]);
 
-        DB::table('role_permission')->insertOrIgnore([
-            'role_id' => $roleId,
-            'permission_id' => $model->id,
-        ]);
+            DB::table('role_permission')->insertOrIgnore([
+                'role_id' => $roleId,
+                'permission_id' => $model->id,
+            ]);
+        });
     }
 
     public function updateRole(string $roleId, string $name, ?string $description = null, ?string $organizationId = null, ?bool $tenantAssignable = null): Role
     {
-        $role = $this->requireRole($roleId, $organizationId);
+        return DB::transaction(function () use ($roleId, $name, $description, $organizationId, $tenantAssignable): Role {
+            $role = $this->requireRole($roleId, $organizationId);
 
-        $before = ['name' => $role->name, 'description' => $role->description, 'tenant_assignable' => $role->tenant_assignable];
+            $before = ['name' => $role->name, 'description' => $role->description, 'tenant_assignable' => $role->tenant_assignable];
 
-        $role->name = $name;
-        $role->description = $description;
+            $role->name = $name;
+            $role->description = $description;
 
-        if ($tenantAssignable !== null) {
-            $role->tenant_assignable = $tenantAssignable;
-        }
+            if ($tenantAssignable !== null) {
+                $role->tenant_assignable = $tenantAssignable;
+            }
 
-        $role->save();
+            $role->save();
 
-        // The staff flag rides the same `role.updated` entry as a rename, with before and
-        // after, because "who may hand this role out" changing is exactly the kind of edit
-        // an auditor looks for and should not have to infer from a later grant.
-        $this->recordRoleChange($role, 'role.updated', [
-            'from' => $before,
-            'to' => ['name' => $name, 'description' => $description, 'tenant_assignable' => $role->tenant_assignable],
-        ]);
+            // The staff flag rides the same `role.updated` entry as a rename, with before and
+            // after, because "who may hand this role out" changing is exactly the kind of edit
+            // an auditor looks for and should not have to infer from a later grant.
+            $this->recordRoleChange($role, 'role.updated', [
+                'from' => $before,
+                'to' => ['name' => $name, 'description' => $description, 'tenant_assignable' => $role->tenant_assignable],
+            ]);
 
-        return $role;
+            return $role;
+        });
     }
 
     public function attachPermission(string $roleId, string $permissionId, ?string $organizationId = null): void
     {
-        $role = $this->requireRole($roleId, $organizationId);
+        DB::transaction(function () use ($roleId, $permissionId, $organizationId): void {
+            $role = $this->requireRole($roleId, $organizationId);
 
-        $attached = DB::table('role_permission')->insertOrIgnore([
-            'role_id' => $role->id,
-            'permission_id' => $permissionId,
-        ]);
+            $attached = DB::table('role_permission')->insertOrIgnore([
+                'role_id' => $role->id,
+                'permission_id' => $permissionId,
+            ]);
 
-        // Announce a STATE CHANGE, not a call — the same rule assign() follows.
-        if ($attached > 0) {
-            $this->recordRoleChange($role, 'role.permission_granted', ['permission_id' => $permissionId]);
-        }
+            // Announce a STATE CHANGE, not a call — the same rule assign() follows.
+            if ($attached > 0) {
+                $this->recordRoleChange($role, 'role.permission_granted', ['permission_id' => $permissionId]);
+            }
+        });
     }
 
     public function revokePermission(string $roleId, string $permissionId, ?string $organizationId = null): void
     {
-        $role = $this->requireRole($roleId, $organizationId);
+        DB::transaction(function () use ($roleId, $permissionId, $organizationId): void {
+            $role = $this->requireRole($roleId, $organizationId);
 
-        $detached = DB::table('role_permission')
-            ->where('role_id', $role->id)
-            ->where('permission_id', $permissionId)
-            ->delete();
+            $detached = DB::table('role_permission')
+                ->where('role_id', $role->id)
+                ->where('permission_id', $permissionId)
+                ->delete();
 
-        if ($detached > 0) {
-            $this->recordRoleChange($role, 'role.permission_revoked', ['permission_id' => $permissionId]);
-        }
+            if ($detached > 0) {
+                $this->recordRoleChange($role, 'role.permission_revoked', ['permission_id' => $permissionId]);
+            }
+        });
     }
 
     public function deleteRole(string $roleId, ?string $organizationId = null): void
     {
-        $role = $this->requireRole($roleId, $organizationId);
-
         // One transaction for the whole removal, and for the events it announces.
         //
         // Nothing here cascades at the database layer, so a partial delete is a
@@ -146,7 +153,9 @@ class RoleService implements Roles
         // second pass to finish the job. The outbox rows are written inside it too — the
         // same rule MembershipService::add() follows — so a crash cannot leave the grants
         // gone and the `role.unassigned` events unwritten.
-        DB::transaction(function () use ($role): void {
+        DB::transaction(function () use ($roleId, $organizationId): void {
+            $role = $this->requireRole($roleId, $organizationId);
+
             // Read the holders BEFORE the delete: they are the subjects whose privileges
             // this removes, and the only way a downstream mirror can be told which grants
             // went. Nothing else reports them — there is no FK cascade and no observer.
@@ -229,7 +238,7 @@ class RoleService implements Roles
         $role = Role::query()
             ->whereKey($roleId)
             ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
-            ->first();
+            ->lockForUpdate()->first();
 
         if ($role === null) {
             throw UnknownRole::make($roleId);
@@ -270,47 +279,70 @@ class RoleService implements Roles
         string $roleId,
         GrantSource $source = GrantSource::Manual,
     ): RoleAssignment {
-        // The role must be assignable IN this organization — either its own, or a system
-        // role (organization_id null) shared across the environment. This is the chokepoint
-        // every caller funnels through — console toggles, directory group→role mapping and
-        // invitation grants all land here — so validating once closes all of them. Without
-        // it a caller can name ANOTHER tenant's role id and have it written under their own
-        // org, and the read path would then surface that role's permissions in this org's
-        // tokens. Mirrors the ownership check grantPermission() has always had.
-        $this->assertAssignableIn($organizationId, $roleId);
+        return DB::transaction(function () use ($organizationId, $userId, $roleId, $source): RoleAssignment {
+            RoleGrantLock::forSubject($userId);
 
-        // Conflict rules, at the same chokepoint as ownership. These used to be enforced
-        // only by the host, in front of the console's manual grant paths — and the one
-        // path a host cannot get in front of is this one, so a directory group→role
-        // mapping created toxic pairs the console would have refused, silently, on every
-        // reconcile. The automation a customer buys is not a way around the control they
-        // bought. Via a contract because Governance already depends on AccessControl and
-        // a direct dependency back would close a cycle.
-        $refusal = $this->grants->refuse($organizationId, $userId, $roleId, $source);
+            // Serialize the policy check and grant with edits, deletion and definition activation.
+            Role::query()->whereKey($roleId)->lockForUpdate()->first();
 
-        if ($refusal !== null) {
-            throw new GrantRefused($organizationId, $userId, $roleId, $refusal);
-        }
+            // The role must be assignable IN this organization — either its own, or a system
+            // role (organization_id null) shared across the environment. This is the chokepoint
+            // every caller funnels through — console toggles, directory group→role mapping and
+            // invitation grants all land here — so validating once closes all of them. Without
+            // it a caller can name ANOTHER tenant's role id and have it written under their own
+            // org, and the read path would then surface that role's permissions in this org's
+            // tokens. Mirrors the ownership check grantPermission() has always had.
+            $this->assertAssignableIn($organizationId, $roleId);
 
-        $assignment = RoleAssignment::query()->firstOrCreate(
-            ['organization_id' => $organizationId, 'user_id' => $userId, 'role_id' => $roleId],
-            ['source' => $source],
-        );
+            // Conflict rules, at the same chokepoint as ownership. These used to be enforced
+            // only by the host, in front of the console's manual grant paths — and the one
+            // path a host cannot get in front of is this one, so a directory group→role
+            // mapping created toxic pairs the console would have refused, silently, on every
+            // reconcile. The automation a customer buys is not a way around the control they
+            // bought. Via a contract because Governance already depends on AccessControl and
+            // a direct dependency back would close a cycle.
+            $refusal = $this->grants->refuse($organizationId, $userId, $roleId, $source);
+            $sourceMessage = $this->grants instanceof DescribesGrantRefusal ? $this->grants->lastRefusalMessage() : null;
 
-        // Announce a STATE CHANGE, not a call. Re-assigning a role the user already
-        // holds is a no-op on the row, and emitting anyway made every reconcile pass
-        // write an outbox row plus a hash-chained audit entry per user.
-        //
-        // The directory reconciler makes that constant: it compares the mapped roles
-        // against the assignments whose source is `pushed`, so a user holding a mapped
-        // role via a MANUAL grant is never in that set and is "assigned" again on every
-        // single reconcile — burning a relay slot each time and feeding the very relay
-        // backlog the async webhook work exists to keep short.
-        if ($assignment->wasRecentlyCreated) {
-            $this->emitAndAudit($organizationId, $userId, $roleId, 'role.assigned');
-        }
+            if ($refusal !== null) {
+                $exception = new GrantRefused($organizationId, $userId, $roleId, $refusal);
+                if ($sourceMessage !== null && $sourceMessage->english() === $refusal) {
+                    $exception->withSourceMessage($sourceMessage);
+                }
+                throw $exception;
+            }
 
-        return $assignment;
+            $assignment = RoleAssignment::query()->firstOrCreate(
+                ['organization_id' => $organizationId, 'user_id' => $userId, 'role_id' => $roleId],
+                ['source' => $source],
+            );
+
+            // An explicit manual grant takes ownership from directory automation.
+            // A later directory unmap must not revoke the administrator's decision.
+            $promoted = ! $assignment->wasRecentlyCreated
+                && $source === GrantSource::Manual && $assignment->source === GrantSource::Pushed;
+            if ($promoted) {
+                $assignment->source = GrantSource::Manual;
+                $assignment->save();
+            }
+
+            // Announce a STATE CHANGE, not a call. Re-assigning a role the user already
+            // holds is a no-op on the row, and emitting anyway made every reconcile pass
+            // write an outbox row plus a hash-chained audit entry per user.
+            //
+            // The directory reconciler makes that constant: it compares the mapped roles
+            // against the assignments whose source is `pushed`, so a user holding a mapped
+            // role via a MANUAL grant is never in that set and is "assigned" again on every
+            // single reconcile — burning a relay slot each time and feeding the very relay
+            // backlog the async webhook work exists to keep short.
+            if ($assignment->wasRecentlyCreated || $promoted) {
+                $this->emitAndAudit($organizationId, $userId, $roleId, 'role.assigned', $promoted
+                    ? ['from_source' => GrantSource::Pushed->value, 'source' => GrantSource::Manual->value]
+                    : []);
+            }
+
+            return $assignment;
+        });
     }
 
     /**
@@ -382,9 +414,16 @@ class RoleService implements Roles
         string $roleId,
         GrantSource $source = GrantSource::Manual,
     ): RoleAssignment {
-        $this->assertTenantAssignable($organizationId, $roleId);
+        return DB::transaction(function () use ($organizationId, $userId, $roleId, $source): RoleAssignment {
+            RoleGrantLock::forSubject($userId);
 
-        return $this->assign($organizationId, $userId, $roleId, $source);
+            // Read the tenant predicate only after the same role lock used by staff edits.
+            Role::query()->whereKey($roleId)->lockForUpdate()->first();
+
+            $this->assertTenantAssignable($organizationId, $roleId);
+
+            return $this->assign($organizationId, $userId, $roleId, $source);
+        });
     }
 
     /**
@@ -417,54 +456,63 @@ class RoleService implements Roles
         string $roleId,
         GrantSource $source = GrantSource::Manual,
     ): EnvironmentRoleAssignment {
-        $role = Role::query()
-            ->whereKey($roleId)
-            ->whereNull('organization_id')
-            ->whereNull('orphaned_at')
-            ->first();
+        return DB::transaction(function () use ($userId, $roleId, $source): EnvironmentRoleAssignment {
+            RoleGrantLock::forSubject($userId);
 
-        if ($role === null) {
-            throw UnknownRole::make($roleId);
-        }
+            $role = Role::query()
+                ->whereKey($roleId)
+                ->whereNull('organization_id')
+                ->whereNull('orphaned_at')
+                ->lockForUpdate()->first();
 
-        // THE CONFLICT CHECK, WHICH THIS PATH SKIPPED. assign() asks the guard before
-        // writing; this did not, and the reasoning was that segregation of duties refuses
-        // a toxic PAIR within an organization while this grant belongs to none — so the
-        // NEXT org-scoped grant would be refused where the pair actually forms.
-        //
-        // That covers one order and not the other. Somebody already holding `Approver` in
-        // one organization could be given a conflicting `Support` everywhere, and no
-        // later grant ever happens to trigger the check: the pair simply exists, in that
-        // organization's tokens, having been refused nowhere.
-        //
-        // So the question is asked ONCE PER ORGANIZATION THE PERSON IS IN, because that
-        // is precisely where this grant is about to land. A refusal anywhere refuses the
-        // whole thing — a grant that cannot be made in one tenant is not a grant that can
-        // be made in all of them.
-        foreach ($this->organizationsOf($userId) as $organizationId) {
-            $refusal = $this->grants->refuse($organizationId, $userId, $roleId, $source);
-
-            if ($refusal !== null) {
-                throw new GrantRefused($organizationId, $userId, $roleId, $refusal);
+            if ($role === null) {
+                throw UnknownRole::make($roleId);
             }
-        }
 
-        $assignment = EnvironmentRoleAssignment::query()->firstOrCreate(
-            ['user_id' => $userId, 'role_id' => $roleId],
-            ['source' => $source],
-        );
+            // THE CONFLICT CHECK, WHICH THIS PATH SKIPPED. assign() asks the guard before
+            // writing; this did not, and the reasoning was that segregation of duties refuses
+            // a toxic PAIR within an organization while this grant belongs to none — so the
+            // NEXT org-scoped grant would be refused where the pair actually forms.
+            //
+            // That covers one order and not the other. Somebody already holding `Approver` in
+            // one organization could be given a conflicting `Support` everywhere, and no
+            // later grant ever happens to trigger the check: the pair simply exists, in that
+            // organization's tokens, having been refused nowhere.
+            //
+            // So the question is asked ONCE PER ORGANIZATION THE PERSON IS IN, because that
+            // is precisely where this grant is about to land. A refusal anywhere refuses the
+            // whole thing — a grant that cannot be made in one tenant is not a grant that can
+            // be made in all of them.
+            foreach ($this->organizationsOf($userId) as $organizationId) {
+                $refusal = $this->grants->refuse($organizationId, $userId, $roleId, $source);
+                $sourceMessage = $this->grants instanceof DescribesGrantRefusal ? $this->grants->lastRefusalMessage() : null;
 
-        // Same rule as assign(): announce a state change, never a call.
-        //
-        // WITH THE ROLE'S APP. A downstream mirror reconciling off this event has to know
-        // which application the grant reaches — an app-agnostic staff role and one app's
-        // "Support" are very different grants — and the role row is the only place it can
-        // learn that from after the fact.
-        if ($assignment->wasRecentlyCreated) {
-            $this->emitAndAudit(null, $userId, $roleId, 'role.assigned_everywhere', ['client_id' => $role->client_id]);
-        }
+                if ($refusal !== null) {
+                    $exception = new GrantRefused($organizationId, $userId, $roleId, $refusal);
+                    if ($sourceMessage !== null && $sourceMessage->english() === $refusal) {
+                        $exception->withSourceMessage($sourceMessage);
+                    }
+                    throw $exception;
+                }
+            }
 
-        return $assignment;
+            $assignment = EnvironmentRoleAssignment::query()->firstOrCreate(
+                ['user_id' => $userId, 'role_id' => $roleId],
+                ['source' => $source],
+            );
+
+            // Same rule as assign(): announce a state change, never a call.
+            //
+            // WITH THE ROLE'S APP. A downstream mirror reconciling off this event has to know
+            // which application the grant reaches — an app-agnostic staff role and one app's
+            // "Support" are very different grants — and the role row is the only place it can
+            // learn that from after the fact.
+            if ($assignment->wasRecentlyCreated) {
+                $this->emitAndAudit(null, $userId, $roleId, 'role.assigned_everywhere', ['client_id' => $role->client_id]);
+            }
+
+            return $assignment;
+        });
     }
 
     /**
@@ -496,16 +544,21 @@ class RoleService implements Roles
     /** Take back an environment-wide grant. */
     public function unassignEverywhere(string $userId, string $roleId): void
     {
-        $deleted = EnvironmentRoleAssignment::query()
-            ->where('user_id', $userId)
-            ->where('role_id', $roleId)
-            ->delete();
+        DB::transaction(function () use ($userId, $roleId): void {
+            RoleGrantLock::forSubject($userId);
+            Role::query()->whereKey($roleId)->lockForUpdate()->first();
 
-        if ($deleted > 0) {
-            $this->emitAndAudit(null, $userId, $roleId, 'role.unassigned_everywhere', [
-                'client_id' => Role::query()->whereKey($roleId)->value('client_id'),
-            ]);
-        }
+            $deleted = EnvironmentRoleAssignment::query()
+                ->where('user_id', $userId)
+                ->where('role_id', $roleId)
+                ->delete();
+
+            if ($deleted > 0) {
+                $this->emitAndAudit(null, $userId, $roleId, 'role.unassigned_everywhere', [
+                    'client_id' => Role::query()->whereKey($roleId)->value('client_id'),
+                ]);
+            }
+        });
     }
 
     /**
@@ -523,46 +576,65 @@ class RoleService implements Roles
 
     public function unassign(string $organizationId, string $userId, string $roleId): void
     {
-        $deleted = RoleAssignment::query()
-            ->where('organization_id', $organizationId)
-            ->where('user_id', $userId)
-            ->where('role_id', $roleId)
-            ->delete();
+        DB::transaction(function () use ($organizationId, $userId, $roleId): void {
+            RoleGrantLock::forSubject($userId);
+            Role::query()->whereKey($roleId)->lockForUpdate()->first();
 
-        // Same rule as assign(): revoking a role the user does not hold changed
-        // nothing, so it announces nothing.
-        if ($deleted > 0) {
-            $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
-        }
+            $deleted = RoleAssignment::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->where('role_id', $roleId)
+                ->delete();
+
+            // Same rule as assign(): revoking a role the user does not hold changed
+            // nothing, so it announces nothing.
+            if ($deleted > 0) {
+                $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
+            }
+        });
     }
 
     public function unassignAll(string $organizationId, string $userId): int
     {
-        $roleIds = RoleAssignment::query()
-            ->where('organization_id', $organizationId)
-            ->where('user_id', $userId)
-            ->pluck('role_id')
-            ->all();
+        return DB::transaction(function () use ($organizationId, $userId): int {
+            RoleGrantLock::forSubject($userId);
 
-        if ($roleIds === []) {
-            return 0;
-        }
+            $roleIds = RoleAssignment::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->pluck('role_id')
+                ->all();
 
-        RoleAssignment::query()
-            ->where('organization_id', $organizationId)
-            ->where('user_id', $userId)
-            ->delete();
-
-        // One event per role, not one for the batch: a downstream consumer reconciling
-        // grants needs to know WHICH roles went, and every other revocation on this
-        // service reports itself that way.
-        foreach ($roleIds as $roleId) {
-            if (is_string($roleId)) {
-                $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
+            if ($roleIds === []) {
+                return 0;
             }
-        }
 
-        return count($roleIds);
+            Role::query()->whereIn('id', $roleIds)->orderBy('id')->lockForUpdate()->get();
+
+            // Catalog deletion takes the role lock without the subject mutex.
+            // It may already have removed and announced one of the snapshotted grants.
+            $roleIds = RoleAssignment::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->pluck('role_id')
+                ->all();
+
+            RoleAssignment::query()
+                ->where('organization_id', $organizationId)
+                ->where('user_id', $userId)
+                ->delete();
+
+            // One event per role, not one for the batch: a downstream consumer reconciling
+            // grants needs to know WHICH roles went, and every other revocation on this
+            // service reports itself that way.
+            foreach ($roleIds as $roleId) {
+                if (is_string($roleId)) {
+                    $this->emitAndAudit($organizationId, $userId, $roleId, 'role.unassigned');
+                }
+            }
+
+            return count($roleIds);
+        });
     }
 
     public function assignmentsForSubject(string $organizationId, string $userId): array

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Authorization\ValueObjects;
 
 use Cbox\Id\Kernel\Authorization\Exceptions\InvalidConsistencyToken;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * "At least as fresh as this" — the revision a fine-grained write produced, handed back
@@ -25,10 +26,7 @@ use Cbox\Id\Kernel\Authorization\Exceptions\InvalidConsistencyToken;
  */
 final readonly class ConsistencyToken
 {
-    private function __construct(
-        public int $revision,
-        private string $environmentTag,
-    ) {}
+    private function __construct(public int $revision, private string $environmentTag) {}
 
     public static function for(string $environmentId, int $revision): self
     {
@@ -41,11 +39,10 @@ final readonly class ConsistencyToken
     public static function parse(string $token, string $environmentId): self
     {
         if (preg_match('/^(\d{1,18})\.([0-9a-f]{12})$/', $token, $match) !== 1) {
-            throw new InvalidConsistencyToken('That consistency token is malformed.');
+            throw (new InvalidConsistencyToken('That consistency token is malformed.'))->withSourceMessage(new SourceMessage('That consistency token is malformed.', []));
         }
-
         if (! hash_equals(self::tag($environmentId), $match[2])) {
-            throw new InvalidConsistencyToken('That consistency token was issued by another environment.');
+            throw (new InvalidConsistencyToken('That consistency token was issued by another environment.'))->withSourceMessage(new SourceMessage('That consistency token was issued by another environment.', []));
         }
 
         return new self((int) $match[1], $match[2]);

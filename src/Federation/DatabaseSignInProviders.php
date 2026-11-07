@@ -11,6 +11,7 @@ use Cbox\Id\Federation\Enums\ConnectionType;
 use Cbox\Id\Federation\Exceptions\InvalidAssertion;
 use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Federation\Models\ProviderOptOut;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -29,18 +30,14 @@ class DatabaseSignInProviders implements SignInProviders
     {
         /** @var array<string, Connection> $offered */
         $offered = [];
-
         $hidden = $organizationId === null ? [] : array_flip($this->notInheritedBy($organizationId));
-
         // 3. The environment's, unless the organization stopped inheriting it.
         foreach ($this->catalogue()->whereNull('organization_id')->get() as $connection) {
             $key = (string) $connection->provider;
-
             if ($connection->isActive() && ! isset($hidden[$key])) {
                 $offered[$key] = $connection;
             }
         }
-
         if ($organizationId !== null) {
             // 1. The organization's own, which REPLACES the environment's for its key: a
             // provider of its own that is turned off removes the button rather than letting
@@ -48,7 +45,6 @@ class DatabaseSignInProviders implements SignInProviders
             // half-saved form, not a decision.
             foreach ($this->catalogue()->where('organization_id', $organizationId)->get() as $connection) {
                 $key = (string) $connection->provider;
-
                 match ($connection->status) {
                     ConnectionStatus::Active => $offered[$key] = $connection,
                     ConnectionStatus::Inactive => $offered = array_diff_key($offered, [$key => true]),
@@ -56,7 +52,6 @@ class DatabaseSignInProviders implements SignInProviders
                 };
             }
         }
-
         ksort($offered);
 
         return array_values($offered);
@@ -72,7 +67,6 @@ class DatabaseSignInProviders implements SignInProviders
         if ($this->opted($organizationId, $provider)->exists()) {
             return false;
         }
-
         ProviderOptOut::query()->create(['organization_id' => $organizationId, 'provider' => $provider]);
 
         return true;
@@ -85,18 +79,12 @@ class DatabaseSignInProviders implements SignInProviders
 
     public function notInheritedBy(string $organizationId): array
     {
-        return array_values(ProviderOptOut::query()
-            ->where('organization_id', $organizationId)
-            ->orderBy('provider')
-            ->get(['provider'])
-            ->map(static fn (ProviderOptOut $optOut): string => $optOut->provider)
-            ->all());
+        return array_values(ProviderOptOut::query()->where('organization_id', $organizationId)->orderBy('provider')->get(['provider'])->map(static fn (ProviderOptOut $optOut): string => $optOut->provider)->all());
     }
 
     public function optOuts(): array
     {
         $byOrganization = [];
-
         foreach (ProviderOptOut::query()->orderBy('organization_id')->orderBy('provider')->get(['organization_id', 'provider']) as $row) {
             $byOrganization[$row->organization_id][] = $row->provider;
         }
@@ -104,22 +92,15 @@ class DatabaseSignInProviders implements SignInProviders
         return $byOrganization;
     }
 
-    public function create(
-        ?string $organizationId,
-        string $provider,
-        ConnectionType $type,
-        string $name,
-        array $config,
-        ?string $id = null,
-    ): Connection {
+    public function create(?string $organizationId, string $provider, ConnectionType $type, string $name, array $config, ?string $id = null): Connection
+    {
         if ($id === null) {
             return $this->connections->create($organizationId, $type, $name, $config, provider: $provider);
         }
-
         // Only the default implementation can honour a reserved id; the contract hosts
         // implement has no such parameter, and adding one would break every one of them.
         if (! $this->connections instanceof ConnectionService) {
-            throw InvalidAssertion::make('the bound Connections cannot create under a reserved id');
+            throw InvalidAssertion::make('the bound Connections cannot create under a reserved id')->withSourceMessage(new SourceMessage('invalid assertion: the bound Connections cannot create under a reserved id', []));
         }
 
         return $this->connections->create($organizationId, $type, $name, $config, provider: $provider, id: $id);

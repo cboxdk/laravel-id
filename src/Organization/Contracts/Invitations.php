@@ -24,7 +24,7 @@ interface Invitations
      * a raw string, for the same reason {@see Memberships::add()} takes one: it is the
      * authorization level the resulting membership is created with.
      */
-    public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null): PendingInvitation;
+    public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null, ?string $clientId = null): PendingInvitation;
 
     /**
      * Accept an invitation on behalf of a resolved subject: creates the

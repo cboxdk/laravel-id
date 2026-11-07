@@ -10,6 +10,7 @@ use Cbox\Id\Directory\Hris\Contracts\HrisProvider;
 use Cbox\Id\Directory\Hris\Support\HrisHttp;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisSyncOptions;
 use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * What every HR-system connector shares: the plain {@see DirectoryConnector}
@@ -26,10 +27,8 @@ abstract class HrisConnector implements HrisProvider
     public function fetchUsers(array $credentials): iterable
     {
         $mapper = HrisEmployeeMapper::fromConfig();
-
         foreach ($this->fetchEmployees($credentials, new HrisSyncOptions) as $employee) {
             $user = $mapper->toScimUser($employee, $this->provider());
-
             if ($user !== null) {
                 yield $user;
             }
@@ -42,25 +41,19 @@ abstract class HrisConnector implements HrisProvider
         $mapper = HrisEmployeeMapper::fromConfig();
         $names = [];
         $members = [];
-
         foreach ($this->fetchDepartments($credentials, $options) as $department) {
             $names[$department->id] = $department->name;
         }
-
         foreach ($this->fetchEmployees($credentials, $options) as $employee) {
             $key = HrisEmployeeMapper::departmentKey($employee);
-
             if ($key === null || ! $mapper->grantsAccess($employee)) {
                 continue;
             }
-
             $members[$key][] = $employee->id;
-
             if (! isset($names[$key]) && $employee->departmentName !== null) {
                 $names[$key] = $employee->departmentName;
             }
         }
-
         foreach ($names as $key => $name) {
             yield new DirectoryGroupSnapshot(HrisDirectorySync::DEPARTMENT_PREFIX.$key, $name, $members[$key] ?? []);
         }
@@ -108,9 +101,8 @@ abstract class HrisConnector implements HrisProvider
     protected function credential(array $credentials, string $key): string
     {
         $value = $credentials[$key] ?? null;
-
         if (! is_string($value) || trim($value) === '') {
-            throw $this->failure("Missing credential: {$key}.");
+            throw $this->failure("Missing credential: {$key}.")->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: Missing credential: :key.', ['value1' => $this->name(), 'key' => $key]));
         }
 
         return trim($value);

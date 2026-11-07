@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Federation\Exceptions;
 
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
 use RuntimeException;
 
 /**
@@ -12,8 +14,10 @@ use RuntimeException;
  * advertised an issuer that did not match, or omitted the authorization/token
  * endpoint the OIDC client requires.
  */
-class OidcDiscoveryFailed extends RuntimeException
+class OidcDiscoveryFailed extends RuntimeException implements HasSourceMessage
 {
+    use CarriesSourceMessage;
+
     public static function make(string $reason): self
     {
         return new self('Could not discover the OpenID Provider: '.$reason);

@@ -138,6 +138,9 @@ class UserInfoController
         // unrelated customers/apps — so a plain `profile` login must NOT leak it. Only a
         // relying party that explicitly needs the switcher opts in.
         if ($token->hasScope('organizations')) {
+            // An empty granted list is authoritative. Omitting it would leave a relying
+            // party unable to distinguish last-membership removal from missing scope.
+            $claims['organizations'] = [];
             $memberships = $this->memberships->forUser($token->subject)
                 ->filter(fn (Membership $m): bool => $m->status === MembershipStatus::Active)
                 ->values();
@@ -155,9 +158,7 @@ class UserInfoController
                     ->values()
                     ->all();
 
-                if ($organizations !== []) {
-                    $claims['organizations'] = $organizations;
-                }
+                $claims['organizations'] = $organizations;
             }
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Support;
 
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\GrantType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
@@ -28,13 +29,11 @@ class ClientSettingsRules
     {
         foreach ($grantTypes as $grant) {
             $known = GrantType::tryFrom($grant);
-
             if ($known === null) {
-                throw InvalidClientMetadata::metadata("grant_type not supported: {$grant}");
+                throw InvalidClientMetadata::metadata("grant_type not supported: {$grant}")->withSourceMessage(new SourceMessage('grant_type not supported: :grant', ['grant' => $grant]));
             }
-
             if ($known->requiresConfidentialClient() && $type !== ClientType::Confidential) {
-                throw InvalidClientMetadata::metadata("grant_type {$grant} requires a confidential client");
+                throw InvalidClientMetadata::metadata("grant_type {$grant} requires a confidential client")->withSourceMessage(new SourceMessage('grant_type :grant requires a confidential client', ['grant' => $grant]));
             }
         }
     }
@@ -52,13 +51,11 @@ class ClientSettingsRules
         if ($method === null) {
             return;
         }
-
         if (($method === TokenEndpointAuthMethod::None) !== ($type === ClientType::Public)) {
-            throw InvalidClientMetadata::metadata("token_endpoint_auth_method {$method->value} does not match a {$type->value} client");
+            throw InvalidClientMetadata::metadata("token_endpoint_auth_method {$method->value} does not match a {$type->value} client")->withSourceMessage(new SourceMessage('token_endpoint_auth_method :value1 does not match a :value2 client', ['value1' => $method->value, 'value2' => $type->value]));
         }
-
         if (($method === TokenEndpointAuthMethod::PrivateKeyJwt) !== ($jwks !== null)) {
-            throw InvalidClientMetadata::metadata('token_endpoint_auth_method "private_key_jwt" and a registered JWK Set go together: one was given without the other');
+            throw InvalidClientMetadata::metadata('token_endpoint_auth_method "private_key_jwt" and a registered JWK Set go together: one was given without the other')->withSourceMessage(new SourceMessage('token_endpoint_auth_method "private_key_jwt" and a registered JWK Set go together: one was given without the other', []));
         }
     }
 
@@ -75,23 +72,18 @@ class ClientSettingsRules
     {
         foreach ($uris as $uri) {
             $parts = parse_url($uri);
-
             if ($parts === false || ! isset($parts['scheme'])) {
-                throw InvalidClientMetadata::redirectUri("{$field}: not an absolute URI: {$uri}");
+                throw InvalidClientMetadata::redirectUri("{$field}: not an absolute URI: {$uri}")->withSourceMessage(new SourceMessage(':field: not an absolute URI: :uri', ['field' => $field, 'uri' => $uri]));
             }
-
             if (isset($parts['fragment'])) {
-                throw InvalidClientMetadata::redirectUri("{$field}: must not contain a fragment: {$uri}");
+                throw InvalidClientMetadata::redirectUri("{$field}: must not contain a fragment: {$uri}")->withSourceMessage(new SourceMessage(':field: must not contain a fragment: :uri', ['field' => $field, 'uri' => $uri]));
             }
-
             $scheme = strtolower($parts['scheme']);
-
             if (($scheme === 'http' || $scheme === 'https') && ! isset($parts['host'])) {
-                throw InvalidClientMetadata::redirectUri("{$field}: has no host: {$uri}");
+                throw InvalidClientMetadata::redirectUri("{$field}: has no host: {$uri}")->withSourceMessage(new SourceMessage(':field: has no host: :uri', ['field' => $field, 'uri' => $uri]));
             }
-
             if ($scheme !== 'http' && $scheme !== 'https' && ! str_contains($scheme, '.')) {
-                throw InvalidClientMetadata::redirectUri("{$field}: a custom scheme must be a reverse-domain name (e.g. com.example.app): {$uri}");
+                throw InvalidClientMetadata::redirectUri("{$field}: a custom scheme must be a reverse-domain name (e.g. com.example.app): {$uri}")->withSourceMessage(new SourceMessage(':field: a custom scheme must be a reverse-domain name (e.g. com.example.app): :uri', ['field' => $field, 'uri' => $uri]));
             }
         }
     }

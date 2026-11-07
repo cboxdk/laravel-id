@@ -36,6 +36,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $invited_by
  * @property Carbon $expires_at
  * @property Carbon|null $accepted_at
+ * @property string|null $accepted_by
+ * @property string|null $app_client_id
  */
 class Invitation extends Model implements EnvironmentOwned
 {

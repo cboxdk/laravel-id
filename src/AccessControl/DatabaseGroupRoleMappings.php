@@ -8,6 +8,7 @@ use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
 use Cbox\Id\AccessControl\Exceptions\GrantRefused;
+use Cbox\Id\AccessControl\Exceptions\UnknownRole;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
 use Cbox\Id\AccessControl\Models\Role;
 use Cbox\Id\AccessControl\Models\RoleAssignment;
@@ -60,13 +61,19 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
 
     public function unmap(string $organizationId, string $groupId, string $roleId): void
     {
+        $priorHolders = $this->stringIds(RoleAssignment::query()
+            ->where('organization_id', $organizationId)->where('role_id', $roleId)
+            ->where('source', GrantSource::Pushed->value)->pluck('user_id')->all());
         GroupRoleMapping::query()
             ->where('organization_id', $organizationId)
             ->where('group_id', $groupId)
             ->where('role_id', $roleId)
             ->delete();
 
-        $this->reconcileGroup($groupId);
+        $this->reconcileGroup($groupId, $organizationId);
+        foreach ($priorHolders as $userId) {
+            $this->reconcileUser($organizationId, $userId);
+        }
     }
 
     public function forOrganization(string $organizationId): array
@@ -79,6 +86,16 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
     }
 
     public function reconcileUser(string $organizationId, string $userId): void
+    {
+        DB::transaction(function () use ($organizationId, $userId): void {
+            // Snapshot and revoke under the same subject lock as manual grants.
+            // Otherwise a stale pushed snapshot can revoke a newly manual grant.
+            RoleGrantLock::forSubject($userId);
+            $this->reconcileUserLocked($organizationId, $userId);
+        });
+    }
+
+    private function reconcileUserLocked(string $organizationId, string $userId): void
     {
         $memberGroupIds = $this->groupIdsForUser($organizationId, $userId);
 
@@ -102,8 +119,6 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
         // removes the mappings with the role, so reaching this is already a repair; the
         // roles simply drop out of the desired set, and anything still held via the
         // directory for them is unassigned below, which is the correct end state.
-        $mappedRoleIds = $this->assignableOnly($organizationId, $mappedRoleIds);
-
         // Roles they currently hold VIA the directory (pushed only — manual/system
         // grants are the admin's, never reconciled away).
         $currentPushed = $this->stringIds(RoleAssignment::query()
@@ -113,9 +128,28 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
             ->pluck('role_id')
             ->all());
 
+        // Different subjects can share role rows. Lock the complete role set in
+        // one order before any nested grant/revoke transaction retains those locks.
+        $roleIds = array_values(array_unique([...$mappedRoleIds, ...$currentPushed]));
+        sort($roleIds);
+        Role::query()->whereIn('id', $roleIds)->orderBy('id')->lockForUpdate()->get();
+        $mappedRoleIds = $this->assignableOnly($organizationId, $mappedRoleIds);
+        sort($mappedRoleIds);
+        sort($currentPushed);
+
+        // Remove obsolete pushed grants first: replacing conflicting A with B
+        // must not withhold B merely because this same reconciliation still holds A.
+        foreach (array_diff($currentPushed, $mappedRoleIds) as $roleId) {
+            $this->roles->unassign($organizationId, $userId, $roleId);
+        }
+
         foreach (array_diff($mappedRoleIds, $currentPushed) as $roleId) {
             try {
-                $this->roles->assign($organizationId, $userId, $roleId, GrantSource::Pushed);
+                $this->roles->assignAsTenant($organizationId, $userId, $roleId, GrantSource::Pushed);
+            } catch (UnknownRole) {
+                // A definition may have changed after the snapshot. Refuse this
+                // grant without preventing unrelated stale grants being withdrawn.
+                continue;
             } catch (GrantRefused $refused) {
                 // A conflict rule vetoed this one. Skip it and keep going: one person's
                 // upstream group membership producing a forbidden pair must not abandon
@@ -132,9 +166,6 @@ class DatabaseGroupRoleMappings implements GroupRoleMappings
             }
         }
 
-        foreach (array_diff($currentPushed, $mappedRoleIds) as $roleId) {
-            $this->roles->unassign($organizationId, $userId, $roleId);
-        }
     }
 
     public function reconcileGroup(string $groupId, ?string $organizationId = null): void

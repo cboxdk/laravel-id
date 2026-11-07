@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
@@ -70,49 +71,29 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     /** The grants an `mcp`-mode registration may hold: the code flow and its refresh. */
     private const MCP_GRANT_TYPES = ['authorization_code', 'refresh_token'];
 
-    public function __construct(
-        private readonly ClientRegistry $clients,
-        private readonly Apis $apis,
-        private readonly ClientSecretStore $secrets,
-        private readonly ClientAudit $audit,
-        private readonly SelfRegisteredScopes $selfRegistered,
-    ) {}
+    public function __construct(private readonly ClientRegistry $clients, private readonly Apis $apis, private readonly ClientSecretStore $secrets, private readonly ClientAudit $audit, private readonly SelfRegisteredScopes $selfRegistered) {}
 
     public function validate(array $request): ClientMetadata
     {
         $mcp = config('cbox-id.oauth.dynamic_registration.mode') === 'mcp';
-
         $authMethod = $this->authMethod($request, $mcp);
         $grantTypes = $mcp ? $this->mcpGrantTypes($request) : $this->grantTypes($request);
         $responseTypes = $this->responseTypes($request, $grantTypes);
         $redirectUris = $this->redirectUris($request, $grantTypes, $mcp);
-
         if ($mcp && isset($request['backchannel_logout_uri'])) {
-            throw InvalidClientMetadata::metadata('backchannel_logout_uri is not accepted for an MCP client registration');
+            throw InvalidClientMetadata::metadata('backchannel_logout_uri is not accepted for an MCP client registration')->withSourceMessage(new SourceMessage('backchannel_logout_uri is not accepted for an MCP client registration', []));
         }
-
         // A client that authenticates with a secret cannot be public, and a
         // public client cannot use client_credentials (it has no secret to prove).
         if ($authMethod === 'none' && in_array('client_credentials', $grantTypes, true)) {
-            throw InvalidClientMetadata::metadata('client_credentials requires a confidential client (token_endpoint_auth_method must not be "none")');
+            throw InvalidClientMetadata::metadata('client_credentials requires a confidential client (token_endpoint_auth_method must not be "none")')->withSourceMessage(new SourceMessage('client_credentials requires a confidential client (token_endpoint_auth_method must not be "none")', []));
         }
-
         // The same grant rules the registry applies, checked HERE too because an RFC 7592
         // update never passes through the registry's register(): token exchange on a
         // public client would otherwise be refused on registration and accepted on update.
         ClientSettingsRules::assertGrants($grantTypes, $authMethod === 'none' ? ClientType::Public : ClientType::Confidential);
 
-        return new ClientMetadata(
-            clientName: $this->clientName($request),
-            tokenEndpointAuthMethod: $authMethod,
-            redirectUris: $redirectUris,
-            grantTypes: $grantTypes,
-            responseTypes: $responseTypes,
-            scopes: $mcp ? $this->selfRegistered->narrow($this->requestedScopes($request), in_array('refresh_token', $grantTypes, true)) : $this->scopes($request),
-            jwks: $this->jwks($request, $authMethod),
-            backchannelLogoutUri: $this->backchannelLogoutUri($request),
-            backchannelLogoutSessionRequired: $this->backchannelLogoutSessionRequired($request),
-        );
+        return new ClientMetadata(clientName: $this->clientName($request), tokenEndpointAuthMethod: $authMethod, redirectUris: $redirectUris, grantTypes: $grantTypes, responseTypes: $responseTypes, scopes: $mcp ? $this->selfRegistered->narrow($this->requestedScopes($request), in_array('refresh_token', $grantTypes, true)) : $this->scopes($request), jwks: $this->jwks($request, $authMethod), backchannelLogoutUri: $this->backchannelLogoutUri($request), backchannelLogoutSessionRequired: $this->backchannelLogoutSessionRequired($request));
     }
 
     public function register(ClientMetadata $metadata): DynamicRegistration
@@ -143,14 +124,10 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // telling it to use the latter.
             tokenEndpointAuthMethod: $metadata->tokenEndpointAuthMethod(),
             backchannelLogoutUri: $metadata->backchannelLogoutUri,
-            backchannelLogoutSessionRequired: $metadata->backchannelLogoutSessionRequired,
+            backchannelLogoutSessionRequired: $metadata->backchannelLogoutSessionRequired
         ));
-
         $registrationToken = 'reg_'.bin2hex(random_bytes(32));
-
-        $registered->client->forceFill([
-            'registration_access_token_hash' => hash('sha256', $registrationToken),
-        ])->save();
+        $registered->client->forceFill(['registration_access_token_hash' => hash('sha256', $registrationToken)])->save();
 
         return new DynamicRegistration($registered->client, $registered->secret, $registrationToken);
     }
@@ -159,7 +136,6 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $client = $this->clients->byClientId($clientId);
         $hasToken = $client !== null && $client->registration_access_token_hash !== null;
-
         // Compare against a fixed dummy when the client or its token hash is
         // absent, so a caller can't distinguish "no such client" from "wrong
         // token" by timing.
@@ -173,7 +149,6 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         return DB::transaction(function () use ($client, $metadata): UpdatedRegistration {
             $before = ClientBlueprint::fromClient($client)->toArray();
-
             $client->forceFill([
                 'name' => $metadata->clientName,
                 'type' => $metadata->isPublic() ? ClientType::Public : ClientType::Confidential,
@@ -192,7 +167,6 @@ class DynamicClientRegistrar implements DynamicClientRegistration
                 'backchannel_logout_uri' => $metadata->backchannelLogoutUri,
                 'backchannel_logout_session_required' => $metadata->backchannelLogoutSessionRequired,
             ])->save();
-
             // A CLIENT THAT ARRIVES AT A SECRET METHOD MUST LEAVE WITH A SECRET.
             //
             // A client that had moved to `private_key_jwt` had its secrets cleared, so
@@ -200,7 +174,6 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             // authenticate, and nothing in the response saying why. It is minted a FRESH
             // one — the retired secret is never resurrected.
             $minted = null;
-
             if ($metadata->usesASharedSecret()) {
                 if (! $this->secrets->hasLive($client)) {
                     $minted = $this->secrets->issue($client)->secret->plaintext;
@@ -218,21 +191,14 @@ class DynamicClientRegistrar implements DynamicClientRegistration
                 // it has retired.
                 $this->secrets->revokeAll($client);
             }
-
             $after = ClientBlueprint::fromClient($client)->toArray();
             $changes = [];
-
             foreach ($after as $key => $value) {
                 if ($before[$key] !== $value) {
                     $changes[$key] = ['from' => $before[$key], 'to' => $value];
                 }
             }
-
-            $this->audit->record(ClientAudit::UPDATED, $client, AuditActor::service($client->client_id), [
-                'source' => 'dynamic_registration',
-                'changes' => $changes,
-                'secret_issued' => $minted !== null,
-            ]);
+            $this->audit->record(ClientAudit::UPDATED, $client, AuditActor::service($client->client_id), ['source' => 'dynamic_registration', 'changes' => $changes, 'secret_issued' => $minted !== null]);
 
             return new UpdatedRegistration($client, $minted);
         });
@@ -263,15 +229,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         // MCP profile, where a public client is the only kind there is, so asking for
         // nothing means `none` rather than a refusal.
         $method = $request['token_endpoint_auth_method'] ?? ($mcp ? 'none' : 'client_secret_basic');
-
         if (! is_string($method) || ! in_array($method, self::AUTH_METHODS, true)) {
-            throw InvalidClientMetadata::metadata('unsupported token_endpoint_auth_method');
+            throw InvalidClientMetadata::metadata('unsupported token_endpoint_auth_method')->withSourceMessage(new SourceMessage('unsupported token_endpoint_auth_method', []));
         }
-
         // A secret handed to whoever reached an open endpoint authenticates nothing; a
         // public client with PKCE is the honest shape of an anonymous registrant.
         if ($mcp && $method !== 'none') {
-            throw InvalidClientMetadata::metadata('this server registers public clients only: token_endpoint_auth_method must be "none"');
+            throw InvalidClientMetadata::metadata('this server registers public clients only: token_endpoint_auth_method must be "none"')->withSourceMessage(new SourceMessage('this server registers public clients only: token_endpoint_auth_method must be "none"', []));
         }
 
         return $method;
@@ -288,15 +252,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $requested = $this->stringList($request['grant_types'] ?? null);
         $requested = $requested === [] ? self::MCP_GRANT_TYPES : array_values(array_unique($requested));
-
         foreach ($requested as $grant) {
             if (! in_array($grant, self::MCP_GRANT_TYPES, true) || ! in_array($grant, $this->configList('allowed_grant_types'), true)) {
-                throw InvalidClientMetadata::metadata("grant_type not permitted: {$grant}");
+                throw InvalidClientMetadata::metadata("grant_type not permitted: {$grant}")->withSourceMessage(new SourceMessage('grant_type not permitted: :grant', ['grant' => $grant]));
             }
         }
-
         if (! in_array('authorization_code', $requested, true)) {
-            throw InvalidClientMetadata::metadata('an MCP client registration needs the authorization_code grant');
+            throw InvalidClientMetadata::metadata('an MCP client registration needs the authorization_code grant')->withSourceMessage(new SourceMessage('an MCP client registration needs the authorization_code grant', []));
         }
 
         return $requested;
@@ -312,7 +274,6 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     private function requestedScopes(array $request): ?array
     {
         $raw = $request['scope'] ?? null;
-
         if (! is_string($raw) || trim($raw) === '') {
             return null;
         }
@@ -338,26 +299,23 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     private function jwks(array $request, string $authMethod): ?array
     {
         $jwks = $request['jwks'] ?? null;
-
         if (isset($request['jwks_uri'])) {
-            throw InvalidClientMetadata::metadata('jwks_uri is not supported here — register the key set inline as "jwks"');
+            throw InvalidClientMetadata::metadata('jwks_uri is not supported here — register the key set inline as "jwks"')->withSourceMessage(new SourceMessage('jwks_uri is not supported here — register the key set inline as "jwks"', []));
         }
-
         if ($authMethod !== 'private_key_jwt') {
             // Keys on a client that authenticates some other way would be stored and never
             // consulted. Refusing says which of the two the registrant got wrong.
             if ($jwks !== null) {
-                throw InvalidClientMetadata::metadata('jwks is only accepted with token_endpoint_auth_method "private_key_jwt"');
+                throw InvalidClientMetadata::metadata('jwks is only accepted with token_endpoint_auth_method "private_key_jwt"')->withSourceMessage(new SourceMessage('jwks is only accepted with token_endpoint_auth_method "private_key_jwt"', []));
             }
 
             return null;
         }
-
         // A private_key_jwt client with no keys can never authenticate — the registry
         // issues it no secret either, so registering one mints a credential-less client
         // that 401s forever.
         if (! is_array($jwks) || ! isset($jwks['keys']) || ! is_array($jwks['keys']) || $jwks['keys'] === []) {
-            throw InvalidClientMetadata::metadata('token_endpoint_auth_method "private_key_jwt" requires a non-empty "jwks" key set');
+            throw InvalidClientMetadata::metadata('token_endpoint_auth_method "private_key_jwt" requires a non-empty "jwks" key set')->withSourceMessage(new SourceMessage('token_endpoint_auth_method "private_key_jwt" requires a non-empty "jwks" key set', []));
         }
 
         /** @var array<string, mixed> $jwks */
@@ -374,15 +332,12 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     private function backchannelLogoutUri(array $request): ?string
     {
         $uri = $request['backchannel_logout_uri'] ?? null;
-
         if ($uri === null) {
             return null;
         }
-
         if (! is_string($uri) || $uri === '') {
-            throw InvalidClientMetadata::metadata('backchannel_logout_uri must be a non-empty string');
+            throw InvalidClientMetadata::metadata('backchannel_logout_uri must be a non-empty string')->withSourceMessage(new SourceMessage('backchannel_logout_uri must be a non-empty string', []));
         }
-
         BackchannelLogoutUri::assertValid($uri);
 
         return $uri;
@@ -394,15 +349,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     private function backchannelLogoutSessionRequired(array $request): bool
     {
         $required = $request['backchannel_logout_session_required'] ?? false;
-
         if (! is_bool($required)) {
-            throw InvalidClientMetadata::metadata('backchannel_logout_session_required must be a boolean');
+            throw InvalidClientMetadata::metadata('backchannel_logout_session_required must be a boolean')->withSourceMessage(new SourceMessage('backchannel_logout_session_required must be a boolean', []));
         }
-
         // Without a URI there is nothing for the requirement to apply to — refused, so a
         // registrant who meant to send both finds out now rather than at the first logout.
         if ($required && ! isset($request['backchannel_logout_uri'])) {
-            throw InvalidClientMetadata::metadata('backchannel_logout_session_required needs a backchannel_logout_uri');
+            throw InvalidClientMetadata::metadata('backchannel_logout_session_required needs a backchannel_logout_uri')->withSourceMessage(new SourceMessage('backchannel_logout_session_required needs a backchannel_logout_uri', []));
         }
 
         return $required;
@@ -416,12 +369,10 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $requested = $this->stringList($request['grant_types'] ?? null);
         $requested = $requested === [] ? ['authorization_code'] : $requested;
-
         $allowed = $this->configList('allowed_grant_types');
-
         foreach ($requested as $grant) {
             if (! in_array($grant, $allowed, true)) {
-                throw InvalidClientMetadata::metadata("grant_type not permitted: {$grant}");
+                throw InvalidClientMetadata::metadata("grant_type not permitted: {$grant}")->withSourceMessage(new SourceMessage('grant_type not permitted: :grant', ['grant' => $grant]));
             }
         }
 
@@ -437,13 +388,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $requested = $this->stringList($request['response_types'] ?? null);
         $requested = $requested === [] ? [] : $requested;
-
         foreach ($requested as $type) {
             if ($type !== 'code') {
-                throw InvalidClientMetadata::metadata("response_type not supported: {$type}");
+                throw InvalidClientMetadata::metadata("response_type not supported: {$type}")->withSourceMessage(new SourceMessage('response_type not supported: :type', ['type' => $type]));
             }
         }
-
         // The authorization_code grant implies the "code" response type.
         if (in_array('authorization_code', $grantTypes, true)) {
             return ['code'];
@@ -461,16 +410,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $uris = $this->stringList($request['redirect_uris'] ?? null);
         $needsRedirect = in_array('authorization_code', $grantTypes, true);
-
         if ($needsRedirect && $uris === []) {
-            throw InvalidClientMetadata::redirectUri('redirect_uris is required for the authorization_code grant');
+            throw InvalidClientMetadata::redirectUri('redirect_uris is required for the authorization_code grant')->withSourceMessage(new SourceMessage('redirect_uris is required for the authorization_code grant', []));
         }
-
         foreach ($uris as $uri) {
             if ($mcp && ! WebRedirectUri::isValid($uri)) {
-                throw InvalidClientMetadata::redirectUri("redirect_uri must use https, or http on a loopback host, with no fragment: {$uri}");
+                throw InvalidClientMetadata::redirectUri("redirect_uri must use https, or http on a loopback host, with no fragment: {$uri}")->withSourceMessage(new SourceMessage('redirect_uri must use https, or http on a loopback host, with no fragment: :uri', ['uri' => $uri]));
             }
-
             if (! $mcp) {
                 $this->assertRedirectUri($uri);
             }
@@ -482,18 +428,14 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     private function assertRedirectUri(string $uri): void
     {
         $parts = parse_url($uri);
-
         if ($parts === false || ! isset($parts['scheme'])) {
-            throw InvalidClientMetadata::redirectUri("redirect_uri is not an absolute URI: {$uri}");
+            throw InvalidClientMetadata::redirectUri("redirect_uri is not an absolute URI: {$uri}")->withSourceMessage(new SourceMessage('redirect_uri is not an absolute URI: :uri', ['uri' => $uri]));
         }
-
         // A fragment in a redirect URI is forbidden (RFC 6749 §3.1.2).
         if (isset($parts['fragment'])) {
-            throw InvalidClientMetadata::redirectUri("redirect_uri must not contain a fragment: {$uri}");
+            throw InvalidClientMetadata::redirectUri("redirect_uri must not contain a fragment: {$uri}")->withSourceMessage(new SourceMessage('redirect_uri must not contain a fragment: :uri', ['uri' => $uri]));
         }
-
         $scheme = strtolower($parts['scheme']);
-
         // A private-use ("custom") URI scheme is allowed for native apps
         // (RFC 8252 §7.1), in both the authority form (com.example.app://cb) and
         // the canonical path form (com.example.app:/cb) — the latter has no host,
@@ -507,32 +449,27 @@ class DynamicClientRegistrar implements DynamicClientRegistration
         // rendered a redirect_uri as a link.
         if ($scheme !== 'http' && $scheme !== 'https') {
             if (! str_contains($scheme, '.')) {
-                throw InvalidClientMetadata::redirectUri("redirect_uri custom scheme must be a reverse-domain name (e.g. com.example.app): {$uri}");
+                throw InvalidClientMetadata::redirectUri("redirect_uri custom scheme must be a reverse-domain name (e.g. com.example.app): {$uri}")->withSourceMessage(new SourceMessage('redirect_uri custom scheme must be a reverse-domain name (e.g. com.example.app): :uri', ['uri' => $uri]));
             }
 
             return;
         }
-
         // http(s) reserved schemes must carry a host: https everywhere, plain http
         // only for loopback (native/CLI/MCP clients, RFC 8252 §7.3).
         $host = isset($parts['host']) ? strtolower($parts['host']) : null;
         $isLoopback = in_array($host, ['localhost', '127.0.0.1', '::1'], true);
-
         if ($scheme === 'https' && $host !== null) {
             return;
         }
-
         if ($scheme === 'http' && $isLoopback) {
             return;
         }
-
         // A sandbox environment is for development, so it accepts plain http on any
         // host (e.g. http://app.test) — never permitted in production.
         if ($scheme === 'http' && $host !== null && ($this->environments()->current()?->isSandbox() ?? false)) {
             return;
         }
-
-        throw InvalidClientMetadata::redirectUri("redirect_uri must use https (or http on loopback): {$uri}");
+        throw InvalidClientMetadata::redirectUri("redirect_uri must use https (or http on loopback): {$uri}")->withSourceMessage(new SourceMessage('redirect_uri must use https (or http on loopback): :uri', ['uri' => $uri]));
     }
 
     /**
@@ -542,13 +479,9 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     private function scopes(array $request): array
     {
         $raw = $request['scope'] ?? '';
-        $requested = is_string($raw)
-            ? array_values(array_filter(explode(' ', $raw), static fn (string $s): bool => $s !== ''))
-            : [];
-
+        $requested = is_string($raw) ? array_values(array_filter(explode(' ', $raw), static fn (string $s): bool => $s !== '')) : [];
         // A reserved scope is never self-granted, whatever the allow-list says.
         $allowed = array_values(array_diff($this->configList('allowed_scopes'), ReservedScopes::all()));
-
         // A REGISTERED API SCOPE IS JUDGED BY ITS API, NOT BY THE ALLOW-LIST. A
         // self-registered client holds one only when the API is environment-owned and the
         // scope tenant-requestable — the same rule the model enforces on save and the
@@ -560,9 +493,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
         // RFC 7591 §2: the server MAY reduce the requested scopes. Drop the rest rather
         // than failing the whole registration — the response's `scope` says what was kept.
-        return array_values(array_filter($requested, static fn (string $s): bool => isset($registered[$s])
-            ? $registered[$s]->mayBeHeldBy($registrant)
-            : in_array($s, $allowed, true)));
+        return array_values(array_filter($requested, static fn (string $s): bool => isset($registered[$s]) ? $registered[$s]->mayBeHeldBy($registrant) : in_array($s, $allowed, true)));
     }
 
     /**

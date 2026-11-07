@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Kernel\Authorization\Schema;
 
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
 use RuntimeException;
 
 /**
@@ -12,4 +14,7 @@ use RuntimeException;
  *
  * @internal
  */
-final class SchemaSyntaxError extends RuntimeException {}
+final class SchemaSyntaxError extends RuntimeException implements HasSourceMessage
+{
+    use CarriesSourceMessage;
+}

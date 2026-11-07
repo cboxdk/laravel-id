@@ -54,3 +54,38 @@ A refresh re-mints the scopes and audience the original token was granted, never
 A resource server should check `iss`, the signature against the JWKS, `typ: at+jwt`, `exp`,
 that its own identifier is in `aud`, and the scopes or permissions it needs. A string `aud`
 and an array `aud` are both valid JWT; compare by membership.
+
+## Resource-server introspection
+
+A confidential client can introspect its own tokens at `/oauth/introspect`. A resource
+server accepting tokens minted to another client needs an explicit host-side grant:
+
+```php
+// config/cbox-id.php, within oauth.introspection:
+'resource_servers' => [
+    'registered-resource-client-id' => ['https://api.example.com'],
+],
+```
+
+The default is an empty map. Register the API audience and confidential client normally;
+then an operator grants only the exact audience that server owns. API-to-app RBAC linkage
+(`oauth_apis.client_id`) does not grant introspection access. This map is not a dynamic
+client-registration field. No wildcard, URI-prefix, issuer-audience or multi-audience
+matching is performed.
+
+The caller authenticates using its own confidential-client credentials and sends the
+original access token as `token`. A valid grant returns the normal introspection response,
+including the original `client_id`, subject, audience, token type and authentication
+context. The resource server must still check its audience, required scopes, caller
+integration delegation and current application permissions. A DPoP token's `cnf` must
+be enforced; an introspection grant does not convert it into an ordinary bearer.
+
+Cross-client introspection also checks current organization status and, for user tokens
+bound to an organization, active membership. Removed or suspended members and inactive
+organizations return only `{"active": false}`. Organization-owned resource clients cannot
+inspect another organization's token. Environment scoping and token revocation remain
+in force. Removing a configured grant stops subsequent cross-client introspection without
+revoking the original client's token. Own-token introspection behavior is unchanged.
+
+The `ResourceIntrospectionAccess` contract can be rebound by hosts that keep these
+explicit grants in another authoritative store.

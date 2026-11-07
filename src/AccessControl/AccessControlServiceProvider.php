@@ -11,6 +11,7 @@ use Cbox\Id\AccessControl\Contracts\GrantGuard;
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\ManifestFetcher;
 use Cbox\Id\AccessControl\Contracts\PermissionDecisions;
+use Cbox\Id\AccessControl\Contracts\RoleDefinitions;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Contracts\StaffAccess;
 use Cbox\Id\AccessControl\Erasure\RoleGrantsErasureStep;
@@ -65,6 +66,7 @@ class AccessControlServiceProvider extends ServiceProvider
         $this->app->singleton(AccessChecker::class, HierarchyAwareAccessChecker::class);
         $this->app->singleton(StaffAccess::class, DatabaseStaffAccess::class);
         $this->app->singleton(AppManifests::class, ManifestSyncService::class);
+        $this->app->singleton(RoleDefinitions::class, ManifestRoleDefinitions::class);
         $this->app->singleton(ManifestFetcher::class, HttpManifestFetcher::class);
         $this->app->singleton(GroupRoleMappings::class, DatabaseGroupRoleMappings::class);
     }

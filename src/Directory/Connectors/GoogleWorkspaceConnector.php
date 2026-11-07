@@ -10,6 +10,7 @@ use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
 use Cbox\Id\Directory\Support\JsonObjectList;
 use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Firebase\JWT\JWT;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -41,33 +42,20 @@ class GoogleWorkspaceConnector implements DirectoryConnector
     public function fetchUsers(array $credentials): iterable
     {
         $token = $this->accessToken($credentials);
-        $customer = is_string($credentials['customer_id'] ?? null) && $credentials['customer_id'] !== ''
-            ? $credentials['customer_id']
-            : 'my_customer';
-
+        $customer = is_string($credentials['customer_id'] ?? null) && $credentials['customer_id'] !== '' ? $credentials['customer_id'] : 'my_customer';
         $pageToken = null;
-
         do {
-            $response = Http::withToken($token)->acceptJson()->get(self::DIRECTORY_URL, array_filter([
-                'customer' => $customer,
-                'maxResults' => 200,
-                'pageToken' => $pageToken,
-            ], fn ($v) => $v !== null));
-
+            $response = Http::withToken($token)->acceptJson()->get(self::DIRECTORY_URL, array_filter(['customer' => $customer, 'maxResults' => 200, 'pageToken' => $pageToken], fn ($v) => $v !== null));
             if ($response->failed()) {
-                throw DirectoryConnectionFailed::make('Google Workspace', 'Directory users request failed ('.$response->status().').');
+                throw DirectoryConnectionFailed::make('Google Workspace', 'Directory users request failed ('.$response->status().').')->withSourceMessage(new SourceMessage('Directory sync with Google Workspace failed: Directory users request failed (:value1).', ['value1' => $response->status()]));
             }
-
             $users = JsonObjectList::from($response->json('users'));
-
             foreach ($users as $user) {
                 $scim = $this->toScimUser($user);
-
                 if ($scim !== null) {
                     yield $scim;
                 }
             }
-
             $next = $response->json('nextPageToken');
             $pageToken = is_string($next) && $next !== '' ? $next : null;
         } while ($pageToken !== null);
@@ -76,34 +64,21 @@ class GoogleWorkspaceConnector implements DirectoryConnector
     public function fetchGroups(array $credentials): iterable
     {
         $token = $this->accessToken($credentials);
-        $customer = is_string($credentials['customer_id'] ?? null) && $credentials['customer_id'] !== ''
-            ? $credentials['customer_id']
-            : 'my_customer';
-
+        $customer = is_string($credentials['customer_id'] ?? null) && $credentials['customer_id'] !== '' ? $credentials['customer_id'] : 'my_customer';
         $pageToken = null;
-
         do {
-            $response = Http::withToken($token)->acceptJson()->get(self::GROUPS_URL, array_filter([
-                'customer' => $customer,
-                'maxResults' => 200,
-                'pageToken' => $pageToken,
-            ], fn ($v) => $v !== null));
-
+            $response = Http::withToken($token)->acceptJson()->get(self::GROUPS_URL, array_filter(['customer' => $customer, 'maxResults' => 200, 'pageToken' => $pageToken], fn ($v) => $v !== null));
             if ($response->failed()) {
-                throw DirectoryConnectionFailed::make('Google Workspace', 'Directory groups request failed ('.$response->status().').');
+                throw DirectoryConnectionFailed::make('Google Workspace', 'Directory groups request failed ('.$response->status().').')->withSourceMessage(new SourceMessage('Directory sync with Google Workspace failed: Directory groups request failed (:value1).', ['value1' => $response->status()]));
             }
-
             $groups = JsonObjectList::from($response->json('groups'));
-
             foreach ($groups as $group) {
                 $id = $group['id'] ?? null;
-                $name = is_string($group['name'] ?? null) && $group['name'] !== '' ? $group['name'] : ($group['email'] ?? null);
-
+                $name = is_string($group['name'] ?? null) && $group['name'] !== '' ? $group['name'] : $group['email'] ?? null;
                 if (is_string($id) && $id !== '' && is_string($name) && $name !== '') {
                     yield new DirectoryGroupSnapshot($id, $name, $this->groupMembers($token, $id));
                 }
             }
-
             $next = $response->json('nextPageToken');
             $pageToken = is_string($next) && $next !== '' ? $next : null;
         } while ($pageToken !== null);
@@ -116,26 +91,18 @@ class GoogleWorkspaceConnector implements DirectoryConnector
     {
         $ids = [];
         $pageToken = null;
-
         do {
-            $response = Http::withToken($token)->acceptJson()->get(self::GROUPS_URL.'/'.$groupId.'/members', array_filter([
-                'maxResults' => 200,
-                'pageToken' => $pageToken,
-            ], fn ($v) => $v !== null));
-
+            $response = Http::withToken($token)->acceptJson()->get(self::GROUPS_URL.'/'.$groupId.'/members', array_filter(['maxResults' => 200, 'pageToken' => $pageToken], fn ($v) => $v !== null));
             // A partial membership is better than failing the whole sync.
             if ($response->failed()) {
                 break;
             }
-
             $members = JsonObjectList::from($response->json('members'));
-
             foreach ($members as $member) {
                 if (($member['type'] ?? null) === 'USER' && is_string($member['id'] ?? null)) {
                     $ids[] = $member['id'];
                 }
             }
-
             $next = $response->json('nextPageToken');
             $pageToken = is_string($next) && $next !== '' ? $next : null;
         } while ($pageToken !== null);
@@ -151,9 +118,7 @@ class GoogleWorkspaceConnector implements DirectoryConnector
             return false;
         }
 
-        return Http::withToken($token)->acceptJson()
-            ->get(self::DIRECTORY_URL, ['customer' => 'my_customer', 'maxResults' => 1])
-            ->successful();
+        return Http::withToken($token)->acceptJson()->get(self::DIRECTORY_URL, ['customer' => 'my_customer', 'maxResults' => 1])->successful();
     }
 
     /**
@@ -162,30 +127,16 @@ class GoogleWorkspaceConnector implements DirectoryConnector
     private function accessToken(array $credentials): string
     {
         $now = time();
-
         try {
             // A signed JWT asserting the service account, impersonating the admin.
-            $assertion = JWT::encode([
-                'iss' => $this->string($credentials, 'client_email'),
-                'sub' => $this->string($credentials, 'admin_email'),
-                'scope' => self::SCOPE,
-                'aud' => self::TOKEN_URL,
-                'iat' => $now,
-                'exp' => $now + 3600,
-            ], $this->string($credentials, 'private_key'), 'RS256');
+            $assertion = JWT::encode(['iss' => $this->string($credentials, 'client_email'), 'sub' => $this->string($credentials, 'admin_email'), 'scope' => self::SCOPE, 'aud' => self::TOKEN_URL, 'iat' => $now, 'exp' => $now + 3600], $this->string($credentials, 'private_key'), 'RS256');
         } catch (Throwable $e) {
-            throw DirectoryConnectionFailed::make('Google Workspace', 'Could not sign the service-account assertion: '.$e->getMessage());
+            throw DirectoryConnectionFailed::make('Google Workspace', 'Could not sign the service-account assertion: '.$e->getMessage())->withSourceMessage(new SourceMessage('Directory sync with Google Workspace failed: Could not sign the service-account assertion: :value1', ['value1' => $e->getMessage()]));
         }
-
-        $response = Http::asForm()->post(self::TOKEN_URL, [
-            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-            'assertion' => $assertion,
-        ]);
-
+        $response = Http::asForm()->post(self::TOKEN_URL, ['grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion' => $assertion]);
         $token = $response->json('access_token');
-
         if (! $response->successful() || ! is_string($token) || $token === '') {
-            throw DirectoryConnectionFailed::make('Google Workspace', 'Could not obtain an Admin SDK access token.');
+            throw DirectoryConnectionFailed::make('Google Workspace', 'Could not obtain an Admin SDK access token.')->withSourceMessage(new SourceMessage('Directory sync with Google Workspace failed: Could not obtain an Admin SDK access token.', []));
         }
 
         return $token;
@@ -198,22 +149,13 @@ class GoogleWorkspaceConnector implements DirectoryConnector
     {
         $id = $user['id'] ?? null;
         $email = $user['primaryEmail'] ?? null;
-
         if (! is_string($id) || $id === '' || ! is_string($email) || $email === '') {
             return null;
         }
-
         $name = $user['name'] ?? null;
         $displayName = is_array($name) && is_string($name['fullName'] ?? null) ? $name['fullName'] : null;
 
-        return new ScimUser(
-            externalId: $id,
-            userName: $email,
-            email: $email,
-            displayName: $displayName,
-            active: ($user['suspended'] ?? false) !== true,
-            raw: $user,
-        );
+        return new ScimUser(externalId: $id, userName: $email, email: $email, displayName: $displayName, active: ($user['suspended'] ?? false) !== true, raw: $user);
     }
 
     /**
@@ -222,9 +164,8 @@ class GoogleWorkspaceConnector implements DirectoryConnector
     private function string(array $credentials, string $key): string
     {
         $value = $credentials[$key] ?? null;
-
         if (! is_string($value) || $value === '') {
-            throw DirectoryConnectionFailed::make('Google Workspace', "Missing credential: {$key}.");
+            throw DirectoryConnectionFailed::make('Google Workspace', "Missing credential: {$key}.")->withSourceMessage(new SourceMessage('Directory sync with Google Workspace failed: Missing credential: :key.', ['key' => $key]));
         }
 
         return $value;

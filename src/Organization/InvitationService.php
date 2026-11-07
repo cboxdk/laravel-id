@@ -31,7 +31,7 @@ class InvitationService implements Invitations
         private readonly AuditLog $audit,
     ) {}
 
-    public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null): PendingInvitation
+    public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null, ?string $clientId = null): PendingInvitation
     {
         $token = 'inv_'.bin2hex(random_bytes(32));
 
@@ -41,6 +41,7 @@ class InvitationService implements Invitations
         $superseded = Invitation::query()
             ->where('organization_id', $organizationId)
             ->where('email', $email)
+            ->where('app_client_id', $clientId)
             ->where('status', InvitationStatus::Pending->value)
             ->get();
 
@@ -57,6 +58,7 @@ class InvitationService implements Invitations
             'token_hash' => hash('sha256', $token),
             'status' => InvitationStatus::Pending,
             'invited_by' => $invitedBy,
+            'app_client_id' => $clientId,
             'expires_at' => now()->addDays(self::TTL_DAYS),
         ]);
         $invitation->save();
@@ -105,6 +107,7 @@ class InvitationService implements Invitations
             $invitation->forceFill([
                 'status' => InvitationStatus::Accepted,
                 'accepted_at' => now(),
+                'accepted_by' => $subjectId,
             ])->save();
 
             $this->events->emit(new DomainEvent('organization.invitation_accepted', ['user_id' => $subjectId], $invitation->organization_id));

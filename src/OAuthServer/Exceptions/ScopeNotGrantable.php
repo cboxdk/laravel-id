@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Exceptions;
 
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\OAuthServer\ValueObjects\RegisteredScope;
 use InvalidArgumentException;
 
@@ -17,8 +20,10 @@ use InvalidArgumentException;
  *
  * {@see RegisteredScope::mayBeHeldBy()} is the rule.
  */
-class ScopeNotGrantable extends InvalidArgumentException
+class ScopeNotGrantable extends InvalidArgumentException implements HasSourceMessage
 {
+    use CarriesSourceMessage;
+
     /**
      * @param  list<string>  $scopes  the refused scope keys
      */
@@ -32,11 +37,6 @@ class ScopeNotGrantable extends InvalidArgumentException
      */
     public static function forScopes(array $scopes): self
     {
-        return new self($scopes, sprintf(
-            'The scope(s) %s belong to a registered API this client may not hold. A client '
-            .'owned by an organization can hold scopes of its own organization\'s APIs, and the '
-            .'tenant-requestable scopes of environment-owned APIs.',
-            implode(' ', $scopes),
-        ));
+        return (new self($scopes, sprintf('The scope(s) %s belong to a registered API this client may not hold. A client '.'owned by an organization can hold scopes of its own organization\'s APIs, and the '.'tenant-requestable scopes of environment-owned APIs.', implode(' ', $scopes))))->withSourceMessage(new SourceMessage('The scope(s) :value1 belong to a registered API this client may not hold. A client owned by an organization can hold scopes of its own organization\'s APIs, and the tenant-requestable scopes of environment-owned APIs.', ['value1' => implode(' ', $scopes)]));
     }
 }

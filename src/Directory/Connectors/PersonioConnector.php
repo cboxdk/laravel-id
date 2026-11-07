@@ -12,6 +12,7 @@ use Cbox\Id\Directory\Hris\ValueObjects\HrisDepartment;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisEmployee;
 use Cbox\Id\Directory\Hris\ValueObjects\HrisSyncOptions;
 use Cbox\Id\Directory\Support\JsonObjectList;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
@@ -49,19 +50,12 @@ class PersonioConnector extends HrisConnector
     public function fetchEmployees(array $credentials, HrisSyncOptions $options): iterable
     {
         $client = $this->client($credentials);
-
-        foreach ($this->collection($client, '/persons', ['limit' => 50], 'The persons request') as $person) {
+        foreach ($this->collection($client, '/persons', ['limit' => 50], new SourceMessage('The persons request')) as $person) {
             $id = HrisValues::string($person, 'id');
-
             if ($id === null) {
                 continue;
             }
-
-            $employments = iterator_to_array(
-                $this->collection($client, '/persons/'.rawurlencode($id).'/employments', ['limit' => 50], 'The employments request'),
-                false,
-            );
-
+            $employments = iterator_to_array($this->collection($client, '/persons/'.rawurlencode($id).'/employments', ['limit' => 50], new SourceMessage('The employments request')), false);
             yield $this->employee($id, $person, self::current($employments), $options->customAttributes);
         }
     }
@@ -69,11 +63,9 @@ class PersonioConnector extends HrisConnector
     public function fetchDepartments(array $credentials, HrisSyncOptions $options): iterable
     {
         $client = $this->client($credentials);
-
-        foreach ($this->collection($client, '/org-units', ['type' => 'department', 'limit' => 100], 'The org-units request') as $unit) {
+        foreach ($this->collection($client, '/org-units', ['type' => 'department', 'limit' => 100], new SourceMessage('The org-units request')) as $unit) {
             $id = HrisValues::string($unit, 'id');
             $name = HrisValues::string($unit, 'name');
-
             if ($id !== null && $name !== null) {
                 yield new HrisDepartment($id, $name, HrisValues::string($unit, 'parent_id'));
             }
@@ -83,8 +75,7 @@ class PersonioConnector extends HrisConnector
     public function probe(array $credentials): void
     {
         $client = $this->client($credentials);
-
-        $this->http()->send(fn () => $client()->get(self::BASE.'/persons', ['limit' => 1]), 'The persons request');
+        $this->http()->send(fn () => $client()->get(self::BASE.'/persons', ['limit' => 1]), new SourceMessage('The persons request'));
     }
 
     /**
@@ -97,17 +88,10 @@ class PersonioConnector extends HrisConnector
     {
         $clientId = $this->credential($credentials, 'client_id');
         $secret = $this->credential($credentials, 'client_secret');
-
-        $response = $this->http()->send(fn () => Http::asForm()->acceptJson()->post(self::BASE.'/auth/token', [
-            'grant_type' => 'client_credentials',
-            'client_id' => $clientId,
-            'client_secret' => $secret,
-        ]), 'The token request');
-
+        $response = $this->http()->send(fn () => Http::asForm()->acceptJson()->post(self::BASE.'/auth/token', ['grant_type' => 'client_credentials', 'client_id' => $clientId, 'client_secret' => $secret]), new SourceMessage('The token request'));
         $token = $response->json('access_token');
-
         if (! is_string($token) || $token === '') {
-            throw $this->failure('Could not obtain an access token.');
+            throw $this->failure('Could not obtain an access token.')->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: Could not obtain an access token.', ['value1' => $this->name()]));
         }
 
         return static fn (): PendingRequest => Http::withToken($token)->acceptJson();
@@ -118,23 +102,17 @@ class PersonioConnector extends HrisConnector
      * @param  array<string, string|int>  $query
      * @return iterable<array<string, mixed>>
      */
-    private function collection(\Closure $client, string $path, array $query, string $what): iterable
+    private function collection(\Closure $client, string $path, array $query, string|SourceMessage $what): iterable
     {
         $url = self::BASE.$path;
         $params = $query;
-
         while ($url !== null) {
             $current = $url;
             $currentParams = $params;
             // A continuation link carries its own query; handing Guzzle an empty `query`
             // option would REPLACE it and fetch the first page forever.
-            $response = $this->http()->send(
-                fn () => $currentParams === [] ? $client()->get($current) : $client()->get($current, $currentParams),
-                $what,
-            );
-
+            $response = $this->http()->send(fn () => $currentParams === [] ? $client()->get($current) : $client()->get($current, $currentParams), $what);
             yield from JsonObjectList::from($response->json('_data'));
-
             $url = $this->pinned($response->json('_meta.links.next.href'), self::BASE);
             $params = [];
         }
@@ -164,40 +142,22 @@ class PersonioConnector extends HrisConnector
      */
     private function employee(string $id, array $person, array $employment, array $custom): HrisEmployee
     {
-        $terminated = HrisValues::date($employment, 'termination', 'termination_date')
-            ?? HrisValues::date($employment, 'termination', 'last_working_day');
-
+        $terminated = HrisValues::date($employment, 'termination', 'termination_date') ?? HrisValues::date($employment, 'termination', 'last_working_day');
         $status = match (strtoupper((string) (HrisValues::string($employment, 'status') ?? HrisValues::string($person, 'status')))) {
             'ONBOARDING' => EmploymentStatus::PreHire,
             'LEAVE' => EmploymentStatus::OnLeave,
             'INACTIVE' => $terminated !== null ? EmploymentStatus::Terminated : EmploymentStatus::Inactive,
             default => EmploymentStatus::Active,
         };
-
         $department = null;
-
         foreach (JsonObjectList::from($employment['org_units'] ?? null) as $unit) {
             if (HrisValues::string($unit, 'type') === 'department') {
                 $department = HrisValues::string($unit, 'id');
             }
         }
-
         $preferred = HrisValues::string($person, 'preferred_name');
 
-        return new HrisEmployee(
-            id: $id,
-            email: HrisValues::string($person, 'email'),
-            status: $status,
-            firstName: HrisValues::string($person, 'first_name'),
-            lastName: HrisValues::string($person, 'last_name'),
-            displayName: $preferred,
-            startDate: HrisValues::date($employment, 'employment_start_date'),
-            terminationDate: $terminated,
-            departmentId: $department,
-            managerId: HrisValues::string($employment, 'supervisor', 'id'),
-            jobTitle: HrisValues::string($employment, 'position', 'title'),
-            customAttributes: self::customAttributes($person, $custom),
-        );
+        return new HrisEmployee(id: $id, email: HrisValues::string($person, 'email'), status: $status, firstName: HrisValues::string($person, 'first_name'), lastName: HrisValues::string($person, 'last_name'), displayName: $preferred, startDate: HrisValues::date($employment, 'employment_start_date'), terminationDate: $terminated, departmentId: $department, managerId: HrisValues::string($employment, 'supervisor', 'id'), jobTitle: HrisValues::string($employment, 'position', 'title'), customAttributes: self::customAttributes($person, $custom));
     }
 
     /**
@@ -212,10 +172,8 @@ class PersonioConnector extends HrisConnector
     {
         $out = [];
         $attributes = JsonObjectList::from($person['custom_attributes'] ?? null);
-
         foreach ($names as $name) {
             $out[$name] = null;
-
             foreach ($attributes as $attribute) {
                 if (in_array($name, [HrisValues::string($attribute, 'id'), HrisValues::string($attribute, 'global_id'), HrisValues::string($attribute, 'label')], true)) {
                     $out[$name] = HrisValues::scalar($attribute['value'] ?? null);

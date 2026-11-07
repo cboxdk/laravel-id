@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Kernel\Authorization\Schema;
 
 use Cbox\Id\Kernel\Authorization\Exceptions\InvalidSchema;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * THE SCHEMA LANGUAGE — what a person writes to describe their authorization model.
@@ -38,7 +39,7 @@ use Cbox\Id\Kernel\Authorization\Exceptions\InvalidSchema;
 final class SchemaParser
 {
     /** A schema longer than this is refused before it is read. */
-    public const int MAX_LENGTH = 65_536;
+    public const int MAX_LENGTH = 65536;
 
     private const array KEYWORDS = ['type', 'relation', 'or', 'and', 'but', 'not', 'from'];
 
@@ -58,90 +59,69 @@ final class SchemaParser
     public function parse(string $source): AuthorizationSchema
     {
         if (strlen($source) > self::MAX_LENGTH) {
-            throw new InvalidSchema([new SchemaError(0, 'The schema is longer than '.self::MAX_LENGTH.' bytes.')]);
+            throw new InvalidSchema([new SchemaError(0, 'The schema is longer than '.self::MAX_LENGTH.' bytes.', source: new SourceMessage('The schema is longer than :value1 bytes.', ['value1' => self::MAX_LENGTH]))]);
         }
-
         $errors = [];
         /** @var array<string, int> $lines type => the line it is defined on */
         $lines = [];
         /** @var array<string, array<string, RelationDefinition>> $relations */
         $relations = [];
         $current = null;
-
         foreach (preg_split('/\r\n|\r|\n/', $source) ?: [] as $index => $raw) {
             $number = $index + 1;
             $text = trim(self::withoutComment($raw));
-
             if ($text === '') {
                 continue;
             }
-
             if (preg_match('/^type\s+(\S+)$/', $text, $match) === 1) {
                 $current = $match[1];
-
                 if (isset($lines[$current])) {
-                    $errors[] = new SchemaError($number, "`{$current}` is defined twice.");
+                    $errors[] = new SchemaError($number, "`{$current}` is defined twice.", source: new SourceMessage('`:current` is defined twice.', ['current' => $current]));
                     $current = null;
 
                     continue;
                 }
-
                 $lines[$current] = $number;
                 $relations[$current] = [];
 
                 continue;
             }
-
             if (preg_match('/^relation\s+([^\s:]+)\s*:\s*(.*)$/', $text, $match) === 1) {
                 if ($current === null) {
-                    $errors[] = new SchemaError($number, 'A relation must follow the `type` it belongs to.');
+                    $errors[] = new SchemaError($number, 'A relation must follow the `type` it belongs to.', source: new SourceMessage('A relation must follow the `type` it belongs to.', []));
 
                     continue;
                 }
-
                 $name = $match[1];
-
                 if (isset($relations[$current][$name])) {
-                    $errors[] = new SchemaError($number, "`{$name}` is defined twice on `{$current}`.");
+                    $errors[] = new SchemaError($number, "`{$name}` is defined twice on `{$current}`.", source: new SourceMessage('`:name` is defined twice on `:current`.', ['name' => $name, 'current' => $current]));
 
                     continue;
                 }
-
                 try {
                     $rewrite = $this->expression($match[2]);
                 } catch (SchemaSyntaxError $error) {
-                    $errors[] = new SchemaError($number, $error->getMessage());
+                    $errors[] = new SchemaError($number, $error->getMessage(), source: $error->sourceMessage());
 
                     continue;
                 }
-
                 $relations[$current][$name] = new RelationDefinition($name, $rewrite, $number);
 
                 continue;
             }
-
-            $errors[] = new SchemaError($number, str_starts_with($text, 'relation')
-                ? 'A relation is written `relation name: definition`.'
-                : 'Expected `type name` or `relation name: definition`.');
+            $errors[] = new SchemaError($number, str_starts_with($text, 'relation') ? 'A relation is written `relation name: definition`.' : 'Expected `type name` or `relation name: definition`.', source: str_starts_with($text, 'relation') ? new SourceMessage('A relation is written `relation name: definition`.', []) : new SourceMessage('Expected `type name` or `relation name: definition`.', []));
         }
-
         if ($lines === [] && $errors === []) {
-            $errors[] = new SchemaError(0, 'The schema defines no types.');
+            $errors[] = new SchemaError(0, 'The schema defines no types.', source: new SourceMessage('The schema defines no types.', []));
         }
-
         $definitions = [];
-
         foreach ($lines as $name => $line) {
             $definitions[$name] = new TypeDefinition($name, $relations[$name] ?? [], $line);
         }
-
         $schema = new AuthorizationSchema($definitions);
-
         $errors = [...$errors, ...$this->validator->validate($schema)];
-
         if ($errors !== []) {
             usort($errors, static fn (SchemaError $a, SchemaError $b): int => $a->line <=> $b->line);
-
             throw new InvalidSchema($errors);
         }
 
@@ -156,15 +136,12 @@ final class SchemaParser
         $this->position = 0;
         preg_match_all('/\[|\]|,|#|\(|\)|[^\s\[\],#()]+/', $text, $matches);
         $this->tokens = $matches[0];
-
         if ($this->tokens === []) {
-            throw new SchemaSyntaxError('The relation has no definition.');
+            throw (new SchemaSyntaxError('The relation has no definition.'))->withSourceMessage(new SourceMessage('The relation has no definition.', []));
         }
-
         $rewrite = $this->union();
-
         if ($this->peek() !== null) {
-            throw new SchemaSyntaxError("Unexpected `{$this->peek()}`.");
+            throw (new SchemaSyntaxError("Unexpected `{$this->peek()}`."))->withSourceMessage(new SourceMessage('Unexpected `:value1`.', ['value1' => $this->peek()]));
         }
 
         return $rewrite;
@@ -179,31 +156,25 @@ final class SchemaParser
     {
         $operands = [$this->operand()];
         $operator = null;
-
         while (in_array($this->peek(), ['or', 'and'], true)) {
             $word = (string) $this->next();
-
             if ($operator !== null && $word !== $operator) {
-                throw new SchemaSyntaxError('`or` and `and` cannot be mixed without parentheses.');
+                throw (new SchemaSyntaxError('`or` and `and` cannot be mixed without parentheses.'))->withSourceMessage(new SourceMessage('`or` and `and` cannot be mixed without parentheses.', []));
             }
-
             $operator = $word;
             $operands[] = $this->operand();
         }
-
         $node = match (true) {
             count($operands) === 1 => $operands[0],
             $operator === 'and' => new IntersectionOf($operands),
             default => new UnionOf($operands),
         };
-
         if ($this->peek() === 'but') {
             $this->next();
             $this->expect('not');
             $node = new ButNot($node, $this->operand());
-
             if ($this->peek() === 'but') {
-                throw new SchemaSyntaxError('Only one `but not` per expression — use parentheses for more.');
+                throw (new SchemaSyntaxError('Only one `but not` per expression — use parentheses for more.'))->withSourceMessage(new SourceMessage('Only one `but not` per expression — use parentheses for more.', []));
             }
         }
 
@@ -216,24 +187,19 @@ final class SchemaParser
     private function operand(): Rewrite
     {
         $token = $this->next();
-
         if ($token === null) {
-            throw new SchemaSyntaxError('The definition ends where an operand was expected.');
+            throw (new SchemaSyntaxError('The definition ends where an operand was expected.'))->withSourceMessage(new SourceMessage('The definition ends where an operand was expected.', []));
         }
-
         if ($token === '[') {
             return $this->directTypes();
         }
-
         if ($token === '(') {
             $inner = $this->union();
             $this->expect(')');
 
             return $inner;
         }
-
         $name = $this->name($token);
-
         if ($this->peek() === 'from') {
             $this->next();
             $tupleset = $this->name($this->next());
@@ -250,25 +216,20 @@ final class SchemaParser
     private function directTypes(): DirectlyRelated
     {
         $types = [];
-
         while (true) {
             $type = $this->name($this->next());
             $relation = null;
-
             if ($this->peek() === '#') {
                 $this->next();
                 $relation = $this->name($this->next());
             }
-
             $types[] = new DirectType($type, $relation);
             $separator = $this->next();
-
             if ($separator === ']') {
                 return new DirectlyRelated($types);
             }
-
             if ($separator !== ',') {
-                throw new SchemaSyntaxError('A list of types is written `[user, group#member]`.');
+                throw (new SchemaSyntaxError('A list of types is written `[user, group#member]`.'))->withSourceMessage(new SourceMessage('A list of types is written `[user, group#member]`.', []));
             }
         }
     }
@@ -279,11 +240,10 @@ final class SchemaParser
     private function name(?string $token): string
     {
         if ($token === null) {
-            throw new SchemaSyntaxError('The definition ends where a name was expected.');
+            throw (new SchemaSyntaxError('The definition ends where a name was expected.'))->withSourceMessage(new SourceMessage('The definition ends where a name was expected.', []));
         }
-
         if (in_array($token, self::KEYWORDS, true) || in_array($token, ['[', ']', ',', '#', '(', ')'], true)) {
-            throw new SchemaSyntaxError("Expected a name, found `{$token}`.");
+            throw (new SchemaSyntaxError("Expected a name, found `{$token}`."))->withSourceMessage(new SourceMessage('Expected a name, found `:token`.', ['token' => $token]));
         }
 
         return $token;
@@ -295,9 +255,8 @@ final class SchemaParser
     private function expect(string $token): void
     {
         $found = $this->next();
-
         if ($found !== $token) {
-            throw new SchemaSyntaxError("Expected `{$token}`".($found === null ? ' before the end of the line.' : ", found `{$found}`."));
+            throw (new SchemaSyntaxError("Expected `{$token}`".($found === null ? ' before the end of the line.' : ", found `{$found}`.")))->withSourceMessage($found === null ? new SourceMessage('Expected `:token` before the end of the line.', ['token' => $token]) : new SourceMessage('Expected `:token`, found `:found`.', ['token' => $token, 'found' => $found]));
         }
     }
 

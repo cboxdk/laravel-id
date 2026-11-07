@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Federation\Support;
 
 use Cbox\Id\Federation\Exceptions\UnsafeFederationUrl;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Cbox\Ssrf\Contracts\UrlGuard;
@@ -27,11 +28,10 @@ class SafeFederationUrl
         if (! UrlVerification::enforced('cbox-id.federation.verify_url')) {
             return;
         }
-
         try {
             app(UrlGuard::class)->assertSafe($url);
         } catch (BlockedUrl $e) {
-            throw UnsafeFederationUrl::make($e->getMessage());
+            throw UnsafeFederationUrl::make($e->getMessage())->withSourceMessage(new SourceMessage('Unsafe federation URL: :value1', ['value1' => $e->getMessage()]));
         }
     }
 
@@ -63,11 +63,10 @@ class SafeFederationUrl
             // four did not.
             return ['allow_redirects' => false];
         }
-
         try {
             return app(UrlGuard::class)->pinnedOptions($url);
         } catch (BlockedUrl $e) {
-            throw UnsafeFederationUrl::make($e->getMessage());
+            throw UnsafeFederationUrl::make($e->getMessage())->withSourceMessage(new SourceMessage('Unsafe federation URL: :value1', ['value1' => $e->getMessage()]));
         }
     }
 }

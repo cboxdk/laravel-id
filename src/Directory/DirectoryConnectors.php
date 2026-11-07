@@ -7,6 +7,7 @@ namespace Cbox\Id\Directory;
 use Cbox\Id\Directory\Contracts\DirectoryConnector;
 use Cbox\Id\Directory\Enums\DirectoryProvider;
 use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 
 /**
  * The registry of API-pull directory connectors, keyed by provider. Deny-by-default:
@@ -34,7 +35,6 @@ class DirectoryConnectors
 
     public function for(DirectoryProvider $provider): DirectoryConnector
     {
-        return $this->connectors[$provider->value]
-            ?? throw DirectoryConnectionFailed::make($provider->value, 'No connector is registered for this provider.');
+        return $this->connectors[$provider->value] ?? throw DirectoryConnectionFailed::make($provider->value, 'No connector is registered for this provider.')->withSourceMessage(new SourceMessage('Directory sync with :value1 failed: No connector is registered for this provider.', ['value1' => $provider->value]));
     }
 }

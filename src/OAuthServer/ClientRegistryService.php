@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer;
 
 use Carbon\CarbonImmutable;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
@@ -33,12 +34,9 @@ use Illuminate\Support\Str;
 class ClientRegistryService implements ClientRegistry
 {
     /** The rotation grace ceiling when none is configured: 30 days. */
-    private const DEFAULT_MAX_ROTATION_GRACE = 2_592_000;
+    private const DEFAULT_MAX_ROTATION_GRACE = 2592000;
 
-    public function __construct(
-        private readonly ClientSecretStore $secrets,
-        private readonly ClientAudit $audit,
-    ) {}
+    public function __construct(private readonly ClientSecretStore $secrets, private readonly ClientAudit $audit) {}
 
     public function register(NewClient $input, ?AuditActor $actor = null): RegisteredClient
     {
@@ -53,48 +51,28 @@ class ClientRegistryService implements ClientRegistry
         // all. RFC 7592 self-management handles that transition, minting and clearing
         // secrets as it goes; an administrator registers a new client.
         if ($settings->type !== $client->type) {
-            throw InvalidClientMetadata::metadata('client_type cannot be changed on an existing client; register a new one');
+            throw InvalidClientMetadata::metadata('client_type cannot be changed on an existing client; register a new one')->withSourceMessage(new SourceMessage('client_type cannot be changed on an existing client; register a new one', []));
         }
-
         if ($settings->tokenEndpointAuthMethod !== ClientBlueprint::fromClient($client)->tokenEndpointAuthMethod) {
-            throw InvalidClientMetadata::metadata('token_endpoint_auth_method cannot be changed here; register a new client');
+            throw InvalidClientMetadata::metadata('token_endpoint_auth_method cannot be changed here; register a new client')->withSourceMessage(new SourceMessage('token_endpoint_auth_method cannot be changed here; register a new client', []));
         }
-
         $settings->assertValid();
         $this->assertApiKeyPrefixFree($settings->apiKeyPrefix, $client);
-
         $before = ClientBlueprint::fromClient($client)->toArray();
         $after = $settings->toArray();
-
         $changes = [];
-
         foreach ($after as $key => $value) {
             if ($before[$key] !== $value) {
                 $changes[$key] = ['from' => $before[$key], 'to' => $value];
             }
         }
-
         if ($changes === []) {
             return $client;
         }
 
         return DB::transaction(function () use ($client, $settings, $changes, $actor): Client {
-            $client->forceFill([
-                'name' => $settings->name,
-                'grant_types' => $settings->grantTypes,
-                'redirect_uris' => $settings->redirectUris,
-                'post_logout_redirect_uris' => $settings->postLogoutRedirectUris,
-                'scopes' => $settings->scopes,
-                'first_party' => $settings->firstParty,
-                'manifest_url' => $settings->manifestUrl,
-                'access_token_ttl' => $settings->accessTokenTtl,
-                'backchannel_logout_uri' => $settings->backchannelLogoutUri,
-                'backchannel_logout_session_required' => $settings->backchannelLogoutSessionRequired,
-                'api_key_prefix' => $settings->apiKeyPrefix,
-            ]);
-
+            $client->forceFill(['name' => $settings->name, 'grant_types' => $settings->grantTypes, 'redirect_uris' => $settings->redirectUris, 'post_logout_redirect_uris' => $settings->postLogoutRedirectUris, 'scopes' => $settings->scopes, 'first_party' => $settings->firstParty, 'manifest_url' => $settings->manifestUrl, 'access_token_ttl' => $settings->accessTokenTtl, 'backchannel_logout_uri' => $settings->backchannelLogoutUri, 'backchannel_logout_session_required' => $settings->backchannelLogoutSessionRequired, 'api_key_prefix' => $settings->apiKeyPrefix]);
             $this->saveClaimingPrefix($client);
-
             $this->audit->record(ClientAudit::UPDATED, $client, $actor, ['changes' => $changes]);
 
             return $client;
@@ -107,7 +85,6 @@ class ClientRegistryService implements ClientRegistry
             // The secrets go with it — by the foreign key's cascade, and by the model's
             // own `deleted` hook on an engine that does not enforce one.
             $client->delete();
-
             $this->audit->record(ClientAudit::DELETED, $client, $actor);
         });
     }
@@ -129,17 +106,13 @@ class ClientRegistryService implements ClientRegistry
 
     public function secrets(Client $client): array
     {
-        return array_values($this->secrets->live($client)
-            ->map(fn (StoredClientSecret $secret): ClientSecretSummary => ClientSecretSummary::of($secret))
-            ->all());
+        return array_values($this->secrets->live($client)->map(fn (StoredClientSecret $secret): ClientSecretSummary => ClientSecretSummary::of($secret))->all());
     }
 
     public function rotateSecret(Client $client, int $graceSeconds = 0, ?AuditActor $actor = null): RotatedClientSecret
     {
         $this->assertHoldsSharedSecret($client);
-
         $max = $this->maxRotationGrace();
-
         if ($graceSeconds < 0 || $graceSeconds > $max) {
             throw ClientSecretRefused::graceOutOfRange($graceSeconds, $max);
         }
@@ -149,25 +122,13 @@ class ClientRegistryService implements ClientRegistry
             // the other's new secret, and once the grace period ran out the client would
             // hold none at all.
             $this->lock($client);
-
             $hadSecrets = $this->secrets->hasLive($client);
             $issued = $this->secrets->issue($client);
             $retireAt = CarbonImmutable::now()->addSeconds($graceSeconds);
-
             $this->secrets->retireAllExcept($client, $issued->stored->id, $retireAt);
+            $this->audit->record(ClientAudit::SECRET_ROTATED, $client, $actor, ['secret_id' => $issued->stored->id, 'hint' => $issued->stored->hint, 'grace_seconds' => $graceSeconds, 'previous_expire_at' => $hadSecrets ? $retireAt->toIso8601String() : null]);
 
-            $this->audit->record(ClientAudit::SECRET_ROTATED, $client, $actor, [
-                'secret_id' => $issued->stored->id,
-                'hint' => $issued->stored->hint,
-                'grace_seconds' => $graceSeconds,
-                'previous_expire_at' => $hadSecrets ? $retireAt->toIso8601String() : null,
-            ]);
-
-            return new RotatedClientSecret(
-                secret: $issued->secret->plaintext,
-                summary: ClientSecretSummary::of($issued->stored),
-                previousExpireAt: $hadSecrets ? $retireAt : null,
-            );
+            return new RotatedClientSecret(secret: $issued->secret->plaintext, summary: ClientSecretSummary::of($issued->stored), previousExpireAt: $hadSecrets ? $retireAt : null);
         });
     }
 
@@ -175,13 +136,10 @@ class ClientRegistryService implements ClientRegistry
     {
         DB::transaction(function () use ($client, $secretId, $actor): void {
             $this->lock($client);
-
             $secret = $this->secrets->find($client, $secretId);
-
             if ($secret === null) {
                 throw ClientSecretRefused::unknownSecret($client->client_id, $secretId);
             }
-
             // Revoking the last secret of a client that authenticates with one is not a
             // revocation, it is switching the app off with no replacement — and on a
             // console page it is one click from the one that was meant. Rotation (with
@@ -189,13 +147,8 @@ class ClientRegistryService implements ClientRegistry
             if ($this->usesSharedSecret($client) && $this->secrets->live($client)->count() <= 1) {
                 throw ClientSecretRefused::lastLiveSecret($client->client_id);
             }
-
             $this->secrets->revoke($client, $secret);
-
-            $this->audit->record(ClientAudit::SECRET_REVOKED, $client, $actor, [
-                'secret_id' => $secret->id,
-                'hint' => $secret->hint,
-            ]);
+            $this->audit->record(ClientAudit::SECRET_REVOKED, $client, $actor, ['secret_id' => $secret->id, 'hint' => $secret->hint]);
         });
     }
 
@@ -208,23 +161,7 @@ class ClientRegistryService implements ClientRegistry
     {
         $blueprint->assertValid();
 
-        return $this->create(new NewClient(
-            name: $blueprint->name,
-            type: $blueprint->type,
-            redirectUris: $blueprint->redirectUris,
-            grantTypes: $blueprint->grantTypes,
-            scopes: $blueprint->scopes,
-            firstParty: $blueprint->firstParty,
-            organizationId: $organizationId,
-            jwks: $jwks,
-            postLogoutRedirectUris: $blueprint->postLogoutRedirectUris,
-            accessTokenTtl: $blueprint->accessTokenTtl,
-            tokenEndpointAuthMethod: $blueprint->tokenEndpointAuthMethod,
-            manifestUrl: $blueprint->manifestUrl,
-            backchannelLogoutUri: $blueprint->backchannelLogoutUri,
-            backchannelLogoutSessionRequired: $blueprint->backchannelLogoutSessionRequired,
-            apiKeyPrefix: $blueprint->apiKeyPrefix,
-        ), $actor, ['source' => 'blueprint']);
+        return $this->create(new NewClient(name: $blueprint->name, type: $blueprint->type, redirectUris: $blueprint->redirectUris, grantTypes: $blueprint->grantTypes, scopes: $blueprint->scopes, firstParty: $blueprint->firstParty, organizationId: $organizationId, jwks: $jwks, postLogoutRedirectUris: $blueprint->postLogoutRedirectUris, accessTokenTtl: $blueprint->accessTokenTtl, tokenEndpointAuthMethod: $blueprint->tokenEndpointAuthMethod, manifestUrl: $blueprint->manifestUrl, backchannelLogoutUri: $blueprint->backchannelLogoutUri, backchannelLogoutSessionRequired: $blueprint->backchannelLogoutSessionRequired, apiKeyPrefix: $blueprint->apiKeyPrefix), $actor, ['source' => 'blueprint']);
     }
 
     /**
@@ -238,53 +175,27 @@ class ClientRegistryService implements ClientRegistry
         // `client_credentials` would then mint this environment's `iss` carrying that
         // environment's `org`.
         OwnerEnvironment::assertLocal($input->organizationId, Client::class);
-
         ClientSettingsRules::assertGrants($input->grantTypes, $input->type);
         ClientSettingsRules::assertAuthMethod($input->tokenEndpointAuthMethod, $input->type, $input->jwks);
         AccessTokenLifetime::assertAcceptable($input->accessTokenTtl);
-
         if ($input->backchannelLogoutUri !== null) {
             BackchannelLogoutUri::assertValid($input->backchannelLogoutUri);
         }
-
         if ($input->apiKeyPrefix !== null && ApiKeyPrefix::tryFrom($input->apiKeyPrefix) === null) {
-            throw InvalidClientMetadata::metadata("api_key_prefix [{$input->apiKeyPrefix}] must match ".ApiKeyPrefix::PATTERN.' and not use a reserved root');
+            throw InvalidClientMetadata::metadata("api_key_prefix [{$input->apiKeyPrefix}] must match ".ApiKeyPrefix::PATTERN.' and not use a reserved root')->withSourceMessage(new SourceMessage('api_key_prefix [:value1] must match :value2 and not use a reserved root', ['value1' => $input->apiKeyPrefix, 'value2' => ApiKeyPrefix::PATTERN]));
         }
-
         $this->assertApiKeyPrefixFree($input->apiKeyPrefix, null);
 
         return DB::transaction(function () use ($input, $actor, $context): RegisteredClient {
             $client = new Client;
-            $client->fill([
-                'organization_id' => $input->organizationId,
-                'client_id' => 'cid_'.Str::lower((string) Str::ulid()),
-                'name' => $input->name,
-                'type' => $input->type,
-                'token_endpoint_auth_method' => $input->tokenEndpointAuthMethod,
-                'redirect_uris' => $input->redirectUris,
-                'post_logout_redirect_uris' => $input->postLogoutRedirectUris,
-                'grant_types' => $input->grantTypes,
-                'scopes' => $input->scopes,
-                'manifest_url' => $input->manifestUrl,
-                'access_token_ttl' => $input->accessTokenTtl,
-                'first_party' => $input->firstParty,
-                'backchannel_logout_uri' => $input->backchannelLogoutUri,
-                'backchannel_logout_session_required' => $input->backchannelLogoutUri !== null && $input->backchannelLogoutSessionRequired,
-                'api_key_prefix' => $input->apiKeyPrefix,
-            ]);
-
+            $client->fill(['organization_id' => $input->organizationId, 'client_id' => 'cid_'.Str::lower((string) Str::ulid()), 'name' => $input->name, 'type' => $input->type, 'token_endpoint_auth_method' => $input->tokenEndpointAuthMethod, 'redirect_uris' => $input->redirectUris, 'post_logout_redirect_uris' => $input->postLogoutRedirectUris, 'grant_types' => $input->grantTypes, 'scopes' => $input->scopes, 'manifest_url' => $input->manifestUrl, 'access_token_ttl' => $input->accessTokenTtl, 'first_party' => $input->firstParty, 'backchannel_logout_uri' => $input->backchannelLogoutUri, 'backchannel_logout_session_required' => $input->backchannelLogoutUri !== null && $input->backchannelLogoutSessionRequired, 'api_key_prefix' => $input->apiKeyPrefix]);
             $client->jwks = $input->jwks;
             $this->saveClaimingPrefix($client);
-
             // A confidential client authenticates EITHER by a shared secret OR by
             // signing assertions with its registered keys (`private_key_jwt`). When it
             // registers a JWK Set it gets no secret — one credential mechanism, not two.
             $secret = $this->usesSharedSecret($client) ? $this->secrets->issue($client)->secret->plaintext : null;
-
-            $this->audit->record(ClientAudit::CREATED, $client, $actor, $context + [
-                'client_type' => $client->type->value,
-                'grant_types' => $client->grant_types,
-            ]);
+            $this->audit->record(ClientAudit::CREATED, $client, $actor, $context + ['client_type' => $client->type->value, 'grant_types' => $client->grant_types]);
 
             return new RegisteredClient($client, $secret);
         });
@@ -298,7 +209,6 @@ class ClientRegistryService implements ClientRegistry
         if ($client->type !== ClientType::Confidential) {
             throw ClientSecretRefused::publicClient($client->client_id);
         }
-
         // A private_key_jwt client is Confidential AND has no secret, by construction.
         // Minting one does not rotate anything; it ADDS a bearer credential to a client
         // that was asymmetric-only, and the authenticator would then accept client_id plus
@@ -310,9 +220,7 @@ class ClientRegistryService implements ClientRegistry
 
     private function usesSharedSecret(Client $client): bool
     {
-        return $client->type === ClientType::Confidential
-            && $client->jwks === null
-            && $client->token_endpoint_auth_method !== TokenEndpointAuthMethod::PrivateKeyJwt;
+        return $client->type === ClientType::Confidential && $client->jwks === null && $client->token_endpoint_auth_method !== TokenEndpointAuthMethod::PrivateKeyJwt;
     }
 
     /**
@@ -327,12 +235,7 @@ class ClientRegistryService implements ClientRegistry
         if ($prefix === null) {
             return;
         }
-
-        $taken = Client::query()
-            ->where('api_key_prefix', $prefix)
-            ->when($except !== null, fn (Builder $query) => $query->whereKeyNot($except?->getKey()))
-            ->exists();
-
+        $taken = Client::query()->where('api_key_prefix', $prefix)->when($except !== null, fn (Builder $query) => $query->whereKeyNot($except?->getKey()))->exists();
         if ($taken) {
             throw self::prefixTaken($prefix);
         }
@@ -352,14 +255,13 @@ class ClientRegistryService implements ClientRegistry
             if ($client->api_key_prefix === null) {
                 throw $e;
             }
-
             throw self::prefixTaken($client->api_key_prefix);
         }
     }
 
     private static function prefixTaken(string $prefix): InvalidClientMetadata
     {
-        return InvalidClientMetadata::metadata("api_key_prefix [{$prefix}] is already declared by another app in this environment; import with another prefix (or none)");
+        return InvalidClientMetadata::metadata("api_key_prefix [{$prefix}] is already declared by another app in this environment; import with another prefix (or none)")->withSourceMessage(new SourceMessage('api_key_prefix [:prefix] is already declared by another app in this environment; import with another prefix (or none)', ['prefix' => $prefix]));
     }
 
     private function lock(Client $client): void
@@ -379,25 +281,19 @@ class ClientRegistryService implements ClientRegistry
         // An empty string is "no URI", as a cleared console field sends it — not a
         // relative URI to refuse.
         $uri = $uri !== null && trim($uri) !== '' ? trim($uri) : null;
-
         if ($uri !== null) {
             BackchannelLogoutUri::assertValid($uri);
         }
-
         // Meaningless without a URI; stored false so a later URI does not inherit a
         // requirement nobody set alongside it.
         $sessionRequired = $uri !== null && $sessionRequired;
-
         $changes = [];
-
         if ($client->backchannel_logout_uri !== $uri) {
             $changes['backchannel_logout_uri'] = ['from' => $client->backchannel_logout_uri, 'to' => $uri];
         }
-
         if ($client->backchannel_logout_session_required !== $sessionRequired) {
             $changes['backchannel_logout_session_required'] = ['from' => $client->backchannel_logout_session_required, 'to' => $sessionRequired];
         }
-
         if ($changes === []) {
             return $client;
         }
@@ -405,11 +301,7 @@ class ClientRegistryService implements ClientRegistry
         // Where an app is told that its users signed out is a setting like any other, and
         // audited like one — the same `app.updated` entry an update() writes.
         return DB::transaction(function () use ($client, $uri, $sessionRequired, $changes, $actor): Client {
-            $client->forceFill([
-                'backchannel_logout_uri' => $uri,
-                'backchannel_logout_session_required' => $sessionRequired,
-            ])->save();
-
+            $client->forceFill(['backchannel_logout_uri' => $uri, 'backchannel_logout_session_required' => $sessionRequired])->save();
             $this->audit->record(ClientAudit::UPDATED, $client, $actor, ['changes' => $changes]);
 
             return $client;

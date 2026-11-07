@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
@@ -53,12 +54,7 @@ readonly class ClientBlueprint
     /** Identifies the document, so a blueprint is never mistaken for some other JSON. */
     public const KIND = 'cbox-id.client-blueprint';
 
-    private const KEYS = [
-        'kind', 'version', 'name', 'client_type', 'token_endpoint_auth_method', 'grant_types',
-        'redirect_uris', 'post_logout_redirect_uris', 'scopes', 'first_party', 'manifest_url',
-        'access_token_ttl', 'backchannel_logout_uri', 'backchannel_logout_session_required',
-        'api_key_prefix',
-    ];
+    private const KEYS = ['kind', 'version', 'name', 'client_type', 'token_endpoint_auth_method', 'grant_types', 'redirect_uris', 'post_logout_redirect_uris', 'scopes', 'first_party', 'manifest_url', 'access_token_ttl', 'backchannel_logout_uri', 'backchannel_logout_session_required', 'api_key_prefix'];
 
     /** @var list<string> */
     public array $grantTypes;
@@ -81,21 +77,8 @@ readonly class ClientBlueprint
      * @param  list<string>  $postLogoutRedirectUris
      * @param  list<string>  $scopes
      */
-    public function __construct(
-        public string $name,
-        public ClientType $type = ClientType::Confidential,
-        public ?TokenEndpointAuthMethod $tokenEndpointAuthMethod = null,
-        array $grantTypes = [],
-        array $redirectUris = [],
-        array $postLogoutRedirectUris = [],
-        array $scopes = [],
-        public bool $firstParty = false,
-        public ?string $manifestUrl = null,
-        public ?int $accessTokenTtl = null,
-        public ?string $backchannelLogoutUri = null,
-        bool $backchannelLogoutSessionRequired = false,
-        public ?string $apiKeyPrefix = null,
-    ) {
+    public function __construct(public string $name, public ClientType $type = ClientType::Confidential, public ?TokenEndpointAuthMethod $tokenEndpointAuthMethod = null, array $grantTypes = [], array $redirectUris = [], array $postLogoutRedirectUris = [], array $scopes = [], public bool $firstParty = false, public ?string $manifestUrl = null, public ?int $accessTokenTtl = null, public ?string $backchannelLogoutUri = null, bool $backchannelLogoutSessionRequired = false, public ?string $apiKeyPrefix = null)
+    {
         $this->grantTypes = self::normalize($grantTypes);
         $this->redirectUris = self::normalize($redirectUris);
         $this->postLogoutRedirectUris = self::normalize($postLogoutRedirectUris);
@@ -111,8 +94,7 @@ readonly class ClientBlueprint
             // A client that signs assertions but never had its method written down still
             // exports as `private_key_jwt`. Left null, the import would read "a confidential
             // client with no key set" and mint it a bearer secret.
-            tokenEndpointAuthMethod: $client->token_endpoint_auth_method
-                ?? ($client->jwks !== null ? TokenEndpointAuthMethod::PrivateKeyJwt : null),
+            tokenEndpointAuthMethod: $client->token_endpoint_auth_method ?? ($client->jwks !== null ? TokenEndpointAuthMethod::PrivateKeyJwt : null),
             grantTypes: array_values($client->grant_types),
             redirectUris: array_values($client->redirect_uris),
             postLogoutRedirectUris: array_values($client->post_logout_redirect_uris ?? []),
@@ -122,7 +104,7 @@ readonly class ClientBlueprint
             accessTokenTtl: $client->access_token_ttl,
             backchannelLogoutUri: $client->backchannel_logout_uri,
             backchannelLogoutSessionRequired: $client->backchannel_logout_session_required,
-            apiKeyPrefix: $client->api_key_prefix,
+            apiKeyPrefix: $client->api_key_prefix
         );
     }
 
@@ -137,98 +119,60 @@ readonly class ClientBlueprint
     public static function fromArray(array $document): self
     {
         $unknown = array_diff(array_map('strval', array_keys($document)), self::KEYS);
-
         if ($unknown !== []) {
             // Refused rather than ignored: a document carrying `client_secret` or
             // `client_id` was written by somebody who expects them to be honoured.
-            throw self::invalid('unknown key(s): '.implode(', ', $unknown));
+            throw self::invalid('unknown key(s): '.implode(', ', $unknown))->withSourceMessage(new SourceMessage('Invalid client blueprint: unknown key(s): :value1', ['value1' => implode(', ', $unknown)]));
         }
-
         if (($document['kind'] ?? null) !== self::KIND) {
-            throw self::invalid('"kind" must be "'.self::KIND.'"');
+            throw self::invalid('"kind" must be "'.self::KIND.'"')->withSourceMessage(new SourceMessage('Invalid client blueprint: "kind" must be ":value1"', ['value1' => self::KIND]));
         }
-
         if (($document['version'] ?? null) !== self::VERSION) {
-            throw self::invalid('unsupported version; this server reads version '.self::VERSION);
+            throw self::invalid('unsupported version; this server reads version '.self::VERSION)->withSourceMessage(new SourceMessage('Invalid client blueprint: unsupported version; this server reads version :value1', ['value1' => self::VERSION]));
         }
-
         $name = $document['name'] ?? null;
-
         if (! is_string($name) || trim($name) === '') {
-            throw self::invalid('"name" must be a non-empty string');
+            throw self::invalid('"name" must be a non-empty string')->withSourceMessage(new SourceMessage('Invalid client blueprint: "name" must be a non-empty string', []));
         }
-
         $type = is_string($document['client_type'] ?? null) ? ClientType::tryFrom($document['client_type']) : null;
-
         if ($type === null) {
-            throw self::invalid('"client_type" must be "confidential" or "public"');
+            throw self::invalid('"client_type" must be "confidential" or "public"')->withSourceMessage(new SourceMessage('Invalid client blueprint: "client_type" must be "confidential" or "public"', []));
         }
-
         $method = $document['token_endpoint_auth_method'] ?? null;
         $authMethod = null;
-
         if ($method !== null) {
             $authMethod = is_string($method) ? TokenEndpointAuthMethod::tryFrom($method) : null;
-
             if ($authMethod === null) {
-                throw self::invalid('"token_endpoint_auth_method" is not a supported method');
+                throw self::invalid('"token_endpoint_auth_method" is not a supported method')->withSourceMessage(new SourceMessage('Invalid client blueprint: "token_endpoint_auth_method" is not a supported method', []));
             }
         }
-
         $firstParty = $document['first_party'] ?? false;
-
         if (! is_bool($firstParty)) {
-            throw self::invalid('"first_party" must be a boolean');
+            throw self::invalid('"first_party" must be a boolean')->withSourceMessage(new SourceMessage('Invalid client blueprint: "first_party" must be a boolean', []));
         }
-
         $manifestUrl = $document['manifest_url'] ?? null;
-
         if ($manifestUrl !== null && (! is_string($manifestUrl) || filter_var($manifestUrl, FILTER_VALIDATE_URL) === false)) {
-            throw self::invalid('"manifest_url" must be an absolute URL or null');
+            throw self::invalid('"manifest_url" must be an absolute URL or null')->withSourceMessage(new SourceMessage('Invalid client blueprint: "manifest_url" must be an absolute URL or null', []));
         }
-
         $ttl = $document['access_token_ttl'] ?? null;
-
         if ($ttl !== null && ! is_int($ttl)) {
-            throw self::invalid('"access_token_ttl" must be an integer number of seconds or null');
+            throw self::invalid('"access_token_ttl" must be an integer number of seconds or null')->withSourceMessage(new SourceMessage('Invalid client blueprint: "access_token_ttl" must be an integer number of seconds or null', []));
         }
-
         // The three 1.19 keys are optional on the way in, so a document exported before
         // they existed still reads — as "not configured", which is what it described.
         $backchannelUri = $document['backchannel_logout_uri'] ?? null;
-
         if ($backchannelUri !== null && ! is_string($backchannelUri)) {
-            throw self::invalid('"backchannel_logout_uri" must be a string or null');
+            throw self::invalid('"backchannel_logout_uri" must be a string or null')->withSourceMessage(new SourceMessage('Invalid client blueprint: "backchannel_logout_uri" must be a string or null', []));
         }
-
         $sessionRequired = $document['backchannel_logout_session_required'] ?? false;
-
         if (! is_bool($sessionRequired)) {
-            throw self::invalid('"backchannel_logout_session_required" must be a boolean');
+            throw self::invalid('"backchannel_logout_session_required" must be a boolean')->withSourceMessage(new SourceMessage('Invalid client blueprint: "backchannel_logout_session_required" must be a boolean', []));
         }
-
         $prefix = $document['api_key_prefix'] ?? null;
-
         if ($prefix !== null && ! is_string($prefix)) {
-            throw self::invalid('"api_key_prefix" must be a string or null');
+            throw self::invalid('"api_key_prefix" must be a string or null')->withSourceMessage(new SourceMessage('Invalid client blueprint: "api_key_prefix" must be a string or null', []));
         }
-
-        $blueprint = new self(
-            name: trim($name),
-            type: $type,
-            tokenEndpointAuthMethod: $authMethod,
-            grantTypes: self::stringList($document, 'grant_types'),
-            redirectUris: self::stringList($document, 'redirect_uris'),
-            postLogoutRedirectUris: self::stringList($document, 'post_logout_redirect_uris'),
-            scopes: self::stringList($document, 'scopes'),
-            firstParty: $firstParty,
-            manifestUrl: $manifestUrl,
-            accessTokenTtl: $ttl,
-            backchannelLogoutUri: $backchannelUri,
-            backchannelLogoutSessionRequired: $sessionRequired,
-            apiKeyPrefix: $prefix,
-        );
-
+        $blueprint = new self(name: trim($name), type: $type, tokenEndpointAuthMethod: $authMethod, grantTypes: self::stringList($document, 'grant_types'), redirectUris: self::stringList($document, 'redirect_uris'), postLogoutRedirectUris: self::stringList($document, 'post_logout_redirect_uris'), scopes: self::stringList($document, 'scopes'), firstParty: $firstParty, manifestUrl: $manifestUrl, accessTokenTtl: $ttl, backchannelLogoutUri: $backchannelUri, backchannelLogoutSessionRequired: $sessionRequired, apiKeyPrefix: $prefix);
         $blueprint->assertValid();
 
         return $blueprint;
@@ -242,11 +186,10 @@ readonly class ClientBlueprint
         try {
             $document = json_decode($json, true, 16, JSON_THROW_ON_ERROR);
         } catch (JsonException $e) {
-            throw self::invalid('not valid JSON: '.$e->getMessage());
+            throw self::invalid('not valid JSON: '.$e->getMessage())->withSourceMessage(new SourceMessage('Invalid client blueprint: not valid JSON: :value1', ['value1' => $e->getMessage()]));
         }
-
         if (! is_array($document) || array_is_list($document)) {
-            throw self::invalid('must be a JSON object');
+            throw self::invalid('must be a JSON object')->withSourceMessage(new SourceMessage('Invalid client blueprint: must be a JSON object', []));
         }
 
         return self::fromArray($document);
@@ -266,24 +209,19 @@ readonly class ClientBlueprint
         ClientSettingsRules::assertRedirectUris($this->redirectUris);
         ClientSettingsRules::assertRedirectUris($this->postLogoutRedirectUris, 'post_logout_redirect_uris');
         AccessTokenLifetime::assertAcceptable($this->accessTokenTtl);
-
-        if ($this->tokenEndpointAuthMethod !== null
-            && ($this->tokenEndpointAuthMethod === TokenEndpointAuthMethod::None) !== ($this->type === ClientType::Public)) {
-            throw self::invalid("token_endpoint_auth_method {$this->tokenEndpointAuthMethod->value} does not match a {$this->type->value} client");
+        if ($this->tokenEndpointAuthMethod !== null && ($this->tokenEndpointAuthMethod === TokenEndpointAuthMethod::None) !== ($this->type === ClientType::Public)) {
+            throw self::invalid("token_endpoint_auth_method {$this->tokenEndpointAuthMethod->value} does not match a {$this->type->value} client")->withSourceMessage(new SourceMessage('Invalid client blueprint: token_endpoint_auth_method :value1 does not match a :value2 client', ['value1' => $this->tokenEndpointAuthMethod->value, 'value2' => $this->type->value]));
         }
-
         if (in_array('authorization_code', $this->grantTypes, true) && $this->redirectUris === []) {
-            throw InvalidClientMetadata::redirectUri('redirect_uris is required for the authorization_code grant');
+            throw InvalidClientMetadata::redirectUri('redirect_uris is required for the authorization_code grant')->withSourceMessage(new SourceMessage('redirect_uris is required for the authorization_code grant', []));
         }
-
         if ($this->backchannelLogoutUri !== null) {
             BackchannelLogoutUri::assertValid($this->backchannelLogoutUri);
         }
-
         // The format only. Whether the prefix is free is a question about the environment
         // the blueprint lands in, answered by the registry at import and update.
         if ($this->apiKeyPrefix !== null && ApiKeyPrefix::tryFrom($this->apiKeyPrefix) === null) {
-            throw self::invalid("\"api_key_prefix\" [{$this->apiKeyPrefix}] must match ".ApiKeyPrefix::PATTERN.' and not use a reserved root');
+            throw self::invalid("\"api_key_prefix\" [{$this->apiKeyPrefix}] must match ".ApiKeyPrefix::PATTERN.' and not use a reserved root')->withSourceMessage(new SourceMessage('Invalid client blueprint: "api_key_prefix" [:value1] must match :value2 and not use a reserved root', ['value1' => $this->apiKeyPrefix, 'value2' => ApiKeyPrefix::PATTERN]));
         }
     }
 
@@ -294,23 +232,7 @@ readonly class ClientBlueprint
      */
     public function toArray(): array
     {
-        return [
-            'kind' => self::KIND,
-            'version' => self::VERSION,
-            'name' => $this->name,
-            'client_type' => $this->type->value,
-            'token_endpoint_auth_method' => $this->tokenEndpointAuthMethod?->value,
-            'grant_types' => $this->grantTypes,
-            'redirect_uris' => $this->redirectUris,
-            'post_logout_redirect_uris' => $this->postLogoutRedirectUris,
-            'scopes' => $this->scopes,
-            'first_party' => $this->firstParty,
-            'manifest_url' => $this->manifestUrl,
-            'access_token_ttl' => $this->accessTokenTtl,
-            'backchannel_logout_uri' => $this->backchannelLogoutUri,
-            'backchannel_logout_session_required' => $this->backchannelLogoutSessionRequired,
-            'api_key_prefix' => $this->apiKeyPrefix,
-        ];
+        return ['kind' => self::KIND, 'version' => self::VERSION, 'name' => $this->name, 'client_type' => $this->type->value, 'token_endpoint_auth_method' => $this->tokenEndpointAuthMethod?->value, 'grant_types' => $this->grantTypes, 'redirect_uris' => $this->redirectUris, 'post_logout_redirect_uris' => $this->postLogoutRedirectUris, 'scopes' => $this->scopes, 'first_party' => $this->firstParty, 'manifest_url' => $this->manifestUrl, 'access_token_ttl' => $this->accessTokenTtl, 'backchannel_logout_uri' => $this->backchannelLogoutUri, 'backchannel_logout_session_required' => $this->backchannelLogoutSessionRequired, 'api_key_prefix' => $this->apiKeyPrefix];
     }
 
     /**
@@ -393,22 +315,9 @@ readonly class ClientBlueprint
      * @param  list<string>|null  $postLogoutRedirectUris
      * @param  list<string>|null  $scopes
      */
-    private function copy(
-        ?string $name = null,
-        ?array $grantTypes = null,
-        ?array $redirectUris = null,
-        ?array $postLogoutRedirectUris = null,
-        ?array $scopes = null,
-        ?bool $firstParty = null,
-    ): self {
-        return $this->rebuild(array_filter([
-            'name' => $name,
-            'grantTypes' => $grantTypes,
-            'redirectUris' => $redirectUris,
-            'postLogoutRedirectUris' => $postLogoutRedirectUris,
-            'scopes' => $scopes,
-            'firstParty' => $firstParty,
-        ], fn (mixed $value): bool => $value !== null));
+    private function copy(?string $name = null, ?array $grantTypes = null, ?array $redirectUris = null, ?array $postLogoutRedirectUris = null, ?array $scopes = null, ?bool $firstParty = null): self
+    {
+        return $this->rebuild(array_filter(['name' => $name, 'grantTypes' => $grantTypes, 'redirectUris' => $redirectUris, 'postLogoutRedirectUris' => $postLogoutRedirectUris, 'scopes' => $scopes, 'firstParty' => $firstParty], fn (mixed $value): bool => $value !== null));
     }
 
     /**
@@ -419,21 +328,7 @@ readonly class ClientBlueprint
      */
     private function rebuild(array $changes): self
     {
-        return new self(
-            name: array_key_exists('name', $changes) ? $changes['name'] : $this->name,
-            type: $this->type,
-            tokenEndpointAuthMethod: $this->tokenEndpointAuthMethod,
-            grantTypes: array_key_exists('grantTypes', $changes) ? $changes['grantTypes'] : $this->grantTypes,
-            redirectUris: array_key_exists('redirectUris', $changes) ? $changes['redirectUris'] : $this->redirectUris,
-            postLogoutRedirectUris: array_key_exists('postLogoutRedirectUris', $changes) ? $changes['postLogoutRedirectUris'] : $this->postLogoutRedirectUris,
-            scopes: array_key_exists('scopes', $changes) ? $changes['scopes'] : $this->scopes,
-            firstParty: array_key_exists('firstParty', $changes) ? $changes['firstParty'] : $this->firstParty,
-            manifestUrl: array_key_exists('manifestUrl', $changes) ? $changes['manifestUrl'] : $this->manifestUrl,
-            accessTokenTtl: array_key_exists('accessTokenTtl', $changes) ? $changes['accessTokenTtl'] : $this->accessTokenTtl,
-            backchannelLogoutUri: array_key_exists('backchannelLogoutUri', $changes) ? $changes['backchannelLogoutUri'] : $this->backchannelLogoutUri,
-            backchannelLogoutSessionRequired: array_key_exists('backchannelLogoutSessionRequired', $changes) ? $changes['backchannelLogoutSessionRequired'] : $this->backchannelLogoutSessionRequired,
-            apiKeyPrefix: array_key_exists('apiKeyPrefix', $changes) ? $changes['apiKeyPrefix'] : $this->apiKeyPrefix,
-        );
+        return new self(name: array_key_exists('name', $changes) ? $changes['name'] : $this->name, type: $this->type, tokenEndpointAuthMethod: $this->tokenEndpointAuthMethod, grantTypes: array_key_exists('grantTypes', $changes) ? $changes['grantTypes'] : $this->grantTypes, redirectUris: array_key_exists('redirectUris', $changes) ? $changes['redirectUris'] : $this->redirectUris, postLogoutRedirectUris: array_key_exists('postLogoutRedirectUris', $changes) ? $changes['postLogoutRedirectUris'] : $this->postLogoutRedirectUris, scopes: array_key_exists('scopes', $changes) ? $changes['scopes'] : $this->scopes, firstParty: array_key_exists('firstParty', $changes) ? $changes['firstParty'] : $this->firstParty, manifestUrl: array_key_exists('manifestUrl', $changes) ? $changes['manifestUrl'] : $this->manifestUrl, accessTokenTtl: array_key_exists('accessTokenTtl', $changes) ? $changes['accessTokenTtl'] : $this->accessTokenTtl, backchannelLogoutUri: array_key_exists('backchannelLogoutUri', $changes) ? $changes['backchannelLogoutUri'] : $this->backchannelLogoutUri, backchannelLogoutSessionRequired: array_key_exists('backchannelLogoutSessionRequired', $changes) ? $changes['backchannelLogoutSessionRequired'] : $this->backchannelLogoutSessionRequired, apiKeyPrefix: array_key_exists('apiKeyPrefix', $changes) ? $changes['apiKeyPrefix'] : $this->apiKeyPrefix);
     }
 
     /**
@@ -443,18 +338,14 @@ readonly class ClientBlueprint
     private static function stringList(array $document, string $key): array
     {
         $value = $document[$key] ?? [];
-
         if (! is_array($value) || ! array_is_list($value)) {
-            throw self::invalid("\"{$key}\" must be a list of strings");
+            throw self::invalid("\"{$key}\" must be a list of strings")->withSourceMessage(new SourceMessage('Invalid client blueprint: ":key" must be a list of strings', ['key' => $key]));
         }
-
         $strings = [];
-
         foreach ($value as $item) {
             if (! is_string($item) || trim($item) === '' || preg_match('/\s/', $item) === 1) {
-                throw self::invalid("\"{$key}\" must contain only non-empty strings without whitespace");
+                throw self::invalid("\"{$key}\" must contain only non-empty strings without whitespace")->withSourceMessage(new SourceMessage('Invalid client blueprint: ":key" must contain only non-empty strings without whitespace', ['key' => $key]));
             }
-
             $strings[] = $item;
         }
 

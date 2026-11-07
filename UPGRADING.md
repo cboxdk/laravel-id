@@ -18,6 +18,53 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased — atomic built-in role assignments
+
+Deploy the framework and application lockfiles together. Before serving application
+code that calls `RoleGrantLock`, run the framework migrations, including
+`2026_11_07_230000_create_role_grant_subject_locks.php`. It creates the built-in
+`role_grant_subject_locks` table keyed by environment and subject. It does not grant
+roles, activate definitions, or change entitlements. Drain old web/queue workers
+before enabling writes on the new version: old workers do not participate in these
+locks. Restart workers on the same installed package version as the application.
+Do not roll back this migration while code using the mutex remains deployed.
+
+Built-in grants and revocations now serialize per environment and subject before
+locking individual role rows. This covers two different conflicting role IDs as
+well as organization and environment-wide grants. Role policy is checked again
+under the lock: a concurrent staff-only change, definition activation or deletion
+cannot be bypassed by a previously read role. Role changes, grants and their
+outbox/audit records commit together. Existing manual assignments remain assigned
+when an administrator activates a definition; activation changes the role's
+permissions, not its holders.
+
+Host operations that read a role-version snapshot and then call `Roles` must keep
+that read and the writes in one transaction. If they also lock membership, use
+**membership → subject grant mutex → role rows**, and acquire the subject mutex
+before reading the snapshot or comparing its version. For batch changes, lock the
+complete changed role set in sorted ID order before any grant or revoke. Directory
+reconciliation removes obsolete pushed roles before granting their replacements,
+so replacing two mutually exclusive roles completes in one pass. The native Cbox ID
+`AppMemberRoles` implementation follows this order. `RoleGrantLock` is an internal
+coordination helper, so hosts using it must deploy a compatible framework version
+with the new table rather than calling it against an older package.
+
+Explicitly assigning an already directory-pushed role as `Manual` now promotes
+its source to `Manual`. A later group unmap no longer removes that explicit grant.
+The promotion emits one `role.assigned` event and audit entry with
+`from_source=pushed` and `source=manual`; repeating the manual grant is silent.
+Directory pushes never downgrade a manual grant. Reconciliation reads its desired
+roles and current grant sources under the same subject mutex before removing
+pushed grants. Subject erasure removes the mutex record with the role grants,
+within the erasure transaction and the current environment.
+
+The mutex does not require a built-in user row: host-provided subject IDs remain
+supported. It does not replace the application's live membership checks or
+resource-level authorization. The `external` RBAC driver does not install this
+table; external adapters must serialize their own grant checks and writes using
+their own schema. Do not switch an external installation to the built-in driver
+to obtain the mutex.
+
 ## 1.27.2 — federation browser binding
 
 OIDC and SP-initiated SAML callbacks now require a `__Host-` flow cookie with

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Exceptions;
 
+use Cbox\Id\Kernel\Presentation\Concerns\CarriesSourceMessage;
+use Cbox\Id\Kernel\Presentation\Contracts\HasSourceMessage;
 use RuntimeException;
 
 /**
@@ -12,8 +14,10 @@ use RuntimeException;
  * `invalid_client_metadata`, or `invalid_software_statement` — surfaced verbatim in
  * the 400 response body.
  */
-class InvalidClientMetadata extends RuntimeException
+class InvalidClientMetadata extends RuntimeException implements HasSourceMessage
 {
+    use CarriesSourceMessage;
+
     public function __construct(public readonly string $error, string $description)
     {
         parent::__construct($description);

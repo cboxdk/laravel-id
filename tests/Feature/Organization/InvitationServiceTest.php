@@ -42,7 +42,9 @@ it('grants membership only when the invitee accepts', function (): void {
 
     $membership = $invitations->accept($pending->token, 'subject_dana');
 
-    expect($membership->role->value)->toBe('admin')
+    expect($pending->invitation->fresh()->accepted_by)->toBe('subject_dana')
+        ->and($pending->invitation->fresh()->accepted_at)->not->toBeNull()
+        ->and($membership->role->value)->toBe('admin')
         ->and(app(Memberships::class)->of($org->id, 'subject_dana')?->role?->value)->toBe('admin')
         ->and($invitations->pending($org->id))->toBeEmpty(); // no longer pending
 });
@@ -147,4 +149,25 @@ it('refuses to add a member to an organization from another environment', functi
         ->toThrow(CrossEnvironmentAccess::class);
 
     expect(Membership::query()->count())->toBe(0);
+});
+
+it('supersedes invitations only within the same app', function (): void {
+    $org = $this->makeOrganization();
+    $service = app(Invitations::class);
+    $first = $service->invite($org->id, 'person@example.test', MembershipRole::Member, clientId: 'app_first');
+    $other = $service->invite($org->id, 'person@example.test', MembershipRole::Member, clientId: 'app_other');
+    $replacement = $service->invite($org->id, 'person@example.test', MembershipRole::Member, clientId: 'app_first');
+    expect($first->invitation->fresh()->isPending())->toBeFalse()
+        ->and($other->invitation->fresh()->isPending())->toBeTrue()
+        ->and($replacement->invitation->app_client_id)->toBe('app_first');
+});
+
+it('accepts an app invitation without changing an existing organization role', function (): void {
+    $org = $this->makeOrganization();
+    app(Memberships::class)->add($org->id, 'existing', MembershipRole::Admin);
+    $service = app(Invitations::class);
+    $pending = $service->invite($org->id, 'existing@example.test', MembershipRole::Member, clientId: 'app_new');
+    $membership = $service->accept($pending->token, 'existing');
+    expect($membership->role)->toBe(MembershipRole::Admin)
+        ->and($pending->invitation->fresh()->accepted_by)->toBe('existing');
 });

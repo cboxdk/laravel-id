@@ -9,6 +9,7 @@ use Cbox\Id\AccessControl\Exceptions\ManifestFetchFailed;
 use Cbox\Id\AccessControl\Manifest\Manifest;
 use Cbox\Id\AccessControl\Manifest\ManifestParser;
 use Cbox\Id\AccessControl\Manifest\SafeManifestUrl;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
@@ -26,28 +27,19 @@ class HttpManifestFetcher implements ManifestFetcher
         // Throws UnsafeManifestUrl on a blocked host; returns options that pin the
         // connection to the validated IPs.
         $pinned = SafeManifestUrl::pinnedOptions($url);
-
         $timeout = config('cbox-id.access_control.fetch_timeout', 10);
-
         try {
-            $response = Http::withOptions($pinned)
-                ->timeout(is_int($timeout) ? $timeout : 10)
-                ->acceptJson()
-                ->get($url);
+            $response = Http::withOptions($pinned)->timeout(is_int($timeout) ? $timeout : 10)->acceptJson()->get($url);
         } catch (ConnectionException $e) {
-            throw ManifestFetchFailed::make($e->getMessage());
+            throw ManifestFetchFailed::make($e->getMessage())->withSourceMessage(new SourceMessage('Failed to fetch app manifest: :value1', ['value1' => $e->getMessage()]));
         }
-
         if (! $response->successful()) {
-            throw ManifestFetchFailed::make("endpoint returned HTTP {$response->status()}.");
+            throw ManifestFetchFailed::make("endpoint returned HTTP {$response->status()}.")->withSourceMessage(new SourceMessage('Failed to fetch app manifest: endpoint returned HTTP :value1.', ['value1' => $response->status()]));
         }
-
         $body = $response->json();
-
         if (! is_array($body)) {
-            throw ManifestFetchFailed::make('response body was not a JSON object.');
+            throw ManifestFetchFailed::make('response body was not a JSON object.')->withSourceMessage(new SourceMessage('Failed to fetch app manifest: response body was not a JSON object.', []));
         }
-
         // Re-key rather than ASSERT the key type: `is_array` says nothing about the
         // keys, and a JSON array (`[…]`) decodes with integer ones. Claiming
         // `array<string, mixed>` in a docblock made PHPStan reason about a shape the

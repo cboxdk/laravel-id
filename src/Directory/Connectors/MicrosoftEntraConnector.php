@@ -10,6 +10,7 @@ use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
 use Cbox\Id\Directory\Support\JsonObjectList;
 use Cbox\Id\Directory\ValueObjects\DirectoryGroupSnapshot;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
+use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -58,28 +59,21 @@ class MicrosoftEntraConnector implements DirectoryConnector
     {
         $token = $this->accessToken($credentials);
         $url = self::GRAPH.'/users?$select='.self::SELECT.'&$top=999';
-
         // Follow Graph's @odata.nextLink pagination to completion.
         while ($url !== null) {
             $response = Http::withToken($token)->acceptJson()->get($url);
-
             if ($response->failed()) {
-                throw DirectoryConnectionFailed::make('Microsoft Entra', 'Graph users request failed ('.$response->status().').');
+                throw DirectoryConnectionFailed::make('Microsoft Entra', 'Graph users request failed ('.$response->status().').')->withSourceMessage(new SourceMessage('Directory sync with Microsoft Entra failed: Graph users request failed (:value1).', ['value1' => $response->status()]));
             }
-
             $body = $response->json();
             $body = is_array($body) ? $body : [];
-
             $users = JsonObjectList::from($body['value'] ?? null);
-
             foreach ($users as $user) {
                 $scim = $this->toScimUser($user);
-
                 if ($scim !== null) {
                     yield $scim;
                 }
             }
-
             $url = $this->nextLink($body);
         }
     }
@@ -88,26 +82,20 @@ class MicrosoftEntraConnector implements DirectoryConnector
     {
         $token = $this->accessToken($credentials);
         $url = self::GRAPH.'/groups?$select=id,displayName&$top=999';
-
         while ($url !== null) {
             $response = Http::withToken($token)->acceptJson()->get($url);
-
             if ($response->failed()) {
-                throw DirectoryConnectionFailed::make('Microsoft Entra', 'Graph groups request failed ('.$response->status().').');
+                throw DirectoryConnectionFailed::make('Microsoft Entra', 'Graph groups request failed ('.$response->status().').')->withSourceMessage(new SourceMessage('Directory sync with Microsoft Entra failed: Graph groups request failed (:value1).', ['value1' => $response->status()]));
             }
-
             $body = is_array($response->json()) ? $response->json() : [];
             $groups = JsonObjectList::from($body['value'] ?? null);
-
             foreach ($groups as $group) {
                 $id = $group['id'] ?? null;
                 $name = $group['displayName'] ?? null;
-
                 if (is_string($id) && $id !== '' && is_string($name) && $name !== '') {
                     yield new DirectoryGroupSnapshot($id, $name, $this->groupMembers($token, $id));
                 }
             }
-
             $url = $this->nextLink($body);
         }
     }
@@ -120,22 +108,17 @@ class MicrosoftEntraConnector implements DirectoryConnector
         // The /microsoft.graph.user OData cast returns only user members.
         $url = self::GRAPH.'/groups/'.$groupId.'/members/microsoft.graph.user?$select=id&$top=999';
         $ids = [];
-
         while ($url !== null) {
             $response = Http::withToken($token)->acceptJson()->get($url);
-
             if ($response->failed()) {
                 break;
             }
-
             $body = is_array($response->json()) ? $response->json() : [];
-
-            foreach ((is_array($body['value'] ?? null) ? $body['value'] : []) as $member) {
+            foreach (is_array($body['value'] ?? null) ? $body['value'] : [] as $member) {
                 if (is_array($member) && is_string($member['id'] ?? null)) {
                     $ids[] = $member['id'];
                 }
             }
-
             $url = $this->nextLink($body);
         }
 
@@ -150,9 +133,7 @@ class MicrosoftEntraConnector implements DirectoryConnector
             return false;
         }
 
-        return Http::withToken($token)->acceptJson()
-            ->get(self::GRAPH.'/users?$top=1')
-            ->successful();
+        return Http::withToken($token)->acceptJson()->get(self::GRAPH.'/users?$top=1')->successful();
     }
 
     /**
@@ -161,18 +142,10 @@ class MicrosoftEntraConnector implements DirectoryConnector
     private function accessToken(array $credentials): string
     {
         $tenant = $this->string($credentials, 'tenant_id');
-
-        $response = Http::asForm()->post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", [
-            'client_id' => $this->string($credentials, 'client_id'),
-            'client_secret' => $this->string($credentials, 'client_secret'),
-            'scope' => 'https://graph.microsoft.com/.default',
-            'grant_type' => 'client_credentials',
-        ]);
-
+        $response = Http::asForm()->post("https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/token", ['client_id' => $this->string($credentials, 'client_id'), 'client_secret' => $this->string($credentials, 'client_secret'), 'scope' => 'https://graph.microsoft.com/.default', 'grant_type' => 'client_credentials']);
         $token = $response->json('access_token');
-
         if (! $response->successful() || ! is_string($token) || $token === '') {
-            throw DirectoryConnectionFailed::make('Microsoft Entra', 'Could not obtain a Graph access token.');
+            throw DirectoryConnectionFailed::make('Microsoft Entra', 'Could not obtain a Graph access token.')->withSourceMessage(new SourceMessage('Directory sync with Microsoft Entra failed: Could not obtain a Graph access token.', []));
         }
 
         return $token;
@@ -185,21 +158,12 @@ class MicrosoftEntraConnector implements DirectoryConnector
     {
         $id = $user['id'] ?? null;
         $upn = $user['userPrincipalName'] ?? null;
-
         if (! is_string($id) || $id === '' || ! is_string($upn) || $upn === '') {
             return null;
         }
-
         $mail = is_string($user['mail'] ?? null) && $user['mail'] !== '' ? $user['mail'] : $upn;
 
-        return new ScimUser(
-            externalId: $id,
-            userName: $upn,
-            email: $mail,
-            displayName: is_string($user['displayName'] ?? null) ? $user['displayName'] : null,
-            active: ($user['accountEnabled'] ?? true) !== false,
-            raw: $user,
-        );
+        return new ScimUser(externalId: $id, userName: $upn, email: $mail, displayName: is_string($user['displayName'] ?? null) ? $user['displayName'] : null, active: ($user['accountEnabled'] ?? true) !== false, raw: $user);
     }
 
     /**
@@ -208,9 +172,8 @@ class MicrosoftEntraConnector implements DirectoryConnector
     private function string(array $credentials, string $key): string
     {
         $value = $credentials[$key] ?? null;
-
         if (! is_string($value) || $value === '') {
-            throw DirectoryConnectionFailed::make('Microsoft Entra', "Missing credential: {$key}.");
+            throw DirectoryConnectionFailed::make('Microsoft Entra', "Missing credential: {$key}.")->withSourceMessage(new SourceMessage('Directory sync with Microsoft Entra failed: Missing credential: :key.', ['key' => $key]));
         }
 
         return $value;

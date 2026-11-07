@@ -19,8 +19,8 @@ interface AppManifests
 {
     /**
      * Idempotently reconcile an app's declared catalog to match the manifest:
-     * upsert its permissions + roles (scoped to the app), (re)link each role to its
-     * permissions, and flag anything the app no longer declares as orphaned WITHOUT
+     * upsert its permissions + roles (scoped to the app), stage changes to existing
+     * role permissions for explicit activation, and flag dropped definitions WITHOUT
      * deleting it — a live role assignment is never silently revoked. A manifest
      * whose checksum is unchanged since the last sync is a no-op.
      */
