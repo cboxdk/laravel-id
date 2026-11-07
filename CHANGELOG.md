@@ -15,7 +15,7 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
-## [2.0.0] — prepared candidate, not published
+## [2.0.0] - 2026-11-07
 
 ### Upgrade
 
