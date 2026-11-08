@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-08
+
 ### Added
 
 - **CIBA and the device grant for self-registered agents and CLIs.** A protected resource opens them with `dynamic_client_grants: ['ciba', 'device_code']`. `mcp`-mode registration then accepts those grants, accepts `token_endpoint_auth_method: "private_key_jwt"` with an inline `jwks` (no secret handed out), and no longer requires `authorization_code` for a client that signs people in without a browser. Every backchannel or device request from such a client must name that resource (`invalid_target` otherwise), and a backchannel request must carry a `binding_message`. `dynamic_public_backchannel` lets a resource accept public clients for CIBA too. See `docs/security/ciba.md`.

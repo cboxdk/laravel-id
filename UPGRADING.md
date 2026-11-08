@@ -18,7 +18,7 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
-## Unreleased — CIBA for self-registered clients
+## 2.1.0 — CIBA for self-registered clients
 
 - **`BackchannelAuthentication::request()` gained `?string $resource = null` as its last
   parameter.** A class that implements or decorates the contract must add it, and a
@@ -32,7 +32,7 @@ ambiguous between "nothing to do" and "nobody wrote it down".
 - Nothing opens CIBA or the device grant to self-registered clients until a protected
   resource sets `dynamic_client_grants`.
 
-## Unreleased — atomic built-in role assignments
+## 2.0.0 — atomic built-in role assignments
 
 Deploy the framework and application lockfiles together. Before serving application
 code that calls `RoleGrantLock`, run the framework migrations, including
