@@ -13,6 +13,7 @@ use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
 use Cbox\Id\OAuthServer\Contracts\DynamicClientRegistration;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Enums\GrantType;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
@@ -39,9 +40,11 @@ use Illuminate\Support\Facades\DB;
  * exactly the MCP case).
  *
  * THE `mcp` MODE is open registration held to what an MCP client actually needs and no
- * more: a public client (`none`, no secret, no keys), the authorization-code and refresh
- * grants only — PKCE is mandatory for every public client at `/authorize` and the token
- * endpoint already — redirect URIs on https or a loopback host only (no custom schemes,
+ * more: a public client (`none`, no secret, no keys) or one that brings its own key
+ * (`private_key_jwt`, inline `jwks` — still no secret handed out), the authorization-code
+ * and refresh grants — PKCE is mandatory for every public client at `/authorize` and the
+ * token endpoint already — plus CIBA and the device grant where a protected resource has
+ * opened them to self-registered clients (`dynamic_client_grants`), redirect URIs on https or a loopback host only (no custom schemes,
  * no sandbox http), no back-channel logout URI (nothing for the server to call), and the
  * scopes {@see SelfRegisteredScopes} allows: those of host-declared resources open to
  * self-registered clients, plus permitted protocol scopes. The same rules apply to an
@@ -77,7 +80,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
     {
         $mcp = config('cbox-id.oauth.dynamic_registration.mode') === 'mcp';
         $authMethod = $this->authMethod($request, $mcp);
-        $grantTypes = $mcp ? $this->mcpGrantTypes($request) : $this->grantTypes($request);
+        $grantTypes = $mcp ? $this->mcpGrantTypes($request, $authMethod) : $this->grantTypes($request);
         $responseTypes = $this->responseTypes($request, $grantTypes);
         $redirectUris = $this->redirectUris($request, $grantTypes, $mcp);
         if ($mcp && isset($request['backchannel_logout_uri'])) {
@@ -233,8 +236,11 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             throw InvalidClientMetadata::metadata('unsupported token_endpoint_auth_method')->withSourceMessage(new SourceMessage('unsupported token_endpoint_auth_method', []));
         }
         // A secret handed to whoever reached an open endpoint authenticates nothing; a
-        // public client with PKCE is the honest shape of an anonymous registrant.
-        if ($mcp && $method !== 'none') {
+        // public client with PKCE is the honest shape of an anonymous registrant. A client
+        // that brings its OWN key (`private_key_jwt`, inline `jwks`) is different: the
+        // server hands out nothing, and each install proves possession of a key only it
+        // holds — the shape a CLI or agent that wants CIBA should register with.
+        if ($mcp && $method !== 'none' && $method !== 'private_key_jwt') {
             throw InvalidClientMetadata::metadata('this server registers public clients only: token_endpoint_auth_method must be "none"')->withSourceMessage(new SourceMessage('this server registers public clients only: token_endpoint_auth_method must be "none"', []));
         }
 
@@ -248,17 +254,30 @@ class DynamicClientRegistrar implements DynamicClientRegistration
      * @param  array<string, mixed>  $request
      * @return list<string>
      */
-    private function mcpGrantTypes(array $request): array
+    private function mcpGrantTypes(array $request, string $authMethod): array
     {
         $requested = $this->stringList($request['grant_types'] ?? null);
         $requested = $requested === [] ? self::MCP_GRANT_TYPES : array_values(array_unique($requested));
+        // The decoupled grants are opened per protected resource by the host
+        // (`dynamic_client_grants`), not by the global allow-list: that resource policy IS
+        // the operator's switch, and it is checked again on every request that uses them.
+        $decoupled = $this->selfRegistered->grants();
         foreach ($requested as $grant) {
-            if (! in_array($grant, self::MCP_GRANT_TYPES, true) || ! in_array($grant, $this->configList('allowed_grant_types'), true)) {
+            $codeFlow = in_array($grant, self::MCP_GRANT_TYPES, true) && in_array($grant, $this->configList('allowed_grant_types'), true);
+            if (! $codeFlow && ! in_array($grant, $decoupled, true)) {
                 throw InvalidClientMetadata::metadata("grant_type not permitted: {$grant}")->withSourceMessage(new SourceMessage('grant_type not permitted: :grant', ['grant' => $grant]));
             }
         }
-        if (! in_array('authorization_code', $requested, true)) {
-            throw InvalidClientMetadata::metadata('an MCP client registration needs the authorization_code grant')->withSourceMessage(new SourceMessage('an MCP client registration needs the authorization_code grant', []));
+        // Something has to put a person in the loop: the code flow, CIBA or the device grant.
+        // A refresh grant alone could never obtain its first token.
+        if (array_intersect($requested, ['authorization_code', GrantType::Ciba->value, GrantType::DeviceCode->value]) === []) {
+            throw InvalidClientMetadata::metadata('an MCP client registration needs the authorization_code, ciba or device_code grant')->withSourceMessage(new SourceMessage('an MCP client registration needs the authorization_code, ciba or device_code grant', []));
+        }
+        // CIBA puts a prompt on a person's phone from a request with no browser behind it.
+        // A self-registered client does that with its own key unless a resource explicitly
+        // lets public clients do it too (`dynamic_public_backchannel`).
+        if ($authMethod === 'none' && in_array(GrantType::Ciba->value, $requested, true) && ! $this->selfRegistered->publicBackchannel()) {
+            throw InvalidClientMetadata::metadata('the ciba grant needs token_endpoint_auth_method "private_key_jwt" with an inline "jwks" here')->withSourceMessage(new SourceMessage('the ciba grant needs token_endpoint_auth_method "private_key_jwt" with an inline "jwks" here', []));
         }
 
         return $requested;

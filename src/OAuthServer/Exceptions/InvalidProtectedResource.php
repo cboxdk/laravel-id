@@ -35,4 +35,14 @@ class InvalidProtectedResource extends InvalidArgumentException
     {
         return new self("The scope [{$scope}] is defined by the authorization server itself and cannot belong to a protected resource.");
     }
+
+    public static function dynamicGrant(string $grant): self
+    {
+        return new self("The grant [{$grant}] cannot be opened to self-registered clients: only urn:openid:params:grant-type:ciba (ciba) and urn:ietf:params:oauth:grant-type:device_code (device_code) can.");
+    }
+
+    public static function publicBackchannelWithoutCiba(): self
+    {
+        return new self('`dynamic_public_backchannel` needs `dynamic_clients` on and the ciba grant in `dynamic_client_grants`.');
+    }
 }

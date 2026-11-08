@@ -676,6 +676,8 @@ return [
          *       'name' => 'MCP',                 // RFC 9728 resource_name (optional)
          *       'scopes' => ['mcp:read', 'mcp:write'],
          *       'dynamic_clients' => true,       // self-registered clients may use it
+         *       // 'dynamic_client_grants' => ['ciba', 'device_code'], // decoupled grants they may use
+         *       // 'dynamic_public_backchannel' => false, // public (not private_key_jwt) clients may start CIBA
          *       // 'client_id' => '…',           // whose app roles its tokens carry
          *       // 'documentation' => 'https://…',
          *   ],
@@ -761,6 +763,14 @@ return [
         'ciba' => [
             'ttl_seconds' => env('CBOX_ID_CIBA_TTL_SECONDS', 300),
             'poll_interval' => env('CBOX_ID_CIBA_POLL_INTERVAL', 5),
+            // Prompt-flooding limits: one client asking about one login_hint, and one
+            // person across every client. Past either, `429 slow_down` and nothing is filed.
+            'rate_limits' => [
+                'per_client_hint' => (int) env('CBOX_ID_CIBA_PER_CLIENT_HINT', 5),
+                'per_client_hint_window' => 60,
+                'per_person' => (int) env('CBOX_ID_CIBA_PER_PERSON', 10),
+                'per_person_window' => 600,
+            ],
         ],
 
         /*

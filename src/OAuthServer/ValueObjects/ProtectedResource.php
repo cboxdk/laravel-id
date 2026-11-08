@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
 use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
+use Cbox\Id\OAuthServer\Enums\GrantType;
 use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 use Cbox\Id\OAuthServer\Exceptions\InvalidProtectedResource;
 
@@ -33,6 +34,9 @@ readonly class ProtectedResource
     /** RFC 9728 §3: the well-known URI suffix protected resource metadata lives under. */
     public const WELL_KNOWN = '/.well-known/oauth-protected-resource';
 
+    /** The grants a host may open to self-registered clients, per resource. */
+    public const DYNAMIC_GRANTS = [GrantType::Ciba->value, GrantType::DeviceCode->value];
+
     /** RFC 6749 §3.3 scope-token, the same rule an API's scopes are held to. */
     private const SCOPE_TOKEN = '/^[\x21\x23-\x5B\x5D-\x7E]{1,128}$/';
 
@@ -58,6 +62,24 @@ readonly class ProtectedResource
          * null = the requesting client's own, as for any unregistered audience.
          */
         public ?string $clientId = null,
+        /**
+         * The decoupled grants a self-registered client may use for THIS resource: CIBA and
+         * the device grant (RFC 8628). Empty unless the host says so. Those grants put a
+         * prompt in front of a person without a browser bound to the flow, so opening them to
+         * whoever reached the registration endpoint is a decision per resource, never a
+         * default — and only meaningful with `dynamicClients` on.
+         *
+         * @var list<string>
+         */
+        public array $dynamicClientGrants = [],
+        /**
+         * Whether a self-registered PUBLIC client (`token_endpoint_auth_method` none) may start
+         * CIBA for this resource. Off by default: a self-registered client that wants CIBA
+         * registers with `private_key_jwt` and its own key, and is confidential. On, a public
+         * client may too, held to a binding message, a bound resource and per-client and
+         * per-person rate limits — see BackchannelAuthenticationController.
+         */
+        public bool $dynamicPublicBackchannel = false,
     ) {
         if (! self::isServableIdentifier($identifier)) {
             throw InvalidProtectedResource::identifier($identifier);
@@ -74,6 +96,25 @@ readonly class ProtectedResource
                 throw InvalidProtectedResource::protocolScope($scope);
             }
         }
+
+        foreach ($dynamicClientGrants as $grant) {
+            if (! in_array($grant, self::DYNAMIC_GRANTS, true)) {
+                throw InvalidProtectedResource::dynamicGrant($grant);
+            }
+        }
+
+        if ($dynamicPublicBackchannel && ! $this->allowsDynamicGrant(GrantType::Ciba->value)) {
+            throw InvalidProtectedResource::publicBackchannelWithoutCiba();
+        }
+    }
+
+    /**
+     * Whether a self-registered client may use $grant for this resource: the resource is
+     * open to self-registered clients at all, and the host opened this grant on it.
+     */
+    public function allowsDynamicGrant(string $grant): bool
+    {
+        return $this->dynamicClients && in_array($grant, $this->dynamicClientGrants, true);
     }
 
     public function accepts(string $scope): bool

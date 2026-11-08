@@ -101,6 +101,8 @@ it('still issues both to a client that holds the scopes', function (): void {
  */
 it('refuses a CIBA request that asks for a scope the client does not hold', function (): void {
     $subject = app(Subjects::class)->create('ciba@acme.test', 'Ciba User');
+    // A login_hint email must be one the person confirmed.
+    app(Subjects::class)->markEmailVerified($subject->id, 'ciba@acme.test');
     $registered = $this->makeClient(['openid'], grantTypes: ['urn:openid:params:grant-type:ciba']);
 
     $this->postJson('/oauth/backchannel_authentication', [
@@ -115,6 +117,7 @@ it('refuses a CIBA request that asks for a scope the client does not hold', func
 
 it('still starts a CIBA request within the client’s registered scopes', function (): void {
     $subject = app(Subjects::class)->create('ciba-ok@acme.test', 'Ciba User');
+    app(Subjects::class)->markEmailVerified($subject->id, 'ciba-ok@acme.test');
     $registered = $this->makeClient(['openid', 'offline_access'], grantTypes: ['urn:openid:params:grant-type:ciba']);
 
     $this->postJson('/oauth/backchannel_authentication', [

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
+use Cbox\Id\Kernel\Audit\Enums\ActorType;
+use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
@@ -13,6 +16,7 @@ use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
+use Cbox\Id\OAuthServer\Exceptions\CibaRateLimited;
 use Cbox\Id\OAuthServer\Exceptions\CibaSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
@@ -23,6 +27,7 @@ use Cbox\Id\OAuthServer\Support\GrantedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\BackchannelAuthenticationResult;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Poll-mode CIBA (OpenID Connect CIBA Core). The polling state machine mirrors the
@@ -38,9 +43,15 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
     private const DEFAULT_POLL_INTERVAL = 5;
 
+    /** Requests per person, across every client, in the window below — the prompt-fatigue cap. */
+    private const DEFAULT_PER_PERSON = 10;
+
+    private const DEFAULT_PER_PERSON_WINDOW = 600;
+
     public function __construct(
         private readonly Subjects $subjects,
         private readonly EventBus $events,
+        private readonly AuditLog $audit,
     ) {}
 
     public function request(
@@ -50,14 +61,36 @@ class CibaAuthenticationService implements BackchannelAuthentication
         ?string $bindingMessage = null,
         ?string $nonce = null,
         ?int $requestedExpiry = null,
+        ?string $resource = null,
     ): BackchannelAuthenticationResult {
-        // Resolve the user the client is asking to authenticate — by opaque id or
-        // by email. Deny-by-default: an unresolvable hint never creates a request.
-        $subject = $this->subjects->find($loginHint) ?? $this->subjects->findByEmail($loginHint);
+        // Resolve the user the client is asking to authenticate — by opaque id, or by an
+        // email address the person has CONFIRMED. An unconfirmed address proves nothing
+        // about who reads it, and a prompt keyed to one could land with whoever typed it
+        // into a sign-up form. Deny-by-default: an unresolvable hint never creates a
+        // request, and an unconfirmed one reads exactly like an unknown one.
+        $subject = $this->subjects->find($loginHint);
+
+        if ($subject === null) {
+            $byEmail = $this->subjects->findByEmail($loginHint);
+            $subject = $byEmail !== null && $byEmail->emailVerified ? $byEmail : null;
+        }
 
         if ($subject === null) {
             throw new UnknownUserHint;
         }
+
+        // However many clients ask, one person sees at most this many prompts in the
+        // window. A person who has dismissed thirty approves the thirty-first; this is the
+        // ceiling on how many they can be shown.
+        $key = 'cbox-id:ciba:person:'.$subject->id;
+        $limit = self::configInt('cbox-id.oauth.ciba.rate_limits.per_person', self::DEFAULT_PER_PERSON);
+        $window = self::configInt('cbox-id.oauth.ciba.rate_limits.per_person_window', self::DEFAULT_PER_PERSON_WINDOW);
+
+        if (RateLimiter::tooManyAttempts($key, $limit)) {
+            throw new CibaRateLimited(RateLimiter::availableIn($key));
+        }
+
+        RateLimiter::hit($key, $window);
 
         // The same ceiling the device grant applies, for the same reason and with the same
         // refusal: CIBA is machine-initiated, so nobody is stranded by a 400, and a grant
@@ -82,6 +115,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
             'scopes' => $scopes,
             'binding_message' => $bindingMessage,
             'nonce' => $nonce,
+            'resource' => $resource,
             'status' => GrantPollStatus::Pending,
             'interval' => $interval,
             'expires_at' => now()->addSeconds($ttl),
@@ -98,7 +132,17 @@ class CibaAuthenticationService implements BackchannelAuthentication
                 'user_id' => $subject->id,
                 'binding_message' => $bindingMessage,
                 'scopes' => $scopes,
+                'resource' => $resource,
             ],
+        ));
+
+        $this->audit->record(new AuditEvent(
+            action: 'oauth.ciba.requested',
+            actorType: ActorType::Service,
+            actorId: $client->client_id,
+            targetType: 'user',
+            targetId: $subject->id,
+            context: ['request_id' => $model->id, 'scopes' => $scopes, 'resource' => $resource, 'binding_message' => $bindingMessage],
         ));
 
         return new BackchannelAuthenticationResult(
@@ -113,16 +157,41 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
     public function approve(string $requestId, string $subjectId, ?string $organizationId = null): bool
     {
-        return $this->transitionPending($requestId, $subjectId, [
+        $approved = $this->transitionPending($requestId, $subjectId, [
             'status' => GrantPollStatus::Approved,
             'organization_id' => $organizationId,
             'approved_at' => now(),
         ]);
+
+        if ($approved) {
+            $this->recordDecision('oauth.ciba.approved', $requestId, $subjectId, $organizationId);
+        }
+
+        return $approved;
     }
 
     public function deny(string $requestId, string $subjectId): bool
     {
-        return $this->transitionPending($requestId, $subjectId, ['status' => GrantPollStatus::Denied]);
+        $denied = $this->transitionPending($requestId, $subjectId, ['status' => GrantPollStatus::Denied]);
+
+        if ($denied) {
+            $this->recordDecision('oauth.ciba.denied', $requestId, $subjectId, null);
+        }
+
+        return $denied;
+    }
+
+    /** Every decision on a backchannel request, by the person it was for. */
+    private function recordDecision(string $action, string $requestId, string $subjectId, ?string $organizationId): void
+    {
+        $this->audit->record(new AuditEvent(
+            action: $action,
+            actorType: ActorType::User,
+            actorId: $subjectId,
+            organizationId: $organizationId,
+            targetType: 'ciba_request',
+            targetId: $requestId,
+        ));
     }
 
     public function redeem(string $clientId, string $authReqId): AuthorizedGrant
@@ -181,6 +250,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
                 scopes: array_values($locked->scopes),
                 nonce: $locked->nonce,
                 authTime: $locked->approved_at?->getTimestamp(),
+                resource: $locked->resource,
             );
 
             $locked->forceFill(['status' => GrantPollStatus::Redeemed, 'last_polled_at' => now()])->save();
@@ -234,5 +304,13 @@ class CibaAuthenticationService implements BackchannelAuthentication
         $value = config('cbox-id.oauth.ciba.poll_interval', self::DEFAULT_POLL_INTERVAL);
 
         return is_numeric($value) ? (int) $value : self::DEFAULT_POLL_INTERVAL;
+    }
+
+    /** A positive whole number from config, or the default when it is not one. */
+    private static function configInt(string $key, int $default): int
+    {
+        $value = config($key, $default);
+
+        return is_numeric($value) && (int) $value > 0 ? (int) $value : $default;
     }
 }
