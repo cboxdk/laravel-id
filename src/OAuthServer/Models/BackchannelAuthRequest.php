@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property array<int, string> $scopes
  * @property string|null $binding_message
  * @property string|null $nonce
+ * @property string|null $resource
  * @property GrantPollStatus $status
  * @property int $interval
  * @property Carbon|null $last_polled_at

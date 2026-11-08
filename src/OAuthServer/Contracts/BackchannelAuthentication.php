@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer\Contracts;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
+use Cbox\Id\OAuthServer\Exceptions\CibaRateLimited;
 use Cbox\Id\OAuthServer\Exceptions\CibaSlowDown;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
@@ -39,7 +40,12 @@ interface BackchannelAuthentication
      *
      * @param  list<string>  $scopes
      *
-     * @throws UnknownUserHint when the login_hint resolves to no user
+     * `resource` (RFC 8707) is stored with the request, so the token the poll yields is
+     * audience-bound to it exactly as an authorization code's is.
+     *
+     * @throws UnknownUserHint when the login_hint resolves to no user, or names an email
+     *                         address the person has not confirmed
+     * @throws CibaRateLimited when the person has been asked too often in the window
      * @throws ScopeNotGranted when the request names a scope the client is not registered
      *                         for — refused rather than narrowed, because CIBA is
      *                         machine-initiated and nobody is stranded by a 400
@@ -51,6 +57,7 @@ interface BackchannelAuthentication
         ?string $bindingMessage = null,
         ?string $nonce = null,
         ?int $requestedExpiry = null,
+        ?string $resource = null,
     ): BackchannelAuthenticationResult;
 
     /**

@@ -6,8 +6,11 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
+use Cbox\Id\OAuthServer\Support\DynamicGrantPolicy;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
+use Cbox\Id\OAuthServer\Support\ResourceParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,6 +25,7 @@ class DeviceAuthorizationController
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,
         private readonly DeviceAuthorization $device,
+        private readonly DynamicGrantPolicy $dynamicGrants,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -42,6 +46,14 @@ class DeviceAuthorizationController
         // prompt in front of a user.
         if (! GrantPolicy::allows($client, 'urn:ietf:params:oauth:grant-type:device_code')) {
             return new JsonResponse(['error' => 'unauthorized_client'], 400);
+        }
+
+        // A self-registered client starts a device flow only for a resource that opened the
+        // device grant to such clients — checked here, before any code is shown to anyone.
+        try {
+            $this->dynamicGrants->resourceFor($client, 'urn:ietf:params:oauth:grant-type:device_code', ResourceParameter::fromRequest($request));
+        } catch (InvalidAudience $e) {
+            return new JsonResponse(['error' => $e->error, 'error_description' => $e->getMessage()], 400);
         }
 
         $scope = $request->string('scope')->toString();

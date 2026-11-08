@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
+use Cbox\Id\OAuthServer\Enums\GrantType;
 use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 use Cbox\Id\OAuthServer\Exceptions\InvalidProtectedResource;
 use Cbox\Id\OAuthServer\ValueObjects\ProtectedResource;
@@ -91,7 +92,25 @@ class ConfiguredProtectedResources implements ProtectedResources
             name: $this->optional($entry['name'] ?? null),
             documentation: $this->optional($entry['documentation'] ?? null),
             clientId: $this->optional($entry['client_id'] ?? null),
+            dynamicClientGrants: $this->dynamicGrants($entry['dynamic_client_grants'] ?? []),
+            dynamicPublicBackchannel: filter_var($entry['dynamic_public_backchannel'] ?? false, FILTER_VALIDATE_BOOL),
         );
+    }
+
+    /**
+     * `dynamic_client_grants`, with the short names an operator writes in a JSON env var
+     * (`ciba`, `device_code`) expanded to the grant URNs. Anything else passes through
+     * unchanged, so the value object refuses it by name.
+     *
+     * @return list<string>
+     */
+    private function dynamicGrants(mixed $grants): array
+    {
+        return array_values(array_unique(array_map(static fn (string $grant): string => match ($grant) {
+            'ciba' => GrantType::Ciba->value,
+            'device_code' => GrantType::DeviceCode->value,
+            default => $grant,
+        }, $this->strings($grants))));
     }
 
     /**

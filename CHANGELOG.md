@@ -15,6 +15,23 @@ naming competitor products in prose; that applies to entries written from here o
 deliberately NOT applied backwards, because a silent rewrite of shipped history costs
 more trust than the wording it removes.
 
+## [Unreleased]
+
+### Added
+
+- **CIBA and the device grant for self-registered agents and CLIs.** A protected resource opens them with `dynamic_client_grants: ['ciba', 'device_code']`. `mcp`-mode registration then accepts those grants, accepts `token_endpoint_auth_method: "private_key_jwt"` with an inline `jwks` (no secret handed out), and no longer requires `authorization_code` for a client that signs people in without a browser. Every backchannel or device request from such a client must name that resource (`invalid_target` otherwise), and a backchannel request must carry a `binding_message`. `dynamic_public_backchannel` lets a resource accept public clients for CIBA too. See `docs/security/ciba.md`.
+- **RFC 8707 `resource` on CIBA.** The backchannel request may name a resource; it is checked before anyone is prompted, stored (`ciba_requests.resource`, migration `2026_11_08_120000`, additive), and the token the poll yields is bound to it. A poll that names another resource is `invalid_target`.
+- **Rate limits on backchannel requests**: per client and `login_hint` (5 per minute) and per person across clients (10 per 10 minutes) → `429 slow_down` with `Retry-After`. `oauth.ciba.rate_limits`.
+- **CIBA is audited**: `oauth.ciba.requested`, `oauth.ciba.approved`, `oauth.ciba.denied`.
+
+### Changed
+
+- `BackchannelAuthentication::request()` takes an optional `?string $resource = null` last. Implementations and decorators must accept it (see UPGRADING).
+
+### Security
+
+- **An email `login_hint` must be confirmed.** A backchannel request keyed to an address the person never confirmed answered like any other and prompted whoever owned that account. It now answers `unknown_user_id`, exactly as an unknown address does; a user id is unchanged.
+
 ## [2.0.0] - 2026-11-07
 
 ### Upgrade

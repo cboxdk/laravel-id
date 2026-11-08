@@ -84,6 +84,37 @@ class SelfRegisteredScopes
     }
 
     /**
+     * The decoupled grants (CIBA, device) at least one resource has opened to
+     * self-registered clients — what a registration may ask for. Whether a given request
+     * may USE one is decided again per resource, where the request names it.
+     *
+     * @return list<string>
+     */
+    public function grants(): array
+    {
+        $grants = [];
+        foreach ($this->resources->all() as $resource) {
+            if ($resource->dynamicClients) {
+                array_push($grants, ...$resource->dynamicClientGrants);
+            }
+        }
+
+        return array_values(array_unique($grants));
+    }
+
+    /** Whether any resource lets a self-registered PUBLIC client start CIBA. */
+    public function publicBackchannel(): bool
+    {
+        foreach ($this->resources->all() as $resource) {
+            if ($resource->dynamicPublicBackchannel && $resource->allowsDynamicGrant('urn:openid:params:grant-type:ciba')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return list<string>
      */
     private function protocolScopes(): array

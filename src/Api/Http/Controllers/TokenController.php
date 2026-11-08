@@ -36,6 +36,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\InvalidTokenExchange;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
+use Cbox\Id\OAuthServer\Support\DynamicGrantPolicy;
 use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Cbox\Id\OAuthServer\Support\ResourceParameter;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
@@ -80,7 +81,8 @@ class TokenController
         private readonly Memberships $memberships,
         private readonly SupportSessions $supportSessions,
         // Trailing and optional so existing constructions keep compiling.
-        private readonly ?FeatureFlagClaim $featureFlags = null,
+        private readonly ?FeatureFlagClaim $featureFlags,
+        private readonly ?DynamicGrantPolicy $dynamicGrants = null,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -110,7 +112,7 @@ class TokenController
                 'authorization_code' => $this->authorizationCode($request, $jkt, $resource),
                 'refresh_token' => $this->refreshToken($request, $jkt, $resource),
                 'urn:ietf:params:oauth:grant-type:device_code' => $this->deviceCode($request, $jkt, $resource),
-                'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt),
+                'urn:openid:params:grant-type:ciba' => $this->ciba($request, $jkt, $resource),
                 'urn:ietf:params:oauth:grant-type:token-exchange' => $this->tokenExchange($request, $jkt, $resource),
                 default => $this->error('unsupported_grant_type', 400),
             };
@@ -307,6 +309,10 @@ class TokenController
             return $this->error('unauthorized_client', 400);
         }
 
+        // A self-registered client's token is for a resource that opened the device grant
+        // to it, named again here (RFC 8628 has the device name it on this request).
+        ($this->dynamicGrants ?? app(DynamicGrantPolicy::class))->resourceFor($client, 'urn:ietf:params:oauth:grant-type:device_code', $resource);
+
         try {
             $grant = $this->device->redeem($client->client_id, $request->string('device_code')->toString());
         } catch (DeviceAuthorizationPending) {
@@ -367,7 +373,7 @@ class TokenController
         );
     }
 
-    private function ciba(Request $request, ?string $dpopJkt): JsonResponse
+    private function ciba(Request $request, ?string $dpopJkt, ?string $requested): JsonResponse
     {
         $client = $this->clientAuth->authenticate($request);
 
@@ -401,7 +407,16 @@ class TokenController
         // the approving user (with auth_time and the request nonce).
         // With `auth_time` on the access token too (RFC 9470 §6.1) — the approval time; no
         // `acr`, because a CIBA approval records no authentication methods.
-        $access = $this->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, null, $dpopJkt, AuthenticationEvent::fromAuthorization($grant));
+        // RFC 8707 §2.2, as on the authorization-code branch: the poll may repeat the
+        // resource the request named, never name another. The request's resource wins, so a
+        // token is bound to exactly what the person saw when approving.
+        if ($grant->resource !== null && $requested !== null && $requested !== $grant->resource) {
+            return $this->error('invalid_target', 400, 'the requested resource is not the one this backchannel request was approved for');
+        }
+
+        $resource = $grant->resource ?? $requested;
+
+        $access = $this->issueForUser($client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt, AuthenticationEvent::fromAuthorization($grant));
 
         // AND A REFRESH TOKEN WHEN `offline_access` WAS GRANTED — the same fix the device
         // grant needed, in the branch directly above, and the reasoning carries over
