@@ -85,6 +85,9 @@ class ApiServiceProvider extends ServiceProvider
     /** The named rate limiter on `POST /oauth/register`. */
     public const REGISTRATION_LIMITER = 'cbox-id.client-registration';
 
+    /** Named rate limiter on `POST /oauth/token`, per client and address. */
+    public const TOKEN_LIMITER = 'cbox-id.token';
+
     public function register(): void
     {
         $this->app->bind(ResourceIntrospectionAccess::class, ConfiguredResourceIntrospectionAccess::class);
@@ -99,6 +102,7 @@ class ApiServiceProvider extends ServiceProvider
     public function boot(): void
     {
         RateLimiter::for(self::REGISTRATION_LIMITER, fn (Request $request): Limit => $this->registrationLimit($request));
+        RateLimiter::for(self::TOKEN_LIMITER, fn (Request $request): array => $this->tokenLimits($request));
 
         // Liveness probe. Deliberately OUTSIDE both the environment resolution and the
         // IdP-surface gate below: a kubelet probes the POD (so the Host header maps to
@@ -125,7 +129,7 @@ class ApiServiceProvider extends ServiceProvider
         // advertising an issuer it cannot honour.
         // THE TOKEN ENDPOINTS, held to their own wall.
         //
-        // Same throttle, same no-store, same environment resolution as the surface below
+        // Same no-store and environment resolution as the surface below, its own throttle
         // — what differs is only WHICH hosts serve them, and that is a question the host
         // application answers ({@see firstPartyMiddleware()}). It defaults to the surface
         // list, so a deployment that configures nothing sees no difference at all and the
@@ -141,10 +145,15 @@ class ApiServiceProvider extends ServiceProvider
         Route::middleware(array_merge(
             [ResolveEnvironment::class],
             $this->firstPartyMiddleware(),
-            ['throttle:30,1', NoStore::class],
+            [NoStore::class],
         ))->group(function (): void {
-            Route::post('/oauth/token', TokenController::class);
-            Route::post('/oauth/revoke', RevocationController::class);
+            // Keyed on the client, not the address: every service behind one egress
+            // address (a cluster reaching us through one tunnel) shared a single 30/min
+            // bucket and was refused tokens it was entitled to. {@see tokenLimits()}.
+            Route::post('/oauth/token', TokenController::class)
+                ->middleware('throttle:'.self::TOKEN_LIMITER);
+            Route::post('/oauth/revoke', RevocationController::class)
+                ->middleware('throttle:30,1');
         });
 
         // THE PUBLIC VERIFICATION KEYS, on their own wall.
@@ -510,6 +519,71 @@ class ApiServiceProvider extends ServiceProvider
         }
 
         return $middleware;
+    }
+
+    /**
+     * The token endpoint's limits: one bucket per (client id, address), under a looser
+     * ceiling per address. A request naming no client gets the old per-address bucket.
+     *
+     * The client id is unverified here — the throttle runs before client authentication —
+     * so it is never the whole key. Keyed on the id alone, a caller anywhere could exhaust
+     * a real client's bucket by sending its (public) id; paired with the address, it can
+     * only do that from the client's own address, which a per-address limit allowed too.
+     * The per-address ceiling stops a caller multiplying its attempts by inventing ids.
+     * The client limit is checked first, so a client over its own limit stops counting
+     * against the address it shares with others.
+     *
+     * @return list<Limit>
+     */
+    private function tokenLimits(Request $request): array
+    {
+        $address = (string) $request->ip();
+        $perAddress = Limit::perMinute($this->tokenLimit('per_ip', 300))->by('token-ip|'.$address);
+        $clientId = $this->unverifiedClientId($request);
+
+        if ($clientId === null) {
+            return [
+                Limit::perMinute($this->tokenLimit('anonymous', 30))->by('token-anonymous|'.$address),
+                $perAddress,
+            ];
+        }
+
+        return [
+            Limit::perMinute($this->tokenLimit('per_client', 30))->by('token-client|'.hash('sha256', $clientId).'|'.$address),
+            $perAddress,
+        ];
+    }
+
+    /**
+     * The client id a token request claims, before anything has verified it: the HTTP
+     * Basic user, the body `client_id`, or the `sub` of a `client_assertion` (RFC 7523
+     * §3: `sub` is the client id). Only a throttle key — never an identity.
+     */
+    private function unverifiedClientId(Request $request): ?string
+    {
+        $candidates = [$request->getUser(), $request->input('client_id')];
+
+        $assertion = $request->input('client_assertion');
+
+        if (is_string($assertion) && substr_count($assertion, '.') === 2) {
+            $payload = json_decode((string) base64_decode(strtr(explode('.', $assertion)[1], '-_', '+/'), true), true);
+            $candidates[] = is_array($payload) ? ($payload['sub'] ?? null) : null;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private function tokenLimit(string $name, int $default): int
+    {
+        $configured = config('cbox-id.oauth.token_rate_limits.'.$name, $default);
+
+        return max(1, is_numeric($configured) ? (int) $configured : $default);
     }
 
     /**

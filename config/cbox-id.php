@@ -626,6 +626,29 @@ return [
          */
         'reserved_scopes' => ['vault.manage', 'vault.lease', 'apps.manifest', 'decisions:read'],
 
+        /*
+         * Throttle on `POST /oauth/token`, per minute.
+         *
+         * `per_client` is the bucket for one client id FROM one address. The client id is
+         * read before the client authenticates (HTTP Basic user, body `client_id`, or the
+         * `sub` of a `client_assertion`), so it is unverified — which is why it is paired
+         * with the address: keyed on the id alone, anyone who knows a client id (they are
+         * not secret) could empty that client's bucket from anywhere. Paired, a caller can
+         * only empty the bucket of a client that shares its address, which a per-address
+         * limit already allowed. Several services behind one egress address (a cluster
+         * behind one tunnel) each get their own bucket instead of sharing one.
+         *
+         * `per_ip` is the ceiling on everything from one address, whatever client ids it
+         * names, so inventing ids does not buy unlimited attempts.
+         *
+         * `anonymous` is the bucket for a request that names no client at all, per address.
+         */
+        'token_rate_limits' => [
+            'per_client' => env('CBOX_ID_TOKEN_PER_CLIENT_PER_MINUTE', 30),
+            'per_ip' => env('CBOX_ID_TOKEN_PER_IP_PER_MINUTE', 300),
+            'anonymous' => env('CBOX_ID_TOKEN_ANONYMOUS_PER_MINUTE', 30),
+        ],
+
         'dynamic_registration' => [
             'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),
             'initial_access_token' => env('CBOX_ID_DCR_INITIAL_ACCESS_TOKEN'),

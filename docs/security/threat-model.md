@@ -63,6 +63,7 @@ It is an engineering artifact, not a certification or audit result.
 | Brute force / automated abuse | per-endpoint rate limits, login/MFA/signup throttles |
 | Algorithmic-complexity DoS (auth graph) | visited-set cycle guard in relationship checks |
 | Flooded webhook retries | bounded retry schedule |
+| Token endpoint flooding | per (client id, address) bucket under a per-address ceiling (`oauth.token_rate_limits`); the client id is unverified at throttle time, so it never keys a bucket alone — naming a client from another address cannot empty its bucket |
 | Registration flooding (open / `mcp` DCR) | per-minute throttle plus a per-address hourly ceiling; unused self-registered clients swept by `cbox-id:prune` when enabled |
 
 ### Elevation of privilege (authorization)

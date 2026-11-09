@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-09
+
+### Fixed
+
+- **`POST /oauth/token` is throttled per client, not per address.** Every service behind one egress address (a cluster reaching Cbox ID through one tunnel) shared a single 30/min bucket and was refused tokens. The token endpoint now keys a bucket on the client id the request names (HTTP Basic user, `client_id`, or the `sub` of a `client_assertion`) together with the caller's address, under a per-address ceiling. A request naming no client keeps the old per-address bucket. Defaults: 30/min per client and address, 300/min per address, 30/min anonymous, configurable as `oauth.token_rate_limits` (`CBOX_ID_TOKEN_PER_CLIENT_PER_MINUTE`, `CBOX_ID_TOKEN_PER_IP_PER_MINUTE`, `CBOX_ID_TOKEN_ANONYMOUS_PER_MINUTE`). The client id is unverified when the throttle runs, so it never keys a bucket alone: naming a client from another address cannot empty that client's bucket. `/oauth/revoke` keeps its 30/min per address.
+
 ## [2.1.0] - 2026-11-08
 
 ### Added
