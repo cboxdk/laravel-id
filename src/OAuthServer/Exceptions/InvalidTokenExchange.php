@@ -56,4 +56,10 @@ class InvalidTokenExchange extends RuntimeException
     {
         return new self('invalid_grant', 'The subject token is DPoP-bound; the request must present a DPoP proof for the bound key.');
     }
+
+    /** RFC 9396 §5: the authorization_details were malformed, unknown or not allowed. */
+    public static function invalidAuthorizationDetails(string $message): self
+    {
+        return new self('invalid_authorization_details', $message);
+    }
 }

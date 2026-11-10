@@ -23,12 +23,14 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareTokenIssuer;
+use Cbox\Id\OAuthServer\Contracts\AuthorizationDetailsTokenIssuer;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
+use Cbox\Id\OAuthServer\ValueObjects\AuthorizationDetails;
 use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Memberships;
@@ -48,7 +50,7 @@ use Illuminate\Support\Str;
  * veto throws {@see ActionDenied} before any `jti` is recorded — so a denied token
  * leaves no trace.
  */
-class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
+class JwtTokenIssuer implements AuthenticationAwareTokenIssuer, AuthorizationDetailsTokenIssuer
 {
     /**
      * Fallback access-token lifetime when none is configured. Short by design: the
@@ -66,7 +68,7 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
      * fresh sign-in that never happened. `auth_req_id` and `binding_message` too: a resource
      * server takes them as proof of WHICH approval a CIBA token came from.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act', 'acr', 'auth_time', 'auth_req_id', 'binding_message'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act', 'acr', 'auth_time', 'auth_req_id', 'binding_message', 'authorization_details'];
 
     public function __construct(
         private readonly TokenSigner $signer,
@@ -103,6 +105,20 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
         ?string $dpopJkt = null,
     ): IssuedToken {
         return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt, authentication: $authentication);
+    }
+
+    public function issueForExchange(
+        Client $client,
+        string $userId,
+        ?string $organizationId,
+        array $scopes,
+        AuthorizationDetails $details,
+        ?int $authTime = null,
+        ?string $acr = null,
+        ?string $resource = null,
+        ?string $dpopJkt = null,
+    ): IssuedToken {
+        return $this->issue($client, $userId, $userId, $organizationId, $this->grantScopes($client, $scopes), $resource, $dpopJkt, details: $details, carriedAuthTime: $authTime, carriedAcr: $acr);
     }
 
     public function issueActing(
@@ -230,7 +246,7 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
      * @param  ActingParty|null  $actor  set only for a support session's token (see issueActing())
      * @param  AuthenticationEvent|null  $authentication  the login behind a user grant (see issueForAuthenticatedUser())
      */
-    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null, ?AuthenticationEvent $authentication = null): IssuedToken
+    private function issue(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource = null, ?string $dpopJkt = null, ?ActingParty $actor = null, ?DateTimeInterface $notAfter = null, ?AuthenticationEvent $authentication = null, ?AuthorizationDetails $details = null, ?int $carriedAuthTime = null, ?string $carriedAcr = null): IssuedToken
     {
         // The host may consult a remote risk service. Do that before opening our
         // mint transaction, and include legacy/user grants with unknown AMR too.
@@ -239,7 +255,7 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
             try {
                 app(AuthenticationAssessment::class)->assertAllowed(new VerifiedAuthentication(
                     $userId, $organizationId, $authentication->amr ?? [],
-                    $authentication?->authTime, AuthenticationIssuance::Token,
+                    $authentication->authTime ?? $carriedAuthTime, AuthenticationIssuance::Token,
                 ));
             } catch (AuthenticationStepUpRequired) {
                 throw InvalidGrant::make('stronger authentication is required');
@@ -248,7 +264,7 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
 
         // What this token is FOR — scopes, audience, and whose roles it carries — decided
         // once, here, for every grant type. See AudienceResolver.
-        return DB::transaction(function () use ($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication): IssuedToken {
+        return DB::transaction(function () use ($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication, $details, $carriedAuthTime, $carriedAcr): IssuedToken {
             if ($userId !== null && ! app(Subjects::class)->isActive($userId)) {
                 throw InvalidGrant::make('the subject is no longer active');
             }
@@ -258,12 +274,12 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
                 throw InvalidGrant::make('a second factor is required');
             }
 
-            return $this->mint($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication);
+            return $this->mint($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication, $details, $carriedAuthTime, $carriedAcr);
         });
     }
 
     /** @param list<string> $scopes */
-    private function mint(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource, ?string $dpopJkt, ?ActingParty $actor, ?DateTimeInterface $notAfter, ?AuthenticationEvent $authentication): IssuedToken
+    private function mint(Client $client, string $subject, ?string $userId, ?string $organizationId, array $scopes, ?string $resource, ?string $dpopJkt, ?ActingParty $actor, ?DateTimeInterface $notAfter, ?AuthenticationEvent $authentication, ?AuthorizationDetails $details = null, ?int $carriedAuthTime = null, ?string $carriedAcr = null): IssuedToken
     {
         $audience = $this->audiences->resolve($client, $scopes, $resource);
         $scopes = $audience->scopes;
@@ -375,6 +391,24 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
         // asked for. Only a backchannel grant carries one; reserved, so no hook can forge it.
         if ($userId !== null && $authentication?->backchannel !== null) {
             $claims = [...$claims, ...$authentication->backchannel->claims()];
+        }
+
+        // An exchanged token claims exactly the login its subject token did (RFC 9470
+        // §6.1), read from a token this server signed, and never a newer or stronger one.
+        if ($userId !== null && $authentication === null) {
+            if ($carriedAuthTime !== null) {
+                $claims['auth_time'] = $carriedAuthTime;
+            }
+
+            if ($carriedAcr !== null && $carriedAcr !== '') {
+                $claims['acr'] = $carriedAcr;
+            }
+        }
+
+        // RFC 9396 §9.1: what this token is for, when the exchange narrowed it to one
+        // action. Reserved, so no hook can add, change or strip it.
+        if ($details !== null) {
+            $claims['authorization_details'] = $details->claim();
         }
 
         // RFC 8693 §4.1: who is REALLY holding a support session's token. Set before the

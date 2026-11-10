@@ -18,5 +18,8 @@ readonly class TokenExchangeResult
     public function __construct(
         public IssuedToken $token,
         public array $scopes,
+
+        /** RFC 9396 §7: echoed in the token response when the exchange carried them. */
+        public ?AuthorizationDetails $authorizationDetails = null,
     ) {}
 }

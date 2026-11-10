@@ -41,6 +41,7 @@ use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Cbox\Id\OAuthServer\Support\ResourceParameter;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
+use Cbox\Id\OAuthServer\ValueObjects\AuthorizationDetails;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IdTokenGrant;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
@@ -740,6 +741,12 @@ class TokenController
         }
 
         try {
+            // RFC 9396 §6: optional; parsed here so a malformed value is the client's
+            // `invalid_authorization_details`, not a 500.
+            $details = $request->has('authorization_details')
+                ? AuthorizationDetails::fromRequest($request->input('authorization_details'))
+                : null;
+
             $result = $this->exchange->exchange($client, new TokenExchangeRequest(
                 subjectToken: $subjectToken,
                 subjectTokenType: $subjectTokenType,
@@ -747,6 +754,7 @@ class TokenController
                 resource: $resource,
                 dpopJkt: $dpopJkt,
                 requestedTokenType: $request->string('requested_token_type')->toString() ?: null,
+                authorizationDetails: $details,
             ));
         } catch (InvalidTokenExchange $e) {
             // e.g. "The requested scope exceeds the subject token scope." — already
@@ -762,6 +770,8 @@ class TokenController
             // RFC 8693 §2.2.1: echo the granted scope (REQUIRED when it differs from
             // the request — e.g. an empty request that inherited the subject scopes).
             'scope' => implode(' ', $result->scopes),
+            // RFC 9396 §7: what the token was granted for.
+            ...($result->authorizationDetails === null ? [] : ['authorization_details' => $result->authorizationDetails->claim()]),
         ]));
     }
 

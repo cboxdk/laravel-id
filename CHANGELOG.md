@@ -17,6 +17,16 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-10
+
+### Added
+
+- **Rich authorization requests on token exchange (RFC 9396).** A token exchange may send `authorization_details`, a JSON array of up to 10 objects, each with a string `type`. Every type must be one the client registered in the new `authorization_details_types` column (§10); null, the default for every existing client, means none. The new token carries the details as the reserved `authorization_details` claim (§9.1), along with the subject token's own `auth_time` and `acr` (RFC 9470), never newer ones. The response echoes the details (§7). Malformed, too large or unregistered details get `400 invalid_authorization_details` (§5). The new contract `AuthorizationDetailsTokenIssuer::issueForExchange()` is implemented by `JwtTokenIssuer`. `TokenExchangeRequest` and `TokenExchangeResult` gain an optional `authorizationDetails`. An exchange without details behaves exactly as before. See `docs/security/rich-authorization-requests.md`.
+
+### Migrations
+
+- `2026_11_10_160000_add_authorization_details_types_to_clients` (additive, nullable): `oauth_clients.authorization_details_types`.
+
 ## [2.3.0] - 2026-11-10
 
 ### Added

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\OAuthServer\Contracts\AuthorizationDetailsTokenIssuer;
 use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
@@ -95,11 +96,43 @@ class TokenExchangeService implements TokenExchange
         }
 
         $org = $subject->claims['org'] ?? null;
+        $org = is_string($org) && $org !== '' ? $org : null;
+
+        // RFC 9396 §6: narrowed to one action. Every type must be one this client
+        // registered (§10); the new token carries the details and the subject token's own
+        // login facts, so a resource server can demand a recent or strong enough login.
+        $details = $request->authorizationDetails;
+
+        if ($details !== null) {
+            foreach ($details->types() as $type) {
+                if (! $client->allowsAuthorizationDetailsType($type)) {
+                    throw InvalidTokenExchange::invalidAuthorizationDetails("The client is not registered for authorization_details type [{$type}].");
+                }
+            }
+
+            if (! $this->issuer instanceof AuthorizationDetailsTokenIssuer) {
+                throw InvalidTokenExchange::invalidAuthorizationDetails('This server cannot issue tokens with authorization_details.');
+            }
+
+            $issued = $this->issuer->issueForExchange(
+                $client,
+                $subject->subject,
+                $org,
+                $scopes,
+                $details,
+                $subject->authTime(),
+                $subject->acr(),
+                $resource,
+                $request->dpopJkt,
+            );
+
+            return new TokenExchangeResult($issued, $issued->scopes, $details);
+        }
 
         $issued = $this->issuer->issueForUser(
             $client,
             $subject->subject,
-            is_string($org) && $org !== '' ? $org : null,
+            $org,
             $scopes,
             $resource,
             $request->dpopJkt,

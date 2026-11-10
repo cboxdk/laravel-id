@@ -23,5 +23,11 @@ readonly class TokenExchangeRequest
         public ?string $resource = null,
         public ?string $dpopJkt = null,
         public ?string $requestedTokenType = null,
+
+        /**
+         * RFC 9396 §6: what the exchanged token is for. Every type must be one the
+         * client registered; the token then carries them as `authorization_details`.
+         */
+        public ?AuthorizationDetails $authorizationDetails = null,
     ) {}
 }

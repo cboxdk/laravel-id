@@ -46,6 +46,7 @@ use Illuminate\Support\Carbon;
  * @property bool $backchannel_logout_session_required
  * @property BackchannelTokenDeliveryMode|null $backchannel_token_delivery_mode CIBA Core §4 — null = poll
  * @property string|null $backchannel_client_notification_endpoint CIBA ping mode; operator-registered, https
+ * @property array<int, string>|null $authorization_details_types RFC 9396 §10 — null = none
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
  * @property string|null $manifest_url
@@ -86,6 +87,14 @@ class Client extends Model implements EnvironmentOwned
     public function backchannelTokenDeliveryMode(): BackchannelTokenDeliveryMode
     {
         return $this->backchannel_token_delivery_mode ?? BackchannelTokenDeliveryMode::Poll;
+    }
+
+    /** RFC 9396 §10: whether this client registered the `authorization_details` type. */
+    public function allowsAuthorizationDetailsType(string $type): bool
+    {
+        $types = $this->authorization_details_types;
+
+        return is_array($types) && in_array($type, $types, true);
     }
 
     public function isDynamicallyRegistered(): bool
@@ -181,6 +190,7 @@ class Client extends Model implements EnvironmentOwned
             'first_party' => 'boolean',
             'backchannel_logout_session_required' => 'boolean',
             'backchannel_token_delivery_mode' => BackchannelTokenDeliveryMode::class,
+            'authorization_details_types' => 'array',
             'last_used_at' => 'datetime',
         ];
     }
