@@ -241,6 +241,11 @@ return [
     ],
 
     'webhooks' => [
+        // Send event types as `id.*` (`id.organization.member_added`, `id.user.signed_in`)
+        // instead of today's names. Turn on only after every receiving app runs a
+        // laravel-id-client that accepts both; until then a receiver drops what it does
+        // not know. Subscriptions match either name whatever this says.
+        'prefixed_event_types' => env('CBOX_ID_WEBHOOKS_PREFIXED_EVENT_TYPES', false),
         // Operator-only exact HTTPS endpoint => fixed IP pins for internal services.
         // Customer URLs still use the normal public-address SSRF guard. No wildcards.
         'trusted_endpoints' => [],

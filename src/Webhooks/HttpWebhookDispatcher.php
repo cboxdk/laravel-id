@@ -19,6 +19,7 @@ use Cbox\Id\Webhooks\Support\CboxWebhookSignature;
 use Cbox\Id\Webhooks\Support\EndpointCircuitBreaker;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Cbox\Id\Webhooks\Support\StandardWebhookSignature;
+use Cbox\Id\Webhooks\Support\WebhookEventNames;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -258,7 +259,8 @@ class HttpWebhookDispatcher implements WebhookDispatcher
         }
 
         $body = json_encode([
-            'type' => $delivery->event_type,
+            // The internal name, or `id.*` once the operator turns that on.
+            'type' => WebhookEventNames::onTheWire($delivery->event_type),
             'sequence' => $delivery->sequence,
             'data' => $delivery->payload,
             'delivery_id' => $delivery->id,

@@ -31,6 +31,19 @@ are sent:
 scheme, moving an endpoint between them, and the receiver-side verifiers.
 `data.organization_id` is present on every event that belongs to an organization.
 
+## `id.*` names
+
+Every event also has a product-keyed name: `id.` in front of the name below
+(`id.membership.created`), except `user.login`, which becomes `id.user.signed_in`.
+`WebhookEventNames::prefixed()` and `::internal()` convert between the two. An endpoint
+may subscribe with either name and receives the event either way.
+
+Which name the envelope's `type` carries is the operator's switch
+`cbox-id.webhooks.prefixed_event_types` (`CBOX_ID_WEBHOOKS_PREFIXED_EVENT_TYPES`). It is
+off by default, so receivers keep getting the names below. Turn it on only when every
+receiving app runs a laravel-id-client that accepts both names; a receiver that knows only
+one form drops the other.
+
 ## Rendering this list yourself
 
 The list below is generated from `WebhookEventType::catalogue()`, and the package's test

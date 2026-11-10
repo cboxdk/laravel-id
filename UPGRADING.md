@@ -32,6 +32,13 @@ ambiguous between "nothing to do" and "nobody wrote it down".
   itself (a secret scanner rule, a regex in a test) needs the new form added. Publishable
   keys (`pk_live_`/`pk_test_`), `whsec_` and customer API key prefixes are unchanged.
 
+- **Webhook event types have `id.*` names** (`id.organization.member_added`,
+  `id.user.signed_in` for `user.login`). Nothing changes on the wire until the operator
+  sets `CBOX_ID_WEBHOOKS_PREFIXED_EVENT_TYPES=true`; do that only after every receiving
+  app runs a laravel-id-client that accepts both names. Endpoints may subscribe with
+  either name. A host that published `config/cbox-id.php` gets the default `false` from
+  the package config merge; add the key if you want to set it there.
+
 ## 2.1.0 — CIBA for self-registered clients
 
 - **`BackchannelAuthentication::request()` gained `?string $resource = null` as its last

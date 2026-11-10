@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Webhooks\Enums;
 
+use Cbox\Id\Webhooks\Support\WebhookEventNames;
 use Cbox\Id\Webhooks\ValueObjects\WebhookEventDescriptor;
 
 /**
@@ -102,12 +103,13 @@ enum WebhookEventType: string
     public const WILDCARD = '*';
 
     /**
-     * Whether a subscription string is acceptable: a known catalog event or the
-     * wildcard. Used to validate an endpoint's requested `event_types`.
+     * Whether a subscription string is acceptable: a known catalog event (in either its
+     * internal or its `id.*` name) or the wildcard. Used to validate an endpoint's
+     * requested `event_types`.
      */
     public static function subscribable(string $eventType): bool
     {
-        return $eventType === self::WILDCARD || self::tryFrom($eventType) !== null;
+        return $eventType === self::WILDCARD || self::tryFrom(WebhookEventNames::internal($eventType)) !== null;
     }
 
     /**

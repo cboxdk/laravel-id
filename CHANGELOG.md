@@ -21,6 +21,10 @@ more trust than the wording it removes.
 
 - **Secrets are minted as `cbid_<kind>_…`** (`SecretPrefix`): `cbid_cs_`, `cbid_rt_`, `cbid_ac_`, `cbid_dc_`, `cbid_reg_`, `cbid_scim_`, `cbid_inv_`, `cbid_ml_`, `cbid_evf_`, `cbid_pwr_`. The v2 forms (`csec_`, `rt_`, `scim_`, …) keep working until they are rotated or expire; no migration revokes them. Tested per kind in `SecretPrefixGraceTest`.
 
+### Added
+
+- **`id.*` webhook event names** (`WebhookEventNames`): `id.` + today's name, `user.login` → `id.user.signed_in`. The body's `type` uses them only when `cbox-id.webhooks.prefixed_event_types` (`CBOX_ID_WEBHOOKS_PREFIXED_EVENT_TYPES`) is on; it is off by default, so receivers see today's names. Subscriptions match either form.
+
 ## [2.4.0] - 2026-11-10
 
 ### Added
