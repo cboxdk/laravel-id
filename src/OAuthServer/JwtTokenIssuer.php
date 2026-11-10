@@ -209,13 +209,17 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
     }
 
     /**
-     * This token's lifetime: the client's, cut short so an acted token never outlives the
-     * support session behind it. Zero when the session is already over — an expired token
-     * is the fail-closed answer to a race the token endpoint's own check should have won.
+     * This token's lifetime: the one configured for exactly its scope set when there is one
+     * (`cbox-id.oauth.scope_token_ttls`), the client's otherwise — cut short so an acted
+     * token never outlives the support session behind it. Zero when the session is already
+     * over — an expired token is the fail-closed answer to a race the token endpoint's own
+     * check should have won.
+     *
+     * @param  list<string>  $scopes  the scopes the token carries, after audience resolution
      */
-    private function lifetime(Client $client, ?DateTimeInterface $notAfter): int
+    private function lifetime(Client $client, array $scopes, ?DateTimeInterface $notAfter): int
     {
-        $ttl = $this->ttlFor($client);
+        $ttl = AccessTokenLifetime::forScopes($scopes) ?? $this->ttlFor($client);
 
         return $notAfter === null ? $ttl : max(0, min($ttl, $notAfter->getTimestamp() - time()));
     }
@@ -265,7 +269,7 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
 
         $jti = (string) Str::ulid();
         $issuedAt = time();
-        $ttl = $this->lifetime($client, $notAfter);
+        $ttl = $this->lifetime($client, $scopes, $notAfter);
 
         $claims = [
             'iss' => $this->issuers->issuer(),

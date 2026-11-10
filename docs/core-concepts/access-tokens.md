@@ -22,7 +22,7 @@ client credentials, device, CIBA and token exchange — mints through the same
 | `aud` | always | See [Audience](#audience). |
 | `scope` | always | Space-separated granted scopes (may be empty). |
 | `jti` | always | Unique id; recorded so the token can be revoked and introspected. |
-| `iat`, `exp` | always | Issued-at and expiry. Lifetime is the client's `access_token_ttl`, else `cbox-id.oauth.access_token_ttl` (900 s). |
+| `iat`, `exp` | always | Issued-at and expiry. Lifetime is the client's `access_token_ttl`, else `cbox-id.oauth.access_token_ttl` (900 s); a token whose scopes exactly match a `cbox-id.oauth.scope_token_ttls` entry (by default `account:apps:read`, 12 h) gets that entry's lifetime instead. Always capped by `max_access_token_ttl`. |
 | `org` | always | The organization the grant is bound to, or `null`. |
 | `org_name` | when `org` is set | The organization's display name. |
 | `roles`, `permissions` | user tokens with any grant | The person's roles and their permissions for one app — the API's linked app when the token is for a [registered API](apis-and-scopes.md) that names one, otherwise the requesting client's. Environment-wide grants count when no organization is bound. Absent on `client_credentials`. |

@@ -96,6 +96,30 @@ It is bounded by `cbox-id.oauth.max_access_token_ttl` (default 86 400 s) and a f
 lowered ceiling is clamped to it on its next token. Pick the TTL from the revocation story:
 a token a resource server validates offline can only be revoked by expiry.
 
+### Lifetime by scope set
+
+`cbox-id.oauth.scope_token_ttls` gives a token whose scopes are **exactly** a configured
+set its own lifetime, on every grant. A key is a space-separated scope set (order does not
+matter); the value is seconds. It wins over the client's `access_token_ttl` and the
+deployment default, is still clamped to `max_access_token_ttl`, and a support session's
+token still ends with the session. It covers access tokens only; the ID token keeps the
+client's lifetime.
+
+The default gives `account:apps:read`, the app switcher's read-only catalog grant, 12 hours
+(`CBOX_ID_APP_CATALOG_TOKEN_TTL`, 43 200 s), so a switcher does not lose its catalog after
+15 minutes. A token carrying `account:apps:read` and any other scope (including `openid`)
+keeps the normal lifetime.
+
+```php
+'scope_token_ttls' => [
+    'account:apps:read' => env('CBOX_ID_APP_CATALOG_TOKEN_TTL', 43200),
+    'reports:read' => 3600,
+],
+```
+
+Set an entry to `0` or `null` to turn it off. Leaving a default key out of a published
+config does not remove it, because the package config is merged under the host's.
+
 ## Changing an app's settings
 
 `update()` takes the app's full settings as a `ClientBlueprint`: read the current one,
