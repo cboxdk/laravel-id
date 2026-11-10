@@ -19,6 +19,11 @@ use Cbox\Id\OAuthServer\Models\Client;
  *
  * The deployment default is not clamped. It is the operator's own number, and quietly
  * shortening it on upgrade would change every token in the deployment unannounced.
+ *
+ * One exception sits above both: `cbox-id.oauth.scope_token_ttls` gives a token whose
+ * scopes are EXACTLY a configured set its own lifetime ({@see forScopes()}). It exists for
+ * narrow, read-only grants such as `account:apps:read` (the app switcher's catalog), where
+ * a fifteen-minute token only means a broken switcher. It is clamped to the ceiling too.
  */
 class AccessTokenLifetime
 {
@@ -46,6 +51,51 @@ class AccessTokenLifetime
         }
 
         return min($ttl, self::max());
+    }
+
+    /**
+     * The lifetime configured for a token carrying exactly these scopes, or null when
+     * `cbox-id.oauth.scope_token_ttls` names no such set.
+     *
+     * A key is a space-separated scope set; it matches only when the token's scopes are the
+     * same set (order does not matter). A token with one scope more or one fewer is not a
+     * match, so widening a grant never inherits a long lifetime. A value that is not a
+     * positive number disables its entry. The result is clamped to {@see max()}.
+     *
+     * @param  list<string>  $scopes
+     */
+    public static function forScopes(array $scopes): ?int
+    {
+        $configured = config('cbox-id.oauth.scope_token_ttls', []);
+        if (! is_array($configured) || $scopes === []) {
+            return null;
+        }
+
+        $granted = self::normalize($scopes);
+
+        foreach ($configured as $set => $ttl) {
+            if (! is_string($set) || ! is_numeric($ttl) || (int) $ttl <= 0) {
+                continue;
+            }
+
+            if (self::normalize(preg_split('/\s+/', $set, -1, PREG_SPLIT_NO_EMPTY) ?: []) === $granted) {
+                return min((int) $ttl, self::max());
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<array-key, string>  $scopes
+     * @return list<string>
+     */
+    private static function normalize(array $scopes): array
+    {
+        $scopes = array_values(array_unique($scopes));
+        sort($scopes);
+
+        return $scopes;
     }
 
     /**

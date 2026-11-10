@@ -844,6 +844,25 @@ return [
         'max_access_token_ttl' => env('CBOX_ID_MAX_ACCESS_TOKEN_TTL', 86400),
 
         /*
+         * Access-token lifetimes for an EXACT scope set, in seconds. A key is a
+         * space-separated scope set; it applies only when a token's scopes are that
+         * set and nothing else (order does not matter), and then wins over both the
+         * client's own `access_token_ttl` and the deployment default above. It is
+         * still clamped to `max_access_token_ttl`, and a support session's token
+         * still ends with the session. It applies on every grant (authorization
+         * code, refresh, token exchange, device, CIBA, client credentials).
+         *
+         * The default gives `account:apps:read` (the app switcher's read-only
+         * catalog grant) 12 hours, so the switcher does not lose it after 15
+         * minutes. A token with any other scope as well keeps the normal lifetime.
+         * Set an entry to 0 or null (e.g. CBOX_ID_APP_CATALOG_TOKEN_TTL=0) to turn
+         * it off; omitting a default key in a published config does not remove it.
+         */
+        'scope_token_ttls' => [
+            'account:apps:read' => env('CBOX_ID_APP_CATALOG_TOKEN_TTL', 43200),
+        ],
+
+        /*
          * Client secret rotation. `max_rotation_grace` is the longest a replaced
          * secret may keep working after a rotation, in seconds — the overlap in
          * which deployments move to the new secret. Bounded so a rotation cannot
