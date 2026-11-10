@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-10
+
 ### Added
 
 - **Access-token lifetime by exact scope set.** `cbox-id.oauth.scope_token_ttls` maps a space-separated scope set to seconds. A token whose scopes are exactly that set (order does not matter) gets that lifetime on every grant, ahead of the client's `access_token_ttl` and the deployment default. It is still clamped to `max_access_token_ttl`, and a support session's token still ends with the session. The default gives `account:apps:read`, the app switcher's read-only catalog grant, 12 hours (`CBOX_ID_APP_CATALOG_TOKEN_TTL`, default 43200), so switchers stop losing the catalog after 15 minutes. A token with any other scope as well keeps the normal lifetime. Set an entry to `0` to turn it off. See `docs/core-concepts/oauth-clients.md`.
