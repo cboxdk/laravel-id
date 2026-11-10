@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
 use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Enums\BackchannelTokenDeliveryMode;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\OAuthServer\Exceptions\ClientSecretRefused;
@@ -17,6 +18,7 @@ use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\StoredClientSecret;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
+use Cbox\Id\OAuthServer\Support\CibaNotificationEndpoint;
 use Cbox\Id\OAuthServer\Support\ClientAudit;
 use Cbox\Id\OAuthServer\Support\ClientSecretStore;
 use Cbox\Id\OAuthServer\Support\ClientSettingsRules;
@@ -302,6 +304,45 @@ class ClientRegistryService implements ClientRegistry
         // audited like one — the same `app.updated` entry an update() writes.
         return DB::transaction(function () use ($client, $uri, $sessionRequired, $changes, $actor): Client {
             $client->forceFill(['backchannel_logout_uri' => $uri, 'backchannel_logout_session_required' => $sessionRequired])->save();
+            $this->audit->record(ClientAudit::UPDATED, $client, $actor, ['changes' => $changes]);
+
+            return $client;
+        });
+    }
+
+    public function configureBackchannelTokenDelivery(Client $client, BackchannelTokenDeliveryMode $mode, ?string $notificationEndpoint = null, ?AuditActor $actor = null): Client
+    {
+        $endpoint = $notificationEndpoint !== null && trim($notificationEndpoint) !== '' ? trim($notificationEndpoint) : null;
+
+        if ($mode === BackchannelTokenDeliveryMode::Ping) {
+            if ($endpoint === null) {
+                throw InvalidClientMetadata::metadata('ping mode needs a backchannel_client_notification_endpoint')->withSourceMessage(new SourceMessage('ping mode needs a backchannel_client_notification_endpoint', []));
+            }
+
+            CibaNotificationEndpoint::assertValid($endpoint);
+        } else {
+            // Poll has no use for an endpoint; a stale one would be a URL nobody calls.
+            $endpoint = null;
+        }
+
+        // Poll is stored as null, the value every client had before this existed.
+        $stored = $mode === BackchannelTokenDeliveryMode::Ping ? $mode : null;
+        $changes = [];
+
+        if ($client->backchannel_token_delivery_mode !== $stored) {
+            $changes['backchannel_token_delivery_mode'] = ['from' => $client->backchannelTokenDeliveryMode()->value, 'to' => $mode->value];
+        }
+
+        if ($client->backchannel_client_notification_endpoint !== $endpoint) {
+            $changes['backchannel_client_notification_endpoint'] = ['from' => $client->backchannel_client_notification_endpoint, 'to' => $endpoint];
+        }
+
+        if ($changes === []) {
+            return $client;
+        }
+
+        return DB::transaction(function () use ($client, $stored, $endpoint, $changes, $actor): Client {
+            $client->forceFill(['backchannel_token_delivery_mode' => $stored, 'backchannel_client_notification_endpoint' => $endpoint])->save();
             $this->audit->record(ClientAudit::UPDATED, $client, $actor, ['changes' => $changes]);
 
             return $client;

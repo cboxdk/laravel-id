@@ -67,9 +67,12 @@ Mirrors the device grant's hardening:
 
 ## Honest scope
 
-- **Poll mode only.** The `ping` and `push` delivery modes (a client notification
-  endpoint) are not implemented; discovery advertises `["poll"]`. Poll mode needs no
-  client-side callback and is the simplest to secure.
+- **Poll and ping, no push.** Poll is the default. An operator can register a client
+  for ping with an https notification endpoint; Cbox ID then POSTs the `auth_req_id` to it
+  when the person answers (see [Security: CIBA](../security/ciba.md#ping-mode)). Push is
+  not implemented; discovery advertises `["poll", "ping"]`.
+- **Tokens name their approval.** A CIBA token carries `auth_req_id` and
+  `binding_message`, so a resource server can check it is the approval it asked for.
 - **The approval channel's strength is the host's.** CIBA decouples approval to a
   second device, but whether that device and its notification are phishing-resistant
   is the host's responsibility — the OP issues the token once `approve()` is called.

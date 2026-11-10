@@ -7,6 +7,8 @@ namespace Cbox\Id\Api\Http\Controllers;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Contracts\CibaClientNotifications;
+use Cbox\Id\OAuthServer\Enums\BackchannelTokenDeliveryMode;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Exceptions\CibaRateLimited;
 use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
@@ -24,12 +26,16 @@ use Illuminate\Support\Facades\RateLimiter;
  * endpoint (OpenID Connect CIBA Core §7). A client (typically an autonomous / AI
  * agent) starts a decoupled authentication here by naming the user with
  * `login_hint`; the user approves out-of-band, and the client then polls the token
- * endpoint with the returned `auth_req_id`.
+ * endpoint with the returned `auth_req_id` — or, registered for ping mode, is told at its
+ * notification endpoint and calls the token endpoint once.
  */
 class BackchannelAuthenticationController
 {
     /** The longest binding message stored and shown to the person approving. */
     public const int BINDING_MESSAGE_MAX = 255;
+
+    /** CIBA Core §7.1: a client_notification_token MUST NOT exceed 1024 characters. */
+    public const int CLIENT_NOTIFICATION_TOKEN_MAX = 1024;
 
     /** Requests one client may file for one login_hint in the window below. */
     private const DEFAULT_PER_CLIENT_HINT = 5;
@@ -41,6 +47,7 @@ class BackchannelAuthenticationController
         private readonly BackchannelAuthentication $ciba,
         private readonly DynamicGrantPolicy $dynamicGrants,
         private readonly AudienceResolver $audiences,
+        private readonly CibaClientNotifications $notifications,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -128,6 +135,27 @@ class BackchannelAuthenticationController
             ], 400);
         }
 
+        // CIBA Core §7.1: a client registered for ping MUST send the bearer token Cbox ID
+        // will present at its notification endpoint. Checked before anyone is prompted, so
+        // nobody approves a request whose answer could not be delivered. A poll-mode
+        // client's token, if it sends one, is ignored: it has nowhere to be used.
+        $ping = $client->backchannelTokenDeliveryMode() === BackchannelTokenDeliveryMode::Ping;
+        $notificationToken = $ping ? $request->string('client_notification_token')->toString() : '';
+
+        if ($ping && trim($notificationToken) === '') {
+            return new JsonResponse([
+                'error' => 'invalid_request',
+                'error_description' => 'A client registered for ping mode must send a client_notification_token.',
+            ], 400);
+        }
+
+        if (mb_strlen($notificationToken) > self::CLIENT_NOTIFICATION_TOKEN_MAX) {
+            return new JsonResponse([
+                'error' => 'invalid_request',
+                'error_description' => 'The client_notification_token is longer than '.self::CLIENT_NOTIFICATION_TOKEN_MAX.' characters.',
+            ], 400);
+        }
+
         // One client may not keep asking about one person. The key is the hint as sent,
         // lower-cased; the per-person cap in the service catches a client that varies it.
         $key = 'cbox-id:ciba:client:'.$client->client_id.':'.hash('sha256', mb_strtolower($loginHint));
@@ -171,6 +199,10 @@ class BackchannelAuthenticationController
             ], 400);
         } catch (CibaRateLimited $e) {
             return $this->tooMany($e->retryAfter);
+        }
+
+        if ($ping) {
+            $this->notifications->remember($result, $notificationToken);
         }
 
         // Only the client-facing fields are serialized — never the internal request

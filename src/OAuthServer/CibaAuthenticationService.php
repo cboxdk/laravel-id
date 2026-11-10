@@ -12,6 +12,7 @@ use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Contracts\CibaClientNotifications;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
@@ -26,11 +27,12 @@ use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\GrantedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\BackchannelAuthenticationResult;
+use Cbox\Id\OAuthServer\ValueObjects\BackchannelBinding;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
- * Poll-mode CIBA (OpenID Connect CIBA Core). The polling state machine mirrors the
+ * CIBA, poll and ping mode (OpenID Connect CIBA Core). The polling state machine mirrors the
  * device authorization grant ({@see DeviceAuthorizationService}) — hashed-at-rest
  * single-use secret, TTL, poll-interval `slow_down`, and a locked single-use mint —
  * differing only in that there is no user_code: the user is resolved from
@@ -52,6 +54,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
         private readonly Subjects $subjects,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly ?CibaClientNotifications $notifications = null,
     ) {}
 
     public function request(
@@ -165,6 +168,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
         if ($approved) {
             $this->recordDecision('oauth.ciba.approved', $requestId, $subjectId, $organizationId);
+            $this->ping($requestId);
         }
 
         return $approved;
@@ -176,9 +180,19 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
         if ($denied) {
             $this->recordDecision('oauth.ciba.denied', $requestId, $subjectId, null);
+            $this->ping($requestId);
         }
 
         return $denied;
+    }
+
+    /**
+     * Ping mode (CIBA Core §10.2): a client registered for it is told the person answered,
+     * either way. A no-op for a poll-mode request.
+     */
+    private function ping(string $requestId): void
+    {
+        ($this->notifications ?? app(CibaClientNotifications::class))->notify($requestId);
     }
 
     /** Every decision on a backchannel request, by the person it was for. */
@@ -237,7 +251,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
         // Single-use: flip approved -> redeemed under a row lock in a transaction so
         // two concurrent polls can't both observe Approved and each mint a token.
-        return DB::transaction(function () use ($record): AuthorizedGrant {
+        return DB::transaction(function () use ($record, $authReqId): AuthorizedGrant {
             $locked = BackchannelAuthRequest::query()->whereKey($record->id)->lockForUpdate()->first();
 
             if ($locked === null || $locked->status !== GrantPollStatus::Approved) {
@@ -251,9 +265,19 @@ class CibaAuthenticationService implements BackchannelAuthentication
                 nonce: $locked->nonce,
                 authTime: $locked->approved_at?->getTimestamp(),
                 resource: $locked->resource,
+                // Read from the LOCKED row, so the binding is the one the person approved
+                // on the request this redemption spends. The auth_req_id is the raw value
+                // the client just presented: only its hash is stored, and it is spent here.
+                backchannel: new BackchannelBinding($authReqId, $locked->binding_message),
             );
 
-            $locked->forceFill(['status' => GrantPollStatus::Redeemed, 'last_polled_at' => now()])->save();
+            // Spent: the ping-mode secrets have nothing left to do, so they are not kept.
+            $locked->forceFill([
+                'status' => GrantPollStatus::Redeemed,
+                'last_polled_at' => now(),
+                'client_notification_token' => null,
+                'notification_auth_req_id' => null,
+            ])->save();
 
             return $grant;
         });

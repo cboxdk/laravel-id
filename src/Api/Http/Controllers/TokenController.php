@@ -643,6 +643,12 @@ class TokenController
             $claims['sid'] = $sid;
         }
 
+        // What a CIBA approval was for, the same two claims the access token carries, so a
+        // client that authenticates the ID Token can check the binding too.
+        if ($grant->backchannel !== null) {
+            $claims = [...$claims, ...$grant->backchannel->claims()];
+        }
+
         // Authentication context, for the client's step-up / re-auth decisions.
         if ($grant->authTime !== null) {
             $claims['auth_time'] = $grant->authTime;

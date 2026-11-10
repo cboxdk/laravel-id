@@ -1,6 +1,6 @@
 ---
 title: CIBA
-description: Threat model for OpenID Connect CIBA (poll mode) — hashed single-use auth_req_id, poll throttle, split identifiers, deny-by-default user resolution
+description: Threat model for OpenID Connect CIBA (poll and ping mode) — hashed single-use auth_req_id, poll throttle, split identifiers, deny-by-default user resolution
 weight: 15
 ---
 
@@ -24,6 +24,8 @@ hardening.
 | Bound audience | RFC 8707 `resource` on the backchannel request is checked before anyone is prompted, stored with the request, and the poll may repeat it but never name another (`invalid_target`) | `BackchannelAuthenticationController`, `TokenController::ciba()`, `ciba_requests.resource` |
 | Prompt flooding | per client + `login_hint` (5 per 60 s) and per person across every client (10 per 600 s) → `429 slow_down` with `Retry-After`; nothing is filed, nobody is prompted | config `oauth.ciba.rate_limits.*` |
 | Audit | `oauth.ciba.requested` (actor: the client), `oauth.ciba.approved` / `oauth.ciba.denied` (actor: the person) | `CibaAuthenticationService` |
+| Bound approval | a CIBA token carries `auth_req_id` (the client's own, raw: spent at that point) and `binding_message` (exactly what the person saw), on the access token and the ID Token; read from the locked row; reserved, so no `TokenMinting` hook can forge them; never on a refresh | `BackchannelBinding`, `CibaAuthenticationService::redeem()`, `JwtTokenIssuer` |
+| Ping delivery | operator-registered https endpoint only; `client_notification_token` required (≤ 1024 chars); token and raw `auth_req_id` encrypted at rest and cleared once delivered or redeemed; SSRF guard with pinned DNS, no redirects; queued with short timeouts and retries | `QueuedCibaClientNotifications`, `Jobs\NotifyCibaClient`, config `oauth.ciba.ping.*` |
 | Environment scope | `BelongsToEnvironment` — cross-env invisible | `Models\BackchannelAuthRequest` |
 
 ## Self-registered agents and CLIs
@@ -84,6 +86,55 @@ The backchannel endpoint returns **only** `auth_req_id` (never the internal id),
 a client can never approve its own request. Keeping them separate is the structural
 guard behind the whole flow.
 
+## Bound tokens
+
+A resource server that asked a person to approve ONE thing (a deployment plan) must be
+able to tell that a token is that approval, not another one the same client holds. A
+token minted from a CIBA request carries:
+
+| Claim | Value |
+| --- | --- |
+| `auth_req_id` | the client's own `auth_req_id` for the request |
+| `binding_message` | the binding message the person saw; absent when none was sent |
+
+Both are on the access token and, when `openid` was granted, the ID Token. A client that
+put a digest (or a prefix of one) in the binding message, and stored its `auth_req_id`,
+can check both. The `auth_req_id` is the raw value: redemption is single-use, so by the
+time a token carries it, it opens nothing. A refresh does not carry the binding on.
+
+The binding reaches the access token through `AuthenticationEvent` and
+`AuthenticationAwareTokenIssuer`; a host's own issuer that does not implement that
+contract mints tokens without it.
+
+## Ping mode
+
+Poll is the default and every existing client stays on it. An operator registers ping
+for a client:
+
+```php
+app(ClientRegistry::class)->configureBackchannelTokenDelivery(
+    $client, BackchannelTokenDeliveryMode::Ping, 'https://app.example.com/webhooks/cbox-id/ciba',
+);
+```
+
+The backchannel request must then carry `client_notification_token` (`invalid_request`
+otherwise, before anyone is prompted). When the person approves or denies, a queued job
+POSTs to the endpoint:
+
+```http
+POST /webhooks/cbox-id/ciba
+Authorization: Bearer <client_notification_token>
+Content-Type: application/json
+
+{"auth_req_id": "auth_req_…"}
+```
+
+Any 2xx is delivered (`oauth.ciba.notified`). 5xx, 408, 429 and connection failures are
+retried (2 s, 5 s, 15 s, 30 s; `oauth.ciba.ping.max_attempts`, default 5); anything else,
+or the last failure, is `oauth.ciba.notification_failed`. The client then calls the token
+endpoint once with the `auth_req_id`, and may still poll if a ping never arrives.
+Dynamic registration cannot set ping.
+
 ## Single-use under concurrency
 
 `redeem()` re-reads the request `lockForUpdate()` inside a transaction and re-checks
@@ -95,10 +146,9 @@ unthrottled.
 
 ## Honest limits
 
-- **Poll mode only.** `ping`/`push` delivery (a client notification endpoint) is not
-  implemented; discovery advertises `backchannel_token_delivery_modes_supported:
-  ["poll"]`. Poll mode needs no client callback and avoids that attack surface
-  entirely.
+- **Poll and ping, no push.** Discovery advertises `backchannel_token_delivery_modes_supported:
+  ["poll", "ping"]`. Push (the token in the callback) is not implemented: ping hands the
+  client only an already-spent-on-redeem handle, never a credential.
 - **The approval channel is the host's to secure.** CIBA decouples approval to a
   second device, but the OP mints the token the moment `approve()` is called — the
   strength of the notification and the device (is it phishing-resistant? is the

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\Contracts;
 
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
+use Cbox\Id\OAuthServer\Enums\BackchannelTokenDeliveryMode;
 use Cbox\Id\OAuthServer\Exceptions\ClientSecretRefused;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
 use Cbox\Id\OAuthServer\Models\Client;
@@ -105,4 +106,14 @@ interface ClientRegistry
      * @throws InvalidClientMetadata when the URI is not one this server will call
      */
     public function configureBackchannelLogout(Client $client, ?string $uri, bool $sessionRequired = false, ?AuditActor $actor = null): Client;
+
+    /**
+     * Set how this client learns that a CIBA request was answered (CIBA Core §4/§5): poll
+     * (the default; clears any endpoint) or ping, which needs an https
+     * `backchannel_client_notification_endpoint`. Operator-only: dynamic registration
+     * never sets it. Records `app.updated` when the setting actually changed.
+     *
+     * @throws InvalidClientMetadata when ping has no valid https endpoint
+     */
+    public function configureBackchannelTokenDelivery(Client $client, BackchannelTokenDeliveryMode $mode, ?string $notificationEndpoint = null, ?AuditActor $actor = null): Client;
 }

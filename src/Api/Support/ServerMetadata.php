@@ -128,9 +128,10 @@ class ServerMetadata
             'end_session_endpoint' => $issuer.'/oauth/logout',
             // RFC 8628: device authorization grant.
             'device_authorization_endpoint' => $issuer.'/oauth/device_authorization',
-            // OIDC CIBA: client-initiated backchannel authentication (poll mode).
+            // OIDC CIBA: client-initiated backchannel authentication. Poll is the default;
+            // ping is for a client an operator registered with a notification endpoint.
             'backchannel_authentication_endpoint' => $issuer.'/oauth/backchannel_authentication',
-            'backchannel_token_delivery_modes_supported' => ['poll'],
+            'backchannel_token_delivery_modes_supported' => ['poll', 'ping'],
             'backchannel_user_code_parameter_supported' => false,
             // OIDC Back-Channel Logout 1.0 §2.1. `session_supported` because the ID Token
             // carries `sid` whenever the host names the session, and every logout token

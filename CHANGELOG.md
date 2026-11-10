@@ -17,6 +17,17 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-10
+
+### Added
+
+- **CIBA tokens say which approval they are.** A token minted from an approved backchannel request carries `auth_req_id` (the client's own, raw; it is spent at that point) and `binding_message` (exactly what the person saw, omitted when none was sent), on the access token and, with `openid`, the ID Token. A resource server that asked for one specific approval can check the token is that one. Read from the row the redeem lock holds; both names are reserved claims, so a `TokenMinting` hook cannot set them; a refresh does not carry them on. `AuthorizedGrant`, `IdTokenGrant` and `AuthenticationEvent` gain an optional `backchannel` (`BackchannelBinding`). Tokens reach the access token through `AuthenticationAwareTokenIssuer`, which `JwtTokenIssuer` implements.
+- **CIBA ping mode.** `ClientRegistry::configureBackchannelTokenDelivery($client, BackchannelTokenDeliveryMode::Ping, 'https://…')` registers a client for ping with an https `backchannel_client_notification_endpoint` (operator-only; dynamic registration cannot set it). Its backchannel requests must send `client_notification_token` (at most 1024 characters, `invalid_request` otherwise). On approve or deny, the queued job `NotifyCibaClient` POSTs `{"auth_req_id": "…"}` with `Authorization: Bearer <client_notification_token>`, through the SSRF guard, with short timeouts and retries (`oauth.ciba.ping.*`), audited as `oauth.ciba.notified` / `oauth.ciba.notification_failed`. The token and the raw `auth_req_id` are encrypted at rest and cleared once delivered or redeemed. Discovery advertises `backchannel_token_delivery_modes_supported: ["poll", "ping"]`. Poll stays the default; existing clients are unchanged. New contract `CibaClientNotifications` (separate from `BackchannelAuthentication`, so hosts that decorate it keep compiling). Run a queue worker. See `docs/security/ciba.md`.
+
+### Migrations
+
+- `2026_11_10_120000_add_ciba_ping_mode` (additive, nullable): `oauth_clients.backchannel_token_delivery_mode`, `oauth_clients.backchannel_client_notification_endpoint`, `ciba_requests.client_notification_token`, `ciba_requests.notification_auth_req_id`.
+
 ## [2.2.0] - 2026-11-10
 
 ### Added

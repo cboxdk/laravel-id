@@ -63,9 +63,10 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
      * it is authorization data an app enforces on: a hook must not promote anyone.
      * `acr` and `auth_time` likewise: a resource server grants step-up-gated access on
      * them (RFC 9470), so a hook that could set them could vouch for a second factor or a
-     * fresh sign-in that never happened.
+     * fresh sign-in that never happened. `auth_req_id` and `binding_message` too: a resource
+     * server takes them as proof of WHICH approval a CIBA token came from.
      */
-    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act', 'acr', 'auth_time'];
+    private const RESERVED_CLAIMS = ['iss', 'sub', 'client_id', 'jti', 'scope', 'org', 'org_name', 'iat', 'exp', 'nbf', 'aud', 'cnf', 'ent', 'ent_ver', 'typ', 'roles', 'permissions', 'org_role', 'act', 'acr', 'auth_time', 'auth_req_id', 'binding_message'];
 
     public function __construct(
         private readonly TokenSigner $signer,
@@ -367,6 +368,13 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer
         // change them: both are reserved.
         if ($userId !== null && $authentication !== null) {
             $claims = [...$claims, ...$authentication->claims()];
+        }
+
+        // What a CIBA approval was for — the client's auth_req_id and the binding message
+        // the person saw — so a resource server can check this token is the approval it
+        // asked for. Only a backchannel grant carries one; reserved, so no hook can forge it.
+        if ($userId !== null && $authentication?->backchannel !== null) {
+            $claims = [...$claims, ...$authentication->backchannel->claims()];
         }
 
         // RFC 8693 §4.1: who is REALLY holding a support session's token. Set before the

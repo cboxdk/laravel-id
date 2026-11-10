@@ -35,6 +35,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $purpose
  * @property string|null $action_digest
  * @property Carbon|null $consumed_at
+ * @property string|null $client_notification_token ping mode only; encrypted at rest, cleared once spent
+ * @property string|null $notification_auth_req_id ping mode only; the raw auth_req_id, encrypted, cleared once spent
  */
 class BackchannelAuthRequest extends Model implements EnvironmentOwned
 {
@@ -44,6 +46,9 @@ class BackchannelAuthRequest extends Model implements EnvironmentOwned
     protected $table = 'ciba_requests';
 
     protected $guarded = [];
+
+    /** @var list<string> */
+    protected $hidden = ['client_notification_token', 'notification_auth_req_id'];
 
     /**
      * @return array<string, string>
@@ -57,6 +62,8 @@ class BackchannelAuthRequest extends Model implements EnvironmentOwned
             'approved_at' => 'datetime',
             'expires_at' => 'datetime',
             'consumed_at' => 'datetime',
+            'client_notification_token' => 'encrypted',
+            'notification_auth_req_id' => 'encrypted',
         ];
     }
 }

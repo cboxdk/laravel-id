@@ -794,6 +794,18 @@ return [
                 'per_person' => (int) env('CBOX_ID_CIBA_PER_PERSON', 10),
                 'per_person_window' => 600,
             ],
+            // Ping mode (CIBA Core §10.2), for a client an operator registered with a
+            // `backchannel_client_notification_endpoint`. Delivery is a queued job — run a
+            // queue worker. `verify_url` is the SSRF guard (see backchannel_logout below);
+            // `timeout` / `connect_timeout` are per attempt in seconds; after
+            // `max_attempts` (backoff 2s, 5s, 15s, 30s…) the failure is audited and the
+            // client is left to poll.
+            'ping' => [
+                'verify_url' => env('CBOX_ID_CIBA_PING_VERIFY_URL', true),
+                'timeout' => env('CBOX_ID_CIBA_PING_TIMEOUT', 5),
+                'connect_timeout' => env('CBOX_ID_CIBA_PING_CONNECT_TIMEOUT', 3),
+                'max_attempts' => env('CBOX_ID_CIBA_PING_MAX_ATTEMPTS', 5),
+            ],
         ],
 
         /*

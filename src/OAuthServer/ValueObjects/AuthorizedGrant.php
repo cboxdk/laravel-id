@@ -41,5 +41,11 @@ readonly class AuthorizedGrant
          * session's lifetime cap — and only after re-reading the session.
          */
         public ?ActingParty $actor = null,
+
+        /**
+         * What a CIBA approval was for ({@see BackchannelBinding}): set only by a
+         * backchannel redemption, and carried onto its access and ID Tokens.
+         */
+        public ?BackchannelBinding $backchannel = null,
     ) {}
 }

@@ -50,6 +50,9 @@ readonly class IdTokenGrant
 
         /** A unix time the ID Token must not outlive (a support session's end). */
         public ?int $notAfter = null,
+
+        /** What a CIBA approval was for; only a backchannel grant has one. */
+        public ?BackchannelBinding $backchannel = null,
     ) {}
 
     /**
@@ -74,6 +77,7 @@ readonly class IdTokenGrant
             sessionId: $grant->sessionId,
             actor: $grant->actor,
             notAfter: $notAfter,
+            backchannel: $grant->backchannel,
         );
     }
 

@@ -28,11 +28,18 @@ readonly class AuthenticationEvent
     public function __construct(
         public ?int $authTime = null,
         public array $amr = [],
+
+        /**
+         * What the person approved, for a CIBA grant ({@see BackchannelBinding}). The
+         * approval IS the authentication there, so it travels with it to the issuer.
+         * Never set from a refresh: the refreshed token is not the approval.
+         */
+        public ?BackchannelBinding $backchannel = null,
     ) {}
 
     public static function fromAuthorization(AuthorizedGrant $grant): self
     {
-        return new self($grant->authTime, $grant->amr);
+        return new self($grant->authTime, $grant->amr, $grant->backchannel);
     }
 
     public static function fromRefresh(RefreshGrant $grant): self
@@ -54,7 +61,7 @@ readonly class AuthenticationEvent
 
     public function isEmpty(): bool
     {
-        return $this->authTime === null && $this->amr === [];
+        return $this->authTime === null && $this->amr === [] && $this->backchannel === null;
     }
 
     /**

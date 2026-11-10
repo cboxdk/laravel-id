@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer\Models;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
+use Cbox\Id\OAuthServer\Enums\BackchannelTokenDeliveryMode;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGrantable;
@@ -43,6 +44,8 @@ use Illuminate\Support\Carbon;
  * @property array<int, string>|null $post_logout_redirect_uris
  * @property string|null $backchannel_logout_uri OIDC Back-Channel Logout 1.0 §2.2 — null = never notified
  * @property bool $backchannel_logout_session_required
+ * @property BackchannelTokenDeliveryMode|null $backchannel_token_delivery_mode CIBA Core §4 — null = poll
+ * @property string|null $backchannel_client_notification_endpoint CIBA ping mode; operator-registered, https
  * @property array<int, string> $grant_types
  * @property array<int, string> $scopes
  * @property string|null $manifest_url
@@ -79,6 +82,12 @@ class Client extends Model implements EnvironmentOwned
      * environment-owned for scope purposes, even though its `organization_id` is null
      * — see {@see ScopeHolder}.
      */
+    /** How this client learns a CIBA request was answered; poll unless it registered ping. */
+    public function backchannelTokenDeliveryMode(): BackchannelTokenDeliveryMode
+    {
+        return $this->backchannel_token_delivery_mode ?? BackchannelTokenDeliveryMode::Poll;
+    }
+
     public function isDynamicallyRegistered(): bool
     {
         return $this->registration_access_token_hash !== null;
@@ -171,6 +180,7 @@ class Client extends Model implements EnvironmentOwned
             'jwks' => 'array',
             'first_party' => 'boolean',
             'backchannel_logout_session_required' => 'boolean',
+            'backchannel_token_delivery_mode' => BackchannelTokenDeliveryMode::class,
             'last_used_at' => 'datetime',
         ];
     }

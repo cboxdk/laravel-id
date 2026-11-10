@@ -215,7 +215,7 @@ it('advertises the CIBA endpoint, delivery mode and grant type in metadata', fun
     $this->getJson('/.well-known/oauth-authorization-server')
         ->assertOk()
         ->assertJsonPath('backchannel_authentication_endpoint', fn (string $v): bool => str_ends_with($v, '/oauth/backchannel_authentication'))
-        ->assertJsonPath('backchannel_token_delivery_modes_supported', ['poll'])
+        ->assertJsonPath('backchannel_token_delivery_modes_supported', ['poll', 'ping'])
         ->assertJsonFragment(['grant_types_supported' => [
             'authorization_code', 'client_credentials', 'refresh_token',
             'urn:ietf:params:oauth:grant-type:device_code', CIBA_GRANT,
