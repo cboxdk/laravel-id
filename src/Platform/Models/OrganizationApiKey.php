@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\Models;
 
+use Cbox\Id\Kernel\Authorization\Support\Scopes;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Models\Organization;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -62,7 +63,7 @@ class OrganizationApiKey extends Model
      */
     public function permits(string $scope): bool
     {
-        return $this->scopes === null || in_array($scope, $this->scopes, true);
+        return $this->scopes === null || Scopes::satisfies($this->scopes, $scope);
     }
 
     /**

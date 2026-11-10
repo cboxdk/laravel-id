@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Models;
 
+use Cbox\Id\Kernel\Authorization\Support\Scopes;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
@@ -73,9 +74,10 @@ class Client extends Model implements EnvironmentOwned
      */
     protected $hidden = ['secret_hash', 'registration_access_token_hash'];
 
+    /** Whether the registration covers $scope, under any of its names ({@see Scopes}). */
     public function allows(string $scope): bool
     {
-        return in_array($scope, $this->scopes, true);
+        return Scopes::satisfies($this->scopes, $scope);
     }
 
     /**

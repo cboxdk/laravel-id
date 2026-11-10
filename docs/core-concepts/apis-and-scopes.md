@@ -200,6 +200,30 @@ audience, `invalid_scope` (RFC 6749 §5.2) when nothing requested may be granted
   listing a registered scope there cannot widen what its API allows. Anything else is
   dropped, and the response's `scope` says what was kept.
 
+## Renaming a scope
+
+When the host renames one of its own scopes, the tokens, keys and client registrations
+already issued still hold the old name. Bind `Cbox\Id\Kernel\Authorization\Contracts\ScopeAliases`
+to the host's scope registry and return the current name from `canonical()`:
+
+```php
+use Cbox\Id\Kernel\Authorization\Contracts\ScopeAliases;
+
+$this->app->singleton(ScopeAliases::class, fn () => new class implements ScopeAliases
+{
+    public function canonical(string $scope): string
+    {
+        return ['workspace:read' => 'id:organization:read'][$scope] ?? $scope;
+    }
+});
+```
+
+Every scope check then treats both names as one scope: an access token
+(`Introspection::hasScope()`), a client registration (`Client::allows()`), an environment
+key (`EnvironmentApiKey::can()`) and an organization key (`OrganizationApiKey::permits()`).
+A grant hands back the current name, so a client that asks for `workspace:read` receives
+`id:organization:read`. The default binding, `NoScopeAliases`, knows no aliases.
+
 ## Scope and limits
 
 - One `resource` per request. A repeated `resource` is refused with `invalid_target` —

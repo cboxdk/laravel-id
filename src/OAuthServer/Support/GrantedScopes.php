@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Support;
 
+use Cbox\Id\Kernel\Authorization\Support\Scopes;
 use Cbox\Id\OAuthServer\Models\Client;
 
 /**
@@ -38,13 +39,15 @@ final class GrantedScopes
      */
     public static function for(Client $client, array $requested): array
     {
+        // Granted under their current names, so a client that asks for an old name of a
+        // scope gets the new one back ({@see Scopes}).
         if ($requested === []) {
-            return array_values($client->scopes);
+            return Scopes::canonicalise(array_values($client->scopes));
         }
 
-        return array_values(array_filter(
+        return Scopes::canonicalise(array_values(array_filter(
             $requested,
             static fn (string $scope): bool => $client->allows($scope),
-        ));
+        )));
     }
 }

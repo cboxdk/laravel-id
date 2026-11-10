@@ -39,6 +39,12 @@ ambiguous between "nothing to do" and "nobody wrote it down".
   either name. A host that published `config/cbox-id.php` gets the default `false` from
   the package config merge; add the key if you want to set it there.
 
+- **Scope checks go through `ScopeAliases`.** Nothing changes until the host binds it;
+  the default `NoScopeAliases` keeps every scope only itself. A host that renames scopes
+  binds its registry there (see `docs/core-concepts/apis-and-scopes.md`), and then tokens
+  are granted under the new names. Duplicate names in a requested scope are now granted
+  once.
+
 ## 2.1.0 — CIBA for self-registered clients
 
 - **`BackchannelAuthentication::request()` gained `?string $resource = null` as its last

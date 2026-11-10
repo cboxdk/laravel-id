@@ -24,6 +24,7 @@ more trust than the wording it removes.
 ### Added
 
 - **`id.*` webhook event names** (`WebhookEventNames`): `id.` + today's name, `user.login` → `id.user.signed_in`. The body's `type` uses them only when `cbox-id.webhooks.prefixed_event_types` (`CBOX_ID_WEBHOOKS_PREFIXED_EVENT_TYPES`) is on; it is off by default, so receivers see today's names. Subscriptions match either form.
+- **Scope registry hook** (`Kernel\Authorization\Contracts\ScopeAliases`, default `NoScopeAliases`). A host binds its registry so an old and a new scope name are one scope in `Introspection::hasScope()`, `Client::allows()`, `EnvironmentApiKey::can()` and `OrganizationApiKey::permits()`, and grants (`GrantedScopes`, now also used by `JwtTokenIssuer`) hand back the current name.
 
 ## [2.4.0] - 2026-11-10
 

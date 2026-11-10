@@ -28,6 +28,7 @@ use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
+use Cbox\Id\OAuthServer\Support\GrantedScopes;
 use Cbox\Id\OAuthServer\ValueObjects\ActingParty;
 use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizationDetails;
@@ -200,11 +201,7 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer, AuthorizationDet
      */
     private function grantScopes(Client $client, array $requested): array
     {
-        if ($requested === []) {
-            return array_values($client->scopes);
-        }
-
-        return array_values(array_filter($requested, fn (string $scope): bool => $client->allows($scope)));
+        return GrantedScopes::for($client, $requested);
     }
 
     /**
