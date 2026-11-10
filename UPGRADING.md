@@ -18,6 +18,20 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## Unreleased — v3 standard: secret prefixes, `id.*` event names, scope aliases
+
+- **New secrets carry `cbid_<kind>_`** (`Cbox\Id\Kernel\Crypto\SecretPrefix`): client
+  secrets `cbid_cs_`, refresh tokens `cbid_rt_`, authorization codes `cbid_ac_`, device
+  codes `cbid_dc_`, registration access tokens `cbid_reg_`, SCIM tokens `cbid_scim_`,
+  invitations `cbid_inv_`, magic links `cbid_ml_`, email verifications `cbid_evf_`,
+  password resets `cbid_pwr_`. **Nothing to do, and nothing is revoked.** Every secret is
+  verified by the hash of its whole plaintext, so a `csec_`, `rt_`, `scim_` (or any other
+  v2) secret keeps working: a client secret until it is rotated, a SCIM token until the
+  customer rotates it, a refresh token until it expires (its successor comes back as
+  `cbid_rt_`), the short-lived ones until they lapse. Only code that checks a prefix
+  itself (a secret scanner rule, a regex in a test) needs the new form added. Publishable
+  keys (`pk_live_`/`pk_test_`), `whsec_` and customer API key prefixes are unchanged.
+
 ## 2.1.0 — CIBA for self-registered clients
 
 - **`BackchannelAuthentication::request()` gained `?string $resource = null` as its last

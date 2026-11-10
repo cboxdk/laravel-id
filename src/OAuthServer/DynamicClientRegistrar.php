@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer;
 use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditActor;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Cbox\Id\OAuthServer\Contracts\Apis;
@@ -129,7 +130,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             backchannelLogoutUri: $metadata->backchannelLogoutUri,
             backchannelLogoutSessionRequired: $metadata->backchannelLogoutSessionRequired
         ));
-        $registrationToken = 'reg_'.bin2hex(random_bytes(32));
+        $registrationToken = SecretPrefix::RegistrationAccessToken->mint();
         $registered->client->forceFill(['registration_access_token_hash' => hash('sha256', $registrationToken)])->save();
 
         return new DynamicRegistration($registered->client, $registered->secret, $registrationToken);

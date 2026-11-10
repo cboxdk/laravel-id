@@ -53,7 +53,7 @@ use Cbox\Id\Directory\Contracts\Directories;
 
 $registered = app(Directories::class)->register($organization->id, 'Corporate IdP');
 
-$registered->token;         // "scim_<64 hex chars>" — shown once, never retrievable
+$registered->token;         // "cbid_scim_<64 hex chars>" — shown once, never retrievable
 $registered->directory->id; // the directory the token authenticates
 ```
 
@@ -91,7 +91,7 @@ itself to carry the SCIM media type.
 
 ```bash
 curl -sS 'https://id.example.com/scim/v2/Users?filter=userName%20eq%20%22sam%22' \
-  -H 'Authorization: Bearer scim_…'
+  -H 'Authorization: Bearer cbid_scim_…'
 ```
 
 ```json
@@ -136,7 +136,7 @@ curl -sS 'https://id.example.com/scim/v2/Users?filter=userName%20eq%20%22sam%22'
 
 ```bash
 curl -sS -X POST 'https://id.example.com/scim/v2/Users' \
-  -H 'Authorization: Bearer scim_…' \
+  -H 'Authorization: Bearer cbid_scim_…' \
   -H 'Content-Type: application/scim+json' \
   -d '{
     "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
@@ -197,7 +197,7 @@ sub-attributes are addressable: `urn:…:User:manager.displayName`.
 
 ```bash
 curl -sS -X PATCH 'https://id.example.com/scim/v2/Users/01J…' \
-  -H 'Authorization: Bearer scim_…' \
+  -H 'Authorization: Bearer cbid_scim_…' \
   -H 'Content-Type: application/scim+json' \
   -d '{
     "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
@@ -230,7 +230,7 @@ sends `"False"`). Anything else — `"fasle"`, `"no"`, `"1"`, `0`, `1` — is
 ### Delete
 
 ```bash
-curl -sS -X DELETE 'https://id.example.com/scim/v2/Users/01J…' -H 'Authorization: Bearer scim_…'
+curl -sS -X DELETE 'https://id.example.com/scim/v2/Users/01J…' -H 'Authorization: Bearer cbid_scim_…'
 # 204 No Content
 ```
 
@@ -247,7 +247,7 @@ never held.
 
 ```bash
 curl -sS -X POST 'https://id.example.com/scim/v2/Groups' \
-  -H 'Authorization: Bearer scim_…' \
+  -H 'Authorization: Bearer cbid_scim_…' \
   -H 'Content-Type: application/scim+json' \
   -d '{"displayName": "Engineering", "externalId": "grp|1",
        "members": [{"value": "01J…alice"}, {"value": "01J…bob"}]}'
@@ -290,7 +290,7 @@ different fact. The listing does not even query the membership pivot.
 Ask for it with the RFC 7644 §3.9 `attributes` parameter:
 
 ```bash
-curl -sS 'https://id.example.com/scim/v2/Groups?attributes=members' -H 'Authorization: Bearer scim_…'
+curl -sS 'https://id.example.com/scim/v2/Groups?attributes=members' -H 'Authorization: Bearer cbid_scim_…'
 # fully-qualified names work too:
 curl -sS 'https://id.example.com/scim/v2/Groups?attributes=urn:ietf:params:scim:schemas:core:2.0:Group:members' …
 ```
@@ -382,7 +382,7 @@ every single-valued attribute in the tables above (`members`, `emails.type` and
 
 ```bash
 curl -sS 'https://id.example.com/scim/v2/Users?sortBy=name.familyName&sortOrder=descending&count=50' \
-  -H 'Authorization: Bearer scim_…'
+  -H 'Authorization: Bearer cbid_scim_…'
 ```
 
 - `sortOrder` defaults to `ascending` and is matched in any case.
@@ -434,7 +434,7 @@ every single-resource response — including a `201` — carries it as the `ETag
 
 ```bash
 curl -sS -X PATCH 'https://id.example.com/scim/v2/Users/01J…' \
-  -H 'Authorization: Bearer scim_…' -H 'If-Match: W/"3f6c0e9b2a7d41c58e10"' \
+  -H 'Authorization: Bearer cbid_scim_…' -H 'If-Match: W/"3f6c0e9b2a7d41c58e10"' \
   -H 'Content-Type: application/scim+json' \
   -d '{"Operations":[{"op":"replace","path":"displayName","value":"Dana R."}]}'
 # 412 if the user changed since that tag was read

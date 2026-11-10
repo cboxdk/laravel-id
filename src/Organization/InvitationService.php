@@ -7,6 +7,7 @@ namespace Cbox\Id\Organization;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\Organization\Contracts\Invitations;
@@ -33,7 +34,7 @@ class InvitationService implements Invitations
 
     public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null, ?string $clientId = null): PendingInvitation
     {
-        $token = 'inv_'.bin2hex(random_bytes(32));
+        $token = SecretPrefix::Invitation->mint();
 
         // Supersede any earlier pending invite for the same address. Read first, so each
         // superseded one can be announced: a receiver mirroring pending invitations would

@@ -51,7 +51,7 @@ it('stores a registered secret as a hash with a hint, and nothing else', functio
         ->and($rows[0]->secret_hash)->toBe(ClientSecret::hash($secret))
         ->and($rows[0]->hint)->toBe(substr($secret, -4))
         ->and($rows[0]->expires_at)->toBeNull()
-        ->and($secret)->toStartWith('csec_')
+        ->and($secret)->toStartWith('cbid_cs_')
         // The row never serializes its verifier.
         ->and($rows[0]->toArray())->not->toHaveKey('secret_hash');
 });

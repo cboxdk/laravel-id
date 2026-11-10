@@ -12,6 +12,7 @@ use Cbox\Id\Identity\Models\PasswordResetToken;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Illuminate\Support\Facades\DB;
 
 class PasswordResetService implements PasswordReset
@@ -32,7 +33,7 @@ class PasswordResetService implements PasswordReset
             return null;
         }
 
-        $token = 'pwr_'.bin2hex(random_bytes(32));
+        $token = SecretPrefix::PasswordReset->mint();
 
         PasswordResetToken::query()->create([
             'email' => $email,

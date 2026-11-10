@@ -11,6 +11,7 @@ use Cbox\Id\Identity\Models\EmailVerificationToken;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Illuminate\Support\Facades\DB;
 
 class EmailVerificationService implements EmailVerification
@@ -24,7 +25,7 @@ class EmailVerificationService implements EmailVerification
 
     public function issue(string $subjectId, string $email): string
     {
-        $token = 'evf_'.bin2hex(random_bytes(32));
+        $token = SecretPrefix::EmailVerification->mint();
 
         EmailVerificationToken::query()->create([
             'user_id' => $subjectId,

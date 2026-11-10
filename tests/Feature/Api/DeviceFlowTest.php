@@ -33,7 +33,7 @@ it('starts a device grant with a user_code and verification URI', function (): v
         'device_code', 'user_code', 'verification_uri', 'verification_uri_complete', 'expires_in', 'interval',
     ]);
 
-    expect($response->json('device_code'))->toStartWith('dvc_')
+    expect($response->json('device_code'))->toStartWith('cbid_dc_')
         ->and($response->json('user_code'))->toMatch('/^[A-Z]{4}-[A-Z]{4}$/')
         ->and($response->json('verification_uri'))->toEndWith('/device');
 });

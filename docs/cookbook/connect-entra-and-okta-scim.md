@@ -25,7 +25,7 @@ use Cbox\Id\Directory\Contracts\Directories;
 
 $registered = app(Directories::class)->register($organization->id, 'Corporate Entra ID');
 
-$registered->token;   // "scim_…" — give it to the IdP admin; it is never shown again
+$registered->token;   // "cbid_scim_…" — give it to the IdP admin; it is never shown again
 ```
 
 The base URL is served on the environment's host (the same host as its issuer), and the
@@ -48,7 +48,7 @@ provisioning mode **Automatic**.
 | Setting | Value |
 | --- | --- |
 | Tenant URL | `https://<environment host>/scim/v2` |
-| Secret Token | the `scim_…` token |
+| Secret Token | the `cbid_scim_…` token |
 
 **Test Connection** reads a user and a group with a filter; both must answer `200`
 (an empty `ListResponse` is fine).
@@ -99,7 +99,7 @@ provisioning and configure the integration:
 | SCIM connector base URL | `https://<environment host>/scim/v2` |
 | Unique identifier field for users | `userName` |
 | Supported provisioning actions | Import New Users and Profile Updates, Push New Users, Push Profile Updates, Push Groups (as needed) |
-| Authentication Mode | HTTP Header — the `scim_…` token as the Bearer token |
+| Authentication Mode | HTTP Header — the `cbid_scim_…` token as the Bearer token |
 
 **Test Connector Configuration** reads `GET /Users?startIndex=1&count=2` (and
 `GET /Groups?startIndex=1&count=100` when group import is on).

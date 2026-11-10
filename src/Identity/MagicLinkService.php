@@ -15,6 +15,7 @@ use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -42,7 +43,7 @@ class MagicLinkService implements MagicLink
     {
         $this->assertEnabled();
 
-        $token = 'ml_'.bin2hex(random_bytes(32));
+        $token = SecretPrefix::MagicLink->mint();
 
         MagicLinkToken::query()->create([
             'email' => $email,

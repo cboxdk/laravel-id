@@ -83,7 +83,7 @@ $registered = app(ClientRegistry::class)->import(
 );
 
 $registered->client->client_id;   // a new cid_…
-$registered->secret;              // a new csec_… — shown once
+$registered->secret;              // a new cbid_cs_… — shown once
 ```
 
 **The key prefix is unique per environment.** An import into an environment where another

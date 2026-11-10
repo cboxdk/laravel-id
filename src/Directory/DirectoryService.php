@@ -12,6 +12,7 @@ use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\ValueObjects\RegisteredDirectory;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 
@@ -45,7 +46,7 @@ class DirectoryService implements Directories, PullDirectories
     public function register(string $organizationId, string $name): RegisteredDirectory
     {
         OwnerEnvironment::assertLocal($organizationId, Directory::class);
-        $token = 'scim_'.bin2hex(random_bytes(32));
+        $token = SecretPrefix::ScimToken->mint();
         $directory = new Directory;
         $directory->fill(['organization_id' => $organizationId, 'name' => $name, 'bearer_token_hash' => hash('sha256', $token), 'status' => DirectoryStatus::Active, 'mappings' => []]);
         $directory->save();

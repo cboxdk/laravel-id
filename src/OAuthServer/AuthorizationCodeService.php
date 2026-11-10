@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationCodes;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
@@ -62,7 +63,7 @@ class AuthorizationCodeService implements AuthorizationCodes
             throw InvalidGrant::make('resource must be an absolute URI with a host and no fragment');
         }
 
-        $code = 'ac_'.bin2hex(random_bytes(32));
+        $code = SecretPrefix::AuthorizationCode->mint();
 
         AuthorizationCode::query()->create([
             'code_hash' => hash('sha256', $code),

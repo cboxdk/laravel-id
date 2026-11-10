@@ -28,7 +28,7 @@ it('creates a pending invitation without granting membership', function (): void
 
     $pending = app(Invitations::class)->invite($org->id, 'new@corp.com', MembershipRole::Member, invitedBy: 'admin_1');
 
-    expect($pending->token)->toStartWith('inv_')
+    expect($pending->token)->toStartWith('cbid_inv_')
         ->and($pending->invitation->isPending())->toBeTrue()
         ->and(app(Invitations::class)->pending($org->id))->toHaveCount(1)
         // No membership until accepted.

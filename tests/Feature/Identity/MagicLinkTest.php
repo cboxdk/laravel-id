@@ -14,7 +14,7 @@ uses(RefreshDatabase::class);
 it('issues a hashed single-use token', function (): void {
     $token = app(MagicLink::class)->request('sam@acme.test');
 
-    expect($token)->toStartWith('ml_')
+    expect($token)->toStartWith('cbid_ml_')
         ->and(MagicLinkToken::query()->firstOrFail()->token_hash)->not->toBe($token);
 });
 

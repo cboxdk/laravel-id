@@ -6,6 +6,7 @@ namespace Cbox\Id\OAuthServer;
 
 use Carbon\CarbonInterface;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
@@ -350,7 +351,7 @@ class RefreshTokenService implements RefreshTokens
                 throw InvalidGrant::make('the subject is no longer active');
             }
 
-            $raw = 'rt_'.bin2hex(random_bytes(32));
+            $raw = SecretPrefix::RefreshToken->mint();
 
             RefreshToken::query()->create([
                 'token_hash' => hash('sha256', $raw),
