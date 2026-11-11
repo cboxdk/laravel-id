@@ -56,6 +56,32 @@ else runs (the `ResolveEnvironment` middleware, backed by an `EnvironmentResolve
 2. the **leading DNS label** as an environment **slug** (`id.staging.acme.com` →
    the `staging` environment).
 
+Slug resolution is only trusted under a configured base domain
+(`cbox-id.environments.base_domains`, `CBOX_ID_ENVIRONMENT_BASE_DOMAINS`, a comma list).
+
+### Base domains: the first one is canonical
+
+The list is ordered. An environment with no verified custom domain has the issuer
+`https://{slug}.{first base domain}`; every later entry still resolves the same
+environments by slug, and a metadata request there (`/.well-known/*`) is redirected to
+the canonical host. That is how a tenant base domain is moved: put the new one first and
+keep the old one after it.
+
+The platform root (the `is_default` environment) is derived from none of them. Its issuer
+is `cbox-id.issuer` (`CBOX_ID_ISSUER`), so the root can sit on a different registrable
+domain from its tenants:
+
+```dotenv
+CBOX_ID_ISSUER=https://login.example.com
+CBOX_ID_ENVIRONMENT_BASE_DOMAINS=example-auth.com,example.com
+```
+
+Here `acme.example-auth.com` is the `acme` environment's issuer and passkey relying
+party, `acme.example.com` still resolves to it and redirects its metadata, and the root
+keeps `https://login.example.com`. A host under a base domain whose leading label is no
+environment's slug falls back to the default environment, so reserve the labels the root
+itself is served on (`login`, `app`, `api`, …) as slugs no tenant can take.
+
 For a single-tenant / on-prem deployment, set `cbox-id.environments.default` to
 your one environment key and every host resolves to it. In a multi-tenant
 deployment, a host that maps to no environment is **refused** (404) rather than

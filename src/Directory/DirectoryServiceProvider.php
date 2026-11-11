@@ -12,6 +12,7 @@ use Cbox\Id\Directory\Connectors\MicrosoftEntraConnector;
 use Cbox\Id\Directory\Connectors\PersonioConnector;
 use Cbox\Id\Directory\Connectors\RipplingConnector;
 use Cbox\Id\Directory\Connectors\WorkdayConnector;
+use Cbox\Id\Directory\Contracts\DeprovisioningPolicy;
 use Cbox\Id\Directory\Contracts\Directories;
 use Cbox\Id\Directory\Contracts\DirectoryGroups;
 use Cbox\Id\Directory\Contracts\DirectorySync;
@@ -44,6 +45,7 @@ class DirectoryServiceProvider extends ServiceProvider
         $this->app->singleton(Directories::class, DirectoryService::class);
         $this->app->singleton(PullDirectories::class, DirectoryService::class);
         $this->app->singleton(DirectorySync::class, DatabaseDirectorySync::class);
+        $this->app->singleton(DeprovisioningPolicy::class, EnvironmentDeprovisioningPolicy::class);
         $this->app->singleton(DirectoryUsers::class, DatabaseDirectoryUsers::class);
         $this->app->singleton(DirectoryGroups::class, DatabaseDirectoryGroups::class);
 

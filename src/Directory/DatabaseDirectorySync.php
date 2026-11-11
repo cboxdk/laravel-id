@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Directory;
 
+use Cbox\Id\Directory\Contracts\DeprovisioningPolicy;
 use Cbox\Id\Directory\Contracts\DirectorySync;
+use Cbox\Id\Directory\Enums\DeprovisioningMode;
 use Cbox\Id\Directory\Exceptions\DirectoryUserNameTaken;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Directory\Models\DirectoryUser;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Models\Session;
 use Cbox\Id\Identity\ValueObjects\FederatedPrincipal;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
@@ -26,6 +29,11 @@ use Illuminate\Support\Facades\DB;
  * provisions a local user (Identity), links the SCIM resource, manages org
  * membership (Organization), and — critically — revokes sessions the instant a
  * user is deactivated or deprovisioned.
+ *
+ * HOW FAR a deprovision reaches is the environment's {@see DeprovisioningMode}: the whole
+ * account (the default — the directory owns who has an account), or only this
+ * organization's membership (a shared environment, where the account is the person's own
+ * and one employer must not be able to lock them out of everything else).
  */
 class DatabaseDirectorySync implements DirectorySync
 {
@@ -35,6 +43,7 @@ class DatabaseDirectorySync implements DirectorySync
         private readonly SessionManager $sessions,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly DeprovisioningPolicy $deprovisioning,
     ) {}
 
     public function provisionUser(string $directoryId, ScimUser $user): DirectoryUser
@@ -76,20 +85,29 @@ class DatabaseDirectorySync implements DirectorySync
                 ['resource' => $user->raw, 'user_id' => $subject->id, 'active' => $user->active],
             );
 
+            $mode = $this->deprovisioning->modeFor($directory);
+
             if ($user->active) {
-                $this->subjects->reactivate($subject->id);
+                // Only a directory that owns the account may bring it back. In membership
+                // mode an account somebody else disabled — an operator, the person's own
+                // erasure request — stays disabled; the directory only restores what it
+                // is allowed to take away, which is the membership.
+                if ($mode->ownsAccount()) {
+                    $this->subjects->reactivate($subject->id);
+                }
+
                 $this->memberships->add($directory->organization_id, $subject->id, MembershipRole::Member);
-                $action = 'directory.user.provisioned';
-            } else {
-                // Deactivate the account itself, not just its sessions — otherwise
-                // the deprovisioned user could simply log back in via SSO/password.
-                $this->subjects->deactivate($subject->id);
-                $this->memberships->remove($directory->organization_id, $subject->id);
-                $this->sessions->revokeAllForUser($subject->id);
-                $action = 'directory.user.deactivated';
+
+                $this->emitAndAudit($directory, $user->externalId, 'directory.user.provisioned', ['user_id' => $subject->id]);
+
+                return $directoryUser;
             }
 
-            $this->emitAndAudit($directory, $user->externalId, $action, ['user_id' => $subject->id]);
+            $this->withdraw($directory, $subject->id, $mode);
+
+            $this->emitAndAudit($directory, $user->externalId, 'directory.user.deactivated', [
+                'user_id' => $subject->id,
+            ] + $this->reach($mode, 'directory_deactivated'));
 
             return $directoryUser;
         });
@@ -111,16 +129,66 @@ class DatabaseDirectorySync implements DirectorySync
         DB::transaction(function () use ($directory, $directoryUser, $externalId): void {
             $directoryUser->update(['active' => false]);
 
+            $mode = $this->deprovisioning->modeFor($directory);
+
             if ($directoryUser->user_id !== null) {
-                $this->subjects->deactivate($directoryUser->user_id);
-                $this->memberships->remove($directory->organization_id, $directoryUser->user_id);
-                $this->sessions->revokeAllForUser($directoryUser->user_id);
+                $this->withdraw($directory, $directoryUser->user_id, $mode);
             }
 
             $this->emitAndAudit($directory, $externalId, 'directory.user.deprovisioned', [
                 'user_id' => $directoryUser->user_id,
-            ]);
+            ] + $this->reach($mode, 'directory_removed'));
         });
+    }
+
+    /**
+     * Take away what this directory gave the person, as far as the mode allows.
+     */
+    private function withdraw(Directory $directory, string $userId, DeprovisioningMode $mode): void
+    {
+        if ($mode->ownsAccount()) {
+            // Deactivate the account itself, not just its sessions — otherwise
+            // the deprovisioned user could simply log back in via SSO/password.
+            $this->subjects->deactivate($userId);
+            $this->memberships->remove($directory->organization_id, $userId);
+            $this->sessions->revokeAllForUser($userId);
+
+            return;
+        }
+
+        // MEMBERSHIP ONLY. Removing the membership drops the role assignments with it and
+        // emits `organization.member_removed`, which is what withdraws this organization's
+        // refresh tokens and tells the applications signed in to it (Back-Channel Logout).
+        // The account, and everything the person holds in other organizations, is untouched.
+        $this->memberships->remove($directory->organization_id, $userId);
+
+        // The sign-in sessions bound to THIS organization end too: one started through the
+        // organization's SSO would otherwise go on vouching for a person the organization
+        // has just let go. One at a time through the session manager, so each is audited
+        // and propagated like any other revocation. Sessions bound to another organization,
+        // or to none, are the person's own and stay.
+        Session::query()
+            ->where('user_id', $userId)
+            ->where('organization_id', $directory->organization_id)
+            ->whereNull('revoked_at')
+            ->get(['id'])
+            ->each(fn (Session $session) => $this->sessions->revoke($session->id));
+    }
+
+    /**
+     * What the event and the audit entry say about how far the deprovision reached, so a
+     * reader does not have to know the environment's mode to tell whether the account
+     * survived.
+     *
+     * @return array{reason: string, deprovisioning: string, account_deactivated: bool}
+     */
+    private function reach(DeprovisioningMode $mode, string $reason): array
+    {
+        return [
+            'reason' => $reason,
+            'deprovisioning' => $mode->value,
+            'account_deactivated' => $mode->ownsAccount(),
+        ];
     }
 
     /**

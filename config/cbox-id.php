@@ -387,6 +387,23 @@ return [
          */
         'default_interval_minutes' => env('CBOX_ID_DIRECTORY_INTERVAL_MINUTES', 60),
 
+        /*
+         * How far a directory's deprovisioning reaches (SCIM DELETE, `active: false`, a
+         * pull sync that no longer sees the person):
+         *
+         * - `account` (default): the account is deactivated, the membership removed and
+         *   every session ended. Right when the environment belongs to one customer and
+         *   its directory decides who has an account.
+         * - `membership`: only the directory's organization lets go — its membership, role
+         *   assignments, refresh tokens and the sessions signed in to it. The account is
+         *   never deactivated or reactivated by a directory. Right when many organizations
+         *   share the environment and the account is the person's own.
+         *
+         * This is the deployment default. One environment overrides it with
+         * `settings.directory.deprovisioning` on its `environments` row.
+         */
+        'deprovisioning' => env('CBOX_ID_DIRECTORY_DEPROVISIONING', 'account'),
+
         /* The longest one directory's sync lock is held, in seconds. */
         'lock_seconds' => env('CBOX_ID_DIRECTORY_LOCK_SECONDS', 3600),
 
@@ -476,6 +493,13 @@ return [
          * these — so a spoofed Host like `staging.attacker.com` can never select a
          * plane. Leave empty to require an exact custom-domain match. Comma list
          * via env, or an array here.
+         *
+         * ORDER MATTERS: the FIRST entry is the canonical tenant base — an environment
+         * with no verified custom domain has the issuer `https://{slug}.{first}`. Every
+         * later entry still resolves the same environments (so a base domain you are
+         * moving away from keeps answering, and its metadata redirects to the canonical
+         * host). The platform root (`is_default`) is not derived from any of them: it
+         * keeps `cbox-id.issuer`, which may sit on a different domain altogether.
          */
         'base_domains' => array_filter(array_map(
             'trim',
