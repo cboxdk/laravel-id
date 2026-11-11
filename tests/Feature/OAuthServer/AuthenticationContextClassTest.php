@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
+use Cbox\Id\OAuthServer\Enums\AuthMethod;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationRequirement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -51,4 +54,50 @@ it('advertises exactly the classes the enum asserts', function (): void {
     expect(ServerMetadata::document()['acr_values_supported'])
         ->toBe(['urn:cbox-id:aal1', 'urn:cbox-id:aal2'])
         ->toBe(AuthenticationContextClass::values());
+});
+
+it('reaches the phishing-resistant class only with a user-verified passkey', function (array $amr, bool $expected): void {
+    expect(AuthenticationContextClass::PhishingResistant->isSatisfiedBy($amr))->toBe($expected);
+})->with([
+    'passkey sign-in' => [AuthMethod::forPasskey(), true],
+    'password, then a passkey step-up' => [['pwd', 'passkey', 'pop', 'mfa'], true],
+    'passkey without user verification' => [AuthMethod::forPasskey(userVerified: false), false],
+    'password + totp' => [AuthMethod::forSecondFactorCode(), false],
+    'password + sms' => [AuthMethod::forSmsCode(), false],
+    'emailed otp' => [['pwd', 'otp'], false],
+    'recovery code' => [AuthMethod::forRecoveryCode(), false],
+    'legacy webauthn string' => [['webauthn', 'mfa'], false],
+    'password only' => [['pwd'], false],
+    'nothing' => [[], false],
+]);
+
+it('ranks phishing-resistant above aal2 without changing the level forAmr reports', function (): void {
+    $amr = AuthMethod::forPasskey();
+
+    expect(AuthenticationContextClass::forAmr($amr))->toBe(AuthenticationContextClass::Aal2)
+        ->and(AuthenticationContextClass::strongestFor($amr))->toBe(AuthenticationContextClass::PhishingResistant)
+        ->and(AuthenticationContextClass::strongestFor(AuthMethod::forSecondFactorCode()))->toBe(AuthenticationContextClass::Aal2)
+        ->and(AuthenticationContextClass::PhishingResistant->reaches(AuthenticationContextClass::Aal2))->toBeTrue()
+        ->and(AuthenticationContextClass::Aal2->reaches(AuthenticationContextClass::PhishingResistant))->toBeFalse()
+        ->and(AuthenticationContextClass::Aal2->reaches(AuthenticationContextClass::Aal1))->toBeTrue();
+});
+
+it('states phr in a token and in discovery only when the host turns it on', function (): void {
+    $amr = AuthMethod::forPasskey();
+
+    expect(AuthenticationContextClass::assertedFor($amr))->toBe(AuthenticationContextClass::Aal2)
+        ->and(AuthenticationContextClass::fromRequest('urn:cbox-id:phr'))->toBeNull()
+        ->and((new AuthenticationEvent(time(), $amr))->acr())->toBe(AuthenticationContextClass::Aal2);
+
+    config(['cbox-id.oauth.acr.phishing_resistant' => true]);
+
+    expect(AuthenticationContextClass::assertedFor($amr))->toBe(AuthenticationContextClass::PhishingResistant)
+        ->and(AuthenticationContextClass::assertedFor(AuthMethod::forSecondFactorCode()))->toBe(AuthenticationContextClass::Aal2)
+        ->and(AuthenticationContextClass::fromRequest('urn:cbox-id:aal2 urn:cbox-id:phr'))->toBe(AuthenticationContextClass::PhishingResistant)
+        ->and(AuthenticationContextClass::values())->toBe(['urn:cbox-id:aal1', 'urn:cbox-id:aal2', 'urn:cbox-id:phr'])
+        ->and((new AuthenticationEvent(time(), $amr))->acr())->toBe(AuthenticationContextClass::PhishingResistant);
+
+    // A phr token meets an aal2 requirement; an aal2 token does not meet a phr one.
+    expect(AuthenticationRequirement::of(AuthenticationContextClass::Aal2)->assess('urn:cbox-id:phr', time())->isSatisfied())->toBeTrue()
+        ->and(AuthenticationRequirement::of(AuthenticationContextClass::PhishingResistant)->assess('urn:cbox-id:aal2', time())->isSatisfied())->toBeFalse();
 });

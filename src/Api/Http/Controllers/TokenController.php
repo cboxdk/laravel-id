@@ -660,7 +660,7 @@ class TokenController
             // acr: derived from the amr through the SAME enum that advertises
             // acr_values_supported and gates a requested acr_values at /authorize, so
             // the level we assert here is the level that was actually demanded.
-            $claims['acr'] = AuthenticationContextClass::forAmr($grant->amr)->value;
+            $claims['acr'] = AuthenticationContextClass::assertedFor($grant->amr)->value;
         }
 
         return $this->signer->sign($claims, self::ID_TOKEN_ALG);

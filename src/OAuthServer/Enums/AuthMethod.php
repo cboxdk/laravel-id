@@ -47,11 +47,18 @@ enum AuthMethod: string
      * verification was required at the door, so possession and something the person knows
      * or is were both proved.
      *
+     * Pass `$userVerified: false` from a door that did NOT require user verification
+     * (`cbox-id.webauthn.user_verification` off): `mfa` is then left out, because presence
+     * alone is one factor, and the session does not reach
+     * {@see AuthenticationContextClass::PhishingResistant}.
+     *
      * @return list<string>
      */
-    public static function forPasskey(): array
+    public static function forPasskey(bool $userVerified = true): array
     {
-        return [self::Passkey->value, self::ProofOfPossession->value, self::MultiFactor->value];
+        return $userVerified
+            ? [self::Passkey->value, self::ProofOfPossession->value, self::MultiFactor->value]
+            : [self::Passkey->value, self::ProofOfPossession->value];
     }
 
     /**
