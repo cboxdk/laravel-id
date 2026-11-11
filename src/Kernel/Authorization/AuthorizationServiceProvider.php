@@ -9,6 +9,7 @@ use Cbox\Id\Kernel\Authorization\Contracts\EntitlementWriter;
 use Cbox\Id\Kernel\Authorization\Contracts\FineGrainedAuthorization;
 use Cbox\Id\Kernel\Authorization\Contracts\PolicyDecisionPoint;
 use Cbox\Id\Kernel\Authorization\Contracts\RelationshipStore;
+use Cbox\Id\Kernel\Authorization\Contracts\ScopeAliases;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
@@ -29,6 +30,9 @@ class AuthorizationServiceProvider extends ServiceProvider
         $this->app->alias(CachedEntitlements::class, EntitlementWriter::class);
 
         $this->app->singleton(RelationshipStore::class, DatabaseRelationshipStore::class);
+
+        // The host's scope registry rebinds this so old and new scope names are one scope.
+        $this->app->singleton(ScopeAliases::class, NoScopeAliases::class);
         $this->app->singleton(PolicyDecisionPoint::class, DefaultPolicyDecisionPoint::class);
 
         // An environment's own relationship model (schema + tuples + checks), cached by

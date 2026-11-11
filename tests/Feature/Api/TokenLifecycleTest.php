@@ -236,7 +236,7 @@ it('issues a refresh token only when offline_access is granted', function (): vo
         'code_verifier' => VERIFIER,
     ])->assertOk();
 
-    expect($response->json('refresh_token'))->toBeString()->toStartWith('rt_');
+    expect($response->json('refresh_token'))->toBeString()->toStartWith('cbid_rt_');
 });
 
 it('does not issue a refresh token without offline_access', function (): void {

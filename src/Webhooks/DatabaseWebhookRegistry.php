@@ -14,6 +14,7 @@ use Cbox\Id\Webhooks\Exceptions\UnknownWebhookEvent;
 use Cbox\Id\Webhooks\Models\WebhookEndpoint;
 use Cbox\Id\Webhooks\Support\SafeWebhookUrl;
 use Cbox\Id\Webhooks\Support\StandardWebhookSignature;
+use Cbox\Id\Webhooks\Support\WebhookEventNames;
 use Cbox\Id\Webhooks\ValueObjects\RegisteredEndpoint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -135,9 +136,14 @@ class DatabaseWebhookRegistry implements WebhookRegistry, WebhookSigningSchemes
         // The subscription test stays in PHP: `event_types` is a JSON column, and a
         // portable containment predicate across SQLite, MySQL and PostgreSQL is not one
         // expression. The set is an environment's endpoints, not a table scan.
+        //
+        // Either name of an event matches either form of a subscription
+        // ({@see WebhookEventNames}): `id.user.signed_in` and `user.login` are one event.
+        $wanted = WebhookEventNames::internal($eventType);
+
         return $this->forOrganization($organizationId)
-            ->filter(fn (WebhookEndpoint $endpoint): bool => in_array($eventType, $endpoint->event_types, true)
-                || in_array(WebhookEventType::WILDCARD, $endpoint->event_types, true))
+            ->filter(fn (WebhookEndpoint $endpoint): bool => in_array(WebhookEventType::WILDCARD, $endpoint->event_types, true)
+                || in_array($wanted, array_map(WebhookEventNames::internal(...), $endpoint->event_types), true))
             ->values();
     }
 

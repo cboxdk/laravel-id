@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer;
 
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
@@ -52,7 +53,7 @@ class DeviceAuthorizationService implements DeviceAuthorization
 
         $scopes = $granted;
 
-        $deviceCode = 'dvc_'.bin2hex(random_bytes(32));
+        $deviceCode = SecretPrefix::DeviceCode->mint();
         $userCode = $this->generateUserCode();
         $verificationUri = $this->verificationUri();
 

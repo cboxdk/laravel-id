@@ -18,6 +18,33 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 2.5.0 — v3 standard: secret prefixes, `id.*` event names, scope aliases
+
+- **New secrets carry `cbid_<kind>_`** (`Cbox\Id\Kernel\Crypto\SecretPrefix`): client
+  secrets `cbid_cs_`, refresh tokens `cbid_rt_`, authorization codes `cbid_ac_`, device
+  codes `cbid_dc_`, registration access tokens `cbid_reg_`, SCIM tokens `cbid_scim_`,
+  invitations `cbid_inv_`, magic links `cbid_ml_`, email verifications `cbid_evf_`,
+  password resets `cbid_pwr_`. **Nothing to do, and nothing is revoked.** Every secret is
+  verified by the hash of its whole plaintext, so a `csec_`, `rt_`, `scim_` (or any other
+  v2) secret keeps working: a client secret until it is rotated, a SCIM token until the
+  customer rotates it, a refresh token until it expires (its successor comes back as
+  `cbid_rt_`), the short-lived ones until they lapse. Only code that checks a prefix
+  itself (a secret scanner rule, a regex in a test) needs the new form added. Publishable
+  keys (`pk_live_`/`pk_test_`), `whsec_` and customer API key prefixes are unchanged.
+
+- **Webhook event types have `id.*` names** (`id.organization.member_added`,
+  `id.user.signed_in` for `user.login`). Nothing changes on the wire until the operator
+  sets `CBOX_ID_WEBHOOKS_PREFIXED_EVENT_TYPES=true`; do that only after every receiving
+  app runs a laravel-id-client that accepts both names. Endpoints may subscribe with
+  either name. A host that published `config/cbox-id.php` gets the default `false` from
+  the package config merge; add the key if you want to set it there.
+
+- **Scope checks go through `ScopeAliases`.** Nothing changes until the host binds it;
+  the default `NoScopeAliases` keeps every scope only itself. A host that renames scopes
+  binds its registry there (see `docs/core-concepts/apis-and-scopes.md`), and then tokens
+  are granted under the new names. Duplicate names in a requested scope are now granted
+  once.
+
 ## 2.1.0 — CIBA for self-registered clients
 
 - **`BackchannelAuthentication::request()` gained `?string $resource = null` as its last

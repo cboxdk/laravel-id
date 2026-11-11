@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
+use Cbox\Id\Kernel\Crypto\SecretPrefix;
+
 /**
  * A freshly minted client secret: the plaintext, readable exactly once, and the hash that
  * is all the server keeps.
@@ -24,7 +26,7 @@ readonly class ClientSecret
 
     public static function mint(): self
     {
-        $plaintext = 'csec_'.bin2hex(random_bytes(32));
+        $plaintext = SecretPrefix::ClientSecret->mint();
 
         return new self($plaintext, self::hash($plaintext));
     }

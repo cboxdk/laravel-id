@@ -18,7 +18,7 @@ it('registers a directory and reveals its bearer token once', function (): void 
     $org = $this->makeOrganization();
     $registered = $this->makeDirectory($org->id);
 
-    expect($registered->token)->toStartWith('scim_')
+    expect($registered->token)->toStartWith('cbid_scim_')
         ->and($registered->directory->bearer_token_hash)->not->toBe($registered->token)
         ->and(app(Directories::class)->authenticate($registered->token)?->id)->toBe($registered->directory->id)
         ->and(app(Directories::class)->authenticate('scim_wrong'))->toBeNull();

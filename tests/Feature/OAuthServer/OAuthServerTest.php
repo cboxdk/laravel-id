@@ -24,7 +24,7 @@ beforeEach(function (): void {
 it('registers a confidential client and verifies its secret', function (): void {
     $registered = $this->makeClient(['api.read', 'api.write']);
 
-    expect($registered->secret)->toStartWith('csec_')
+    expect($registered->secret)->toStartWith('cbid_cs_')
         ->and($registered->client->secret_hash)->not->toBe($registered->secret)
         ->and(app(ClientRegistry::class)->verifySecret($registered->client, $registered->secret ?? ''))->toBeTrue()
         ->and(app(ClientRegistry::class)->verifySecret($registered->client, 'wrong'))->toBeFalse();
@@ -114,7 +114,7 @@ it('overlap-rotates a service account: the successor works while the old still d
 
     // A distinct credential with the same privileges, linked to its predecessor.
     expect($successor->client->client_id)->not->toBe($original->client->client_id)
-        ->and($successor->secret)->toStartWith('csec_')
+        ->and($successor->secret)->toStartWith('cbid_cs_')
         ->and($successor->client->scopes)->toBe(['api.read', 'api.write'])
         ->and(ServiceAccount::query()->where('client_id', $successor->client->client_id)->value('rotated_from'))
         ->toBe($original->client->client_id);

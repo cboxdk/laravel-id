@@ -17,7 +17,7 @@ it('issues a hashed single-use token only for a real account', function (): void
 
     $token = $reset->request('sam@acme.test');
 
-    expect($token)->toStartWith('pwr_')
+    expect($token)->toStartWith('cbid_pwr_')
         ->and(PasswordResetToken::query()->firstOrFail()->token_hash)->not->toBe($token);
 });
 

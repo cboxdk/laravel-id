@@ -24,7 +24,7 @@ it('issues a hashed single-use verification token bound to the subject', functio
 
     $token = app(EmailVerification::class)->issue($id, 'sam@acme.test');
 
-    expect($token)->toStartWith('evf_')
+    expect($token)->toStartWith('cbid_evf_')
         ->and(EmailVerificationToken::query()->firstOrFail())
         ->token_hash->not->toBe($token)
         ->user_id->toBe($id);

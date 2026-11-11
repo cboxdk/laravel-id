@@ -113,7 +113,7 @@ it('imports into another environment as a new client, with its own id and secret
 
     expect($imported->client->environment_id)->toBe('env_prod')
         ->and($imported->client->client_id)->not->toBe($source->client->client_id)
-        ->and($imported->secret)->toBeString()->toStartWith('csec_')
+        ->and($imported->secret)->toBeString()->toStartWith('cbid_cs_')
         ->and($imported->secret)->not->toBe($source->secret)
         ->and($imported->client->redirect_uris)->toBe(['https://cortex.test/cb'])
         ->and($imported->client->grant_types)->toBe(['authorization_code', 'refresh_token', GrantType::TokenExchange->value])

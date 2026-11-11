@@ -469,7 +469,7 @@ it('mints further codes only for the session’s own actor', function (): void {
     expect(supportRefusalOf(fn () => app(SupportSessions::class)->issueCode($started->session->id, 'staff-2', supportCode())))
         ->toBe(SupportSessionRefusal::SessionNotActive);
 
-    expect(app(SupportSessions::class)->issueCode($started->session->id, 'staff-1', supportCode()))->toStartWith('ac_');
+    expect(app(SupportSessions::class)->issueCode($started->session->id, 'staff-1', supportCode()))->toStartWith('cbid_ac_');
 })->group('security');
 
 /**

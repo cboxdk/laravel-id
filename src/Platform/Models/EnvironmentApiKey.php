@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Platform\Models;
 
+use Cbox\Id\Kernel\Authorization\Support\Scopes;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
 use Cbox\Id\Platform\Enums\EnvironmentApiScope;
@@ -62,7 +63,7 @@ class EnvironmentApiKey extends Model implements EnvironmentOwned
      */
     public function can(EnvironmentApiScope|string $scope): bool
     {
-        return in_array($scope instanceof EnvironmentApiScope ? $scope->value : $scope, $this->scopes, true);
+        return Scopes::satisfies($this->scopes, $scope instanceof EnvironmentApiScope ? $scope->value : $scope);
     }
 
     /**

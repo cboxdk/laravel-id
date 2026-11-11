@@ -31,7 +31,7 @@ $registered = app(ClientRegistry::class)->register(new NewClient(
 ), AuditActor::organizationMember($memberId));
 
 $registered->client->client_id;   // cid_…
-$registered->secret;              // csec_… — shown ONCE, only its hash is stored
+$registered->secret;              // cbid_cs_… — shown ONCE, only its hash is stored
 ```
 
 A confidential client gets a secret unless it registers a JWK Set (`jwks`), in which case
@@ -60,7 +60,7 @@ $registry = app(ClientRegistry::class);
 // Mint a new secret; the current ones keep working for one more hour.
 $rotated = $registry->rotateSecret($client, graceSeconds: 3600, actor: $actor);
 
-$rotated->secret;             // the new csec_… — shown once
+$rotated->secret;             // the new cbid_cs_… — shown once
 $rotated->previousExpireAt;   // when the old ones stop working
 
 $registry->secrets($client);  // list<ClientSecretSummary>: id, hint, created, expires, last used

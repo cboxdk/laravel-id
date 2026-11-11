@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
+use Cbox\Id\Kernel\Authorization\Support\Scopes;
+
 /**
  * RFC 7662-style introspection result.
  */
@@ -35,9 +37,10 @@ readonly class Introspection
         return new self(false, null, null, [], []);
     }
 
+    /** Whether the token holds $scope, under any of its names ({@see Scopes}). */
     public function hasScope(string $scope): bool
     {
-        return in_array($scope, $this->scopes, true);
+        return Scopes::satisfies($this->scopes, $scope);
     }
 
     /**
