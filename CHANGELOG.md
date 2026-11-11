@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **Phishing-resistant authentication context** (`AuthenticationContextClass::PhishingResistant`, `urn:cbox-id:phr`): met only by a WebAuthn assertion with user verification (`passkey` and `mfa` in the session's `amr`). A time-based, texted or emailed code and a recovery code never meet it. `isSatisfiedBy()`, `strongestFor()` and `reaches()` (phr meets aal2 meets aal1) answer for a session; `AuthenticationRequirement::assessSession()` uses the strongest class the session reached.
+- **`cbox-id.oauth.acr.phishing_resistant`** (`CBOX_ID_ACR_PHISHING_RESISTANT`, default off): when on, a token's `acr` says `urn:cbox-id:phr` for a passkey sign-in, discovery advertises it and `acr_values` can demand it. Off, tokens and discovery are unchanged (`aal1`/`aal2`).
+- **`AuthMethod::forPasskey(userVerified: false)`** leaves `mfa` out for a door that did not require user verification, so that session does not reach the phishing-resistant class.
+
 ## [2.5.0] - 2026-11-11
 
 ### Changed

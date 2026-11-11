@@ -39,8 +39,9 @@ that the resource server will refuse again.
 |---|---|
 | `urn:cbox-id:aal1` | A single factor (password, social sign-in, SSO). |
 | `urn:cbox-id:aal2` | A second factor was used at login: the session's `amr` holds `mfa`, `otp` or `passkey`. |
+| `urn:cbox-id:phr` | Phishing-resistant: a passkey or security key with user verification (`passkey` and `mfa` in `amr`). A one-time code never reaches it. Stated in tokens and advertised only when `cbox-id.oauth.acr.phishing_resistant` is on. |
 
-`aal2` satisfies an `aal1` requirement. If a request lists several classes, the strongest
+`phr` satisfies an `aal2` requirement and `aal2` satisfies an `aal1` requirement. If a request lists several classes, the strongest
 one this server asserts is required. Values this server does not assert are ignored, as
 OIDC treats `acr_values`. A requirement that names only foreign values therefore demands
 no class at all. Name a class from `acr_values_supported`.
@@ -237,9 +238,12 @@ it('demands a second factor for deletion', function (): void {
 
 ## Limits
 
-- **Two levels.** `aal1` and `aal2` are vendor URNs, not standard assurance-level
-  identifiers. There is no phishing-resistant-only class, so a passkey and a one-time code
-  both count as `aal2`.
+- **Vendor URNs.** `aal1`, `aal2` and `phr` are vendor URNs, not standard assurance-level
+  identifiers.
+- **`phr` in tokens is opt-in.** With `cbox-id.oauth.acr.phishing_resistant` off (the
+  default), a passkey and a one-time code both produce an `aal2` token, and a `phr`
+  requirement in `acr_values` is ignored like any value the server does not assert. Your
+  own code can still ask a session: `AuthenticationContextClass::PhishingResistant->isSatisfiedBy($session->amr)`.
 - **No `claims` parameter.** An `acr` requested as an essential claim
   (`claims={"id_token":{"acr":{"essential":true,…}}}`) is not read, and discovery
   advertises `claims_parameter_supported: false`. Use `acr_values`.
