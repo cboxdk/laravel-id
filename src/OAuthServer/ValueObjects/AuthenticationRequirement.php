@@ -159,7 +159,7 @@ readonly class AuthenticationRequirement
         if ($required !== null) {
             $achieved = $acr === null ? null : AuthenticationContextClass::tryFrom($acr);
 
-            if ($achieved === null || ! self::reaches($achieved, $required)) {
+            if ($achieved === null || ! $achieved->reaches($required)) {
                 $shortfalls[] = AuthenticationShortfall::ContextNotMet;
             }
         }
@@ -184,8 +184,10 @@ readonly class AuthenticationRequirement
         // array_values(): a JSON column is not guaranteed to rehydrate as a list.
         $amr = array_values($session->amr);
 
+        // The strongest class the session reached, whatever a token would state: this is
+        // the authorization server asking its own session, not reading a claim.
         return $this->assess(
-            AuthenticationContextClass::forAmr($amr)->value,
+            AuthenticationContextClass::strongestFor($amr)->value,
             $session->created_at?->getTimestamp(),
             $now,
             $leeway,
@@ -215,12 +217,6 @@ readonly class AuthenticationRequirement
     public function challenge(?BearerChallenge $base = null, ?string $description = null): BearerChallenge
     {
         return ($base ?? new BearerChallenge)->insufficientUserAuthentication($this->acrValues, $this->maxAge, $description);
-    }
-
-    /** A higher class satisfies a lower one: aal2 meets aal1. */
-    private static function reaches(AuthenticationContextClass $achieved, AuthenticationContextClass $required): bool
-    {
-        return $required === AuthenticationContextClass::Aal1 || $achieved === $required;
     }
 
     /**

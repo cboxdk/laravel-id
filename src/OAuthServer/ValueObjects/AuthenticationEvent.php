@@ -56,7 +56,7 @@ readonly class AuthenticationEvent
      */
     public function acr(): ?AuthenticationContextClass
     {
-        return $this->amr === [] ? null : AuthenticationContextClass::forAmr($this->amr);
+        return $this->amr === [] ? null : AuthenticationContextClass::assertedFor($this->amr);
     }
 
     public function isEmpty(): bool

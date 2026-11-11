@@ -19,6 +19,9 @@ more trust than the wording it removes.
 
 ### Added
 
+- **Phishing-resistant authentication context** (`AuthenticationContextClass::PhishingResistant`, `urn:cbox-id:phr`): met only by a WebAuthn assertion with user verification (`passkey` and `mfa` in the session's `amr`). A time-based, texted or emailed code and a recovery code never meet it. `isSatisfiedBy()`, `strongestFor()` and `reaches()` (phr meets aal2 meets aal1) answer for a session; `AuthenticationRequirement::assessSession()` uses the strongest class the session reached.
+- **`cbox-id.oauth.acr.phishing_resistant`** (`CBOX_ID_ACR_PHISHING_RESISTANT`, default off): when on, a token's `acr` says `urn:cbox-id:phr` for a passkey sign-in, discovery advertises it and `acr_values` can demand it. Off, tokens and discovery are unchanged (`aal1`/`aal2`).
+- **`AuthMethod::forPasskey(userVerified: false)`** leaves `mfa` out for a door that did not require user verification, so that session does not reach the phishing-resistant class.
 - **Directory deprovisioning mode** (`Directory\Enums\DeprovisioningMode`, `Directory\Contracts\DeprovisioningPolicy`). `account` is the default and what every environment did before: a SCIM `DELETE`, an `active: false` or a pull sync that no longer sees a person deactivates the account. `membership` ends only the directory's organization: its membership, role assignments, refresh tokens and the sessions bound to it. The account is never deactivated or reactivated by a directory. Set per environment in `settings.directory.deprovisioning`, with `cbox-id.directory.deprovisioning` (`CBOX_ID_DIRECTORY_DEPROVISIONING`) as the deployment default. `directory.user.deactivated` and `directory.user.deprovisioned` now carry `reason`, `deprovisioning` and `account_deactivated`. Tested in `DeprovisioningModeTest`.
 
 ### Changed

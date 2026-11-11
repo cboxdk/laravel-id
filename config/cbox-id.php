@@ -678,6 +678,20 @@ return [
             'anonymous' => env('CBOX_ID_TOKEN_ANONYMOUS_PER_MINUTE', 30),
         ],
 
+        /*
+         * Whether a token's `acr` states `urn:cbox-id:phr` (phishing-resistant: a passkey
+         * or security key with user verification) and discovery advertises it.
+         *
+         * Off by default: with it on, a passkey sign-in's `acr` changes from
+         * `urn:cbox-id:aal2` to `urn:cbox-id:phr`, and a relying party that compares the
+         * claim to `aal2` as a string would refuse it. Turn it on once your relying
+         * parties compare by level (`AuthenticationContextClass::reaches()`). A session
+         * can be asked `PhishingResistant->isSatisfiedBy($amr)` either way.
+         */
+        'acr' => [
+            'phishing_resistant' => env('CBOX_ID_ACR_PHISHING_RESISTANT', false),
+        ],
+
         'dynamic_registration' => [
             'mode' => env('CBOX_ID_DCR_MODE', 'disabled'),
             'initial_access_token' => env('CBOX_ID_DCR_INITIAL_ACCESS_TOKEN'),

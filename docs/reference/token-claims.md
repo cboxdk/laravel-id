@@ -97,7 +97,8 @@ when they fall short, answers with the RFC 9470 `insufficient_user_authenticatio
 challenge. See [Require step-up authentication](../cookbook/require-step-up-authentication.md).
 
 - **`acr`** is `urn:cbox-id:aal1` (one factor) or `urn:cbox-id:aal2` (a second factor:
-  `mfa`, `otp` or `passkey` in the login's `amr`). It is **derived from `amr`**, never
+  `mfa`, `otp` or `passkey` in the login's `amr`). With `cbox-id.oauth.acr.phishing_resistant`
+  on, a passkey sign-in with user verification says `urn:cbox-id:phr` instead. It is **derived from `amr`**, never
   copied from the requested `acr_values`, so a token never claims more than the login
   reached. It is absent when the grant recorded no `amr`.
 - **`auth_time`** is the unix time the person authenticated: the sign-in session's
