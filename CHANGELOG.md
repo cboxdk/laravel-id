@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-11
+
 ### Changed
 
 - **Secrets are minted as `cbid_<kind>_…`** (`SecretPrefix`): `cbid_cs_`, `cbid_rt_`, `cbid_ac_`, `cbid_dc_`, `cbid_reg_`, `cbid_scim_`, `cbid_inv_`, `cbid_ml_`, `cbid_evf_`, `cbid_pwr_`. The v2 forms (`csec_`, `rt_`, `scim_`, …) keep working until they are rotated or expire; no migration revokes them. Tested per kind in `SecretPrefixGraceTest`.

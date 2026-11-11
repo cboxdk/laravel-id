@@ -18,7 +18,7 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
-## Unreleased — v3 standard: secret prefixes, `id.*` event names, scope aliases
+## 2.5.0 — v3 standard: secret prefixes, `id.*` event names, scope aliases
 
 - **New secrets carry `cbid_<kind>_`** (`Cbox\Id\Kernel\Crypto\SecretPrefix`): client
   secrets `cbid_cs_`, refresh tokens `cbid_rt_`, authorization codes `cbid_ac_`, device
