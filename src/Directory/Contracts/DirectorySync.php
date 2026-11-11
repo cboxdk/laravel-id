@@ -18,6 +18,10 @@ interface DirectorySync
     /**
      * Deprovision (SCIM delete / active=false): deactivate, drop membership, and
      * revoke the user's sessions immediately.
+     *
+     * In an environment whose deprovisioning mode is `membership`
+     * ({@see DeprovisioningPolicy}) only this organization's membership, tokens and
+     * sessions end; the account itself is left alone.
      */
     public function deprovisionUser(string $directoryId, string $externalId): void;
 }

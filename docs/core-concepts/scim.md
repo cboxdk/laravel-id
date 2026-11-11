@@ -243,6 +243,40 @@ subsequent `GET /scim/v2/Users/{id}` still resolves and reports `"active": false
 to answer `204`, which told the IdP a deprovision had succeeded for an id the server
 never held.
 
+### How far a deprovision reaches
+
+A directory lets go of a person in three ways: `DELETE`, `active: false` (by `PATCH` or
+`PUT`), and a pull sync that no longer sees them. What that takes away is the
+environment's **deprovisioning mode**:
+
+| Mode | What ends | For |
+|---|---|---|
+| `account` (default) | The account is deactivated, the organization membership is removed, and every session and grant the person holds is revoked. A later `active: true` reactivates the account. | An environment one customer owns, where the directory decides who has an account. |
+| `membership` | Only the directory's organization lets go: its membership, the role assignments in it, the refresh tokens scoped to it (with Back-Channel Logout to the applications holding them) and the sign-in sessions bound to it. The account stays active, and so does everything the person holds in other organizations. A later `active: true` restores the membership and never changes the account's status. | An environment many organizations share, where the account is the person's own and one employer must not be able to lock them out of the rest. |
+
+Set the deployment default with `cbox-id.directory.deprovisioning`
+(`CBOX_ID_DIRECTORY_DEPROVISIONING`), and override it for one environment on its row:
+
+```php
+$environment->settings = ['directory' => ['deprovisioning' => 'membership']] + $environment->settings;
+$environment->save();
+```
+
+A value that is not `account` or `membership` is ignored at its level. The mode is per
+environment, not per directory, on purpose: a directory belongs to one organization, and
+an organization administrator in a shared environment must not be able to pick the mode
+that deactivates accounts. A host that needs a different rule binds its own
+`Cbox\Id\Directory\Contracts\DeprovisioningPolicy`.
+
+`directory.user.deactivated` and `directory.user.deprovisioned` (event and audit entry)
+say which happened: `reason` (`directory_deactivated` or `directory_removed`),
+`deprovisioning` (the mode) and `account_deactivated` (`true` or `false`). In
+`membership` mode the removal also raises the ordinary `organization.member_removed` /
+`membership.deleted`.
+
+In `membership` mode the SCIM resource still reads back as `"active": false`: that is the
+directory's view of the person, not the state of their account.
+
 ## Groups
 
 ```bash

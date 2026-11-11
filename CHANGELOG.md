@@ -17,6 +17,18 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **Directory deprovisioning mode** (`Directory\Enums\DeprovisioningMode`, `Directory\Contracts\DeprovisioningPolicy`). `account` is the default and what every environment did before: a SCIM `DELETE`, an `active: false` or a pull sync that no longer sees a person deactivates the account. `membership` ends only the directory's organization: its membership, role assignments, refresh tokens and the sessions bound to it. The account is never deactivated or reactivated by a directory. Set per environment in `settings.directory.deprovisioning`, with `cbox-id.directory.deprovisioning` (`CBOX_ID_DIRECTORY_DEPROVISIONING`) as the deployment default. `directory.user.deactivated` and `directory.user.deprovisioned` now carry `reason`, `deprovisioning` and `account_deactivated`. Tested in `DeprovisioningModeTest`.
+
+### Changed
+
+- `DatabaseDirectorySync` takes a `DeprovisioningPolicy` as a sixth constructor argument. Resolved from the container nothing changes; a host that constructs it by hand passes one.
+
+### Documentation
+
+- The first entry of `cbox-id.environments.base_domains` is the canonical tenant base, later entries keep resolving and redirect their metadata, and the root's issuer comes from `cbox-id.issuer` alone, so tenants can sit on a different registrable domain from the root. No code change; pinned by `TenantBaseDomainTest`.
+
 ## [2.5.0] - 2026-11-11
 
 ### Changed
