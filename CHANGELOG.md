@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-11
+
 ### Added
 
 - **Phishing-resistant authentication context** (`AuthenticationContextClass::PhishingResistant`, `urn:cbox-id:phr`): met only by a WebAuthn assertion with user verification (`passkey` and `mfa` in the session's `amr`). A time-based, texted or emailed code and a recovery code never meet it. `isSatisfiedBy()`, `strongestFor()` and `reaches()` (phr meets aal2 meets aal1) answer for a session; `AuthenticationRequirement::assessSession()` uses the strongest class the session reached.

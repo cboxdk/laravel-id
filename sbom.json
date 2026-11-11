@@ -1,7 +1,7 @@
 {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": "urn:uuid:8db93816-54b2-4a47-a8b1-b51b4294f922",
+    "serialNumber": "urn:uuid:f91b8dbd-41da-4c75-ab76-90e7d1dd6be9",
     "version": 1,
     "metadata": {
         "tools": [
@@ -309,11 +309,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/framework@v13.40.0",
+            "bom-ref": "pkg:composer/laravel/framework@v13.42.0",
             "group": "laravel",
             "name": "framework",
-            "version": "v13.40.0",
-            "purl": "pkg:composer/laravel/framework@v13.40.0",
+            "version": "v13.42.0",
+            "purl": "pkg:composer/laravel/framework@v13.42.0",
             "description": "The Laravel Framework.",
             "licenses": [
                 {
@@ -325,11 +325,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/prompts@v0.3.26",
+            "bom-ref": "pkg:composer/laravel/prompts@v0.3.27",
             "group": "laravel",
             "name": "prompts",
-            "version": "v0.3.26",
-            "purl": "pkg:composer/laravel/prompts@v0.3.26",
+            "version": "v0.3.27",
+            "purl": "pkg:composer/laravel/prompts@v0.3.27",
             "description": "Add beautiful and user-friendly forms to your command-line applications.",
             "licenses": [
                 {
@@ -341,11 +341,11 @@
         },
         {
             "type": "library",
-            "bom-ref": "pkg:composer/laravel/serializable-closure@v2.1.0",
+            "bom-ref": "pkg:composer/laravel/serializable-closure@v2.2.0",
             "group": "laravel",
             "name": "serializable-closure",
-            "version": "v2.1.0",
-            "purl": "pkg:composer/laravel/serializable-closure@v2.1.0",
+            "version": "v2.2.0",
+            "purl": "pkg:composer/laravel/serializable-closure@v2.2.0",
             "description": "Laravel Serializable Closure provides an easy and secure way to serialize closures in PHP.",
             "licenses": [
                 {
