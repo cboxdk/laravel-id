@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-12
+
 ### Added
 
 - **`identity_claims` scope: the ID token carries everything UserInfo returns for the grant**, so a relying party that verified it does not have to call UserInfo after the code exchange or a refresh. With the scope registered on the client and granted, the ID token has `email` and `email_verified` (`email`), `name` (`profile`), `org_slug`, `roles` and `permissions` (when the person holds any for the requesting client) and `organizations` (`organizations`, an empty list when the person belongs to none), under the same scopes and conditions as at UserInfo. Both answers are built by the new `Cbox\Id\Api\Support\IdentityClaims`, and `IdTokenUserInfoParityTest` compares them claim by claim for each scope combination. **Off by default: without the scope the ID token is exactly what 2.6 minted.** It is opt-in because the ID token is sent back as `id_token_hint` at RP-initiated logout, usually in a URL; a client that opts in sends the hint by POST or not at all. An operator grants the scope: discovery does not advertise it, a self-registering client cannot ask for it, and the mint ignores it for a client that does not have it registered.
