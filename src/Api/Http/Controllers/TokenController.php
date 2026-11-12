@@ -6,9 +6,11 @@ namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\Api\Support\ClientAuthenticator;
+use Cbox\Id\Api\Support\IdentityClaims;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\ExternalActions\Exceptions\ActionDenied;
 use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
@@ -67,6 +69,8 @@ class TokenController
      */
     public const ID_TOKEN_ALG = SigningAlg::RS256;
 
+    private readonly IdentityClaims $identity;
+
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,
         private readonly AuthorizationCodes $codes,
@@ -76,15 +80,24 @@ class TokenController
         private readonly DpopProofValidator $dpop,
         private readonly DeviceAuthorization $device,
         private readonly BackchannelAuthentication $ciba,
-        private readonly Organizations $organizations,
+        Organizations $organizations,
         private readonly TokenExchange $exchange,
-        private readonly AccessChecker $access,
-        private readonly Memberships $memberships,
+        AccessChecker $access,
+        Memberships $memberships,
         private readonly SupportSessions $supportSessions,
         // Trailing and optional so existing constructions keep compiling.
-        private readonly ?FeatureFlagClaim $featureFlags,
+        ?FeatureFlagClaim $featureFlags,
         private readonly ?DynamicGrantPolicy $dynamicGrants = null,
-    ) {}
+        ?IdentityClaims $identity = null,
+    ) {
+        $this->identity = $identity ?? new IdentityClaims(
+            app(Subjects::class),
+            $organizations,
+            $memberships,
+            $access,
+            $featureFlags ?? app(FeatureFlagClaim::class),
+        );
+    }
 
     public function __invoke(Request $request): JsonResponse
     {
@@ -570,23 +583,24 @@ class TokenController
             'at_hash' => $this->atHash($access->token),
         ];
 
-        // Human-readable org name alongside the id, so the relying party can label
-        // the organization (e.g. in its own top bar) without a second lookup.
-        if ($grant->organizationId !== null) {
-            $orgName = $this->organizations->find($grant->organizationId)?->name;
-            if (is_string($orgName) && $orgName !== '') {
-                $claims['org_name'] = $orgName;
-            }
-
-            // The same membership tier the access token carries, for a relying party that
-            // authenticates the ID token. Read live here rather than copied from the access
-            // token: both are minted in this request, from the same row.
-            $tier = $this->memberships->activeRole($grant->organizationId, $grant->userId);
-
-            if ($tier !== null) {
-                $claims['org_role'] = $tier->value;
-            }
-        }
+        // Everything UserInfo answers for this grant, from the same source (IdentityClaims):
+        // who the person is (`email`, `name`), the bound organization (`org_slug`,
+        // `org_name`, `org_role`), what they may do in this app (`roles`, `permissions`)
+        // and, under its scope, the organizations they belong to. A relying party that
+        // reads the ID Token does not have to call UserInfo after the code exchange.
+        //
+        // ALL OF IT OR NONE OF IT. A client that skips UserInfo takes everything from here,
+        // so adding `email` without `roles` would sign people in without their roles.
+        // IdTokenUserInfoParityTest compares the two answers claim by claim.
+        $claims = [
+            ...$claims,
+            ...$this->identity->for(
+                $grant->userId,
+                $grant->organizationId,
+                $clientId,
+                $grant->scopes,
+            ),
+        ];
 
         // Group membership, for relying parties that authenticate the ID TOKEN rather
         // than the access token.
@@ -605,20 +619,10 @@ class TokenController
         // and without one there is no RBAC to read.
         // Same as the access token: an absent organization means "what they hold
         // environment-wide", not "nothing".
-        if (in_array('groups', $grant->scopes, true)) {
-            $rbac = $this->access->forToken($grant->userId, $grant->organizationId, $clientId);
-
-            if ($rbac->roles !== []) {
-                $claims['groups'] = $rbac->roles;
-            }
-        }
-
-        // Feature flags (1.24), for a relying party that authenticates the ID token: the
-        // same claim, under the same scope, as the access token. See FeatureFlagClaim.
-        $flags = ($this->featureFlags ?? app(FeatureFlagClaim::class))->for($grant->scopes, $grant->userId, $grant->organizationId);
-
-        if ($flags !== null) {
-            $claims[FeatureFlagClaim::CLAIM] = $flags;
+        //
+        // The same list as `roles` above, under the name those consumers read.
+        if (in_array('groups', $grant->scopes, true) && is_array($claims['roles'] ?? null) && $claims['roles'] !== []) {
+            $claims['groups'] = $claims['roles'];
         }
 
         // RFC 8693 §4.1: a support session's ID Token names who is really holding it, the
