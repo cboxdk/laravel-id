@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Api\Http\Controllers;
 
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
+use Cbox\Id\Api\Support\IdentityClaims;
 use Cbox\Id\Api\Support\ServerMetadata;
 use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
 use Cbox\Id\Identity\Contracts\Subjects;
@@ -16,8 +17,6 @@ use Cbox\Id\OAuthServer\Support\BearerChallenge;
 use Cbox\Id\OAuthServer\ValueObjects\ProtectedResource;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
-use Cbox\Id\Organization\Enums\MembershipStatus;
-use Cbox\Id\Organization\Models\Membership;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,17 +29,32 @@ use Illuminate\Http\Request;
  */
 class UserInfoController
 {
+    private readonly IdentityClaims $identity;
+
+    /**
+     * The claims come from {@see IdentityClaims}, built from the services this controller
+     * is given unless a host hands it one of its own.
+     */
     public function __construct(
         private readonly TokenIntrospector $introspector,
-        private readonly Subjects $subjects,
+        Subjects $subjects,
         private readonly DpopResourceGuard $dpop,
-        private readonly Organizations $organizations,
-        private readonly Memberships $memberships,
-        private readonly AccessChecker $access,
+        Organizations $organizations,
+        Memberships $memberships,
+        AccessChecker $access,
         private readonly IssuerResolver $issuers,
         // Trailing and optional so existing constructions keep compiling.
-        private readonly ?FeatureFlagClaim $featureFlags = null,
-    ) {}
+        ?FeatureFlagClaim $featureFlags = null,
+        ?IdentityClaims $identity = null,
+    ) {
+        $this->identity = $identity ?? new IdentityClaims(
+            $subjects,
+            $organizations,
+            $memberships,
+            $access,
+            $featureFlags ?? app(FeatureFlagClaim::class),
+        );
+    }
 
     public function __invoke(Request $request): JsonResponse
     {
@@ -71,109 +85,20 @@ class UserInfoController
             return $this->challenge($e->getMessage(), scheme: 'DPoP');
         }
 
-        $claims = ['sub' => $token->subject];
-        $subject = $this->subjects->find($token->subject);
-
-        if ($subject !== null) {
-            if ($token->hasScope('email') && $subject->email !== null) {
-                $claims['email'] = $subject->email;
-                // OIDC standard claim — lets a relying party refuse to trust the
-                // address (e.g. for account linking) when it isn't verified.
-                $claims['email_verified'] = $subject->emailVerified;
-            }
-
-            if ($token->hasScope('profile') && $subject->name !== null) {
-                $claims['name'] = $subject->name;
-            }
-        }
-
-        // The org id travels in the token's `org` claim; resolve its name so a
-        // relying party can display the organization, not an opaque id.
+        // Beside `sub`, exactly what the ID Token carries for the same grant: both read
+        // IdentityClaims, so a relying party that skips this call misses nothing. Read
+        // live here; the ID Token is a snapshot from when it was minted.
         $orgId = $token->claims['org'] ?? null;
-        if (is_string($orgId) && $orgId !== '') {
-            $claims['org'] = $orgId;
-            $orgName = $this->organizations->find($orgId)?->name;
-            if (is_string($orgName) && $orgName !== '') {
-                $claims['org_name'] = $orgName;
-            }
 
-            // The subject's CURRENT tier in that organization — live, like `org_name`, so a
-            // relying party that re-reads UserInfo sees a transfer or a suspension without
-            // waiting for a new token. Absent when the membership is gone or not active.
-            $tier = $this->memberships->activeRole($orgId, $token->subject);
-            if ($tier !== null) {
-                $claims['org_role'] = $tier->value;
-            }
-        }
-
-        // RBAC (federated model): mirror the access token's `roles`/`permissions`
-        // claims here so a relying party that authenticates via id_token + UserInfo
-        // (the standard SDK login flow) receives the same signal a resource server
-        // reads from the JWT. Same scoping as issuance: the token's client's own
-        // declared roles plus org-wide roles, never another app's.
-        //
-        // OUTSIDE THE ORG BRANCH. It was nested inside it, so a subject with only
-        // environment-wide grants got an access token carrying roles and permissions and
-        // a UserInfo response carrying neither — the same person, the same request, two
-        // answers, with nothing to say why. The flow this comment itself names as the
-        // standard SDK login is the one that reads UserInfo, so a host with no tenancy
-        // saw its RBAC in the place it does not look and nothing in the place it does.
-        if ($token->clientId !== null) {
-            $rbac = $this->access->forToken(
+        $claims = [
+            'sub' => $token->subject,
+            ...$this->identity->for(
                 $token->subject,
-                is_string($orgId) && $orgId !== '' ? $orgId : null,
+                is_string($orgId) ? $orgId : null,
                 $token->clientId,
-            );
-
-            if (! $rbac->isEmpty()) {
-                $claims['roles'] = $rbac->roles;
-                $claims['permissions'] = $rbac->permissions;
-            }
-        }
-
-        // The organizations this subject belongs to — powers a client-side
-        // organization switcher (SDK maps this to `user.organizations`). Active
-        // memberships only, names batched (no N+1). Gated on a DEDICATED `organizations`
-        // scope (least-disclosure): this exposes every org the user belongs to — across
-        // unrelated customers/apps — so a plain `profile` login must NOT leak it. Only a
-        // relying party that explicitly needs the switcher opts in.
-        if ($token->hasScope('organizations')) {
-            // An empty granted list is authoritative. Omitting it would leave a relying
-            // party unable to distinguish last-membership removal from missing scope.
-            $claims['organizations'] = [];
-            $memberships = $this->memberships->forUser($token->subject)
-                ->filter(fn (Membership $m): bool => $m->status === MembershipStatus::Active)
-                ->values();
-
-            if ($memberships->isNotEmpty()) {
-                $names = $this->organizations->findMany(
-                    $memberships->map(fn (Membership $m): string => $m->organization_id)->all()
-                );
-
-                $organizations = $memberships
-                    ->map(fn (Membership $m): ?array => isset($names[$m->organization_id])
-                        ? ['id' => $m->organization_id, 'name' => $names[$m->organization_id]->name, 'role' => $m->role->value]
-                        : null)
-                    ->filter()
-                    ->values()
-                    ->all();
-
-                $claims['organizations'] = $organizations;
-            }
-        }
-
-        // Feature flags (1.24), read LIVE like `org_role`: a relying party that re-reads
-        // UserInfo sees a flag flipped since the token was minted. Same scope, same shape
-        // as the token's claim — see FeatureFlagClaim.
-        $flags = ($this->featureFlags ?? app(FeatureFlagClaim::class))->for(
-            $token->scopes,
-            $token->clientId === $token->subject ? null : $token->subject,
-            is_string($orgId) && $orgId !== '' ? $orgId : null,
-        );
-
-        if ($flags !== null) {
-            $claims[FeatureFlagClaim::CLAIM] = $flags;
-        }
+                $token->scopes,
+            ),
+        ];
 
         return new JsonResponse($claims);
     }

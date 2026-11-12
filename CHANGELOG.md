@@ -17,6 +17,16 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Added
+
+- **The ID token carries everything UserInfo returns for the grant**, so a relying party that verified it does not have to call UserInfo after the code exchange or a refresh. Under the same scopes and conditions as at UserInfo it now has `email` and `email_verified` (`email`), `name` (`profile`), `roles` and `permissions` (when the person holds any for the requesting client), `organizations` (`organizations`, an empty list when the person belongs to none) and `org_slug`. Both answers are built by the new `Cbox\Id\Api\Support\IdentityClaims`, and `IdTokenUserInfoParityTest` compares them claim by claim for each scope combination. The ID token is a snapshot from when it was minted; UserInfo stays live.
+- **`org_slug`, and `slug` on each `organizations` entry**, at UserInfo and on the ID token: the slug an app addresses an organization by.
+
+### Changed
+
+- The ID token's `groups` claim (scope `groups`) is the same list as its `roles` claim, read once.
+- `UserInfoController` and `TokenController` take an optional trailing `IdentityClaims`. Their other constructor parameters are unchanged.
+
 ## [2.6.0] - 2026-11-11
 
 ### Added
