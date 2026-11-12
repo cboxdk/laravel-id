@@ -24,6 +24,7 @@ use Cbox\Id\OAuthServer\Contracts\TokenExchange;
 use Cbox\Id\OAuthServer\Contracts\TokenIssuer;
 use Cbox\Id\OAuthServer\Dpop\DpopProofValidator;
 use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
+use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
@@ -82,7 +83,7 @@ class TokenController
         private readonly BackchannelAuthentication $ciba,
         Organizations $organizations,
         private readonly TokenExchange $exchange,
-        AccessChecker $access,
+        private readonly AccessChecker $access,
         Memberships $memberships,
         private readonly SupportSessions $supportSessions,
         // Trailing and optional so existing constructions keep compiling.
@@ -583,22 +584,28 @@ class TokenController
             'at_hash' => $this->atHash($access->token),
         ];
 
-        // Everything UserInfo answers for this grant, from the same source (IdentityClaims):
-        // who the person is (`email`, `name`), the bound organization (`org_slug`,
-        // `org_name`, `org_role`), what they may do in this app (`roles`, `permissions`)
-        // and, under its scope, the organizations they belong to. A relying party that
-        // reads the ID Token does not have to call UserInfo after the code exchange.
+        // What describes the person and the bound organization, from the one source
+        // UserInfo reads (IdentityClaims). For a grant that holds the `identity_claims`
+        // scope that is EVERYTHING UserInfo answers (`email`, `name`, `org_slug`, `roles`,
+        // `permissions`, `organizations`), so the relying party does not have to call
+        // UserInfo after the code exchange. Without the scope it is what the ID Token said
+        // before: the bound organization and `feature_flags`.
         //
-        // ALL OF IT OR NONE OF IT. A client that skips UserInfo takes everything from here,
-        // so adding `email` without `roles` would sign people in without their roles.
-        // IdTokenUserInfoParityTest compares the two answers claim by claim.
+        // OPT-IN BECAUSE THE ID TOKEN TRAVELS: it comes back as `id_token_hint` at logout,
+        // usually in a URL. And ALL OF IT OR NONE OF IT: a client that skips UserInfo takes
+        // everything from here, so `email` without `roles` would sign people in without
+        // their roles. IdTokenUserInfoParityTest holds both.
         $claims = [
             ...$claims,
-            ...$this->identity->for(
+            ...$this->identity->forIdToken(
                 $grant->userId,
                 $grant->organizationId,
                 $clientId,
-                $grant->scopes,
+                // The opt-in is the CLIENT'S: the scope counts only when it is registered
+                // on the client, whatever the grant that reached this endpoint says.
+                $client->allows(ProtocolScope::IdentityClaims->value)
+                    ? $grant->scopes
+                    : array_values(array_diff($grant->scopes, [ProtocolScope::IdentityClaims->value])),
             ),
         ];
 
@@ -620,9 +627,16 @@ class TokenController
         // Same as the access token: an absent organization means "what they hold
         // environment-wide", not "nothing".
         //
-        // The same list as `roles` above, under the name those consumers read.
-        if (in_array('groups', $grant->scopes, true) && is_array($claims['roles'] ?? null) && $claims['roles'] !== []) {
-            $claims['groups'] = $claims['roles'];
+        // The same list as `roles` above when the grant has identity claims, read here when
+        // it does not, under the name those consumers read.
+        if (in_array('groups', $grant->scopes, true)) {
+            $roles = is_array($claims['roles'] ?? null)
+                ? $claims['roles']
+                : $this->access->forToken($grant->userId, $grant->organizationId, $clientId)->roles;
+
+            if ($roles !== []) {
+                $claims['groups'] = $roles;
+            }
         }
 
         // RFC 8693 §4.1: a support session's ID Token names who is really holding it, the

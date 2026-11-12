@@ -19,8 +19,8 @@ more trust than the wording it removes.
 
 ### Added
 
-- **The ID token carries everything UserInfo returns for the grant**, so a relying party that verified it does not have to call UserInfo after the code exchange or a refresh. Under the same scopes and conditions as at UserInfo it now has `email` and `email_verified` (`email`), `name` (`profile`), `roles` and `permissions` (when the person holds any for the requesting client), `organizations` (`organizations`, an empty list when the person belongs to none) and `org_slug`. Both answers are built by the new `Cbox\Id\Api\Support\IdentityClaims`, and `IdTokenUserInfoParityTest` compares them claim by claim for each scope combination. The ID token is a snapshot from when it was minted; UserInfo stays live.
-- **`org_slug`, and `slug` on each `organizations` entry**, at UserInfo and on the ID token: the slug an app addresses an organization by.
+- **`identity_claims` scope: the ID token carries everything UserInfo returns for the grant**, so a relying party that verified it does not have to call UserInfo after the code exchange or a refresh. With the scope registered on the client and granted, the ID token has `email` and `email_verified` (`email`), `name` (`profile`), `org_slug`, `roles` and `permissions` (when the person holds any for the requesting client) and `organizations` (`organizations`, an empty list when the person belongs to none), under the same scopes and conditions as at UserInfo. Both answers are built by the new `Cbox\Id\Api\Support\IdentityClaims`, and `IdTokenUserInfoParityTest` compares them claim by claim for each scope combination. **Off by default: without the scope the ID token is exactly what 2.6 minted.** It is opt-in because the ID token is sent back as `id_token_hint` at RP-initiated logout, usually in a URL; a client that opts in sends the hint by POST or not at all. An operator grants the scope: discovery does not advertise it, a self-registering client cannot ask for it, and the mint ignores it for a client that does not have it registered.
+- **`org_slug`, and `slug` on each `organizations` entry**, at UserInfo (and on an `identity_claims` ID token): the slug an app addresses an organization by.
 
 ### Performance
 
@@ -34,7 +34,7 @@ Measured on a production deployment (2026-11-12): a read of the shared cache and
 
 ### Changed
 
-- The ID token's `groups` claim (scope `groups`) is the same list as its `roles` claim, read once.
+- On an `identity_claims` ID token the `groups` claim (scope `groups`) is the same list as its `roles` claim, read once.
 - `UserInfoController` and `TokenController` take an optional trailing `IdentityClaims`. Their other constructor parameters are unchanged.
 
 ## [2.6.0] - 2026-11-11

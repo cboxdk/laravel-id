@@ -7,6 +7,7 @@ namespace Cbox\Id\Api\Support;
 use Cbox\Id\AccessControl\Contracts\AccessChecker;
 use Cbox\Id\FeatureFlags\Support\FeatureFlagClaim;
 use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\MembershipStatus;
@@ -18,6 +19,7 @@ use Cbox\Id\Organization\Models\Membership;
  * they belong to.
  *
  * ONE SOURCE FOR TWO ANSWERS. UserInfo returns exactly these beside `sub`, and the ID Token
+ * of a client that asked for them (the `identity_claims` scope, {@see forIdToken()})
  * carries exactly these beside its protocol claims, so a relying party that reads the ID
  * Token and skips the UserInfo call gets the same answer. A claim added here reaches both;
  * a claim added to only one of them is the bug this class exists to prevent (a client that
@@ -64,6 +66,40 @@ class IdentityClaims
             ...$this->organization($subjectId, $organizationId),
             ...$this->access($subjectId, $organizationId, $clientId),
             ...$this->memberships($subjectId, $scopes),
+            ...$this->featureFlags($subjectId, $organizationId, $clientId, $scopes),
+        ];
+    }
+
+    /**
+     * What the ID Token carries for a grant.
+     *
+     * THE FULL SET IS OPT-IN: only a grant that holds the `identity_claims` scope gets
+     * {@see for()}. The ID Token is not only read by the client that received it. It is
+     * sent back as `id_token_hint` at RP-initiated logout, by most libraries in a GET query
+     * string, where it lands in access logs, browser history and Referer headers. A token
+     * that names the person would put their email, name, organizations and permissions
+     * there for every client, including third parties that never asked for a bigger
+     * token. So a client has the scope registered and asks for it, and such a client is
+     * expected to send the hint by POST or not at all.
+     *
+     * Without the scope the ID Token says what it said before 2.7: the bound organization
+     * (`org`, `org_name`, `org_role`) and `feature_flags` under its own scope.
+     *
+     * @param  list<string>  $scopes  the GRANTED scopes
+     * @return array<string, mixed>
+     */
+    public function forIdToken(string $subjectId, ?string $organizationId, string $clientId, array $scopes): array
+    {
+        if (in_array(ProtocolScope::IdentityClaims->value, $scopes, true)) {
+            return $this->for($subjectId, $organizationId, $clientId, $scopes);
+        }
+
+        $organizationId = $organizationId === '' ? null : $organizationId;
+        $bound = $this->organization($subjectId, $organizationId);
+        unset($bound['org_slug']);
+
+        return [
+            ...$bound,
             ...$this->featureFlags($subjectId, $organizationId, $clientId, $scopes),
         ];
     }
