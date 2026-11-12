@@ -477,6 +477,13 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer, AuthorizationDet
         $now = now();
         $stale = $now->copy()->subHour();
 
+        // The row is in hand: a client stamped within the hour needs no statement at
+        // all. The UPDATE below would match nothing, and sending it is a round trip on
+        // every token. Its own condition stays, for two mints that race past this check.
+        if ($client->last_used_at !== null && $client->last_used_at->greaterThanOrEqualTo($stale)) {
+            return;
+        }
+
         DB::table($client->getTable())
             ->where($client->getKeyName(), $client->getKey())
             ->where(static fn (QueryBuilder $query): QueryBuilder => $query->whereNull('last_used_at')->orWhere('last_used_at', '<', $stale))

@@ -13,6 +13,7 @@ use Cbox\Id\Kernel\Crypto\Models\SigningKey;
 use Cbox\Id\Kernel\Crypto\Support\Base64Url;
 use Cbox\Id\Kernel\Crypto\ValueObjects\GeneratedKeyPair;
 use Cbox\Id\Kernel\Crypto\ValueObjects\VerificationKey;
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -29,24 +30,43 @@ class DatabaseKeyManager implements KeyManager
     /** P-256 coordinates are 32 bytes wide, whatever their numeric value. See `coordinate()`. */
     private const P256_COORDINATE_BYTES = 32;
 
+    /** @var array<string, SigningKey> the active key this request already read, by environment and alg */
+    private array $active = [];
+
+    private ?RequestLifetime $activeLifetime = null;
+
     public function __construct(
         private readonly SecretBox $secretBox,
     ) {}
 
     public function activeSigningKey(SigningAlg $alg = SigningAlg::RS256): SigningKey
     {
-        // Deliberately NOT memoized on the instance: KeyManager is a singleton, so a
-        // process-lifetime memo would keep serving a since-retired key in a long-lived
-        // worker (Octane/queue) — minting tokens under a kid no longer in the JWKS,
-        // which then fail verification everywhere. The active-key row is one indexed
-        // lookup; the costly JWKS/verification material is cached separately with
-        // cross-process invalidation.
+        // Remembered for THE REQUEST, never for the process: KeyManager is a singleton, so
+        // an instance memo would keep serving a since-retired key in a long-lived worker
+        // (Octane/queue), minting tokens under a kid no longer in the JWKS, which then
+        // fail verification everywhere. {@see RequestLifetime} is replaced between
+        // requests and between queued jobs, and {@see flushCaches()} drops the memo when
+        // this process rotates, retires or generates a key. One token response signs
+        // twice (the access token and the ID token); that was two reads of the same row.
+        $lifetime = RequestLifetime::current(app());
+
+        if ($this->activeLifetime !== $lifetime) {
+            $this->activeLifetime = $lifetime;
+            $this->active = [];
+        }
+
+        $memoKey = $this->envId().'|'.$alg->value;
+
+        if (isset($this->active[$memoKey])) {
+            return $this->active[$memoKey];
+        }
+
         $existing = SigningKey::query()
             ->where('alg', $alg->value)
             ->where('status', KeyStatus::Active->value)
             ->first();
 
-        return $existing ?? $this->generate($alg);
+        return $this->active[$memoKey] = $existing ?? $this->generate($alg);
     }
 
     public function rotate(SigningAlg $alg = SigningAlg::RS256): SigningKey
@@ -136,6 +156,7 @@ class DatabaseKeyManager implements KeyManager
 
     private function flushCaches(): void
     {
+        $this->active = [];
         Cache::forget($this->cacheKey('jwks'));
         Cache::forget($this->cacheKey('verification-keys'));
     }

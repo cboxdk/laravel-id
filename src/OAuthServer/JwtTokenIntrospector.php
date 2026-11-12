@@ -64,9 +64,13 @@ class JwtTokenIntrospector implements TokenIntrospector
         // endpoint and token exchange all route through it, and a check at each of them
         // is five checks that can drift. Client-credentials tokens have no subject and
         // skip it — there is no person to have been deactivated.
+        //
+        // The ROW says whether there is a person: `user_id` is written when the token is
+        // minted and is null for client credentials, whose `sub` is the client id. Asking
+        // for an account under a client id found nothing, on every machine call.
         $subject = $claims->subject();
 
-        if ($subject !== null && $this->subjectIsSuspended($subject)) {
+        if ($subject !== null && $record->user_id !== null && $this->subjectIsSuspended($subject)) {
             return Introspection::inactive();
         }
 

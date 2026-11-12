@@ -22,6 +22,16 @@ more trust than the wording it removes.
 - **The ID token carries everything UserInfo returns for the grant**, so a relying party that verified it does not have to call UserInfo after the code exchange or a refresh. Under the same scopes and conditions as at UserInfo it now has `email` and `email_verified` (`email`), `name` (`profile`), `roles` and `permissions` (when the person holds any for the requesting client), `organizations` (`organizations`, an empty list when the person belongs to none) and `org_slug`. Both answers are built by the new `Cbox\Id\Api\Support\IdentityClaims`, and `IdTokenUserInfoParityTest` compares them claim by claim for each scope combination. The ID token is a snapshot from when it was minted; UserInfo stays live.
 - **`org_slug`, and `slug` on each `organizations` entry**, at UserInfo and on the ID token: the slug an app addresses an organization by.
 
+### Performance
+
+Measured on a production deployment (2026-11-12): a read of the shared cache and a database statement are each a network round trip of about 1 ms, so the counts below are milliseconds on every request.
+
+- **The issuer is named from the environment the request already resolved.** `EnvironmentIssuerResolver` asked the database for the request's own environment row again on every request (`select * from environments where id = ?`), after routing had loaded it. It now reads the row from the environment context when the key matches, and `PlatformRoot::model()` does the same when the request is served in the root.
+- **One cache read per key per request for environment resolution.** `EnvironmentResolutionCache` remembers what it read for the request (`RequestLifetime`); its own writes and forgets keep the memo in step. A discovery request read the default environment four times, and an unmapped host its absent marker twice.
+- **The active signing key is read once per request** (`DatabaseKeyManager::activeSigningKey()`), bound to `RequestLifetime` and dropped on rotate, retire and generate. A token response with an ID token read it twice.
+- **No `last_used_at` UPDATE for a client stamped within the hour.** The token issuer sent the conditional UPDATE on every mint; it now checks the loaded row first.
+- **Introspecting a client-credentials token no longer looks for a person.** The token's row says whether there is one (`user_id`); a machine token's `sub` is its client id, and the lookup found nothing on every call.
+
 ### Changed
 
 - The ID token's `groups` claim (scope `groups`) is the same list as its `roles` claim, read once.
