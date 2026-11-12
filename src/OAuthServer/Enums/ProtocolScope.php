@@ -26,6 +26,9 @@ enum ProtocolScope: string
     case Groups = 'groups';
     // The `feature_flags` claim on the access token, ID token and UserInfo (1.24).
     case FeatureFlags = 'feature_flags';
+    // The ID token carries every claim UserInfo returns for the grant (2.7). Without it
+    // the ID token stays as small as it was: see IdentityClaims::forIdToken().
+    case IdentityClaims = 'identity_claims';
     case UserPropertiesRead = 'user_properties:read';
     case UserPropertiesWrite = 'user_properties:write';
 

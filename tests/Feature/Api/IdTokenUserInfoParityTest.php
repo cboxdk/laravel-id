@@ -137,17 +137,17 @@ it('carries every claim UserInfo returns, with the same value', function (array 
             ->and($answers['id'][$claim])->toEqual($value, "The ID Token's `{$claim}` differs from UserInfo's.");
     }
 })->with([
-    'openid' => [['openid']],
-    'email' => [['openid', 'email']],
-    'profile' => [['openid', 'profile']],
-    'email and profile' => [['openid', 'email', 'profile']],
-    'organizations' => [['openid', 'organizations']],
-    'feature flags' => [['openid', 'feature_flags']],
-    'everything' => [['openid', 'email', 'profile', 'organizations', 'feature_flags']],
+    'openid' => [['openid', 'identity_claims']],
+    'email' => [['openid', 'identity_claims', 'email']],
+    'profile' => [['openid', 'identity_claims', 'profile']],
+    'email and profile' => [['openid', 'identity_claims', 'email', 'profile']],
+    'organizations' => [['openid', 'identity_claims', 'organizations']],
+    'feature flags' => [['openid', 'identity_claims', 'feature_flags']],
+    'everything' => [['openid', 'identity_claims', 'email', 'profile', 'organizations', 'feature_flags']],
 ]);
 
 it('names the person, their roles and their organizations in the ID Token', function (): void {
-    $scopes = ['openid', 'email', 'profile', 'organizations'];
+    $scopes = ['openid', 'identity_claims', 'email', 'profile', 'organizations'];
     $clientId = $this->makeClient($scopes, ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
     $organizationId = parityWorld($clientId);
 
@@ -169,10 +169,10 @@ it('names the person, their roles and their organizations in the ID Token', func
 });
 
 it('keeps a claim out of the ID Token when its scope was not granted', function (): void {
-    $clientId = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $clientId = $this->makeClient(['openid', 'identity_claims'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
     $organizationId = parityWorld($clientId);
 
-    $id = parityFor($this, $clientId, $organizationId, ['openid'])['id'];
+    $id = parityFor($this, $clientId, $organizationId, ['openid', 'identity_claims'])['id'];
 
     expect($id)->not->toHaveKey('email')
         ->and($id)->not->toHaveKey('email_verified')
@@ -184,7 +184,7 @@ it('keeps a claim out of the ID Token when its scope was not granted', function 
 });
 
 it('says an empty organization list when the scope is granted and the person belongs to none', function (): void {
-    $scopes = ['openid', 'organizations'];
+    $scopes = ['openid', 'identity_claims', 'organizations'];
     $clientId = $this->makeClient($scopes, ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
 
     $answers = parityFor($this, $clientId, null, $scopes);
@@ -196,18 +196,18 @@ it('says an empty organization list when the scope is granted and the person bel
 });
 
 it("does not put another app's roles in this app's ID Token", function (): void {
-    $billing = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
-    $other = $this->makeClient(['openid'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $billing = $this->makeClient(['openid', 'identity_claims'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $other = $this->makeClient(['openid', 'identity_claims'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
     $organizationId = parityWorld($billing);
 
-    $id = parityFor($this, $other, $organizationId, ['openid'])['id'];
+    $id = parityFor($this, $other, $organizationId, ['openid', 'identity_claims'])['id'];
 
     expect($id)->not->toHaveKey('roles')
         ->and($id)->not->toHaveKey('permissions');
 });
 
 it('answers the same after a refresh', function (): void {
-    $scopes = ['openid', 'email', 'profile', 'organizations', 'offline_access'];
+    $scopes = ['openid', 'identity_claims', 'email', 'profile', 'organizations', 'offline_access'];
     $clientId = $this->makeClient($scopes, ClientType::Public, grantTypes: ['authorization_code', 'refresh_token'])->client->client_id;
     $organizationId = parityWorld($clientId);
     $first = parityFor($this, $clientId, $organizationId, $scopes);
@@ -226,4 +226,72 @@ it('answers the same after a refresh', function (): void {
 
     expect($id['email'])->toBe('alice@parity.test')
         ->and($id['roles'])->toBe(['billing-admin']);
+});
+
+/*
+ * OFF UNLESS THE CLIENT ASKED. The ID Token is also sent back in a URL at RP-initiated
+ * logout (`id_token_hint`), so a token that names the person would put their email, name
+ * and organizations in access logs and browser history for every client that never asked
+ * for a bigger token. The `identity_claims` scope is the opt-in: it has to be registered on
+ * the client and requested. Without it the ID Token is exactly what 2.6 minted.
+ */
+it('mints the ID Token 2.6 minted when the client did not ask for identity claims', function (): void {
+    $scopes = ['openid', 'email', 'profile', 'organizations'];
+    $clientId = $this->makeClient($scopes, ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $organizationId = parityWorld($clientId);
+
+    $answers = parityFor($this, $clientId, $organizationId, $scopes);
+
+    expect(array_keys($answers['id']))->toEqualCanonicalizing([
+        'iss', 'sub', 'aud', 'org', 'iat', 'exp', 'at_hash', 'org_name', 'org_role', 'nonce', 'auth_time', 'amr', 'acr', 'jti',
+    ])
+        // UserInfo is asked over the back channel and still answers in full.
+        ->and($answers['userinfo']['email'])->toBe('alice@parity.test')
+        ->and($answers['userinfo']['roles'])->toBe(['billing-admin'])
+        ->and($answers['userinfo']['org_slug'])->toBe('acme');
+});
+
+it('does not hand identity claims to a client that asks for the scope without having it registered', function (): void {
+    $clientId = $this->makeClient(['openid', 'email', 'profile'], ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $organizationId = parityWorld($clientId);
+
+    // The authorization endpoint is the host's, and it is what refuses an unregistered
+    // scope. This is the mint refusing it as well: a grant that reached the token endpoint
+    // holding `identity_claims` for a client that never registered it gets the small token.
+    $id = parityFor($this, $clientId, $organizationId, ['openid', 'email', 'profile', 'identity_claims'])['id'];
+
+    expect($id)->not->toHaveKey('email')
+        ->and($id)->not->toHaveKey('name')
+        ->and($id)->not->toHaveKey('roles')
+        ->and($id)->not->toHaveKey('org_slug');
+})->group('security');
+
+it('refuses a device grant that asks for identity claims the client does not hold', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: ['urn:ietf:params:oauth:grant-type:device_code']);
+
+    $this->postJson('/oauth/device_authorization', [
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'scope' => 'openid identity_claims',
+    ])->assertStatus(400)->assertJsonPath('error', 'invalid_scope');
+})->group('security');
+
+it('keeps the roles under `groups` for a client that asked for groups and not for identity claims', function (): void {
+    $scopes = ['openid', 'groups'];
+    $clientId = $this->makeClient($scopes, ClientType::Public, grantTypes: ['authorization_code'])->client->client_id;
+    $organizationId = parityWorld($clientId);
+
+    $id = parityFor($this, $clientId, $organizationId, $scopes)['id'];
+
+    expect($id['groups'])->toBe(['billing-admin'])
+        ->and($id)->not->toHaveKey('roles')
+        ->and($id)->not->toHaveKey('permissions');
+});
+
+it('is granted by an operator, not discovered: discovery does not advertise it and a self-registering client cannot ask for it', function (): void {
+    /** @var list<string> $registerable */
+    $registerable = config('cbox-id.oauth.dynamic_registration.allowed_scopes', []);
+
+    expect($this->getJson('/.well-known/openid-configuration')->assertOk()->json('scopes_supported'))->not->toContain('identity_claims')
+        ->and($registerable)->not->toContain('identity_claims');
 });

@@ -22,37 +22,50 @@ claim appears where; the notes below say when.
 | `org` | when bound | when bound | when bound | The organization the grant is bound to. |
 | `org_name` | when bound | when bound | when bound | That organization's display name. |
 | `org_role` | when bound + member | when bound + member | when bound + member | The subject's membership tier in `org`: `owner`, `admin`, `developer`, `member` or `viewer`. |
-| `org_slug` | — | when bound | when bound | That organization's slug, the name an app addresses it by. |
-| `roles` | when held | when held | when held | The app's role keys the subject holds (this app's roles plus organization-wide roles). |
-| `permissions` | when held | when held | when held | The union of those roles' permission keys. |
+| `org_slug` | — | with `identity_claims` scope, when bound | when bound | That organization's slug, the name an app addresses it by. |
+| `roles` | when held | with `identity_claims` scope, when held | when held | The app's role keys the subject holds (this app's roles plus organization-wide roles). |
+| `permissions` | when held | with `identity_claims` scope, when held | when held | The union of those roles' permission keys. |
 | `groups` | — | with `groups` scope | — | The same role keys, under the name ID-token consumers (Kubernetes, Grafana, Vault) read. |
-| `organizations` | — | with `organizations` scope | with `organizations` scope | Every active membership: `[{id, name, role, slug}]`. An explicitly granted scope returns `[]` when none remain; without the scope the claim is omitted. |
+| `organizations` | — | with `identity_claims` and `organizations` scopes | with `organizations` scope | Every active membership: `[{id, name, role, slug}]`. An explicitly granted scope returns `[]` when none remain; without the scope the claim is omitted. |
 | `feature_flags` | with `feature_flags` scope | with `feature_flags` scope | with `feature_flags` scope | The keys of every [feature flag](../core-concepts/feature-flags.md) that is on for `sub` in `org`, sorted. An empty list when none is; absent without the scope. |
 | `ent`, `ent_ver` | when configured | — | — | Claims-mode entitlements and their version. See [Entitlements & billing](../core-concepts/entitlements-and-billing.md). |
 | `cnf` | DPoP-bound | — | — | `{"jkt": …}`, the RFC 9449 key thumbprint. |
 | `auth_time`, `acr` | user grants with a recorded login | yes | — | When the person signed in, and the assurance class reached. On the access token for RFC 9470 step-up; see the notes below. |
 | `nonce`, `amr`, `at_hash` | — | yes | — | OIDC authentication context. |
-| `email`, `email_verified` | — | with `email` scope | with `email` scope | |
-| `name` | — | with `profile` scope | with `profile` scope | |
+| `email`, `email_verified` | — | with `identity_claims` and `email` scopes | with `email` scope | |
+| `name` | — | with `identity_claims` and `profile` scopes | with `profile` scope | |
 
-## The ID token answers what UserInfo answers
+## `identity_claims`: the ID token answers what UserInfo answers
 
-Every claim UserInfo returns for a grant is also on the ID token minted for it, with the
-same value: `email` and `email_verified`, `name`, `org`, `org_slug`, `org_name`, `org_role`,
-`roles`, `permissions`, `organizations` and `feature_flags`, each under the same scope and
-condition as at UserInfo. Both are built by `Cbox\Id\Api\Support\IdentityClaims`. A relying
-party that verified the ID token does not have to call UserInfo after the code exchange or
-a refresh.
+A client that holds the **`identity_claims`** scope and asks for it gets an ID token that
+carries every claim UserInfo returns for the grant, with the same value: `email` and
+`email_verified`, `name`, `org`, `org_slug`, `org_name`, `org_role`, `roles`, `permissions`,
+`organizations` and `feature_flags`, each under the same scope and condition as at UserInfo.
+Both are built by `Cbox\Id\Api\Support\IdentityClaims`. Such a relying party does not have
+to call UserInfo after the code exchange or a refresh.
 
+**Off unless the client asked.** Without the scope the ID token is what it was before 2.7:
+the protocol claims, `org`, `org_name`, `org_role`, and `groups` / `feature_flags` under
+their scopes. Nothing changes for an existing client.
+
+**Why it is opt-in.** The ID token is not only read by the client that received it. It is
+sent back as `id_token_hint` at RP-initiated logout, and most client libraries put it in a
+GET query string, where it reaches access logs, browser history and `Referer` headers. A
+token that names the person must not travel that way.
+
+- **Granting it.** Register the scope on the client, like `groups` or `feature_flags`, and
+  have the app request it. An operator grants it: discovery does not advertise it and a
+  self-registering client (RFC 7591) cannot ask for it. A grant that reaches the token
+  endpoint holding the scope for a client that does not have it registered gets the small
+  token.
+- **What the client owes in return.** Send `id_token_hint` to the end-session endpoint by
+  **POST** (`/oauth/logout` accepts GET and POST, OIDC RP-Initiated Logout 1.0 §2), or do
+  not send it and identify the client with `client_id`. Never put this token in a URL.
 - The ID token is a **snapshot** from the moment it was minted; UserInfo is read live. A
   role, a membership or a name that changed shows on the next refresh, or at UserInfo
   at once.
-- `roles` and `permissions` are not behind a scope in either place. They are the requesting
-  client's own declared roles plus organization-wide ones, never another app's.
-- `organizations` lists every active membership across organizations, so it stays behind
-  its own scope. Ask for it only when the app shows an organization switcher: the list is
-  about 100 bytes per organization, and the ID token is also sent as `id_token_hint` in a
-  logout URL.
+- `organizations` lists every active membership across organizations and stays behind its
+  own scope as well: about 100 bytes per organization.
 
 ## `org_role` — the membership tier
 
