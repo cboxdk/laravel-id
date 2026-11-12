@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization;
 
+use Cbox\Id\Kernel\Runtime\RequestLifetime;
 use Cbox\Id\Kernel\Tenancy\Contracts\Environment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
 use Illuminate\Support\Facades\Cache;
@@ -61,6 +62,11 @@ class EnvironmentResolutionCache
     /** The marker stored for a host that resolves to nothing. Not a valid environment key. */
     private const ABSENT = '\0absent';
 
+    /** @var array<string, mixed> what this request already read, by cache key */
+    private array $memo = [];
+
+    private ?RequestLifetime $memoLifetime = null;
+
     /**
      * The environment a host resolves to, or null when the cache cannot answer and
      * the caller must resolve live.
@@ -88,28 +94,20 @@ class EnvironmentResolutionCache
      */
     public function forHost(string $host): ?Environment
     {
-        $mapped = Cache::get($this->hostKey($host));
+        $mapped = $this->read($this->hostKey($host));
 
         if (! is_string($mapped) || $mapped === self::ABSENT) {
             return null;
         }
 
-        $environment = Cache::get($this->environmentKey($mapped));
+        $environment = $this->read($this->environmentKey($mapped));
 
         return $environment instanceof Environment ? $environment : null;
     }
 
-    /**
-     * True when this host is known to resolve to nothing, so the caller can skip the
-     * live lookup entirely.
-     *
-     * Separate from {@see forHost()} because that method's null already means "ask the
-     * database" — a cached absence has to be a different answer or it is not a cache at
-     * all.
-     */
     public function knownAbsent(string $host): bool
     {
-        return Cache::get($this->hostKey($host)) === self::ABSENT;
+        return $this->read($this->hostKey($host)) === self::ABSENT;
     }
 
     public function putHost(string $host, ?Environment $environment): void
@@ -121,19 +119,18 @@ class EnvironmentResolutionCache
         }
 
         if ($environment === null) {
-            Cache::put($this->hostKey($host), self::ABSENT, min(self::ABSENT_TTL, $ttl));
+            $this->write($this->hostKey($host), self::ABSENT, min(self::ABSENT_TTL, $ttl));
 
             return;
         }
 
-        Cache::put($this->hostKey($host), $environment->environmentKey(), $ttl);
-        Cache::put($this->environmentKey($environment->environmentKey()), $environment, $ttl);
+        $this->write($this->hostKey($host), $environment->environmentKey(), $ttl);
+        $this->write($this->environmentKey($environment->environmentKey()), $environment, $ttl);
     }
 
-    /** Null when not cached — same positives-only rule as {@see forHost()}. */
     public function default(): ?Environment
     {
-        $cached = Cache::get(self::PREFIX.'default');
+        $cached = $this->read(self::PREFIX.'default');
 
         return $cached instanceof Environment ? $cached : null;
     }
@@ -146,25 +143,65 @@ class EnvironmentResolutionCache
             return;
         }
 
-        Cache::put(self::PREFIX.'default', $environment, $ttl);
+        $this->write(self::PREFIX.'default', $environment, $ttl);
     }
 
-    /**
-     * Drop an environment's resolved entry. Enough on its own to make a suspension,
-     * reactivation or settings change take effect on the next request.
-     */
     public function forgetEnvironment(string $environmentKey): void
     {
-        Cache::forget($this->environmentKey($environmentKey));
-        Cache::forget(self::PREFIX.'default');
+        $this->drop($this->environmentKey($environmentKey));
+        $this->drop(self::PREFIX.'default');
     }
 
-    /** Drop a host mapping — used when a custom domain is attached or moved. */
     public function forgetHost(?string $host): void
     {
         if (is_string($host) && $host !== '') {
-            Cache::forget($this->hostKey(strtolower(trim($host))));
+            $this->drop($this->hostKey(strtolower(trim($host))));
         }
+    }
+
+    /**
+     * One read of the shared cache per key per request.
+     *
+     * A request asks the same question several times: the host for routing, the default
+     * environment for every "is this the platform root" check (four times on one
+     * discovery request, measured). Each read of a shared cache is a network round trip,
+     * so the answer is kept for the request. Every write and every forget in this class
+     * goes through {@see write()} and {@see drop()}, which keep what is remembered in
+     * step, so a change made inside the request is seen inside it; a change made by
+     * another process is seen on the next request, as a row read once already was.
+     *
+     * {@see RequestLifetime} ends the memo, because this object is a singleton and under
+     * a long-lived worker would otherwise outlive the request it remembered for.
+     */
+    private function read(string $key): mixed
+    {
+        $lifetime = RequestLifetime::current(app());
+
+        if ($this->memoLifetime !== $lifetime) {
+            $this->memoLifetime = $lifetime;
+            $this->memo = [];
+        }
+
+        if (array_key_exists($key, $this->memo)) {
+            return $this->memo[$key];
+        }
+
+        return $this->memo[$key] = Cache::get($key);
+    }
+
+    private function write(string $key, mixed $value, int $ttl): void
+    {
+        Cache::put($key, $value, $ttl);
+
+        if ($this->memoLifetime === RequestLifetime::current(app())) {
+            $this->memo[$key] = $value;
+        }
+    }
+
+    private function drop(string $key): void
+    {
+        Cache::forget($key);
+        unset($this->memo[$key]);
     }
 
     public function enabled(): bool

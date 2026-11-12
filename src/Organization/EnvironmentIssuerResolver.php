@@ -130,7 +130,15 @@ class EnvironmentIssuerResolver implements IssuerResolver
 
     private function resolve(string $environmentKey): string|false
     {
-        $environment = Environment::query()->find($environmentKey);
+        // The request's own environment was already loaded to route it (from the
+        // resolution cache or the database), with the columns this reads. Asking again
+        // cost a query on every request. It is as fresh as the routing decision: saving an
+        // environment forgets its cached copy.
+        $current = $this->environments()->current();
+
+        $environment = $current instanceof Environment && $current->environmentKey() === $environmentKey
+            ? $current
+            : Environment::query()->find($environmentKey);
 
         if ($environment === null || $environment->is_default) {
             // Unknown key, or the platform-root apex — keep the configured issuer.

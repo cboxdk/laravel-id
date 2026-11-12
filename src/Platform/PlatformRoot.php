@@ -103,7 +103,18 @@ class PlatformRoot
             $this->memoModel = null;
         }
 
-        return $this->memoModel ??= Environment::query()->where('is_default', true)->first();
+        if ($this->memoModel !== null) {
+            return $this->memoModel;
+        }
+
+        // A request served IN the root already holds its row.
+        $current = $this->environments()->current();
+
+        if ($current instanceof Environment && $current->is_default === true) {
+            return $this->memoModel = $current;
+        }
+
+        return $this->memoModel = Environment::query()->where('is_default', true)->first();
     }
 
     /**
