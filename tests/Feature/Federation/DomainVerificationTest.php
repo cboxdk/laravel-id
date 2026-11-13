@@ -101,13 +101,62 @@ it('always allows capture to be switched off', function (): void {
     expect($domain->fresh()?->capture)->toBeFalse();
 });
 
-it('refuses a domain already claimed by another organization', function (): void {
+it('refuses a domain another organization has verified', function (): void {
     $acme = $this->makeOrganization('Acme');
     $evil = $this->makeOrganization('Evil');
-    app(DomainVerification::class)->add($acme->id, 'acme.com');
+    $this->makeVerifiedDomain($acme->id, 'acme.com');
 
     expect(fn () => app(DomainVerification::class)->add($evil->id, 'acme.com'))
         ->toThrow(DomainAlreadyClaimed::class);
+});
+
+/**
+ * WHOEVER PROVES IT FIRST, NOT WHOEVER TYPES IT FIRST. Any row for a domain used to refuse
+ * every other organization, verified or not, so anybody able to add a domain for their own
+ * organization could squat another's with no DNS control at all: the real owner was refused
+ * and never got a challenge to publish.
+ */
+it('gives the real owner its own challenge when another organization only claimed the domain', function (): void {
+    $squatter = $this->makeOrganization('Squatter');
+    $owner = $this->makeOrganization('Owner');
+    $dns = $this->fakeDns();
+    $domains = app(DomainVerification::class);
+
+    $squat = $domains->add($squatter->id, 'victim.example');
+    $claim = $domains->add($owner->id, 'VICTIM.example');
+
+    expect($claim->organization_id)->toBe($owner->id)
+        ->and($claim->id)->not->toBe($squat->id)
+        ->and($claim->verification_token)->not->toBe($squat->verification_token);
+
+    $dns->publish($domains->challengeHost('victim.example'), $claim->verification_token);
+
+    expect($domains->verify($claim->id))->toBeTrue()
+        ->and($domains->verify($squat->id))->toBeFalse()
+        ->and($domains->forEmail('ceo@victim.example')?->organization_id)->toBe($owner->id);
+});
+
+it('lets only one organization verify a domain, even with both challenges published', function (): void {
+    $first = $this->makeOrganization('First');
+    $second = $this->makeOrganization('Second');
+    $dns = $this->fakeDns();
+    $domains = app(DomainVerification::class);
+
+    $a = $domains->add($first->id, 'shared.example');
+    $b = $domains->add($second->id, 'shared.example');
+    $dns->publish($domains->challengeHost('shared.example'), $a->verification_token);
+    $dns->publish($domains->challengeHost('shared.example'), $b->verification_token);
+
+    expect($domains->verify($a->id))->toBeTrue()
+        ->and($domains->verify($b->id))->toBeFalse()
+        ->and($b->fresh()?->isVerified())->toBeFalse();
+});
+
+it('is idempotent for the organization that already claimed the domain', function (): void {
+    $acme = $this->makeOrganization('Acme');
+    $domains = app(DomainVerification::class);
+
+    expect($domains->add($acme->id, 'acme.com')->id)->toBe($domains->add($acme->id, 'ACME.com')->id);
 });
 
 /**

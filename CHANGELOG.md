@@ -21,6 +21,16 @@ more trust than the wording it removes.
 
 - **A directory reactivates only an account it deactivated itself.** In `account` deprovisioning mode, `DatabaseDirectorySync::provisionUser()` called `Subjects::reactivate()` for every person a push or pull listed as active, so an account an administrator disabled (a compromised one, say) while the directory still listed the person came back on the next SCIM re-push, PATCH `active: true` or scheduled HRIS/pull sync. The sync now reads what the directory last said about the person before it is overwritten, and reactivates only when that directory had them as inactive (it deprovisioned them, or pushed `active: false`). An administrator's deactivation stays until an administrator reverses it.
 - **An app-declared role is tenant-assignable only for an app the organization can use.** Manifest roles are stored with no organization whichever organization owns the declaring app, so `Role::scopeTenantAssignable()` read another organization's private app role as environment-shared: `RoleService::assertTenantAssignable()`, `assignAsTenant()` and group-role reconciliation accepted it, and a directory group mapping could grant it to the mapping organization's people. The predicate now also requires the role's app to be environment-wide or owned by that organization; a pushed grant of such a role is withdrawn on the next reconcile. A role whose `client_id` names no client in the environment is no longer offered either.
+- **An unverified domain claim no longer locks the real owner out.** `DomainVerification::add()`
+  refused a domain whenever any other organization in the environment held a row for it,
+  verified or not, so anybody able to add a domain for their own organization could squat
+  another organization's domain with no DNS control: the owner was refused and never got a
+  challenge to publish. Each organization now holds its own pending claim and token;
+  `add()` refuses only a domain another organization has VERIFIED, and `verify()` stamps a
+  domain only when no other organization verified it first (checked under a lock). The
+  unique index moves from `(environment_id, domain)` to `(environment_id, organization_id,
+  domain)`; run the migration. Hosts that look up `verified_domains` by domain alone should
+  filter on `verified_at` (the package's own lookups already do).
 
 ## [2.8.0] - 2026-11-13
 
