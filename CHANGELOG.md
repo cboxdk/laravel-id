@@ -17,6 +17,10 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Security
+
+- **A role key or permission key an app declares reaches that app's token only from the app's own declaration.** `HierarchyAwareAccessChecker::forToken()` collected bare names from every role relevant to the app, and an organization's own roles and manual permissions share that namespace with the app's declared ones, so a same-named organization row read to the app as its key and did not honor the app's `tenant_assignable: false`. A permission name the app declares is now emitted only from the app's own declared permission row, and a role key the app declares only from the app's own role; another row with the same name, compared case-insensitively and including a declaration the app has since dropped, is left out of the claim. The role's other permissions are unaffected. Names no app declares are unchanged. The signed token, UserInfo, the `identity_claims` ID token, `PermissionDecisions` and the permission check on customer API keys all read `forToken()`, so all of them follow (`AppDeclaredNameTest`). `can()` and `permissionsFor()` answer across apps by contract and are unchanged.
+
 ## [2.7.0] - 2026-11-12
 
 ### Added
