@@ -248,3 +248,53 @@ it('ends only the membership when a pull sync no longer sees the person', functi
         ->and(app(Memberships::class)->of($org->id, $stayer))->not->toBeNull()
         ->and(app(Subjects::class)->isActive($stayer))->toBeTrue();
 })->with([['membership', true], ['account', false]])->group('security');
+
+/*
+ * WHO DISABLED IT. In account mode a directory owns the account — but only the
+ * deactivations it caused are its to undo. An administrator who disables a
+ * directory-provisioned person (a compromised account, say) while the directory still
+ * lists them active must not be overruled by the next re-push or scheduled pull.
+ */
+it('leaves an account an administrator disabled alone in account mode, however the directory re-pushes it', function (): void {
+    deprovisioningEnvironment('account');
+    $person = sharedPerson($this);
+
+    app(Subjects::class)->deactivate($person['userId']);
+
+    // An unchanged PUT, a PATCH active:true, and a sync-path re-provision.
+    $this->putJson('/scim/v2/Users/'.$person['scimId'], [
+        'userName' => 'dana',
+        'externalId' => 'okta|1',
+        'emails' => [['value' => 'dana@corp.com', 'primary' => true]],
+        'active' => true,
+    ], $person['headers'])->assertOk();
+    $this->patchJson('/scim/v2/Users/'.$person['scimId'], [
+        'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        'Operations' => [['op' => 'replace', 'path' => 'active', 'value' => true]],
+    ], $person['headers'])->assertOk();
+
+    expect(app(Subjects::class)->isActive($person['userId']))->toBeFalse();
+})->group('security');
+
+it('still brings back an account the directory itself deactivated, in account mode', function (): void {
+    deprovisioningEnvironment('account');
+    $org = $this->makeOrganization();
+    $directory = $this->makeDirectory($org->id)->directory;
+    $sync = app(DirectorySync::class);
+
+    $userId = (string) $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com'))->user_id;
+    $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com', active: false));
+    expect(app(Subjects::class)->isActive($userId))->toBeFalse();
+
+    $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com', active: true));
+
+    expect(app(Subjects::class)->isActive($userId))->toBeTrue()
+        ->and(app(Memberships::class)->of($org->id, $userId))->not->toBeNull();
+
+    // …and after a DELETE (deprovision), a later push lists them again.
+    $sync->deprovisionUser($directory->id, 'okta|1');
+    expect(app(Subjects::class)->isActive($userId))->toBeFalse();
+
+    $sync->provisionUser($directory->id, new ScimUser('okta|1', 'dana', 'dana@corp.com', active: true));
+    expect(app(Subjects::class)->isActive($userId))->toBeTrue();
+})->group('security');

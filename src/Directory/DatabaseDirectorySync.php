@@ -80,6 +80,13 @@ class DatabaseDirectorySync implements DirectorySync
                 raw: $user->raw,
             ));
 
+            // What THIS directory last said about the person, read before it is overwritten:
+            // the reactivation below may only undo a deactivation the directory caused.
+            $previous = DirectoryUser::query()
+                ->where('directory_id', $directory->id)
+                ->where('external_id', $user->externalId)
+                ->first();
+
             $directoryUser = DirectoryUser::query()->updateOrCreate(
                 ['directory_id' => $directory->id, 'external_id' => $user->externalId],
                 ['resource' => $user->raw, 'user_id' => $subject->id, 'active' => $user->active],
@@ -92,7 +99,13 @@ class DatabaseDirectorySync implements DirectorySync
                 // mode an account somebody else disabled — an operator, the person's own
                 // erasure request — stays disabled; the directory only restores what it
                 // is allowed to take away, which is the membership.
-                if ($mode->ownsAccount()) {
+                //
+                // And even then only a deactivation it CAUSED: the person was on this
+                // directory's books as inactive (deprovisioned, or pushed `active: false`).
+                // An account an administrator disabled while the directory still reported
+                // the person active — a compromised account, say — stays disabled through
+                // every re-push and scheduled pull, until an administrator reactivates it.
+                if ($mode->ownsAccount() && $previous !== null && ! $previous->active) {
                     $this->subjects->reactivate($subject->id);
                 }
 

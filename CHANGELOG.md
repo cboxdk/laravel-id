@@ -17,6 +17,11 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Security
+
+- **A directory reactivates only an account it deactivated itself.** In `account` deprovisioning mode, `DatabaseDirectorySync::provisionUser()` called `Subjects::reactivate()` for every person a push or pull listed as active, so an account an administrator disabled (a compromised one, say) while the directory still listed the person came back on the next SCIM re-push, PATCH `active: true` or scheduled HRIS/pull sync. The sync now reads what the directory last said about the person before it is overwritten, and reactivates only when that directory had them as inactive (it deprovisioned them, or pushed `active: false`). An administrator's deactivation stays until an administrator reverses it.
+- **An app-declared role is tenant-assignable only for an app the organization can use.** Manifest roles are stored with no organization whichever organization owns the declaring app, so `Role::scopeTenantAssignable()` read another organization's private app role as environment-shared: `RoleService::assertTenantAssignable()`, `assignAsTenant()` and group-role reconciliation accepted it, and a directory group mapping could grant it to the mapping organization's people. The predicate now also requires the role's app to be environment-wide or owned by that organization; a pushed grant of such a role is withdrawn on the next reconcile. A role whose `client_id` names no client in the environment is no longer offered either.
+
 ## [2.8.0] - 2026-11-13
 
 ### Added
