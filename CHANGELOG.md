@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-13
+
 ### Security
 
 - **A suspended or archived organization is closed to every grant.** `JwtTokenIssuer` refuses to mint a token naming a closed organization by any grant (refresh, `client_credentials` for the organization's own client, token exchange, device, CIBA, support sessions), `RefreshTokenService::rotate()` refuses its refresh token before consuming it, `JwtTokenIntrospector` calls a token naming it inactive, and `DirectoryService::authenticate()` refuses its SCIM token (the pull sync skips its directories). Reactivation restores all of it. New: `Organization\Support\OrganizationStanding`.
