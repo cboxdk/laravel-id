@@ -13,6 +13,7 @@ use Cbox\Id\Identity\Contracts\ErasureSteps;
 use Cbox\Id\Identity\Contracts\HashVerifier;
 use Cbox\Id\Identity\Contracts\LoginAttempts;
 use Cbox\Id\Identity\Contracts\MagicLink;
+use Cbox\Id\Identity\Contracts\MailboxProof;
 use Cbox\Id\Identity\Contracts\Mfa;
 use Cbox\Id\Identity\Contracts\MfaMandate;
 use Cbox\Id\Identity\Contracts\MfaVerification;
@@ -145,6 +146,9 @@ class IdentityServiceProvider extends ServiceProvider
         $this->app->singleton(Mfa::class, MfaService::class);
         $this->app->singleton(TotpDevices::class, MfaService::class);
         $this->app->singleton(MagicLink::class, MagicLinkService::class);
+        // Withdraws what was set on an unverified account once its mailbox is proven. Hosts
+        // with their own Subjects resolver bind their own (see the contract).
+        $this->app->singleton(MailboxProof::class, DatabaseMailboxProof::class);
         $this->app->singleton(PasswordReset::class, PasswordResetService::class);
         $this->app->singleton(AdminPasswords::class, AdminPasswordService::class);
         $this->app->singleton(AuthPolicies::class, DatabaseAuthPolicies::class);

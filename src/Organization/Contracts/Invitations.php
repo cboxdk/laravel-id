@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization\Contracts;
 
+use Cbox\Id\Identity\Contracts\MailboxProof;
 use Cbox\Id\Organization\Enums\MembershipRole;
 use Cbox\Id\Organization\Exceptions\InvalidInvitation;
 use Cbox\Id\Organization\Models\Invitation;
@@ -31,6 +32,12 @@ interface Invitations
      * membership and marks the invitation accepted. Throws
      * {@see InvalidInvitation} if the token is
      * unknown, used, revoked, or expired.
+     *
+     * The token was mailed to the invited address, so accepting it proves that mailbox.
+     * When `$subjectId` is the account under the invited address and its address was
+     * never verified, the account is claimed through {@see MailboxProof} first: everything
+     * set on it before is withdrawn and the address is marked verified. A host that then
+     * lets the person set a password does so after this call.
      */
     public function accept(string $token, string $subjectId): Membership;
 

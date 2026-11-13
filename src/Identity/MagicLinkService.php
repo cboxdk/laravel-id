@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\MagicLink;
+use Cbox\Id\Identity\Contracts\MailboxProof;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Contracts\SignInMethods;
 use Cbox\Id\Identity\Contracts\Subjects;
@@ -25,6 +26,12 @@ use Illuminate\Support\Facades\DB;
  * halves: no link is minted, and a link minted before the switch was turned off no longer
  * redeems — turning magic links off is meant to close the door, not to stop new keys being
  * cut for it while the old ones still work.
+ *
+ * A REDEEMED LINK PROVES THE MAILBOX. When it lands on an account whose address was never
+ * verified, the account is handed to the link's holder through {@see MailboxProof} before
+ * the session starts: whatever was set on it before (password, factors, passkeys, linked
+ * sign-ins, tokens, sessions) is withdrawn and the address is marked verified. A verified
+ * account is signed in to as it is.
  */
 class MagicLinkService implements MagicLink
 {
@@ -34,6 +41,7 @@ class MagicLinkService implements MagicLink
         private readonly Subjects $subjects,
         private readonly SessionManager $sessions,
         private readonly AuditLog $audit,
+        private readonly ?MailboxProof $mailboxProof = null,
     ) {}
 
     /**
@@ -82,6 +90,12 @@ class MagicLinkService implements MagicLink
             // A deactivated account can't be logged in via a magic link either.
             if (! $this->subjects->isActive($subject->id)) {
                 throw InvalidMagicLink::make();
+            }
+
+            // Before the session starts, so the only session left on a claimed account is
+            // the one this link opens.
+            if (! $subject->emailVerified) {
+                $subject = ($this->mailboxProof ?? app(MailboxProof::class))->claim($subject, $link->email);
             }
 
             $session = $this->sessions->start($subject->id, null, ['magic_link']);
