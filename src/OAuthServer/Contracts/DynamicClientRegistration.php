@@ -19,13 +19,15 @@ use Cbox\Id\OAuthServer\ValueObjects\UpdatedRegistration;
 interface DynamicClientRegistration
 {
     /**
-     * Validate and normalize a raw RFC 7591 registration request.
+     * Validate and normalize a raw RFC 7591 registration request — or, with $profile, an
+     * RFC 7592 update, held to the profile its client registered under
+     * ({@see Client::registrationProfile()}) rather than the server's current mode.
      *
      * @param  array<string, mixed>  $request
      *
      * @throws InvalidClientMetadata
      */
-    public function validate(array $request): ClientMetadata;
+    public function validate(array $request, ?string $profile = null): ClientMetadata;
 
     /**
      * Register a client from already-validated metadata, returning it together

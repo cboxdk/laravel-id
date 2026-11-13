@@ -349,3 +349,106 @@ it('lists stored tuples with filters, by page', function (): void {
         ->and(array_map(strval(...), $this->fga()->tuples(new TupleFilter(resourceType: 'document', resourceId: 'leave'))->tuples))
         ->toBe(['document:leave#parent@folder:policies', 'document:leave#editor@user:bob']);
 });
+
+it('answers a check over a complete digraph of groups in a bounded number of reads', function (): void {
+    $this->fgaSchema("type user\n\ntype group\n  relation member: [user, group#member]\n");
+
+    $tuples = [];
+
+    foreach (range(0, 11) as $i) {
+        foreach (range(0, 11) as $j) {
+            if ($i !== $j) {
+                $tuples[] = "group:g{$i}#member@group:g{$j}#member";
+            }
+        }
+    }
+
+    // A member nested several levels deep, through a chain that loops back on itself.
+    foreach (range(0, 4) as $level) {
+        $tuples[] = 'group:c'.$level.'#member@group:c'.($level + 1).'#member';
+    }
+
+    $tuples[] = 'group:c5#member@group:c0#member';
+    $tuples[] = 'group:c5#member@user:carol';
+    $tuples[] = 'group:g11#member@group:c3#member';
+
+    foreach (array_chunk($tuples, 100) as $batch) {
+        $this->fgaWrite(...$batch);
+    }
+
+    $reads = 0;
+    DB::listen(static function ($query) use (&$reads): void {
+        if (str_contains($query->sql, 'fga_tuples')) {
+            $reads++;
+        }
+    });
+
+    $started = microtime(true);
+    $results = $this->fga()->checkMany([
+        Check::of('group', 'g0', 'member', SubjectRef::of('user', 'fresh1')),
+        Check::of('group', 'g0', 'member', SubjectRef::of('user', 'fresh2')),
+    ]);
+
+    expect(array_map(static fn ($result): bool => $result->allowed, $results))->toBe([false, false])
+        // Every node expanded at most once per subject: 12 groups plus the c chain it reaches.
+        ->and($reads)->toBeLessThanOrEqual(2 * 20)
+        ->and(microtime(true) - $started)->toBeLessThan(2.0)
+        ->and($this->fgaAllows('group:g0#member@user:carol'))->toBeTrue()
+        ->and($this->fgaAllows('group:c0#member@user:carol'))->toBeTrue()
+        ->and($this->fgaAllows('group:c3#member@user:carol'))->toBeTrue()
+        ->and($this->fgaAllows('group:g5#member@user:mallory'))->toBeFalse();
+});
+
+it('refuses a check batch past the expansion budget rather than searching on', function (): void {
+    config(['cbox-id.fga.max_expansion' => 10]);
+    $this->fgaSchema("type user\n\ntype group\n  relation member: [user, group#member]\n");
+
+    $tuples = [];
+
+    foreach (range(0, 5) as $i) {
+        foreach (range(0, 5) as $j) {
+            if ($i !== $j) {
+                $tuples[] = "group:g{$i}#member@group:g{$j}#member";
+            }
+        }
+    }
+
+    $this->fgaWrite(...$tuples);
+
+    // Six expansions per fresh subject: the budget is shared across the batch.
+    expect($this->fgaAllows('group:g0#member@user:one'))->toBeFalse()
+        ->and(fn () => $this->fga()->checkMany([
+            Check::of('group', 'g0', 'member', SubjectRef::of('user', 'two')),
+            Check::of('group', 'g0', 'member', SubjectRef::of('user', 'three')),
+        ]))->toThrow(ResolutionTooComplex::class);
+});
+
+it('keys the answer cache unambiguously, so one question never answers another', function (): void {
+    fgaFolders();
+    $this->fgaWrite('document:z9#viewer@user:bob', 'document:d1#viewer@user:bob|7|x');
+
+    $fga = app(FineGrainedAuthorization::class);
+
+    // `bob` with limit 7 after `x|100|` used to render the same question as `bob|7|x`.
+    expect($fga->listResources(SubjectRef::of('user', 'bob'), 'viewer', 'document', limit: 7, after: 'x|100|')->ids)->toBe(['z9'])
+        ->and($fga->listResources(SubjectRef::of('user', 'bob|7|x'), 'viewer', 'document', limit: 100, after: '')->ids)->toBe(['d1'])
+        ->and($fga->listSubjects(ResourceRef::of('document', 'z9'), 'viewer', 'user', limit: 1, after: 'a|2|')->ids)->toBe(['bob'])
+        ->and($fga->listSubjects(ResourceRef::of('document', 'd1'), 'viewer', 'user', limit: 100)->ids)->toBe(['bob|7|x']);
+});
+
+it('refuses an id that could never be stored, instead of answering under another question\'s key', function (): void {
+    fgaFolders();
+
+    // A plain subject id `eng#member` rendered exactly like the userset group:eng#member.
+    expect(fn () => $this->fga()->check(Check::of('document', 'leave', 'viewer', SubjectRef::of('group', 'eng#member'))))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and($this->fgaAllows('document:leave#viewer@group:eng#member'))->toBeTrue()
+        ->and(fn () => $this->fga()->check(Check::of('document', 'le@ve', 'viewer', SubjectRef::of('user', 'alice'))))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and(fn () => $this->fga()->listResources(SubjectRef::of('user', 'a b'), 'viewer', 'document'))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and(fn () => $this->fga()->listSubjects(ResourceRef::of('document', 'x#y'), 'viewer', 'user'))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and(fn () => $this->fga()->listSubjects(ResourceRef::of('document', 'leave'), 'viewer', 'user', after: "bob\n"))
+        ->toThrow(InvalidTuple::class, 'cursor');
+});

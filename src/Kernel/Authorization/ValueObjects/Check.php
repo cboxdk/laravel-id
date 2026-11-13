@@ -20,7 +20,7 @@ final readonly class Check
         return new self(ResourceRef::of($resourceType, $resourceId), $relation, $subject);
     }
 
-    /** Stable across processes: what the check cache is keyed on, within one revision. */
+    /** The check in tuple notation, for display. Not a cache key: ids may contain the separators. */
     public function key(): string
     {
         return $this->resource->type.':'.$this->resource->id.'#'.$this->relation.'@'.$this->subject;

@@ -17,7 +17,7 @@ use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 final readonly class SubjectRef
 {
     /** Ids are what an app already calls things: anything printable up to 128 characters, except the notation's `#` and `@`. */
-    public const string ID_PATTERN = '/^[^\s#@\x00-\x1F\x7F]{1,128}$/u';
+    public const string ID_PATTERN = '/^[^\s#@\x00-\x1F\x7F]{1,128}\z/u';
 
     public function __construct(public string $type, public string $id, public ?string $relation = null) {}
 

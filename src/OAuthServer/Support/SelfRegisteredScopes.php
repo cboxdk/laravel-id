@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\OAuthServer\Support;
 
+use Cbox\Id\Kernel\Tenancy\Concerns\ResolvesEnvironment;
+use Cbox\Id\OAuthServer\Contracts\Apis;
 use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
 use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 
@@ -21,11 +23,15 @@ use Cbox\Id\OAuthServer\Enums\ProtocolScope;
  *    person in and keep a refresh token.
  *
  * Never a registered API's scope, never a free-text scope from the allow-list, and never a
- * reserved one ({@see ReservedScopes}), whatever any of the lists say.
+ * reserved one ({@see ReservedScopes}), whatever any of the lists say. A key a resource
+ * accepts that a registered API in the environment also owns is left out: at the token
+ * endpoint the API's row would win the key and audience the token to the API.
  */
 class SelfRegisteredScopes
 {
-    public function __construct(private readonly ProtectedResources $resources) {}
+    use ResolvesEnvironment;
+
+    public function __construct(private readonly ProtectedResources $resources, private readonly Apis $apis) {}
 
     /**
      * @return list<string>
@@ -40,10 +46,15 @@ class SelfRegisteredScopes
             }
         }
 
-        return array_values(array_diff(
+        $allowed = array_values(array_diff(
             array_unique([...$resourceScopes, ...$this->protocolScopes()]),
             ReservedScopes::all(),
         ));
+
+        $environmentId = $this->environments()->current()?->environmentKey();
+        $owned = $environmentId === null ? [] : array_keys($this->apis->registeredScopes($environmentId, $allowed));
+
+        return array_values(array_diff($allowed, $owned));
     }
 
     /**

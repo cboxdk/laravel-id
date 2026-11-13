@@ -13,6 +13,7 @@ use Cbox\Id\ExternalActions\ValueObjects\ActionContext;
 use Cbox\Id\ExternalActions\ValueObjects\ActionResult;
 use Cbox\Id\ExternalActions\ValueObjects\PreparedActionRequest;
 use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
+use Cbox\Id\Kernel\Ssrf\UrlVerification;
 use Cbox\Ssrf\Contracts\UrlGuard;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
@@ -145,9 +146,13 @@ class HttpActionTransport implements ConcurrentActionTransport
      */
     private function prepare(ExternalActionEndpoint $endpoint, ActionContext $context): PreparedActionRequest
     {
-        $pinned = config('cbox-id.external_actions.verify_url', true) === true
-            ? $this->ssrf->pinnedOptions($endpoint->url)
-            : [];
+        // Read like the registration guard reads it ({@see UrlVerification}): `=== true`
+        // left every truthy string ('1', 'on', 'yes') unpinned at delivery while the same
+        // value still guarded registration — a DNS rebind between the two reached the
+        // metadata service. With verification off, redirects stay refused all the same.
+        $pinned = UrlVerification::enforced('cbox-id.external_actions.verify_url')
+            ? $this->ssrf->pinnedOptions($endpoint->url, DatabaseExternalActions::SCHEMES)
+            : ['allow_redirects' => false];
 
         $body = json_encode(['context' => $context->toArray()], JSON_THROW_ON_ERROR);
         $secret = $this->secretBox->open($endpoint->secret_encrypted, $endpoint->secretContext());

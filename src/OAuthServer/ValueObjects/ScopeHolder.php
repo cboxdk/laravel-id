@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Id\OAuthServer\ValueObjects;
 
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\SelfRegisteredScopes;
 
 /**
  * The facts about a client that decide which registered scopes it may hold: the
@@ -23,6 +24,7 @@ readonly class ScopeHolder
         public ?string $environmentId,
         public ?string $organizationId = null,
         public bool $dynamicallyRegistered = false,
+        public bool $resourceBound = false,
     ) {}
 
     public static function of(Client $client): self
@@ -33,7 +35,31 @@ readonly class ScopeHolder
             is_string($environmentId) && $environmentId !== '' ? $environmentId : null,
             $client->organization_id,
             $client->isDynamicallyRegistered(),
+            self::isResourceBound($client),
         );
+    }
+
+    /**
+     * Registered ITSELF for the host's declared resources — in `mcp` mode, or as a client
+     * ID metadata document client — and so never the holder of a registered API's scope
+     * ({@see SelfRegisteredScopes}). A self-registered row from before the profile was
+     * recorded is judged by the mode the server is in now.
+     */
+    private static function isResourceBound(Client $client): bool
+    {
+        if ($client->isMetadataDocumentClient()) {
+            return true;
+        }
+
+        if (! $client->isDynamicallyRegistered()) {
+            return false;
+        }
+
+        $profile = $client->registration_profile;
+
+        return is_string($profile) && $profile !== ''
+            ? $profile === 'mcp'
+            : config('cbox-id.oauth.dynamic_registration.mode') === 'mcp';
     }
 
     /**
