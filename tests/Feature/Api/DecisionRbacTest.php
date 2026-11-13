@@ -183,11 +183,10 @@ it('denies everything in a suspended organization', function (): void {
 
     app(Organizations::class)->suspend($org->id, 'operator');
 
-    rbacAsk($this, $token, ['permission' => 'invoices:read'])
-        ->assertOk()
-        ->assertJsonPath('organization_active', false)
-        ->assertJsonPath('results.0.allowed', false)
-        ->assertJsonPath('allowed', false);
+    // The token itself is no longer active: a token naming a closed organization
+    // introspects inactive, so the decision is refused at authentication rather than
+    // answered with a deny for each permission.
+    rbacAsk($this, $token, ['permission' => 'invoices:read'])->assertUnauthorized();
 });
 
 it('refuses a user token asking about somebody else, or another organization', function (): void {
