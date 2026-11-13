@@ -191,6 +191,60 @@ it('applies the MCP rules to an RFC 7592 update too', function (): void {
         ->assertJsonPath('error', 'invalid_client_metadata');
 });
 
+it('holds an RFC 7592 update to the profile the client registered under, whatever the mode is now', function (string $mode): void {
+    mcpDcr();
+    $registered = $this->postJson('/oauth/register', mcpRegistration())->assertStatus(201);
+    $clientId = (string) $registered->json('client_id');
+    $before = Client::query()->where('client_id', $clientId)->firstOrFail()->only(['type', 'grant_types', 'token_endpoint_auth_method', 'redirect_uris']);
+
+    config([
+        'cbox-id.oauth.dynamic_registration.mode' => $mode,
+        'cbox-id.oauth.dynamic_registration.initial_access_token' => 'iat-secret',
+    ]);
+
+    $bodies = [
+        mcpRegistration(['token_endpoint_auth_method' => 'client_secret_post', 'grant_types' => ['authorization_code', 'client_credentials', 'urn:openid:params:grant-type:ciba']]),
+        mcpRegistration(['grant_types' => ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code']]),
+        mcpRegistration(['redirect_uris' => ['com.example.app:/cb']]),
+    ];
+
+    foreach ($bodies as $body) {
+        $response = $this->withToken((string) $registered->json('registration_access_token'))
+            ->putJson('/oauth/register/'.$clientId, $body);
+
+        expect($response->status())->toBeIn([400, 403])
+            ->and($response->json('client_secret'))->toBeNull();
+    }
+
+    expect(Client::query()->where('client_id', $clientId)->firstOrFail()->only(['type', 'grant_types', 'token_endpoint_auth_method', 'redirect_uris']))->toBe($before);
+})->with(['disabled', 'protected', 'open']);
+
+it('refuses to read or update a registration while registration is disabled, and still lets the client delete itself', function (): void {
+    mcpDcr();
+    $registered = $this->postJson('/oauth/register', mcpRegistration())->assertStatus(201);
+    $clientId = (string) $registered->json('client_id');
+    $token = (string) $registered->json('registration_access_token');
+
+    config(['cbox-id.oauth.dynamic_registration.mode' => 'disabled']);
+
+    $this->withToken($token)->getJson('/oauth/register/'.$clientId)->assertStatus(403)->assertJsonPath('error', 'access_denied');
+    $this->withToken($token)->putJson('/oauth/register/'.$clientId, mcpRegistration(['client_name' => 'Renamed']))->assertStatus(403);
+    $this->withToken($token)->deleteJson('/oauth/register/'.$clientId)->assertStatus(204);
+
+    expect(Client::query()->where('client_id', $clientId)->exists())->toBeFalse();
+});
+
+it('records the profile a client registered under', function (): void {
+    mcpDcr();
+    $mcp = $this->postJson('/oauth/register', mcpRegistration())->assertStatus(201);
+
+    config(['cbox-id.oauth.dynamic_registration.mode' => 'open']);
+    $open = $this->postJson('/oauth/register', mcpRegistration(['token_endpoint_auth_method' => 'client_secret_basic']))->assertStatus(201);
+
+    expect(Client::query()->where('client_id', $mcp->json('client_id'))->value('registration_profile'))->toBe('mcp')
+        ->and(Client::query()->where('client_id', $open->json('client_id'))->value('registration_profile'))->toBe('general');
+});
+
 // ---------------------------------------------------------------------------------------
 // Throttle.
 // ---------------------------------------------------------------------------------------

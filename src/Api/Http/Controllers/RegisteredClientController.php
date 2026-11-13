@@ -15,7 +15,9 @@ use Illuminate\Http\Response;
 /**
  * `GET|PUT|DELETE /oauth/register/{client}` — RFC 7592 client configuration
  * endpoint. Every operation is authenticated by the registration access token
- * issued at registration; the token scopes access to exactly one client.
+ * issued at registration; the token scopes access to exactly one client. While
+ * registration is `disabled`, only DELETE is answered; an update is validated against
+ * the profile the client registered under, whatever the mode is now.
  */
 class RegisteredClientController
 {
@@ -23,6 +25,10 @@ class RegisteredClientController
 
     public function show(Request $request, string $client): JsonResponse
     {
+        if ($this->disabled()) {
+            return $this->refused();
+        }
+
         $authenticated = $this->authenticate($request, $client);
 
         return $authenticated instanceof Client
@@ -32,6 +38,10 @@ class RegisteredClientController
 
     public function update(Request $request, string $client): JsonResponse
     {
+        if ($this->disabled()) {
+            return $this->refused();
+        }
+
         $authenticated = $this->authenticate($request, $client);
 
         if (! $authenticated instanceof Client) {
@@ -39,7 +49,8 @@ class RegisteredClientController
         }
 
         try {
-            $metadata = $this->registrar->validate($request->json()->all());
+            // Held to the profile the client registered under, never the current mode.
+            $metadata = $this->registrar->validate($request->json()->all(), $authenticated->registrationProfile() ?? 'mcp');
         } catch (InvalidClientMetadata $e) {
             return new JsonResponse(['error' => $e->error, 'error_description' => $e->getMessage()], 400);
         }
@@ -69,6 +80,23 @@ class RegisteredClientController
         $this->registrar->delete($authenticated);
 
         return response()->noContent();
+    }
+
+    /**
+     * Registration switched off is the kill switch: a self-registered client may still
+     * delete itself (RFC 7592 §2.3), but neither read nor change its registration.
+     */
+    private function disabled(): bool
+    {
+        return ! in_array(config('cbox-id.oauth.dynamic_registration.mode', 'disabled'), ['open', 'mcp', 'protected'], true);
+    }
+
+    private function refused(): JsonResponse
+    {
+        return new JsonResponse([
+            'error' => 'access_denied',
+            'error_description' => 'dynamic client registration is disabled',
+        ], 403);
     }
 
     private function authenticate(Request $request, string $clientId): ?Client

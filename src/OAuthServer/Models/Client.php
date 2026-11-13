@@ -55,6 +55,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $api_key_prefix the prefix of this app's customer API keys; null = it accepts none
  * @property bool $first_party
  * @property string|null $registration_access_token_hash
+ * @property string|null $registration_profile `mcp` or `general`: the RFC 7591 profile it registered under; null = not self-registered
  * @property Carbon|null $last_used_at when an access token was last minted for it, to the hour
  * @property Carbon|null $created_at
  */
@@ -102,6 +103,25 @@ class Client extends Model implements EnvironmentOwned
     public function isDynamicallyRegistered(): bool
     {
         return $this->registration_access_token_hash !== null;
+    }
+
+    /**
+     * The RFC 7591 profile this client registered under — `mcp` or `general` — which an
+     * RFC 7592 update is held to whatever the server's mode is now. A self-registered row
+     * written before the profile was recorded is read from its shape: one that holds no
+     * shared secret fits the MCP profile and is held to it. Null when not self-registered.
+     */
+    public function registrationProfile(): ?string
+    {
+        if (! $this->isDynamicallyRegistered()) {
+            return null;
+        }
+
+        if (is_string($this->registration_profile) && $this->registration_profile !== '') {
+            return $this->registration_profile;
+        }
+
+        return $this->type === ClientType::Public || in_array($this->token_endpoint_auth_method, [TokenEndpointAuthMethod::None, TokenEndpointAuthMethod::PrivateKeyJwt], true) ? 'mcp' : 'general';
     }
 
     /**
