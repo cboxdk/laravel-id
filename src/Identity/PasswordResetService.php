@@ -6,6 +6,7 @@ namespace Cbox\Id\Identity;
 
 use Cbox\Id\Identity\Contracts\PasswordReset;
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\SubjectGrantRevoker;
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Exceptions\InvalidPasswordReset;
 use Cbox\Id\Identity\Models\PasswordResetToken;
@@ -23,6 +24,9 @@ class PasswordResetService implements PasswordReset
         private readonly Subjects $subjects,
         private readonly SessionManager $sessions,
         private readonly AuditLog $audit,
+        // Trailing and optional so existing constructions keep compiling; the container
+        // always supplies it.
+        private readonly ?SubjectGrantRevoker $grants = null,
     ) {}
 
     public function request(string $email): ?string
@@ -85,7 +89,9 @@ class PasswordResetService implements PasswordReset
             $this->subjects->setPassword($subject->id, $newPassword);
 
             // A reset implies the previous credential may be compromised — cut every
-            // existing session so a thief can't ride one past the change.
+            // existing session so a thief can't ride one past the change, and every app grant
+            // too: an app the thief authorized with the stolen password kept refreshing.
+            $this->grants?->revokeGrantsForUser($subject->id);
             $this->sessions->revokeAllForUser($subject->id);
 
             // Any other outstanding reset tokens for this account are now void.

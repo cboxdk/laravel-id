@@ -142,6 +142,19 @@ class SupportSessionService implements SupportSessions
             throw SupportSessionRefused::because(SupportSessionRefusal::SessionNotActive);
         }
 
+        // begin()'s eligibility, asked again for every code: a person removed from the
+        // organization, or an organization suspended or archived, since the session began
+        // is the same refusal it would have been at the start.
+        $organization = $this->organizations->find($session->organization_id);
+
+        if ($organization === null || $organization->status !== OrganizationStatus::Active) {
+            throw SupportSessionRefused::because(SupportSessionRefusal::OrganizationInactive);
+        }
+
+        if ($this->memberships->of($session->organization_id, $session->target_user_id)?->status !== MembershipStatus::Active) {
+            throw SupportSessionRefused::because(SupportSessionRefusal::TargetNotMember);
+        }
+
         return $this->mint($session, $this->eligibleClient($session->client_id), $code);
     }
 

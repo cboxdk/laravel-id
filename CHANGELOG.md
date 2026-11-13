@@ -17,6 +17,15 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Security
+
+- **A suspended or archived organization is closed to every grant.** `JwtTokenIssuer` refuses to mint a token naming a closed organization by any grant (refresh, `client_credentials` for the organization's own client, token exchange, device, CIBA, support sessions), `RefreshTokenService::rotate()` refuses its refresh token before consuming it, `JwtTokenIntrospector` calls a token naming it inactive, and `DirectoryService::authenticate()` refuses its SCIM token (the pull sync skips its directories). Reactivation restores all of it. New: `Organization\Support\OrganizationStanding`.
+- **A withdrawn grant takes its access tokens with it.** `withdrawAccess()`, `revokeForUserAndClient()` and `revoke()` (RFC 7009) also revoke the matching access tokens, so token exchange can no longer renew a withdrawn grant. `revokeForUser()` (the role-change verb) still revokes nothing else.
+- **A deleted client's tokens die with it** (RFC 7592 §2.3): `ClientRegistryService::delete()` revokes its access and refresh tokens, and introspection refuses a token whose registered client is gone (client-id-metadata-document clients excepted).
+- **A password reset withdraws the person's app grants** (`SubjectGrantRevoker`), not only their sessions.
+- **A deactivated person's pipe token is not leased** (`DatabasePipeTokens::lease()` answers `PipeLeaseDenied`).
+- **A support session re-checks its target on every code**: an organization no longer active, or a person no longer an active member, is refused as `begin()` would refuse it.
+
 ## [2.8.0] - 2026-11-13
 
 ### Added
