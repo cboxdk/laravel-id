@@ -7,11 +7,13 @@ namespace Cbox\Id\OAuthServer;
 use Cbox\Id\Kernel\Tenancy\Scopes\EnvironmentScope;
 use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
 use Cbox\Id\OAuthServer\Contracts\Apis;
+use Cbox\Id\OAuthServer\Contracts\ProtectedResources;
 use Cbox\Id\OAuthServer\Enums\ProtocolScope;
 use Cbox\Id\OAuthServer\Exceptions\InvalidApiDefinition;
 use Cbox\Id\OAuthServer\Models\Api;
 use Cbox\Id\OAuthServer\Models\ApiScope;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\ReservedScopes;
 use Cbox\Id\OAuthServer\Support\ResourceIndicator;
 use Cbox\Id\OAuthServer\ValueObjects\ApiAudience;
 use Cbox\Id\OAuthServer\ValueObjects\ApiScopeDefinition;
@@ -122,8 +124,16 @@ class DatabaseApis implements Apis
             throw InvalidApiDefinition::scopeKey($scope->key);
         }
 
-        if (ProtocolScope::isProtocol($scope->key)) {
+        // The authorization server's own scopes — protocol, reserved and those of the
+        // resources the host declares — are not an API's to own. A token request names a
+        // scope by key alone, and an API row wins the key at the token endpoint, so a
+        // shared key would send a token meant for the host's resource to the API.
+        if (ProtocolScope::isProtocol($scope->key) || in_array($scope->key, ReservedScopes::all(), true)) {
             throw InvalidApiDefinition::reservedScope($scope->key);
+        }
+
+        if ($this->declared($scope->key)) {
+            throw InvalidApiDefinition::declaredScope($scope->key);
         }
 
         // Bound to the API's own environment in the WHERE clause, not left to the ambient
@@ -233,6 +243,24 @@ class DatabaseApis implements Apis
             ->get()
             ->map(fn (ApiScope $scope): string => $scope->key)
             ->all());
+    }
+
+    /** Whether a resource the host declares (or the issuer itself) accepts $key. */
+    private function declared(string $key): bool
+    {
+        $resources = app(ProtectedResources::class);
+
+        if (in_array($key, $resources->issuerScopes(), true)) {
+            return true;
+        }
+
+        foreach ($resources->all() as $resource) {
+            if ($resource->accepts($key)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function validName(string $name): string

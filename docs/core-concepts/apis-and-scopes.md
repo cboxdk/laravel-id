@@ -47,7 +47,7 @@ Environment
 | `name` | What a person calls it. |
 | `organization_id` | The owner. `null` = the environment owns it. |
 | `client_id` | Optional. The app whose declared roles/permissions this API enforces. Must have the **same owner** as the API. |
-| scope `key` | An RFC 6749 scope token (≤ 128 characters). **Unique per environment**, across all APIs — a request names a scope by key alone. The protocol scopes (`openid`, `profile`, `email`, `offline_access`, `organizations`, `groups`, `feature_flags`) can never be registered. |
+| scope `key` | An RFC 6749 scope token (≤ 128 characters). **Unique per environment**, across all APIs — a request names a scope by key alone. The protocol scopes (`openid`, `profile`, `email`, `offline_access`, `organizations`, `groups`, `feature_flags`) can never be registered, nor can a reserved scope (`oauth.reserved_scopes`) or a scope a [declared resource](#resources-the-host-serves-itself) accepts (`InvalidApiDefinition`). |
 | scope `tenant_requestable` | For an environment-owned API: may a client owned by an organization (or a dynamically registered one) hold this scope? Default `true`. |
 
 ## Who may hold a registered scope
@@ -138,7 +138,10 @@ more than config. A declared resource is then:
 - **described** — RFC 9728 metadata at `/.well-known/oauth-protected-resource/mcp`;
 - **open or closed to self-registered clients** — a client registered through RFC 7591 or
   described by a client ID metadata document is refused (`invalid_target`) a resource that
-  did not set `dynamic_clients`, and can never carry a reserved scope to one.
+  did not set `dynamic_clients`, and can never carry a reserved scope to one. Such a
+  client, registered in `mcp` mode or described by a metadata document, never holds a
+  scope a registered API owns either: the key is dropped at registration and at the
+  token endpoint, so its token is never audienced to the API.
 
 A self-registered client may also never name a resource that is none of these — not an
 API, not declared, not the issuer. Operator clients keep the RFC 8707 pass-through (any

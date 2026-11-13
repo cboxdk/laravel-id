@@ -31,6 +31,12 @@ readonly class RegisteredScope
      */
     public function mayBeHeldBy(ScopeHolder $holder): bool
     {
+        // Registered itself for the host's declared resources: no registered API's scope,
+        // whatever the API allows tenants.
+        if ($holder->resourceBound) {
+            return false;
+        }
+
         if ($holder->isEnvironmentOwned()) {
             return true;
         }

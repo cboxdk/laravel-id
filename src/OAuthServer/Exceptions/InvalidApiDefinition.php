@@ -42,6 +42,11 @@ class InvalidApiDefinition extends InvalidArgumentException implements HasSource
         return (new self("The scope [{$key}] is defined by the authorization server itself and cannot belong to an API."))->withSourceMessage(new SourceMessage('The scope [:key] is defined by the authorization server itself and cannot belong to an API.', ['key' => $key]));
     }
 
+    public static function declaredScope(string $key): self
+    {
+        return (new self("The scope [{$key}] is already accepted by a resource this server declares itself. Pick a key of the API's own, such as one prefixed with its name."))->withSourceMessage(new SourceMessage('The scope [:key] is already accepted by a resource this server declares itself. Pick a key of the API\'s own, such as one prefixed with its name.', ['key' => $key]));
+    }
+
     public static function scopeTaken(string $key): self
     {
         return (new self("The scope [{$key}] already belongs to another API in this environment. Scope keys are unique per environment, because a token request names a scope by key alone."))->withSourceMessage(new SourceMessage('The scope [:key] already belongs to another API in this environment. Scope keys are unique per environment, because a token request names a scope by key alone.', ['key' => $key]));
