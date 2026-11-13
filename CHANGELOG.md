@@ -17,6 +17,8 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-13
+
 ### Added
 
 - **`Introspection::isMachine()`**: whether a token is an app acting as itself (`client_credentials`): active, its subject is its client id, and it carries no `act` claim. A token issued to a person through an app also carries that app's `client_id`; ask this before treating `client_id` as the caller's identity. See [Access tokens](docs/core-concepts/access-tokens.md#verifying-one).
