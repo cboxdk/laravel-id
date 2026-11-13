@@ -56,7 +56,7 @@ class ConfiguredResourceIntrospectionAccess implements ResourceIntrospectionAcce
 
         // A resource-server lookup is a current access decision, not merely a
         // historical token check. Machine subjects have no user membership.
-        return $token->subject !== null && ($token->subject === $token->clientId
+        return $token->subject !== null && ($token->isMachine()
             || $this->memberships->activeRole($org, $token->subject) !== null);
     }
 }

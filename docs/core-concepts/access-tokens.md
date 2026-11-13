@@ -55,6 +55,19 @@ A resource server should check `iss`, the signature against the JWKS, `typ: at+j
 that its own identifier is in `aud`, and the scopes or permissions it needs. A string `aud`
 and an array `aud` are both valid JWT; compare by membership.
 
+Every token an app holds carries that app's `client_id`, including one issued to a person
+signed in through it. Do not treat `client_id` as the caller's identity on its own. Only a
+machine token (`client_credentials`) acts as the app: active, `sub` equal to `client_id`,
+and no `act` claim. `Introspection::isMachine()` checks all three:
+
+```php
+if ($token->isMachine()) {
+    // The app itself: its own secrets, its own grants, service-to-service questions.
+} else {
+    // A person ($token->subject), through that app. Hold them to their own access.
+}
+```
+
 ## Resource-server introspection
 
 A confidential client can introspect its own tokens at `/oauth/introspect`. A resource
