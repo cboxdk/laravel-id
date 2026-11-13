@@ -35,6 +35,19 @@ class DatabaseExternalActions implements ExternalActions
     // it here captured the first job's environment for the life of a queue worker.
     use ResolvesEnvironment;
 
+    /**
+     * Inline hooks are HTTPS-ONLY, at registration and again at every delivery. The
+     * request carries the person's context (subject, organization, scopes, claims; email
+     * and name at registration) and the reply is trusted to veto sign-ins or add claims to
+     * a signed token with no authentication of its own, so plaintext http would hand both
+     * to anyone on the path. Webhooks pin the same list. Switching
+     * `external_actions.verify_url` off lifts this with the rest of the guard, as for
+     * webhooks — for a single-tenant deployment reaching its own internal hosts.
+     *
+     * @var list<string>
+     */
+    public const SCHEMES = ['https'];
+
     public function __construct(
         private readonly SecretBox $secretBox,
         private readonly UrlGuard $ssrf,
@@ -200,7 +213,7 @@ class DatabaseExternalActions implements ExternalActions
         }
 
         try {
-            $this->ssrf->assertSafe($url);
+            $this->ssrf->assertSafe($url, self::SCHEMES);
         } catch (BlockedUrl) {
             throw UnsafeActionUrl::forUrl($url);
         }
