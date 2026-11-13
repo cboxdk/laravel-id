@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 use Cbox\Id\Identity\Contracts\SessionManager;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Identity\Models\Session;
+use Cbox\Id\Identity\ValueObjects\Subject;
 use Cbox\Id\OAuthServer\Support\SessionIdentifier;
 use Cbox\Id\Organization\Contracts\Organizations;
 use Cbox\Id\Organization\Enums\EnvironmentStatus;
@@ -142,4 +144,17 @@ function sessionForSid(string $sid): ?Session
     }
 
     return null;
+}
+
+/**
+ * A subject whose email address is verified — the only kind the SAML IdP will assert an
+ * address for (see tests/Feature/SamlIdp/UnverifiedEmailAssertionTest.php).
+ */
+function verifiedSubject(string $email): Subject
+{
+    $subjects = app(Subjects::class);
+    $subject = $subjects->create($email);
+    $subjects->markEmailVerified($subject->id, $email);
+
+    return $subject;
 }

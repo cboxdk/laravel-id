@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Cbox\Id\SamlIdp\Contracts;
 
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\SamlIdp\Exceptions\EmailNotVerified;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
+use Cbox\Id\SamlIdp\Exceptions\SubjectNotPermitted;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
 use Cbox\Id\SamlIdp\ValueObjects\AuthnRequest;
 use Cbox\Id\SamlIdp\ValueObjects\SamlError;
@@ -74,9 +77,17 @@ interface SamlIdentityProvider
      * had been typed even for people who signed in with a passkey — a false statement in
      * a signed document that relying parties act on.
      *
+     * Only a verified email address is ever asserted. When the SP would receive the
+     * subject's email (an emailAddress or unspecified NameID sourced from `email`, or an
+     * attribute mapped from `email`) and the {@see Subjects} resolver does not report that
+     * address as verified, issuance is refused with {@see EmailNotVerified}; for any other
+     * SP an unverified address is dropped from `$attributes` before mapping.
+     *
      * @param  array<string, string|list<string>>  $attributes
      * @param  list<string>  $amr
      *
+     * @throws EmailNotVerified the SP would receive an email address the subject has not verified
+     * @throws SubjectNotPermitted the subject is not an active member of the organization that owns the SP
      * @throws InvalidAuthnRequest the request has already been answered (replay)
      * @throws UnknownServiceProvider the SP referenced by the request is no longer active
      */

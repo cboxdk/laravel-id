@@ -362,7 +362,7 @@ it('carries the transmitted octets across the login hand-off and back', function
     // Leg 2 — the host returns the browser to exactly that URL once the user has
     // signed in. The same signature must verify a second time; it used to fail
     // here, AFTER the login, for every SP that percent-encodes differently.
-    $subject = $this->makeUser('alice@sp.example.test');
+    $subject = verifiedSubject('alice@sp.example.test');
 
     $resumed = $this->actingAs(new GenericUser(['id' => $subject->id, 'remember_token' => '']))
         ->get((string) $returnTo);
@@ -481,10 +481,12 @@ it('answers one AuthnRequest exactly once, but tolerates re-parsing it across th
     $this->samlIdp()->parseAuthnRequest($samlRequest);
     $request = $this->samlIdp()->parseAuthnRequest($samlRequest);
 
-    $this->samlIdp()->issueResponse($request, 'user-1', ['email' => 'a@sp.example.test']);
+    $subjectId = verifiedSubject('a@sp.example.test')->id;
+
+    $this->samlIdp()->issueResponse($request, $subjectId, ['email' => 'a@sp.example.test']);
 
     // A SECOND assertion for the same request id is.
-    expect(fn () => $this->samlIdp()->issueResponse($request, 'user-1', ['email' => 'a@sp.example.test']))
+    expect(fn () => $this->samlIdp()->issueResponse($request, $subjectId, ['email' => 'a@sp.example.test']))
         ->toThrow(InvalidAuthnRequest::class, 'replay');
 });
 
@@ -512,7 +514,7 @@ it('accepts a NameIDPolicy of unspecified as "IdP, you choose"', function (strin
     $request = $this->makeRedirectAuthnRequest($sp->entity_id, nameIdFormat: $urn);
     $response = $this->samlIdp()->issueResponse(
         $this->samlIdp()->parseAuthnRequest($request),
-        'user-1',
+        verifiedSubject('alice@sp.example.test')->id,
         ['email' => 'alice@sp.example.test'],
     );
 
@@ -672,7 +674,7 @@ it('issues assertions under the frozen EntityID after the host moves', function 
     app()->forgetInstance(IssuerResolver::class);
 
     $request = $this->samlIdp()->parseAuthnRequest($this->makeRedirectAuthnRequest($sp->entity_id, destination: IdpDescriptor::ssoUrl()));
-    $response = $this->samlIdp()->issueResponse($request, 'user-1', ['email' => 'a@sp.example.test']);
+    $response = $this->samlIdp()->issueResponse($request, verifiedSubject('a@sp.example.test')->id, ['email' => 'a@sp.example.test']);
 
     expect($response->xml)->toContain('>'.$frozen.'</saml:Issuer>');
 });
@@ -694,7 +696,7 @@ it('lets a configured EntityID override the frozen one', function (): void {
  * survived a conformance suite.
  */
 it('issues an opaque, per-service-provider Persistent NameID', function (): void {
-    $subject = 'user-persistent';
+    $subject = verifiedSubject('alice@corp.example')->id;
 
     $alpha = $this->registerSamlServiceProvider(
         entityId: 'https://alpha.example/metadata',
@@ -742,12 +744,14 @@ it('mints a fresh Transient NameID for every assertion', function (): void {
         nameIdFormat: NameIdFormat::Transient,
     );
 
+    $subject = verifiedSubject('bob@corp.example')->id;
+
     $issued = fn (string $id): string => nameIdIn($this->samlIdp()->issueResponse(
         $this->samlIdp()->parseAuthnRequest(
             $this->makeRedirectAuthnRequest($sp->entity_id, $sp->acs_url, id: $id, nameIdFormat: NameIdFormat::Transient->value),
             'state',
         ),
-        'user-transient',
+        $subject,
         ['email' => 'bob@corp.example'],
     )->xml);
 
