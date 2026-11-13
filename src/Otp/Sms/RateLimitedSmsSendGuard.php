@@ -23,7 +23,9 @@ use Illuminate\Cache\RateLimiter;
  *     admit the number. Permanent: `country_not_allowed`.
  *  2. COOLDOWN — one text per number per `cooldown_seconds`, per environment.
  *  3. PER NUMBER — `per_number_per_day` texts per number per day, per environment.
- *  4. PER IP — `per_ip_per_hour` texts per requesting address, per environment.
+ *  4. PER IP — `per_ip_per_hour` texts per requesting address, per environment. An IPv6
+ *     address counts as its /64: one subscriber is routinely handed a whole /64 and can
+ *     pick a fresh address from it for every request.
  *  5. ENVIRONMENT CAP — `per_environment_per_day`, so one tenant (or one attacker on a
  *     free trial) cannot spend the whole deployment's budget and lock everybody else out.
  *  6. DAILY CAP — `daily_cap` for the whole deployment: the circuit breaker that bounds
@@ -66,7 +68,7 @@ class RateLimitedSmsSendGuard implements SmsSendGuard
         $budgets = [
             [$env.':sms:cooldown:'.$to->cacheKey(), 1, $this->cooldownSeconds, SmsRefusalReason::Cooldown],
             [$env.':sms:number:'.$to->cacheKey(), $this->perNumberPerDay, self::DAY, SmsRefusalReason::NumberLimit],
-            [$env.':sms:ip:'.($ip ?? 'unknown'), $this->perIpPerHour, 3600, SmsRefusalReason::IpLimit],
+            [$env.':sms:ip:'.self::client($ip), $this->perIpPerHour, 3600, SmsRefusalReason::IpLimit],
             [$env.':sms:environment:'.$day, $this->perEnvironmentPerDay, self::DAY, SmsRefusalReason::EnvironmentCap],
             ['sms:deployment:'.$day, $this->dailyCap, self::DAY, SmsRefusalReason::DailyCap],
         ];
@@ -82,6 +84,29 @@ class RateLimitedSmsSendGuard implements SmsSendGuard
         foreach ($live as [$key, , $decay]) {
             $this->limiter->hit($key, $decay);
         }
+    }
+
+    /**
+     * The client a per-IP budget is kept for: an IPv4 address as it is, an IPv6 address as
+     * its /64 (an IPv4-mapped one as the IPv4 address it carries).
+     */
+    private static function client(?string $ip): string
+    {
+        if ($ip === null || $ip === '') {
+            return 'unknown';
+        }
+
+        $packed = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false ? @inet_pton($ip) : false;
+
+        if (! is_string($packed) || strlen($packed) !== 16) {
+            return $ip;
+        }
+
+        if (str_starts_with($packed, str_repeat("\0", 10)."\xff\xff")) {
+            return (string) inet_ntop(substr($packed, 12));
+        }
+
+        return bin2hex(substr($packed, 0, 8)).'::/64';
     }
 
     /**

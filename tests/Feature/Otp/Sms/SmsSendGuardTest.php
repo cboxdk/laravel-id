@@ -90,6 +90,21 @@ it('caps texts per requesting IP, across numbers', function (): void {
         ->and(refusal(fn () => $guard->admit(phone('+4533333333'), '198.51.100.7')))->toBeNull();
 });
 
+it('counts an IPv6 client by its /64, so rotating addresses inside it does not reset the budget', function (): void {
+    $guard = smsGuard(perIp: 10);
+
+    foreach (range(1, 10) as $i) {
+        $guard->admit(phone('+45'.(20000000 + $i)), '2001:db8:1234:5678::'.dechex($i));
+    }
+
+    expect(refusal(fn () => $guard->admit(phone('+4530000000'), '2001:db8:1234:5678:ffff:ffff:ffff:ffff')))->toBe(SmsRefusalReason::IpLimit)
+        // The same /64 written another way is still the same client.
+        ->and(refusal(fn () => $guard->admit(phone('+4530000001'), '2001:0DB8:1234:5678:0:0:0:abcd')))->toBe(SmsRefusalReason::IpLimit)
+        // Another /64, and IPv4, are counted on their own.
+        ->and(refusal(fn () => $guard->admit(phone('+4530000002'), '2001:db8:1234:5679::1')))->toBeNull()
+        ->and(refusal(fn () => $guard->admit(phone('+4530000003'), '203.0.113.9')))->toBeNull();
+});
+
 it('caps one environment without spending the others', function (): void {
     $guard = smsGuard(perEnvironment: 1);
 

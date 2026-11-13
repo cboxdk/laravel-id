@@ -1098,7 +1098,7 @@ return [
      * +979, …) are refused regardless: they have no country to allow.
      *
      * `limits`: `cooldown_seconds` between texts to one number; `per_number_per_day` and
-     * `per_ip_per_hour` per environment; `per_environment_per_day` so one tenant cannot
+     * `per_ip_per_hour` per environment (an IPv6 client counted by its /64); `per_environment_per_day` so one tenant cannot
      * spend the deployment's budget; `daily_cap` for the whole deployment — the circuit
      * breaker that bounds the worst day's bill. 0 disables a limit. The counters live in
      * the cache store, which must be shared between replicas.
