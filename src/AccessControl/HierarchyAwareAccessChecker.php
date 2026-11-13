@@ -85,19 +85,54 @@ class HierarchyAwareAccessChecker implements AccessChecker
             return new AppAccessClaims([], []);
         }
 
+        // A NAME THE APP DECLARES IS THE APP'S. Both claims are bare strings, and an
+        // organization's own roles and permissions share their namespace with the app's
+        // declared ones. A manual row spelled like an app's key would read to the app as
+        // that key, and walk around `tenant_assignable`, which is how an app keeps a
+        // privileged key off the tenant plane. So a name the app declares is emitted only
+        // from the app's own declared row; any other row spelled the same (compared
+        // case-insensitively) is dropped. An orphaned declaration still counts, since the
+        // app may declare it again. Read without the model scopes, so an environment
+        // context that hides the app's rows cannot make the check pass by omission.
+        $declaredRoleKeys = $this->lowered(DB::table('roles')
+            ->where('client_id', $clientId)
+            ->whereNotNull('key')
+            ->pluck('key')
+            ->all());
+
         // A stable identifier per role: an app role's slug, else the role name.
         $roleKeys = array_values(array_unique(
-            $roles->map(fn (Role $role): string => $role->key ?? $role->name)->all()
+            $roles
+                ->filter(fn (Role $role): bool => $role->client_id === $clientId
+                    || ! isset($declaredRoleKeys[mb_strtolower($role->key ?? $role->name)]))
+                ->map(fn (Role $role): string => $role->key ?? $role->name)
+                ->all()
         ));
 
-        $permissions = DB::table('role_permission')
+        $rows = DB::table('role_permission')
             ->join('permissions', 'permissions.id', '=', 'role_permission.permission_id')
             ->whereIn('role_permission.role_id', $roles->modelKeys())
             ->distinct()
-            ->pluck('permissions.name')
-            ->all();
+            ->get(['permissions.name', 'permissions.client_id']);
 
-        $permissions = array_values(array_filter($permissions, 'is_string'));
+        $declaredPermissions = $this->lowered(DB::table('permissions')
+            ->where('client_id', $clientId)
+            ->pluck('name')
+            ->all());
+
+        $permissions = [];
+
+        foreach ($rows as $row) {
+            if (! is_string($row->name)) {
+                continue;
+            }
+
+            if ($row->client_id === $clientId || ! isset($declaredPermissions[mb_strtolower($row->name)])) {
+                $permissions[] = $row->name;
+            }
+        }
+
+        $permissions = array_values(array_unique($permissions));
 
         // Sorted, byte-wise, in PHP. Both claims are sets, but they are signed into a
         // token and compared by apps, SDK caches and tests: an order that depends on the
@@ -107,6 +142,25 @@ class HierarchyAwareAccessChecker implements AccessChecker
         sort($permissions, SORT_STRING);
 
         return new AppAccessClaims($roleKeys, $permissions);
+    }
+
+    /**
+     * A lookup set of the given names, lower-cased.
+     *
+     * @param  array<mixed>  $names
+     * @return array<string, true>
+     */
+    private function lowered(array $names): array
+    {
+        $set = [];
+
+        foreach ($names as $name) {
+            if (is_string($name)) {
+                $set[mb_strtolower($name)] = true;
+            }
+        }
+
+        return $set;
     }
 
     /**
