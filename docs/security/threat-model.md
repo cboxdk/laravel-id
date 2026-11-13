@@ -28,6 +28,7 @@ It is an engineering artifact, not a certification or audit result.
 | `alg=none` / algorithm confusion | explicit alg allow-list, per-key alg binding (RFC 8725) |
 | Forged SAML/OIDC assertions | XML-DSig / JWS verification, RS256-pinned, `iss`/`aud` checks, replay guard |
 | Session fixation | session id regenerated on login |
+| An account registered under someone else's address before they sign up | redeeming a sign-in link or accepting a mailed invitation proves the mailbox; an unverified account under that address is then claimed (`MailboxProof`): its password, second factors, passkeys, linked sign-ins, reset and sign-in links, personal API tokens, OAuth grants and sessions are withdrawn and the address is marked verified, in one transaction, audited as `user.unverified_account_claimed`. A verified account is left alone. Email verification itself does not claim: its token is minted for one account at that account's request |
 | Token-type confusion | `typ: at+jwt` on access tokens (RFC 9068) |
 
 ### Tampering (integrity)

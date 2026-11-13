@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Organization;
 
+use Cbox\Id\Identity\Contracts\MailboxProof;
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -30,6 +32,8 @@ class InvitationService implements Invitations
         private readonly Memberships $memberships,
         private readonly EventBus $events,
         private readonly AuditLog $audit,
+        private readonly ?Subjects $subjects = null,
+        private readonly ?MailboxProof $mailboxProof = null,
     ) {}
 
     public function invite(string $organizationId, string $email, MembershipRole $role, ?string $invitedBy = null, ?string $clientId = null): PendingInvitation
@@ -98,6 +102,8 @@ class InvitationService implements Invitations
                 throw InvalidInvitation::make();
             }
 
+            $this->claimInvitedAccount($subjectId, $invitation->email);
+
             $membership = $this->memberships->add(
                 $invitation->organization_id,
                 $subjectId,
@@ -132,6 +138,27 @@ class InvitationService implements Invitations
 
             return $membership;
         });
+    }
+
+    /**
+     * The invitation token was mailed to the invited address, so accepting it proves that
+     * mailbox. When the accepting account IS the account under that address and nobody
+     * had verified it, it is handed to the token's holder ({@see MailboxProof}) before the
+     * membership lands on it: what was set on it before is withdrawn and the address is
+     * marked verified. A verified account, an account under another address (a signed-in
+     * person accepting with their own account) and an id the subject store does not know
+     * are left as they are.
+     */
+    private function claimInvitedAccount(string $subjectId, string $invitedEmail): void
+    {
+        $subject = ($this->subjects ?? app(Subjects::class))->find($subjectId);
+
+        if ($subject === null || $subject->emailVerified || $subject->email === null
+            || mb_strtolower($subject->email) !== mb_strtolower($invitedEmail)) {
+            return;
+        }
+
+        ($this->mailboxProof ?? app(MailboxProof::class))->claim($subject, $invitedEmail);
     }
 
     public function revoke(string $organizationId, string $invitationId, ?string $revokedBy = null): void
