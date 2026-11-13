@@ -13,12 +13,14 @@ use Cbox\Id\OAuthServer\Contracts\RefreshTokens;
 use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\RefreshTokenReuse;
+use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Cbox\Id\OAuthServer\ValueObjects\AccessWithdrawal;
 use Cbox\Id\OAuthServer\ValueObjects\ConnectedApplication;
 use Cbox\Id\OAuthServer\ValueObjects\RefreshGrant;
 use Cbox\Id\OAuthServer\ValueObjects\SessionParticipation;
+use Cbox\Id\Organization\Support\OrganizationStanding;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -62,6 +64,13 @@ class RefreshTokenService implements RefreshTokens
                 // read below still decides revocation, consumption and reuse.
                 $candidate = RefreshToken::query()->where('token_hash', hash('sha256', $rawToken))->first();
                 if ($candidate === null || ($candidate->user_id !== null && ! app(Subjects::class)->isActive($candidate->user_id))) {
+                    throw InvalidGrant::make('refresh token invalid, expired or revoked');
+                }
+
+                // A closed organization's family is refused BEFORE anything is consumed, so
+                // the client still holds a token that works once the organization is
+                // reactivated. The issuer refuses it too; this is the early, lossless no.
+                if (OrganizationStanding::isClosed($candidate->organization_id)) {
                     throw InvalidGrant::make('refresh token invalid, expired or revoked');
                 }
 
@@ -172,6 +181,12 @@ class RefreshTokenService implements RefreshTokens
         }
 
         $this->revokeFamily($token->family_id);
+
+        // RFC 7009 §2.1: revoking a refresh token SHOULD invalidate the access tokens issued
+        // from the same grant. They record no family, so it goes by (person, client, org).
+        if ($token->user_id !== null) {
+            $this->revokeAccessTokens($token->user_id, $token->client_id, $token->organization_id, true);
+        }
     }
 
     public function revokeForUser(string $userId, ?string $organizationId = null): int
@@ -186,6 +201,12 @@ class RefreshTokenService implements RefreshTokens
 
         $held = $this->grantsHeld($userId, (clone $live)->get(['client_id', 'session_id', 'organization_id']));
         $revoked = $live->update(['revoked_at' => now()]);
+
+        // AND THE ACCESS TOKENS THEY MINTED. Left valid, a client with the token-exchange
+        // grant exchanged one for a fresh one before each expiry, and the withdrawal never
+        // landed. Not on revokeForUser(): that is the role-change verb, and a role change
+        // signs nobody out.
+        $this->revokeAccessTokens($userId, null, $organizationId, $organizationId !== null);
 
         // AND THE APPLICATIONS HOLDING THEM. Revoking the refresh token stops the next
         // refresh; an application that signed the person in keeps its own session, and
@@ -275,6 +296,7 @@ class RefreshTokenService implements RefreshTokens
 
         $held = $this->grantsHeld($userId, (clone $live)->get(['client_id', 'session_id', 'organization_id']));
         $revoked = $live->update(['revoked_at' => now()]);
+        $this->revokeAccessTokens($userId, $clientId, null, false);
 
         // Only this application is told — the whole point of withdrawing ONE.
         $this->logout->accessWithdrawn(new AccessWithdrawal(
@@ -284,6 +306,18 @@ class RefreshTokenService implements RefreshTokens
         ));
 
         return $revoked;
+    }
+
+    private function revokeAccessTokens(string $userId, ?string $clientId, ?string $organizationId, bool $scopedToOrganization): void
+    {
+        AccessToken::query()
+            ->where('user_id', $userId)
+            ->when($clientId !== null, fn (Builder $query) => $query->where('client_id', $clientId))
+            ->when($scopedToOrganization, fn (Builder $query) => $organizationId === null
+                ? $query->whereNull('organization_id')
+                : $query->where('organization_id', $organizationId))
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now()]);
     }
 
     /**

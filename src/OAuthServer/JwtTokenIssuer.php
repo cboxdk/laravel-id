@@ -36,6 +36,7 @@ use Cbox\Id\OAuthServer\ValueObjects\EmbeddedEntitlements;
 use Cbox\Id\OAuthServer\ValueObjects\IssuedToken;
 use Cbox\Id\Organization\Contracts\Memberships;
 use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Support\OrganizationStanding;
 use DateTimeInterface;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -262,6 +263,16 @@ class JwtTokenIssuer implements AuthenticationAwareTokenIssuer, AuthorizationDet
         // What this token is FOR — scopes, audience, and whose roles it carries — decided
         // once, here, for every grant type. See AudienceResolver.
         return DB::transaction(function () use ($client, $subject, $userId, $organizationId, $scopes, $resource, $dpopJkt, $actor, $notAfter, $authentication, $details, $carriedAuthTime, $carriedAcr): IssuedToken {
+            // NO TOKEN FOR A CLOSED ORGANIZATION, by any grant. `revokesAccess()` refuses
+            // sign-in and consent; a refresh, a client_credentials grant for the
+            // organization's own app, a token exchange and a support session all reach
+            // here instead, and each went on minting `org` for a suspended or archived
+            // organization. Not conditioned on a person: a machine token names the
+            // organization too. Asked at issuance, so reactivation restores every grant.
+            if (OrganizationStanding::isClosed($organizationId)) {
+                throw InvalidGrant::make('the organization is not active');
+            }
+
             if ($userId !== null && ! app(Subjects::class)->isActive($userId)) {
                 throw InvalidGrant::make('the subject is no longer active');
             }

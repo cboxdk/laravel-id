@@ -10,7 +10,10 @@ use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
 use Cbox\Id\OAuthServer\Models\AccessToken;
+use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Support\ClientIdUrl;
 use Cbox\Id\OAuthServer\ValueObjects\Introspection;
+use Cbox\Id\Organization\Support\OrganizationStanding;
 use Closure;
 use Throwable;
 
@@ -71,6 +74,22 @@ class JwtTokenIntrospector implements TokenIntrospector
         $subject = $claims->subject();
 
         if ($subject !== null && $record->user_id !== null && $this->subjectIsSuspended($subject)) {
+            return Introspection::inactive();
+        }
+
+        // …AND WHAT IT SPEAKS FOR HAS TO STILL BE THERE. A token naming an organization that
+        // has since been suspended or archived went on reading its vault and acting in it
+        // until it expired; a token of an app an administrator deleted to cut it off went on
+        // being reported active (RFC 7592 §2.3: the server SHOULD invalidate them). Asked
+        // per use, so a reactivated organization's unexpired tokens work again. A
+        // client-id-metadata-document client has no row by design and is not asked.
+        if (OrganizationStanding::isClosed($claims->string('org'))) {
+            return Introspection::inactive();
+        }
+
+        $clientId = $claims->string('client_id') ?? $record->client_id;
+
+        if (! ClientIdUrl::isValid($clientId) && ! Client::query()->where('client_id', $clientId)->exists()) {
             return Introspection::inactive();
         }
 

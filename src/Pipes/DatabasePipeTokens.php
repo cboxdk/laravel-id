@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Id\Pipes;
 
+use Cbox\Id\Identity\Contracts\Subjects;
+use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -58,6 +60,13 @@ class DatabasePipeTokens implements PipeTokens
     public function lease(string $provider, string $userId, string $clientId, string $purpose): PipeAccessToken
     {
         $this->environments()->requireEnvironment();
+
+        // A deactivated person's connected account is not handed out. Deactivation revokes
+        // their own grants and left these, so an app granted the pipe went on leasing a
+        // leaver's provider token. The same uniform refusal as every other: no signal.
+        if (self::deactivated($userId)) {
+            throw PipeLeaseDenied::make();
+        }
 
         $pipe = Pipe::query()->where('provider', $provider)->first();
         $granted = $pipe !== null
@@ -327,5 +336,21 @@ class DatabasePipeTokens implements PipeTokens
         $value = config('cbox-id.pipes.'.$key, $default);
 
         return is_numeric($value) ? max(0, (int) $value) : $default;
+    }
+
+    /**
+     * A known account that is no longer Active. Not `isActive()`, which also answers false
+     * for an id with no account (the introspector draws the same line).
+     */
+    private static function deactivated(string $userId): bool
+    {
+        $subjects = app(Subjects::class);
+        $subject = $subjects->find($userId);
+
+        if ($subject === null) {
+            return false;
+        }
+
+        return $subject->status !== null ? $subject->status !== UserStatus::Active : ! $subjects->isActive($userId);
     }
 }

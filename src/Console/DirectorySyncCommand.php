@@ -10,6 +10,7 @@ use Cbox\Id\Directory\Exceptions\DirectoryConnectionFailed;
 use Cbox\Id\Directory\Exceptions\DirectorySyncInProgress;
 use Cbox\Id\Directory\Models\Directory;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentContext;
+use Cbox\Id\Organization\Support\OrganizationStanding;
 use Illuminate\Console\Command;
 
 /**
@@ -49,6 +50,9 @@ class DirectorySyncCommand extends Command
 
             return $query->get();
         });
+
+        // A closed organization's directories are paused, like its SCIM token.
+        $directories = $directories->reject(fn (Directory $directory): bool => OrganizationStanding::isClosed($directory->organization_id))->values();
 
         if ($this->option('due') === true) {
             $directories = $directories->filter(fn (Directory $directory): bool => $directory->isDueForSync())->values();

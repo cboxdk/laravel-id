@@ -14,7 +14,9 @@ use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\TokenEndpointAuthMethod;
 use Cbox\Id\OAuthServer\Exceptions\ClientSecretRefused;
 use Cbox\Id\OAuthServer\Exceptions\InvalidClientMetadata;
+use Cbox\Id\OAuthServer\Models\AccessToken;
 use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\OAuthServer\Models\RefreshToken;
 use Cbox\Id\OAuthServer\Models\StoredClientSecret;
 use Cbox\Id\OAuthServer\Support\AccessTokenLifetime;
 use Cbox\Id\OAuthServer\Support\BackchannelLogoutUri;
@@ -84,6 +86,11 @@ class ClientRegistryService implements ClientRegistry
     public function delete(Client $client, ?AuditActor $actor = null): void
     {
         DB::transaction(function () use ($client, $actor): void {
+            // Its tokens die with it (RFC 7592 §2.3): nothing cascades from the client id,
+            // and an app deleted to cut it off kept every token it held until expiry.
+            AccessToken::query()->where('client_id', $client->client_id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+            RefreshToken::query()->where('client_id', $client->client_id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+
             // The secrets go with it — by the foreign key's cascade, and by the model's
             // own `deleted` hook on an engine that does not enforce one.
             $client->delete();

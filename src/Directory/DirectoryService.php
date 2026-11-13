@@ -15,6 +15,7 @@ use Cbox\Id\Kernel\Crypto\Contracts\SecretBox;
 use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Presentation\ValueObjects\SourceMessage;
 use Cbox\Id\Kernel\Tenancy\Support\OwnerEnvironment;
+use Cbox\Id\Organization\Support\OrganizationStanding;
 
 class DirectoryService implements Directories, PullDirectories
 {
@@ -56,7 +57,12 @@ class DirectoryService implements Directories, PullDirectories
 
     public function authenticate(string $token): ?Directory
     {
-        return Directory::query()->where('bearer_token_hash', hash('sha256', $token))->where('status', DirectoryStatus::Active->value)->first();
+        $directory = Directory::query()->where('bearer_token_hash', hash('sha256', $token))->where('status', DirectoryStatus::Active->value)->first();
+
+        // A closed (suspended or archived) organization's directory authenticates as none:
+        // its identity provider stops provisioning into it. Asked per request, so
+        // reactivation lets the same token in again.
+        return $directory === null || OrganizationStanding::isClosed($directory->organization_id) ? null : $directory;
     }
 
     public function replaceCredentials(Directory $directory, array $credentials): Directory
