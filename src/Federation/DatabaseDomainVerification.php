@@ -16,6 +16,7 @@ use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Database + DNS-backed domain verification. Lookups run under the environment
@@ -34,18 +35,30 @@ class DatabaseDomainVerification implements DomainVerification
         private readonly EventBus $events,
     ) {}
 
+    /**
+     * Claim a domain for an organization: a pending row with its own DNS challenge.
+     *
+     * WHOEVER PROVES IT FIRST OWNS IT, not whoever types it first. Only a VERIFIED claim
+     * by another organization refuses; a pending one is a claim, not ownership, and used
+     * to lock the real owner out of the challenge it needed to prove the domain. Each
+     * organization holds its own pending row and token, and {@see verify()} lets exactly
+     * one of them become verified.
+     */
     public function add(string $organizationId, string $domain): VerifiedDomain
     {
         $normalized = $this->normalize($domain);
 
-        $existing = VerifiedDomain::query()->where('domain', $normalized)->first();
+        $own = VerifiedDomain::query()
+            ->where('organization_id', $organizationId)
+            ->where('domain', $normalized)
+            ->first();
 
-        if ($existing !== null) {
-            if ($existing->organization_id !== $organizationId) {
-                throw DomainAlreadyClaimed::make($normalized);
-            }
+        if ($own !== null) {
+            return $own;
+        }
 
-            return $existing;
+        if ($this->verifiedElsewhere($normalized, $organizationId)) {
+            throw DomainAlreadyClaimed::make($normalized);
         }
 
         $verifiedDomain = VerifiedDomain::query()->create([
@@ -61,6 +74,14 @@ class DatabaseDomainVerification implements DomainVerification
         return $verifiedDomain;
     }
 
+    /**
+     * Prove a claim by its DNS challenge.
+     *
+     * ONE VERIFIED ROW PER DOMAIN, decided here under a lock rather than by an index: the
+     * pending claims of several organizations may coexist, and a domain another
+     * organization has already proved is not proved again by anybody else — even with the
+     * record published, which a domain's real owner can only have done for one of them.
+     */
     public function verify(string $id): bool
     {
         $domain = VerifiedDomain::query()->whereKey($id)->firstOrFail();
@@ -75,10 +96,25 @@ class DatabaseDomainVerification implements DomainVerification
             return false;
         }
 
-        $domain->forceFill(['verified_at' => now()])->save();
-        $this->record('domain.verified', $domain, ['domain' => $domain->domain]);
+        $verified = DB::transaction(function () use ($domain): bool {
+            // Every claim on this domain, locked, so two organizations proving it at once
+            // cannot both win.
+            VerifiedDomain::query()->where('domain', $domain->domain)->lockForUpdate()->get();
 
-        return true;
+            if ($this->verifiedElsewhere($domain->domain, $domain->organization_id)) {
+                return false;
+            }
+
+            $domain->forceFill(['verified_at' => now()])->save();
+
+            return true;
+        });
+
+        if ($verified) {
+            $this->record('domain.verified', $domain, ['domain' => $domain->domain]);
+        }
+
+        return $verified;
     }
 
     /**
@@ -154,6 +190,16 @@ class DatabaseDomainVerification implements DomainVerification
         $connection = $this->connections->forOrganization($verified->organization_id);
 
         return $connection !== null && $connection->isActive() ? $connection : null;
+    }
+
+    /** Whether an organization other than this one has PROVED the domain. */
+    private function verifiedElsewhere(string $normalized, string $organizationId): bool
+    {
+        return VerifiedDomain::query()
+            ->where('domain', $normalized)
+            ->where('organization_id', '!=', $organizationId)
+            ->whereNotNull('verified_at')
+            ->exists();
     }
 
     public function challengeHost(string $domain): string

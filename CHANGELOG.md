@@ -17,6 +17,19 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Security
+
+- **An unverified domain claim no longer locks the real owner out.** `DomainVerification::add()`
+  refused a domain whenever any other organization in the environment held a row for it,
+  verified or not, so anybody able to add a domain for their own organization could squat
+  another organization's domain with no DNS control: the owner was refused and never got a
+  challenge to publish. Each organization now holds its own pending claim and token;
+  `add()` refuses only a domain another organization has VERIFIED, and `verify()` stamps a
+  domain only when no other organization verified it first (checked under a lock). The
+  unique index moves from `(environment_id, domain)` to `(environment_id, organization_id,
+  domain)`; run the migration. Hosts that look up `verified_domains` by domain alone should
+  filter on `verified_at` (the package's own lookups already do).
+
 ## [2.8.0] - 2026-11-13
 
 ### Added
