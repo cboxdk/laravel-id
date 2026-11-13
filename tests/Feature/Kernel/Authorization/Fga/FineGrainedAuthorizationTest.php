@@ -422,3 +422,33 @@ it('refuses a check batch past the expansion budget rather than searching on', f
             Check::of('group', 'g0', 'member', SubjectRef::of('user', 'three')),
         ]))->toThrow(ResolutionTooComplex::class);
 });
+
+it('keys the answer cache unambiguously, so one question never answers another', function (): void {
+    fgaFolders();
+    $this->fgaWrite('document:z9#viewer@user:bob', 'document:d1#viewer@user:bob|7|x');
+
+    $fga = app(FineGrainedAuthorization::class);
+
+    // `bob` with limit 7 after `x|100|` used to render the same question as `bob|7|x`.
+    expect($fga->listResources(SubjectRef::of('user', 'bob'), 'viewer', 'document', limit: 7, after: 'x|100|')->ids)->toBe(['z9'])
+        ->and($fga->listResources(SubjectRef::of('user', 'bob|7|x'), 'viewer', 'document', limit: 100, after: '')->ids)->toBe(['d1'])
+        ->and($fga->listSubjects(ResourceRef::of('document', 'z9'), 'viewer', 'user', limit: 1, after: 'a|2|')->ids)->toBe(['bob'])
+        ->and($fga->listSubjects(ResourceRef::of('document', 'd1'), 'viewer', 'user', limit: 100)->ids)->toBe(['bob|7|x']);
+});
+
+it('refuses an id that could never be stored, instead of answering under another question\'s key', function (): void {
+    fgaFolders();
+
+    // A plain subject id `eng#member` rendered exactly like the userset group:eng#member.
+    expect(fn () => $this->fga()->check(Check::of('document', 'leave', 'viewer', SubjectRef::of('group', 'eng#member'))))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and($this->fgaAllows('document:leave#viewer@group:eng#member'))->toBeTrue()
+        ->and(fn () => $this->fga()->check(Check::of('document', 'le@ve', 'viewer', SubjectRef::of('user', 'alice'))))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and(fn () => $this->fga()->listResources(SubjectRef::of('user', 'a b'), 'viewer', 'document'))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and(fn () => $this->fga()->listSubjects(ResourceRef::of('document', 'x#y'), 'viewer', 'user'))
+        ->toThrow(InvalidTuple::class, 'not a valid id')
+        ->and(fn () => $this->fga()->listSubjects(ResourceRef::of('document', 'leave'), 'viewer', 'user', after: "bob\n"))
+        ->toThrow(InvalidTuple::class, 'cursor');
+});

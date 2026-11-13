@@ -180,11 +180,13 @@ class DatabaseFineGrainedAuthorization implements FineGrainedAuthorization
         foreach ($checks as $check) {
             $this->assertKnown($schema, $check->resource->type, $check->relation);
             $this->assertKnownSubject($schema, $check->subject);
+            $this->assertId($check->resource->id, 'resource_id');
+            $this->assertId($check->subject->id, 'subject_id');
         }
         $token = ConsistencyToken::for($environmentId, $store->revision);
         $keys = [];
         foreach ($checks as $index => $check) {
-            $keys[$index] = $this->cacheKey($environmentId, $store, 'check', $check->key());
+            $keys[$index] = $this->cacheKey($environmentId, $store, 'check', [$check->resource->type, $check->resource->id, $check->relation, $check->subject->toArray()]);
         }
         $cached = $this->cacheEnabled() && $keys !== [] ? $this->cache()->many(array_values(array_unique($keys))) : [];
         $evaluator = null;
@@ -216,7 +218,9 @@ class DatabaseFineGrainedAuthorization implements FineGrainedAuthorization
         $schema = $this->requireSchema($store);
         $this->assertKnown($schema, $resourceType, $relation);
         $this->assertKnownSubject($schema, $subject);
-        $page = $this->remember($this->cacheKey($environmentId, $store, 'resources', $resourceType.'#'.$relation.'@'.$subject.'|'.$limit.'|'.$after), fn (): array => $this->evaluator($schema, $environmentId, $fresh)->resources($subject, $relation, $resourceType, $limit, $after));
+        $this->assertId($subject->id, 'subject_id');
+        $after = $this->cursor($after);
+        $page = $this->remember($this->cacheKey($environmentId, $store, 'resources', [$resourceType, $relation, $subject->toArray(), $limit, $after]), fn (): array => $this->evaluator($schema, $environmentId, $fresh)->resources($subject, $relation, $resourceType, $limit, $after));
 
         return $this->objects($resourceType, $page, $environmentId, $store);
     }
@@ -230,7 +234,9 @@ class DatabaseFineGrainedAuthorization implements FineGrainedAuthorization
         if ($schema->type($subjectType) === null) {
             throw UnknownRelation::type($subjectType);
         }
-        $page = $this->remember($this->cacheKey($environmentId, $store, 'subjects', $resource->type.':'.$resource->id.'#'.$relation.'@'.$subjectType.'|'.$limit.'|'.$after), fn (): array => $this->evaluator($schema, $environmentId, $fresh)->subjects($resource->type, $resource->id, $relation, $subjectType, $limit, $after));
+        $this->assertId($resource->id, 'resource_id');
+        $after = $this->cursor($after);
+        $page = $this->remember($this->cacheKey($environmentId, $store, 'subjects', [$resource->type, $resource->id, $relation, $subjectType, $limit, $after]), fn (): array => $this->evaluator($schema, $environmentId, $fresh)->subjects($resource->type, $resource->id, $relation, $subjectType, $limit, $after));
 
         return $this->objects($subjectType, $page, $environmentId, $store);
     }
@@ -449,9 +455,45 @@ class DatabaseFineGrainedAuthorization implements FineGrainedAuthorization
         return new ObjectList($type, $page['ids'], $page['more'] ? $last : null, ConsistencyToken::for($environmentId, $store->revision));
     }
 
-    private function cacheKey(string $environmentId, FgaStore $store, string $kind, string $question): string
+    /**
+     * The question is hashed as a JSON list of its parts, never as a string joined on
+     * separators the parts may themselves contain: two different questions must never
+     * share an answer.
+     *
+     * @param  list<mixed>  $question
+     */
+    private function cacheKey(string $environmentId, FgaStore $store, string $kind, array $question): string
     {
-        return 'cbox-fga:'.$environmentId.':'.$store->revision.':'.$store->revision_tag.':'.$kind.':'.hash('sha256', $question);
+        return 'cbox-fga:'.$environmentId.':'.$store->revision.':'.$store->revision_tag.':'.$kind.':'.hash('sha256', json_encode($question, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * A check or list query about an id no tuple could hold is refused, not answered.
+     *
+     * @throws InvalidTuple
+     */
+    private function assertId(string $id, string $field): void
+    {
+        if (preg_match(SubjectRef::ID_PATTERN, $id) !== 1) {
+            throw (new InvalidTuple("`{$id}` is not a valid id: 1–128 printable characters without spaces, `#` or `@`.", field: $field))->withSourceMessage(new SourceMessage('`:id` is not a valid id: 1–128 printable characters without spaces, `#` or `@`.', ['id' => $id]));
+        }
+    }
+
+    /**
+     * A list cursor is the last id of the previous page: an id, or nothing.
+     *
+     * @throws InvalidTuple
+     */
+    private function cursor(?string $after): ?string
+    {
+        if ($after === null || $after === '') {
+            return null;
+        }
+        if (preg_match(SubjectRef::ID_PATTERN, $after) !== 1) {
+            throw (new InvalidTuple('That cursor is malformed: pass the cursor the previous page returned.', field: 'after'))->withSourceMessage(new SourceMessage('That cursor is malformed: pass the cursor the previous page returned.', []));
+        }
+
+        return $after;
     }
 
     private function cache(): Cache
