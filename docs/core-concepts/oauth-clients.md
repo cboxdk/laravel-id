@@ -192,9 +192,18 @@ use Cbox\Id\OAuthServer\Contracts\AuthorizationClients;
 
 $authorizing = app(AuthorizationClients::class)->resolve($clientId); // null = unknown client
 
-$authorizing->allowsRedirectUri($redirectUri); // exact match for a document client
+$authorizing->allowsRedirectUri($redirectUri); // exact match, or a loopback port (below)
 $authorizing->consentRequired();               // true for every self-registered client
 $authorizing->documentHost;                    // e.g. "client.example" — show it on consent
 ```
+
+`allowsRedirectUri()` matches exactly, with one exception: an `http` loopback redirect
+(`127.0.0.1`, `[::1]` or `localhost`) may differ in port from the registered one
+(RFC 8252 §7.3), because a native client binds whatever port is free. The exception applies
+only to a URI in canonical form: no credentials, fragment, backslash, whitespace or control
+character, and byte-identical to `http://host[:port]path[?query]` rebuilt from its own parse.
+Any other URI must match a registered one exactly. If your own `/authorize` floats a loopback
+port, use the same matcher, `WebRedirectUri::loopbackWithoutPort()`, rather than reading the
+URI with `parse_url()` yourself.
 
 The full flow is in [Protect an MCP server with Cbox ID](../cookbook/protect-an-mcp-server.md).

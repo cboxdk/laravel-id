@@ -7,6 +7,7 @@ namespace Cbox\Id\OAuthServer\ValueObjects;
 use Cbox\Id\OAuthServer\Contracts\AuthorizationClients;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\MetadataDocumentClient;
+use Cbox\Id\OAuthServer\Support\WebRedirectUri;
 
 /**
  * The client an authorization request names, as the host's `/authorize` and consent
@@ -65,6 +66,9 @@ readonly class AuthorizationClient
      * client: a native MCP client publishes `http://localhost/callback` in its document and
      * binds whatever port is free when it signs in, so an exact match on loopback would
      * refuse every such client after the first port.
+     *
+     * The port exception is reached only when both sides are loopback URIs in canonical
+     * form ({@see WebRedirectUri::loopbackWithoutPort()}); anything else must match exactly.
      */
     public function allowsRedirectUri(string $redirectUri): bool
     {
@@ -74,33 +78,18 @@ readonly class AuthorizationClient
             return true;
         }
 
-        $candidate = self::withoutLoopbackPort($redirectUri);
+        $candidate = WebRedirectUri::loopbackWithoutPort($redirectUri);
 
         if ($candidate === null) {
             return false;
         }
 
         foreach ($registered as $uri) {
-            if (self::withoutLoopbackPort($uri) === $candidate) {
+            if (WebRedirectUri::loopbackWithoutPort($uri) === $candidate) {
                 return true;
             }
         }
 
         return false;
-    }
-
-    /**
-     * An http loopback URI with its port removed, or null when it is not one.
-     */
-    private static function withoutLoopbackPort(string $uri): ?string
-    {
-        $parts = parse_url($uri);
-
-        if (! is_array($parts) || ($parts['scheme'] ?? null) !== 'http'
-            || ! in_array($parts['host'] ?? null, ['127.0.0.1', '[::1]', 'localhost'], true)) {
-            return null;
-        }
-
-        return 'http://'.$parts['host'].($parts['path'] ?? '').(isset($parts['query']) ? '?'.$parts['query'] : '');
     }
 }

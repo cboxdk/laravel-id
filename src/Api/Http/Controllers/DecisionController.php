@@ -125,7 +125,7 @@ class DecisionController
         }
 
         // A client_credentials token's subject is the client itself (a service).
-        $subject = $sub === $introspection->clientId ? Subject::service($sub) : Subject::user($sub);
+        $subject = $introspection->isMachine() ? Subject::service($sub) : Subject::user($sub);
 
         // Bound the batch BEFORE any of it is evaluated. Each permission check walks
         // the relationship graph to MAX_DEPTH with two queries per node, so an
@@ -244,7 +244,7 @@ class DecisionController
         $askedSubject = $this->optionalString($request->input('subject'));
         $askedOrg = $this->optionalString($request->input('org'));
 
-        if ($subject === $clientId) {
+        if ($token->isMachine()) {
             // A service asking about somebody else. That is a wider question than a person
             // asking about themselves, so it needs the scope whether or not the deployment
             // requires it for the rest of the endpoint.

@@ -37,7 +37,7 @@ class PropertyTokenAccess
         }
         // A delegated token can only address its own subject. Machine tokens are
         // explicitly granted access by an operator through the namespace registry.
-        if ($token->subject !== $userId && $token->subject !== $token->clientId) {
+        if ($token->subject !== $userId && ! $token->isMachine()) {
             throw new AccessDeniedHttpException('This token cannot act for another user.');
         }
         $scope = $request->isMethod('GET') ? 'user_properties:read' : 'user_properties:write';

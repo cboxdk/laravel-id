@@ -98,6 +98,24 @@ readonly class Introspection
     }
 
     /**
+     * Whether this is a machine token: issued to an app for itself (`client_credentials`),
+     * so the caller IS the app named by `client_id`. Active, its subject is its client id,
+     * and nobody acts for anybody (no `act` claim).
+     *
+     * A token issued to a person through an app also carries that app's `client_id`, but it
+     * acts as the person. Ask this before treating `clientId` as the caller's identity — an
+     * app's own secrets, its own grants, a service-to-service question — so a person's token
+     * is never mistaken for the app.
+     */
+    public function isMachine(): bool
+    {
+        return $this->active
+            && $this->clientId !== null && $this->clientId !== ''
+            && $this->subject === $this->clientId
+            && ! array_key_exists('act', $this->claims);
+    }
+
+    /**
      * RFC 8693 §4.1: the subject of the party ACTING for this token's subject — set on a
      * support session's token — or null. Read like `cnf`: a JWT decode yields a stdClass.
      */
