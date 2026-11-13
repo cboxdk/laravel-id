@@ -17,6 +17,10 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+### Security
+
+- **An FGA check over a cyclic group graph is expanded once per node, and is bounded.** `Evaluator::check()` did not remember a "no" that leaned on a cycle, so over a set of groups that all contain each other it searched every simple path, with a database read per step: twelve groups were enough to hold a worker for minutes. A "no" that leaned on a cycle is now provisional and reused while the cycle is being decided, and settled once it is (Tarjan's low-link), so each node is expanded at most once per subject and answers are unchanged (checked against the reference fixpoint on thousands of random graphs). Every expansion also counts against `cbox-id.fga.max_expansion`, shared across a `checkMany()` batch; past it the check is refused with `ResolutionTooComplex`, as list queries already were. `DatabaseTupleReader::direct()` remembers its answer per node and subject (`FineGrainedAuthorizationTest`).
+
 ## [2.8.0] - 2026-11-13
 
 ### Added

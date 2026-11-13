@@ -34,6 +34,9 @@ final class DatabaseTupleReader implements TupleReader
     /** @var array<string, list<SubjectRef>> node => its usersets */
     private array $usersets = [];
 
+    /** @var array<string, array<string, bool>> node => subject => whether the subject is named there */
+    private array $named = [];
+
     public function __construct(
         private readonly string $environmentId,
         private readonly bool $fresh = false,
@@ -76,6 +79,13 @@ final class DatabaseTupleReader implements TupleReader
             return [$this->has($type, $id, $relation, $subject), $this->usersets($type, $id, $relation)];
         }
 
+        // Asked before for this subject: the same answer, without another read.
+        $who = (string) $subject;
+
+        if (isset($this->usersets[$key], $this->named[$key][$who])) {
+            return [$this->named[$key][$who], $this->usersets[$key]];
+        }
+
         $rows = $this->query()
             ->where('resource_type', $type)
             ->where('resource_id', $id)
@@ -106,6 +116,7 @@ final class DatabaseTupleReader implements TupleReader
         }
 
         $this->usersets[$key] = $usersets;
+        $this->named[$key][$who] = $named;
 
         return [$named, $usersets];
     }

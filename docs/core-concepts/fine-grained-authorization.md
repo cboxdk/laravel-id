@@ -125,10 +125,15 @@ A check or list query naming a type or relation the schema does not define is re
 
 A relation means the least fixpoint of its definition: a subject has it when a finite
 chain of tuples and rewrites derives it. A **check** searches for that chain depth-first.
-A node already on the current path is a cycle and contributes nothing on that path; an
-answer is remembered for the rest of the call when it is "yes", or a "no" that did not
-depend on such a cut, so every node is expanded at most once per subject. The search is
-bounded by `max_depth` (default 25); past it the check is **refused**
+A node already on the current path is a cycle and contributes nothing on that path. A
+"yes" is remembered for the rest of the call. A "no" that leaned on such a cycle is
+provisional: other paths reuse it while the nodes it leaned on are still being decided,
+and once the lowest of them is decided "no" every provisional answer under it is final
+(the strongly-connected-component idea from Tarjan's algorithm). So every node is
+expanded at most once per subject, and a cyclic group graph costs one pass over its nodes
+and edges. Every expansion counts against `max_expansion` (default 50 000), shared across
+a batch of checks. The search is bounded by `max_depth` (default 25); past either bound
+the check is **refused**
 (`ResolutionTooComplex`) rather than answered — "no" would be wrong for a grant further
 down, and wrong the other way inside a `but not`.
 

@@ -29,11 +29,18 @@ use Closure;
  *  - an (object, relation) node already on the current path is a cycle, and answers "no"
  *    on this path — a shortest derivation never visits a node twice, so this loses no
  *    real grant (that is what makes the ROOT's answer exact);
- *  - a node's answer is remembered for the rest of the call when it is "yes", or when it
- *    is "no" and its search never ran into such a cycle; a "no" that leaned on a cut is
- *    only true for that path and is recomputed if asked again. The memo is what keeps a
- *    dense or cyclic graph polynomial — each node is fully expanded at most once per
- *    subject;
+ *  - a "yes" is exact and remembered for the rest of the call. A "no" that never leaned
+ *    on such a cut is exact too. A "no" that leaned on a cut is PROVISIONAL: it holds
+ *    while the nodes it assumed "no" for are still on the path, and is reused, as a cut
+ *    at the lowest of them, by any other path that reaches it meanwhile (the low-link of
+ *    Tarjan's strongly connected components). When the lowest node it leaned on finishes
+ *    "no", every provisional answer under it is exact — together they are a pre-fixpoint,
+ *    so the least fixpoint is "no" on all of them — and they are remembered. When any
+ *    node finishes "yes", the provisional answers under it are dropped, because they may
+ *    have assumed it was "no". So each node is expanded at most once per subject, and a
+ *    cyclic group graph costs O(nodes + edges), not one search per simple path;
+ *  - every expansion is counted against `max_expansion` for the life of the instance —
+ *    one call, or one batch of checks. Past it the check REFUSES, as a list query does;
  *  - `but not` evaluates its subtracted side in a fresh frame and needs the exact answer
  *    there: the schema guarantees that side never depends on the relation being decided
  *    ({@see SchemaValidator}), so a fresh frame
@@ -56,11 +63,17 @@ final class Evaluator
     /** @var array<string, array<string, bool>> subject => node => answer */
     private array $memo = [];
 
-    /** @var array<string, true> the nodes on the current search path */
+    /** @var array<string, int> the nodes on the current search path, by position */
     private array $path = [];
 
-    /** Whether the current subtree's search ran into a node on the path. */
-    private bool $cut = false;
+    /** The lowest path position the current subtree's search leaned on; PHP_INT_MAX for none. */
+    private int $low = PHP_INT_MAX;
+
+    /** @var array<string, int> provisional "no" answers, in order found => the lowest path position each leans on */
+    private array $provisional = [];
+
+    /** Nodes expanded by this instance, against $maxExpansion. */
+    private int $expanded = 0;
 
     public function __construct(
         private readonly AuthorizationSchema $schema,
@@ -77,7 +90,8 @@ final class Evaluator
     public function check(string $type, string $id, string $relation, SubjectRef $subject): bool
     {
         $this->path = [];
-        $this->cut = false;
+        $this->low = PHP_INT_MAX;
+        $this->provisional = [];
 
         return $this->node($type, $id, $relation, $subject, 0);
     }
@@ -216,7 +230,15 @@ final class Evaluator
         }
 
         if (isset($this->path[$key])) {
-            $this->cut = true;
+            $this->low = min($this->low, $this->path[$key]);
+
+            return false;
+        }
+
+        // Answered "no" on a path that is still open: the same answer here, leaning on
+        // the same nodes.
+        if (isset($this->provisional[$key])) {
+            $this->low = min($this->low, $this->provisional[$key]);
 
             return false;
         }
@@ -225,9 +247,15 @@ final class Evaluator
             throw ResolutionTooComplex::depth($this->maxDepth);
         }
 
-        $this->path[$key] = true;
-        $outer = $this->cut;
-        $this->cut = false;
+        if (++$this->expanded > $this->maxExpansion) {
+            throw ResolutionTooComplex::breadth($this->maxExpansion);
+        }
+
+        $position = count($this->path);
+        $this->path[$key] = $position;
+        $outer = $this->low;
+        $this->low = PHP_INT_MAX;
+        $mark = count($this->provisional);
 
         try {
             $answer = $this->rewrite($type, $id, $relation, $definition->rewrite, $subject, $depth);
@@ -235,17 +263,43 @@ final class Evaluator
             unset($this->path[$key]);
         }
 
-        if ($answer || ! $this->cut) {
-            $this->memo[$who][$key] = $answer;
+        if ($answer) {
+            // Exact. Whatever under it was "no" on the assumption it was "no" is not.
+            $this->memo[$who][$key] = true;
+            $this->provisional = array_slice($this->provisional, 0, $mark, true);
+            $this->low = $outer;
+
+            return true;
         }
 
-        $this->cut = $outer || $this->cut;
+        if ($this->low >= $position) {
+            // Leaned on nothing above this node: it and everything provisional under it
+            // are exact.
+            foreach (array_slice($this->provisional, $mark, null, true) as $settled => $_) {
+                $this->memo[$who][$settled] = false;
+            }
 
-        return $answer;
+            $this->provisional = array_slice($this->provisional, 0, $mark, true);
+            $this->memo[$who][$key] = false;
+            $this->low = $outer;
+
+            return false;
+        }
+
+        // Provisional. What under it leaned on this node now leans on what this node
+        // leaned on — a position still on the path.
+        foreach (array_slice($this->provisional, $mark, null, true) as $pending => $low) {
+            $this->provisional[$pending] = min($low, $this->low);
+        }
+
+        $this->provisional[$key] = $this->low;
+        $this->low = min($outer, $this->low);
+
+        return false;
     }
 
     /**
-     * Impure: it marks the path and the cut flag as it searches.
+     * Impure: it marks the path and the low-link as it searches.
      *
      * @phpstan-impure
      *
@@ -319,22 +373,26 @@ final class Evaluator
 
     /**
      * Run $evaluate with an empty path, as its own search: the exact answer an exclusion
-     * needs for its subtracted side. The outer path and cut flag are put back afterwards.
+     * needs for its subtracted side. The outer path, low-link and provisional answers are
+     * put back afterwards.
      *
      * @param  Closure(): bool  $evaluate
      */
     private function isolated(Closure $evaluate): bool
     {
         $path = $this->path;
-        $cut = $this->cut;
+        $low = $this->low;
+        $provisional = $this->provisional;
         $this->path = [];
-        $this->cut = false;
+        $this->low = PHP_INT_MAX;
+        $this->provisional = [];
 
         try {
             return $evaluate();
         } finally {
             $this->path = $path;
-            $this->cut = $cut;
+            $this->low = $low;
+            $this->provisional = $provisional;
         }
     }
 

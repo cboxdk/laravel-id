@@ -1296,7 +1296,8 @@ return [
      *
      * `max_depth` bounds how many relations deep one check may follow (nested groups,
      * folder trees); past it the check is refused, never guessed. `max_expansion` bounds
-     * how many objects a list query may visit. `max_batch` caps a tuple batch and a
+     * how many objects a list query may visit, and how many nodes one check, or one batch
+     * of checks, may expand. `max_batch` caps a tuple batch and a
      * batch check.
      *
      * Answers are cached under the environment's current revision: every write advances
