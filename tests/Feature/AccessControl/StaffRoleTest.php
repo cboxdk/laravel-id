@@ -133,14 +133,24 @@ it('re-syncs when a role becomes staff-only, and hashes an ordinary manifest as 
 it('lists only what a tenant may grant: its own and shared roles, never staff, orphaned or foreign ones', function (): void {
     $roles = app(Roles::class);
 
+    $app = static fn (string $name, ?string $organizationId = null): string => app(ClientRegistry::class)->register(new NewClient(
+        $name, ClientType::Confidential, redirectUris: ['https://'.strtolower($name).'.test/cb'], organizationId: $organizationId,
+    ))->client->client_id;
+    $cadastreApp = $app('Cadastre');
+    $taxApp = $app('Tax', 'org-a');
+    $theirApp = $app('Theirs', 'org-b');
+
     $own = $roles->define('org-a', 'Editor');
     $shared = $roles->define(null, 'Viewer');
     $roles->define(null, 'Support', tenantAssignable: false);
     $roles->define('org-b', 'Their editor');
-    $orphan = $roles->define(null, 'Retired', clientId: 'app_cadastre');
+    $orphan = $roles->define(null, 'Retired', clientId: $cadastreApp);
     $orphan->forceFill(['orphaned_at' => now()])->save();
-    $cadastre = $roles->define(null, 'Surveyor', clientId: 'app_cadastre');
-    $tax = $roles->define(null, 'Accountant', clientId: 'app_tax');
+    $cadastre = $roles->define(null, 'Surveyor', clientId: $cadastreApp);
+    $tax = $roles->define(null, 'Accountant', clientId: $taxApp);
+    // A role of ANOTHER organization's private app: stored with no organization like every
+    // manifest role, and still not this organization's to grant.
+    $theirs = $roles->define(null, 'Their admin', clientId: $theirApp);
 
     $ids = static fn (array $list): array => array_map(static fn (Role $role): string => $role->id, $list);
 
@@ -148,8 +158,13 @@ it('lists only what a tenant may grant: its own and shared roles, never staff, o
         ->toEqualCanonicalizing([$own->id, $shared->id, $cadastre->id, $tax->id]);
 
     // Narrowed to one app: its roles plus the app-agnostic ones, never another app's.
-    expect($ids($roles->tenantAssignableRoles('org-a', 'app_cadastre')))
+    expect($ids($roles->tenantAssignableRoles('org-a', $cadastreApp)))
         ->toEqualCanonicalizing([$own->id, $shared->id, $cadastre->id]);
+
+    // The other organization is offered its own app's role, and not org-a's.
+    expect($ids($roles->tenantAssignableRoles('org-b')))
+        ->toContain($theirs->id)
+        ->not->toContain($tax->id);
 });
 
 /**

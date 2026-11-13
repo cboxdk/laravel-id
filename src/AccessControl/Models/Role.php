@@ -7,6 +7,7 @@ namespace Cbox\Id\AccessControl\Models;
 use Cbox\Id\AccessControl\Enums\RoleSource;
 use Cbox\Id\Kernel\Tenancy\Concerns\BelongsToEnvironment;
 use Cbox\Id\Kernel\Tenancy\Contracts\EnvironmentOwned;
+use Cbox\Id\OAuthServer\Models\Client;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -58,6 +59,13 @@ class Role extends Model implements EnvironmentOwned
      * a write, so the two cannot drift: a role the picker hides is exactly a role the
      * write path refuses.
      *
+     * AN APP-DECLARED ROLE ONLY FOR AN APP THIS ORGANIZATION CAN USE. A manifest role is
+     * stored with no organization whichever organization owns the app that declares it,
+     * so "organization_id is null" alone let one organization's administrator grant —
+     * through a directory group mapping, say — a role of ANOTHER organization's private
+     * app to their own people, and the app's tokens then carried it. The role's app must
+     * be environment-wide (no organization) or this organization's own.
+     *
      * @param  Builder<self>  $query
      */
     public function scopeTenantAssignable(Builder $query, string $organizationId, ?string $clientId = null): void
@@ -68,6 +76,13 @@ class Role extends Model implements EnvironmentOwned
                 ->orWhere($inner->qualifyColumn('organization_id'), $organizationId))
             ->where($query->qualifyColumn('tenant_assignable'), true)
             ->whereNull($query->qualifyColumn('orphaned_at'))
+            ->where(fn (Builder $app) => $app
+                ->whereNull($app->qualifyColumn('client_id'))
+                ->orWhereIn($app->qualifyColumn('client_id'), Client::query()
+                    ->select('client_id')
+                    ->where(fn (Builder $owner) => $owner
+                        ->whereNull('organization_id')
+                        ->orWhere('organization_id', $organizationId))))
             ->when($clientId !== null, fn (Builder $inner) => $inner->where(fn (Builder $app) => $app
                 ->whereNull($app->qualifyColumn('client_id'))
                 ->orWhere($app->qualifyColumn('client_id'), $clientId)));
