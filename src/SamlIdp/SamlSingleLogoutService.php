@@ -15,6 +15,7 @@ use Cbox\Id\SamlIdp\Support\IdpDescriptor;
 use Cbox\Id\SamlIdp\Support\LogoutResponseBuilder;
 use Cbox\Id\SamlIdp\Support\MessageGuard;
 use Cbox\Id\SamlIdp\Support\ReceivedEndpoint;
+use Cbox\Id\SamlIdp\Support\RedirectBindingInflater;
 use Cbox\Id\SamlIdp\Support\RedirectBindingResponseSigner;
 use Cbox\Id\SamlIdp\Support\RedirectBindingSignature;
 use Cbox\Id\SamlIdp\ValueObjects\LogoutMessage;
@@ -250,9 +251,10 @@ class SamlSingleLogoutService implements SamlSingleLogout
             return $samlRequest;
         }
 
-        $inflated = @gzinflate($decoded);
-
-        return $inflated !== false ? $inflated : $decoded;
+        // Raw DEFLATE (redirect binding) inflates with a ceiling; past it, or for a value
+        // that is not DEFLATE (POST binding), the decoded bytes go on to the XML parser,
+        // which refuses anything that is not a LogoutRequest.
+        return RedirectBindingInflater::inflate($decoded) ?? $decoded;
     }
 
     /**

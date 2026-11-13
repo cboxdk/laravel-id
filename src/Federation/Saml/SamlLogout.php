@@ -10,6 +10,7 @@ use Cbox\Id\Federation\Models\Connection;
 use Cbox\Id\Identity\Contracts\SessionManager;
 use Cbox\Id\Identity\Models\IdentityLink;
 use Cbox\Id\SamlIdp\Support\MessageGuard;
+use Cbox\Id\SamlIdp\Support\RedirectBindingInflater;
 use DOMDocument;
 use OneLogin\Saml2\Auth;
 use OneLogin\Saml2\LogoutRequest;
@@ -144,7 +145,7 @@ class SamlLogout implements SamlSpSingleLogout
     {
         $decoded = base64_decode($samlRequest, true);
 
-        return is_string($decoded) ? (@gzinflate($decoded) ?: $decoded) : $samlRequest;
+        return is_string($decoded) ? (RedirectBindingInflater::inflate($decoded) ?? $decoded) : $samlRequest;
     }
 
     /**
