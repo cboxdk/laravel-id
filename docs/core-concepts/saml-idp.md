@@ -97,6 +97,27 @@ Before 1.22 every SP behaved as environment-wide, whatever organization the cons
 filed it under. Existing registrations keep `organization_id = null` and their behaviour;
 set it to scope them.
 
+## Only a verified email is asserted
+
+Most SPs key their accounts by the email in the assertion, so the IdP signs an address
+only once the subject has verified it. `issueResponse()` asks the `Subjects` resolver
+itself; a host cannot skip the check by passing the attributes directly.
+
+- When the SP would receive the email (an `emailAddress` or `unspecified` NameID taken
+  from `email`, or an attribute mapped from `email`) and the address is not verified, or
+  the caller passes an `email` that is not the subject's verified address, issuance is
+  refused with `EmailNotVerified`. It is a `SubjectNotPermitted`, refused before the
+  request id is spent, reported to the SP as `Responder` / `RequestDenied`, and recorded
+  as `saml_idp.assertion_refused` with reason `email_not_verified`.
+- For any other SP the person signs in as usual, and the unverified address is removed
+  from the attributes before mapping (from `email` and from any other field that carries
+  it).
+
+The package's SSO endpoint answers `EmailNotVerified` with a 403 asking the person to
+confirm their address. Once they do, the same request can still be answered. A host
+that drives `issueResponse()` itself can catch `EmailNotVerified` before
+`InvalidAuthnRequest` to do the same.
+
 ## Endpoints
 
 Registered by the `Api` layer behind `ResolveEnvironment` + throttling:
@@ -201,6 +222,7 @@ the active key is ever non-RSA the IdP refuses to sign rather than downgrade.
 | Request `Destination` ≠ the published SingleSignOnService URL, or absent on a signed request | refused (SAML core §3.2.1) |
 | Request `IssueInstant` outside a 15-minute window (or missing) | refused — the window covers the host login hand-off, so a request survives a real sign-in |
 | SP is organization-owned and the subject is not an active member of that organization | refused at issuance with `Responder` / `RequestDenied` (`SubjectNotPermitted`), audited and announced as `saml_idp.assertion_refused` |
+| SP would receive the subject's email (NameID or mapped attribute) and it is not verified | refused at issuance with `Responder` / `RequestDenied` (`EmailNotVerified`), audited and announced as `saml_idp.assertion_refused`; the package SSO endpoint answers 403 |
 | A second assertion for the same request id | refused — one `AuthnRequest` buys exactly one assertion (the id is burned at *issuance*, so re-parsing it across the login hand-off is fine) |
 | `NameIDPolicy/@Format` is neither `unspecified` nor the SP's registered format | refused with `Requester` / `InvalidNameIDPolicy` (SAML core §3.4.1.1) |
 

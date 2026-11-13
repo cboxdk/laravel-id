@@ -66,7 +66,7 @@ it('issues a signed assertion a real SP (onelogin) accepts, with correct audienc
     $samlRequest = $this->makeRedirectAuthnRequest($sp->entity_id, $sp->acs_url);
     $request = $this->samlIdp()->parseAuthnRequest($samlRequest, 'return-here');
 
-    $response = $this->samlIdp()->issueResponse($request, 'user-123', [
+    $response = $this->samlIdp()->issueResponse($request, verifiedSubject('alice@sp.example.test')->id, [
         'email' => 'alice@sp.example.test',
         'name' => 'Alice Example',
     ]);
@@ -95,7 +95,7 @@ it('issues a signed assertion a real SP (onelogin) accepts, with correct audienc
 it('produces an RSA-SHA256 signature and never SHA-1', function () {
     $sp = $this->registerSamlServiceProvider();
     $request = $this->samlIdp()->parseAuthnRequest($this->makeRedirectAuthnRequest($sp->entity_id));
-    $response = $this->samlIdp()->issueResponse($request, 'user-1', ['email' => 'a@sp.example.test']);
+    $response = $this->samlIdp()->issueResponse($request, verifiedSubject('a@sp.example.test')->id, ['email' => 'a@sp.example.test']);
 
     expect($response->xml)
         ->toContain('http://www.w3.org/2001/04/xmldsig-more#rsa-sha256')
@@ -107,7 +107,7 @@ it('produces an RSA-SHA256 signature and never SHA-1', function () {
 it('is rejected by onelogin when the assertion is tampered after signing', function () {
     $sp = $this->registerSamlServiceProvider(acsUrl: 'https://sp.example.test/acs');
     $request = $this->samlIdp()->parseAuthnRequest($this->makeRedirectAuthnRequest($sp->entity_id));
-    $response = $this->samlIdp()->issueResponse($request, 'user-1', ['email' => 'alice@sp.example.test']);
+    $response = $this->samlIdp()->issueResponse($request, verifiedSubject('alice@sp.example.test')->id, ['email' => 'alice@sp.example.test']);
 
     // Flip an attribute value inside the signed document.
     $tampered = str_replace('alice@sp.example.test', 'attacker@evil.test', $response->xml);
@@ -393,7 +393,7 @@ it('rejects a wrapped AuthnRequest', function (callable $assemble, string $expec
 it('renders an auto-submitting POST form that escapes RelayState', function () {
     $sp = $this->registerSamlServiceProvider(acsUrl: 'https://sp.example.test/acs');
     $request = $this->samlIdp()->parseAuthnRequest($this->makeRedirectAuthnRequest($sp->entity_id), '"><script>alert(1)</script>');
-    $response = $this->samlIdp()->issueResponse($request, 'user-1', ['email' => 'a@sp.example.test']);
+    $response = $this->samlIdp()->issueResponse($request, verifiedSubject('a@sp.example.test')->id, ['email' => 'a@sp.example.test']);
 
     $form = $response->toPostForm();
 
@@ -424,11 +424,12 @@ it('records the issued assertion so logout can be scoped to the service provider
         $this->makeRedirectAuthnRequest($sp->entity_id, $sp->acs_url),
     );
 
-    $response = $this->samlIdp()->issueResponse($request, 'user-recorded', ['email' => 'recorded@example.test']);
+    $subjectId = verifiedSubject('recorded@example.test')->id;
+    $response = $this->samlIdp()->issueResponse($request, $subjectId, ['email' => 'recorded@example.test']);
 
     expect($response->encoded)->not->toBe('');
 
-    $record = SamlIdpSession::query()->where('subject_id', 'user-recorded')->first();
+    $record = SamlIdpSession::query()->where('subject_id', $subjectId)->first();
 
     expect($record)->not->toBeNull('nothing recorded what we told the service provider')
         ->and($record->sp_entity_id)->toBe($sp->entity_id)

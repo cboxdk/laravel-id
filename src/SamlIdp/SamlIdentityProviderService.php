@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Id\SamlIdp;
 
+use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\Kernel\Audit\Contracts\AuditLog;
 use Cbox\Id\Kernel\Audit\Enums\ActorType;
 use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
@@ -17,6 +18,7 @@ use Cbox\Id\SamlIdp\Enums\AuthnContext;
 use Cbox\Id\SamlIdp\Enums\NameIdFormat;
 use Cbox\Id\SamlIdp\Enums\SamlBinding;
 use Cbox\Id\SamlIdp\Enums\SamlStatusCode;
+use Cbox\Id\SamlIdp\Exceptions\EmailNotVerified;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\SubjectNotPermitted;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
@@ -88,6 +90,7 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         private readonly Memberships $memberships,
         private readonly AuditLog $audit,
         private readonly EventBus $events,
+        private readonly Subjects $subjects,
     ) {}
 
     /**
@@ -562,6 +565,15 @@ class SamlIdentityProviderService implements SamlIdentityProvider
         // request for whoever is allowed. Environment-wide SPs (no owner) are unchanged.
         $this->assertSubjectPermitted($serviceProvider, $request, $subjectId);
 
+        // WHAT may be asserted. A signed assertion is a statement relying parties act on,
+        // and most SPs key accounts by the email in it — so the IdP only ever puts a
+        // VERIFIED address there. Enforced here rather than left to the caller: the
+        // attributes are the host's, and a host that forgot the check would have the IdP
+        // sign an address the person never proved they own. An SP that would receive the
+        // email is refused (before the request id is burned, so the person can confirm the
+        // address and come back); for any other SP the unverified address is dropped.
+        $attributes = $this->releasableAttributes($serviceProvider, $request, $subjectId, $attributes);
+
         // Single-use: one AuthnRequest buys exactly one assertion. Burning the id
         // HERE rather than at parse time is deliberate — the SSO endpoint parses
         // the same request again when the browser returns from the host's login,
@@ -674,6 +686,117 @@ class SamlIdentityProviderService implements SamlIdentityProvider
             inResponseTo: $request->id,
             relayState: $request->relayState,
             message: 'the signed-in user is not permitted to use this service provider',
+        ));
+    }
+
+    /**
+     * The caller's attributes with any email address the subject has not verified taken
+     * out — or a refusal, when this SP would receive the subject's email.
+     *
+     * The `email` field is releasable only when the subject resolver says the subject's
+     * address is verified AND every value supplied for it is that address. An unknown
+     * subject has nothing verified. Without a verified address, the `email` field is
+     * dropped and so is any other field carrying the subject's address or a supplied
+     * email value, so a mapping from a differently-named field cannot release it either.
+     *
+     * @param  array<string, string|list<string>>  $attributes
+     * @return array<string, string|list<string>>
+     *
+     * @throws EmailNotVerified
+     */
+    private function releasableAttributes(
+        ServiceProvider $serviceProvider,
+        AuthnRequest $request,
+        string $subjectId,
+        array $attributes,
+    ): array {
+        $subject = $this->subjects->find($subjectId);
+        $subjectEmail = $subject?->email !== null && $subject->email !== '' ? $subject->email : null;
+        $supplied = $this->valuesFor($attributes, 'email');
+
+        $verified = $subject !== null
+            && $subject->emailVerified
+            && $subjectEmail !== null
+            && array_all($supplied, fn (string $email): bool => strcasecmp($email, $subjectEmail) === 0);
+
+        if ($verified) {
+            return $attributes;
+        }
+
+        // There is an address in play — the subject's own, or one the caller supplied —
+        // and this SP is configured to receive it.
+        if (($subjectEmail !== null || $supplied !== []) && $this->releasesEmail($serviceProvider)) {
+            $this->refuseUnverifiedEmail($serviceProvider, $request, $subjectId);
+        }
+
+        $unverified = array_map(strtolower(...), array_filter([$subjectEmail, ...$supplied], is_string(...)));
+        unset($attributes['email']);
+
+        foreach ($attributes as $field => $value) {
+            $kept = array_values(array_filter(
+                is_array($value) ? $value : [$value],
+                fn (string $item): bool => ! in_array(strtolower($item), $unverified, true),
+            ));
+
+            if ($kept === []) {
+                unset($attributes[$field]);
+            } else {
+                $attributes[$field] = is_array($value) ? $kept : $kept[0];
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Whether this SP's configuration puts the subject's email in the assertion: as the
+     * NameID (an emailAddress or unspecified format sourced from `email` — persistent and
+     * transient NameIDs are minted, never the address) or through an attribute mapping.
+     */
+    private function releasesEmail(ServiceProvider $serviceProvider): bool
+    {
+        $nameIdIsEmail = ! in_array($serviceProvider->name_id_format, [NameIdFormat::Persistent, NameIdFormat::Transient], true)
+            && $serviceProvider->name_id_attribute === 'email';
+
+        return $nameIdIsEmail || in_array('email', $serviceProvider->attribute_mappings, true);
+    }
+
+    /**
+     * Refuse — audited, announced, and reported to the SP in SAML — an assertion that
+     * would carry an email address the subject has not verified.
+     *
+     * @throws EmailNotVerified
+     */
+    private function refuseUnverifiedEmail(ServiceProvider $serviceProvider, AuthnRequest $request, string $subjectId): never
+    {
+        $organizationId = $serviceProvider->isOrganizationOwned() ? (string) $serviceProvider->organization_id : null;
+
+        $this->audit->record(new AuditEvent(
+            action: 'saml_idp.assertion_refused',
+            actorType: ActorType::User,
+            actorId: $subjectId,
+            organizationId: $organizationId,
+            targetType: 'saml_service_provider',
+            targetId: $serviceProvider->id,
+            context: ['reason' => 'email_not_verified', 'sp_entity_id' => $serviceProvider->entity_id],
+            ip: request()->ip(),
+        ));
+
+        $this->events->emit(new DomainEvent('saml_idp.assertion_refused', [
+            'user_id' => $subjectId,
+            'service_provider_id' => $serviceProvider->id,
+            'sp_entity_id' => $serviceProvider->entity_id,
+            'reason' => 'email_not_verified',
+        ], $organizationId));
+
+        throw EmailNotVerified::forServiceProvider(new SamlError(
+            spEntityId: $serviceProvider->entity_id,
+            acsUrl: $serviceProvider->acs_url,
+            status: SamlStatusCode::Responder,
+            subStatus: SamlStatusCode::RequestDenied,
+            inResponseTo: $request->id,
+            relayState: $request->relayState,
+            message: 'the signed-in user has not verified the email address this service provider receives',
         ));
     }
 

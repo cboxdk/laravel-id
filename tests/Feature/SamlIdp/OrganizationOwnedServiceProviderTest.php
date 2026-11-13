@@ -29,7 +29,7 @@ uses(RefreshDatabase::class);
 
 it('asserts an active member of the owning organization, and names the organization', function (): void {
     $org = $this->makeOrganization('Northwind');
-    $member = $this->makeUser('member@northwind.test');
+    $member = verifiedSubject('member@northwind.test');
     app(Memberships::class)->add($org->id, $member->id, MembershipRole::Member);
 
     $sp = $this->registerSamlServiceProvider(organizationId: $org->id);
@@ -83,7 +83,7 @@ it('refuses a subject who is not a member of the owning organization', function 
         ->and(Event::query()->where('type', 'saml_idp.assertion_refused')->where('organization_id', $owner->id)->exists())->toBeTrue();
 
     // Refused BEFORE the request id was burned: a member can still answer it.
-    $member = $this->makeUser('member@northwind.test');
+    $member = verifiedSubject('member@northwind.test');
     app(Memberships::class)->add($owner->id, $member->id, MembershipRole::Member);
 
     expect($this->samlIdp()->issueResponse($request, $member->id, ['email' => 'member@northwind.test'])->acsUrl)
@@ -104,7 +104,7 @@ it('refuses a suspended member of the owning organization', function (): void {
 
 it('keeps an environment-wide service provider open to any subject, without an organization attribute', function (): void {
     $this->makeOrganization('Northwind');
-    $anyone = $this->makeUser('anyone@example.test');
+    $anyone = verifiedSubject('anyone@example.test');
 
     $sp = $this->registerSamlServiceProvider();
 
@@ -128,7 +128,7 @@ it('keeps an environment-wide service provider open to any subject, without an o
 
 it('does not let an attribute mapping overwrite the organization attribute', function (): void {
     $org = $this->makeOrganization('Northwind');
-    $member = $this->makeUser('member@northwind.test');
+    $member = verifiedSubject('member@northwind.test');
     app(Memberships::class)->add($org->id, $member->id, MembershipRole::Member);
 
     $sp = $this->registerSamlServiceProvider(

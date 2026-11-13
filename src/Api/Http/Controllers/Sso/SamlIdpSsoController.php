@@ -6,6 +6,7 @@ namespace Cbox\Id\Api\Http\Controllers\Sso;
 
 use Cbox\Id\Identity\Contracts\Subjects;
 use Cbox\Id\SamlIdp\Contracts\SamlIdentityProvider;
+use Cbox\Id\SamlIdp\Exceptions\EmailNotVerified;
 use Cbox\Id\SamlIdp\Exceptions\InvalidAuthnRequest;
 use Cbox\Id\SamlIdp\Exceptions\UnknownServiceProvider;
 use Illuminate\Http\RedirectResponse;
@@ -81,11 +82,16 @@ class SamlIdpSsoController
 
         // Issuance refuses too — a replayed request, or (since 1.22) a subject who is not
         // an active member of the organization that owns this SP. Both go back to the SP
-        // the same way a parse-time refusal does, rather than surfacing as a 500.
+        // the same way a parse-time refusal does, rather than surfacing as a 500. An
+        // unverified email the SP would receive is the person's to fix, so it is a 403.
         try {
             $response = $this->idp->issueResponse($authnRequest, $subjectId, $this->attributesFor($subjectId));
         } catch (UnknownServiceProvider) {
             return new Response('Unknown or inactive SAML service provider.', 403);
+        } catch (EmailNotVerified) {
+            // Something the person can fix, so they are told — not the SP. The request id
+            // is not burned, so the same sign-in works once the address is confirmed.
+            return new Response('Confirm your email address before signing in to this service.', 403);
         } catch (InvalidAuthnRequest $exception) {
             return $this->refuse($exception);
         }
@@ -138,6 +144,10 @@ class SamlIdpSsoController
      * `name_id_attribute` / `attribute_mappings` reference. The default surfaces
      * email and name; a host issuing richer attributes drives issueResponse itself.
      *
+     * The email is a source value only once it is verified: an unconfirmed address never
+     * reaches a signed assertion, whatever the SP's mapping says. (issueResponse() holds
+     * the same line on its own; this keeps the controller from offering it at all.)
+     *
      * @return array<string, string>
      */
     private function attributesFor(string $subjectId): array
@@ -145,7 +155,7 @@ class SamlIdpSsoController
         $subject = $this->subjects->find($subjectId);
 
         $attributes = [];
-        if ($subject?->email !== null && $subject->email !== '') {
+        if ($subject?->emailVerified === true && $subject->email !== null && $subject->email !== '') {
             $attributes['email'] = $subject->email;
         }
         if ($subject?->name !== null && $subject->name !== '') {
