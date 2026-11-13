@@ -20,14 +20,18 @@ interface DomainVerification
      * Register a domain for an organization (unverified) and mint its DNS
      * challenge token. Idempotent for the same org+domain.
      *
+     * Another organization's PENDING claim does not refuse: each organization gets its
+     * own challenge, and the first to prove the domain owns it.
+     *
      * @throws DomainAlreadyClaimed when another org
-     *                              already holds the domain in this environment
+     *                              has already verified the domain in this environment
      */
     public function add(string $organizationId, string $domain): VerifiedDomain;
 
     /**
      * Re-check the DNS challenge and mark the domain verified if the token is
-     * present. Idempotent; returns whether the domain is now verified.
+     * present and no other organization has verified it first. Idempotent;
+     * returns whether the domain is now verified.
      */
     public function verify(string $id): bool;
 
