@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Cbox\Id\AccessControl\Contracts\GroupRoleMappings;
 use Cbox\Id\AccessControl\Contracts\Roles;
 use Cbox\Id\AccessControl\Enums\GrantSource;
+use Cbox\Id\AccessControl\Exceptions\RoleNotTenantAssignable;
 use Cbox\Id\AccessControl\Listeners\ReconcileGroupRolesOnDomainEvent;
 use Cbox\Id\AccessControl\Models\GroupRoleMapping;
 use Cbox\Id\AccessControl\Models\Role;
@@ -15,6 +16,9 @@ use Cbox\Id\Directory\Models\DirectoryGroup;
 use Cbox\Id\Directory\ValueObjects\ScimUser;
 use Cbox\Id\Kernel\Events\EventDelivered;
 use Cbox\Id\Kernel\Events\Models\Event;
+use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
+use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\ValueObjects\NewClient;
 use Cbox\Id\Organization\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -205,4 +209,52 @@ it('withdraws a pushed grant of a role that became staff-only', function (): voi
 
     expect(hasAssignment($userId, $support->id))->toBeFalse()
         ->and(hasAssignment($userId, $keep->id, GrantSource::Pushed))->toBeTrue();
+})->group('security');
+
+/*
+ * AN APP-DECLARED ROLE ONLY FOR AN APP THE ORGANIZATION CAN USE. A manifest role is stored
+ * with no organization, whichever organization owns the app declaring it — so the tenant
+ * predicate read another organization's private app role as an environment-shared one,
+ * and a directory group mapping granted it.
+ */
+it('refuses mapping a group onto a role of another organization\'s private app', function (): void {
+    [$org, $group, , $userId] = engineeringGroup();
+    $other = test()->makeOrganization('Other');
+
+    $theirs = app(ClientRegistry::class)->register(new NewClient(
+        'Their App', ClientType::Confidential, redirectUris: ['https://their.test/cb'], organizationId: $other->id,
+    ))->client;
+    $role = app(Roles::class)->define(null, 'their-admin', clientId: $theirs->client_id);
+
+    expect(fn () => app(GroupRoleMappings::class)->map($org->id, $group->id, $role->id))
+        ->toThrow(RoleNotTenantAssignable::class);
+
+    expect(hasAssignment($userId, $role->id))->toBeFalse()
+        ->and(GroupRoleMapping::query()->where('role_id', $role->id)->exists())->toBeFalse()
+        ->and(Role::query()->tenantAssignable($other->id)->whereKey($role->id)->exists())->toBeTrue();
+
+    // An environment-wide app's role, and the organization's own app's, still map.
+    $shared = app(ClientRegistry::class)->register(new NewClient(
+        'Shared App', ClientType::Confidential, redirectUris: ['https://shared.test/cb'],
+    ))->client;
+    $sharedRole = app(Roles::class)->define(null, 'shared-viewer', clientId: $shared->client_id);
+    app(GroupRoleMappings::class)->map($org->id, $group->id, $sharedRole->id);
+
+    expect(hasAssignment($userId, $sharedRole->id, GrantSource::Pushed))->toBeTrue();
+})->group('security');
+
+it('withdraws a pushed grant of another organization\'s app role on reconcile', function (): void {
+    [$org, $group, , $userId] = engineeringGroup();
+    $other = test()->makeOrganization('Other');
+    $theirs = app(ClientRegistry::class)->register(new NewClient(
+        'Their App', ClientType::Confidential, redirectUris: ['https://their.test/cb'], organizationId: $other->id,
+    ))->client;
+    $role = app(Roles::class)->define(null, 'their-admin', clientId: $theirs->client_id);
+
+    // A mapping that predates the rule, written directly.
+    GroupRoleMapping::query()->create(['organization_id' => $org->id, 'group_id' => $group->id, 'role_id' => $role->id, 'priority' => 0]);
+    $event = new Event(['type' => 'directory.group.membership_changed', 'payload' => ['group_id' => $group->id, 'organization_id' => $org->id]]);
+    app(ReconcileGroupRolesOnDomainEvent::class)->handle(new EventDelivered($event));
+
+    expect(hasAssignment($userId, $role->id))->toBeFalse();
 })->group('security');

@@ -33,7 +33,13 @@ SSRF surface as webhooks, so it reuses the exact guard: the URL is asserted at r
 and every send resolves DNS, checks **all** returned IPs against private/reserved/cloud-
 metadata ranges, pins the connection to the validated IP (defeating DNS-rebinding/TOCTOU),
 and disables redirects (a 30x to an internal host is a fresh SSRF vector). TLS verification is
-left ON. The one difference from webhooks is that a hook is **synchronous**: a short hard
+left ON. Like webhooks, a hook is **https only**, at registration and again at every send:
+the reply is trusted to veto or add claims with no authentication of its own, so plaintext
+would hand both to anyone on the path. A stored `http://` URL is never called; the hook
+point's fail policy decides. `external_actions.verify_url` is read the same way at
+registration and at send (`1`, `on`, `yes` and `true` all mean on); switching it off lifts
+the host and scheme checks together, for a single-tenant deployment reaching its own
+internal hosts, and redirects stay refused. The one difference from webhooks is that a hook is **synchronous**: a short hard
 timeout, **no retry**, and any failure is a deny rather than a scheduled retry.
 
 ## Why the gates fail closed — and why the login hook does not

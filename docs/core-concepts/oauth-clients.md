@@ -173,6 +173,14 @@ Self-registered clients go through the same rules. An RFC 7592 update that moves
 one rather than resurrecting the old. Both are recorded as `app.updated` with the client
 itself as the actor.
 
+An update is held to the profile the client **registered** under (`registration_profile`:
+`mcp` or `general`), never the mode the server has now: a client that registered in `mcp`
+mode stays a public or own-key client with the MCP grants, redirects and scopes after the
+mode is switched to `protected` or `open`. While the mode is `disabled`, `GET` and `PUT`
+on `/oauth/register/{client}` answer 403; `DELETE` still works, so a client can remove
+itself. A self-registered client from before the profile was recorded is read from its
+shape: one without a shared secret is held to the MCP profile.
+
 `mcp` mode (`oauth.dynamic_registration.mode`) is open registration held to what an MCP
 client needs: a public client, the code flow and its refresh, https or loopback redirect
 URIs, and the scopes of [protected resources the host declared](apis-and-scopes.md#resources-the-host-serves-itself)

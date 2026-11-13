@@ -1098,7 +1098,7 @@ return [
      * +979, …) are refused regardless: they have no country to allow.
      *
      * `limits`: `cooldown_seconds` between texts to one number; `per_number_per_day` and
-     * `per_ip_per_hour` per environment; `per_environment_per_day` so one tenant cannot
+     * `per_ip_per_hour` per environment (an IPv6 client counted by its /64); `per_environment_per_day` so one tenant cannot
      * spend the deployment's budget; `daily_cap` for the whole deployment — the circuit
      * breaker that bounds the worst day's bill. 0 disables a limit. The counters live in
      * the cache store, which must be shared between replicas.
@@ -1296,7 +1296,8 @@ return [
      *
      * `max_depth` bounds how many relations deep one check may follow (nested groups,
      * folder trees); past it the check is refused, never guessed. `max_expansion` bounds
-     * how many objects a list query may visit. `max_batch` caps a tuple batch and a
+     * how many objects a list query may visit, and how many nodes one check, or one batch
+     * of checks, may expand. `max_batch` caps a tuple batch and a
      * batch check.
      *
      * Answers are cached under the environment's current revision: every write advances

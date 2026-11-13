@@ -49,7 +49,8 @@ use Illuminate\Support\Facades\DB;
  * no sandbox http), no back-channel logout URI (nothing for the server to call), and the
  * scopes {@see SelfRegisteredScopes} allows: those of host-declared resources open to
  * self-registered clients, plus permitted protocol scopes. The same rules apply to an
- * RFC 7592 update, which goes through {@see validate()} too.
+ * RFC 7592 update, which goes through {@see validate()} too — held to the profile the
+ * client REGISTERED under (`registration_profile`), not the mode the server has now.
  */
 class DynamicClientRegistrar implements DynamicClientRegistration
 {
@@ -77,9 +78,13 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
     public function __construct(private readonly ClientRegistry $clients, private readonly Apis $apis, private readonly ClientSecretStore $secrets, private readonly ClientAudit $audit, private readonly SelfRegisteredScopes $selfRegistered) {}
 
-    public function validate(array $request): ClientMetadata
+    public function validate(array $request, ?string $profile = null): ClientMetadata
     {
-        $mcp = config('cbox-id.oauth.dynamic_registration.mode') === 'mcp';
+        // A registration is judged by the mode it arrives under; an RFC 7592 update by the
+        // profile its client registered under. Never the reverse: switching the server to
+        // `disabled` or `protected` must not let an anonymously registered MCP client
+        // rewrite itself into a confidential one with grants nobody gave it.
+        $mcp = ($profile ?? self::currentProfile()) === 'mcp';
         $authMethod = $this->authMethod($request, $mcp);
         $grantTypes = $mcp ? $this->mcpGrantTypes($request, $authMethod) : $this->grantTypes($request);
         $responseTypes = $this->responseTypes($request, $grantTypes);
@@ -131,7 +136,7 @@ class DynamicClientRegistrar implements DynamicClientRegistration
             backchannelLogoutSessionRequired: $metadata->backchannelLogoutSessionRequired
         ));
         $registrationToken = SecretPrefix::RegistrationAccessToken->mint();
-        $registered->client->forceFill(['registration_access_token_hash' => hash('sha256', $registrationToken)])->save();
+        $registered->client->forceFill(['registration_access_token_hash' => hash('sha256', $registrationToken), 'registration_profile' => self::currentProfile()])->save();
 
         return new DynamicRegistration($registered->client, $registered->secret, $registrationToken);
     }
@@ -206,6 +211,15 @@ class DynamicClientRegistrar implements DynamicClientRegistration
 
             return new UpdatedRegistration($client, $minted);
         });
+    }
+
+    /**
+     * The profile a registration arriving now is held to: `mcp`, or `general` for `open`
+     * and `protected`.
+     */
+    public static function currentProfile(): string
+    {
+        return config('cbox-id.oauth.dynamic_registration.mode') === 'mcp' ? 'mcp' : 'general';
     }
 
     public function delete(Client $client): void

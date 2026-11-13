@@ -91,11 +91,11 @@ class AuthnRequestParser
             return $decoded;
         }
 
-        // Redirect binding: the request is raw-DEFLATE compressed. gzinflate emits a
-        // warning and returns false on bad input, so suppress and check explicitly.
-        $inflated = @gzinflate($decoded);
+        // Redirect binding: the request is raw-DEFLATE compressed — inflated with a
+        // ceiling, because this runs before anyone has signed in.
+        $inflated = RedirectBindingInflater::inflate($decoded);
 
-        if (! is_string($inflated) || $inflated === '') {
+        if ($inflated === null) {
             throw InvalidAuthnRequest::make('redirect-binding request could not be inflated');
         }
 
