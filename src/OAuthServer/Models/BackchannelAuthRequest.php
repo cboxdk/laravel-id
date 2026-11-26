@@ -10,6 +10,7 @@ use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use LogicException;
 
 /**
  * A CIBA (OpenID Connect Client-Initiated Backchannel Authentication) request in
@@ -23,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string $client_id
  * @property string $user_id
  * @property string|null $organization_id
+ * @property string|null $requested_organization_id Immutable opt-in binding; null for legacy requests
  * @property array<int, string> $scopes
  * @property string|null $binding_message
  * @property string|null $nonce
@@ -49,6 +51,15 @@ class BackchannelAuthRequest extends Model implements EnvironmentOwned
 
     /** @var list<string> */
     protected $hidden = ['client_notification_token', 'notification_auth_req_id'];
+
+    protected static function booted(): void
+    {
+        static::updating(static function (self $request): void {
+            if ($request->isDirty('requested_organization_id')) {
+                throw new LogicException('A CIBA request cannot change its requested organization.');
+            }
+        });
+    }
 
     /**
      * @return array<string, string>

@@ -11,23 +11,31 @@ use Cbox\Id\Kernel\Audit\ValueObjects\AuditEvent;
 use Cbox\Id\Kernel\Events\Contracts\EventBus;
 use Cbox\Id\Kernel\Events\ValueObjects\DomainEvent;
 use Cbox\Id\OAuthServer\Contracts\ActionApprovals;
-use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\CibaClientNotifications;
+use Cbox\Id\OAuthServer\Contracts\CibaOrganizationPolicy;
+use Cbox\Id\OAuthServer\Contracts\OrganizationBoundBackchannelAuthentication;
+use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaAuthorizationPending;
 use Cbox\Id\OAuthServer\Exceptions\CibaExpired;
 use Cbox\Id\OAuthServer\Exceptions\CibaRateLimited;
 use Cbox\Id\OAuthServer\Exceptions\CibaSlowDown;
+use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\InvalidGrant;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Exceptions\UnknownUserHint;
 use Cbox\Id\OAuthServer\Models\BackchannelAuthRequest;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Support\GrantedScopes;
+use Cbox\Id\OAuthServer\Support\GrantPolicy;
 use Cbox\Id\OAuthServer\ValueObjects\AuthorizedGrant;
 use Cbox\Id\OAuthServer\ValueObjects\BackchannelAuthenticationResult;
 use Cbox\Id\OAuthServer\ValueObjects\BackchannelBinding;
+use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Contracts\Organizations;
+use Cbox\Id\Organization\Enums\OrganizationStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -39,7 +47,7 @@ use Illuminate\Support\Facades\RateLimiter;
  * `login_hint` up front and approves out-of-band, so the notification/approval
  * surface is the host's (driven by the emitted domain event).
  */
-class CibaAuthenticationService implements BackchannelAuthentication
+class CibaAuthenticationService implements OrganizationBoundBackchannelAuthentication
 {
     private const DEFAULT_TTL_SECONDS = 300;
 
@@ -65,6 +73,37 @@ class CibaAuthenticationService implements BackchannelAuthentication
         ?string $nonce = null,
         ?int $requestedExpiry = null,
         ?string $resource = null,
+    ): BackchannelAuthenticationResult {
+        return $this->initiate($client, $scopes, $loginHint, $bindingMessage, $nonce, $requestedExpiry, $resource);
+    }
+
+    public function requestForOrganization(
+        Client $client,
+        array $scopes,
+        string $loginHint,
+        string $organizationId,
+        ?string $bindingMessage = null,
+        ?string $nonce = null,
+        ?int $requestedExpiry = null,
+        ?string $resource = null,
+    ): BackchannelAuthenticationResult {
+        if (preg_match('/\A(?:org_)?([0-7][0-9a-hjkmnp-tv-z]{25})\z/i', $organizationId, $match) !== 1) {
+            throw new CibaAccessDenied('Organization binding is not available for this request.');
+        }
+
+        return $this->initiate($client, $scopes, $loginHint, $bindingMessage, $nonce, $requestedExpiry, $resource, strtolower($match[1]));
+    }
+
+    /** @param list<string> $scopes */
+    private function initiate(
+        Client $client,
+        array $scopes,
+        string $loginHint,
+        ?string $bindingMessage,
+        ?string $nonce,
+        ?int $requestedExpiry,
+        ?string $resource,
+        ?string $organizationId = null,
     ): BackchannelAuthenticationResult {
         // Resolve the user the client is asking to authenticate — by opaque id, or by an
         // email address the person has CONFIRMED. An unconfirmed address proves nothing
@@ -107,6 +146,11 @@ class CibaAuthenticationService implements BackchannelAuthentication
 
         $scopes = $granted;
 
+        // Check the scopes that will be stored, including the registered defaults.
+        if ($organizationId !== null && ! $this->organizationAllowed($client->client_id, $subject->id, $organizationId, $resource, $scopes)) {
+            throw new CibaAccessDenied('Organization binding is not available for this request.');
+        }
+
         $authReqId = 'auth_req_'.bin2hex(random_bytes(32));
         $interval = $this->pollInterval();
         $ttl = $this->effectiveTtl($requestedExpiry, $interval);
@@ -115,6 +159,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
             'auth_req_id_hash' => hash('sha256', $authReqId),
             'client_id' => $client->client_id,
             'user_id' => $subject->id,
+            'requested_organization_id' => $organizationId,
             'scopes' => $scopes,
             'binding_message' => $bindingMessage,
             'nonce' => $nonce,
@@ -136,6 +181,7 @@ class CibaAuthenticationService implements BackchannelAuthentication
                 'binding_message' => $bindingMessage,
                 'scopes' => $scopes,
                 'resource' => $resource,
+                ...($organizationId === null ? [] : ['organization_id' => $organizationId]),
             ],
         ));
 
@@ -155,16 +201,34 @@ class CibaAuthenticationService implements BackchannelAuthentication
             expiresIn: $ttl,
             interval: $interval,
             bindingMessage: $bindingMessage,
+            organizationId: $organizationId,
         );
     }
 
     public function approve(string $requestId, string $subjectId, ?string $organizationId = null): bool
     {
-        $approved = $this->transitionPending($requestId, $subjectId, [
-            'status' => GrantPollStatus::Approved,
-            'organization_id' => $organizationId,
-            'approved_at' => now(),
-        ]);
+        $approved = DB::transaction(function () use ($requestId, $subjectId, &$organizationId): bool {
+            $request = BackchannelAuthRequest::query()->whereKey($requestId)
+                ->where('user_id', $subjectId)->where('status', GrantPollStatus::Pending)
+                ->where('expires_at', '>', now())->lockForUpdate()->first();
+
+            if ($request === null) {
+                return false;
+            }
+
+            if ($request->requested_organization_id !== null) {
+                if (($organizationId !== null && $organizationId !== $request->requested_organization_id)
+                    || ! $this->organizationAllowed($request->client_id, $subjectId, $request->requested_organization_id, $request->resource, array_values($request->scopes))) {
+                    return false;
+                }
+
+                $organizationId = $request->requested_organization_id;
+            }
+
+            $request->forceFill(['status' => GrantPollStatus::Approved, 'organization_id' => $organizationId, 'approved_at' => now()])->save();
+
+            return true;
+        });
 
         if ($approved) {
             $this->recordDecision('oauth.ciba.approved', $requestId, $subjectId, $organizationId);
@@ -258,6 +322,16 @@ class CibaAuthenticationService implements BackchannelAuthentication
                 throw new InvalidGrant('auth_req_id already used');
             }
 
+            if ($locked->expires_at->isPast()) {
+                throw new CibaExpired;
+            }
+
+            if ($locked->requested_organization_id !== null
+                && ($locked->organization_id !== $locked->requested_organization_id
+                    || ! $this->organizationAllowed($locked->client_id, $locked->user_id, $locked->requested_organization_id, $locked->resource, array_values($locked->scopes)))) {
+                throw new CibaAccessDenied('Organization binding is no longer available.');
+            }
+
             $grant = new AuthorizedGrant(
                 userId: (string) $locked->user_id,
                 organizationId: $locked->organization_id,
@@ -299,6 +373,32 @@ class CibaAuthenticationService implements BackchannelAuthentication
             ->where('status', GrantPollStatus::Pending)
             ->where('expires_at', '>', now())
             ->update($attributes);
+    }
+
+    /** @param list<string> $scopes */
+    private function organizationAllowed(string $clientId, string $subjectId, string $organizationId, ?string $resource, array $scopes): bool
+    {
+        // Read current registration and membership, never client ownership or ambient tenant.
+        // These contracts/queries retain the issuer's mandatory EnvironmentScope.
+        $client = Client::query()->where('client_id', $clientId)->first();
+
+        if ($client === null || $client->type !== ClientType::Confidential || $client->isDynamicallyRegistered()
+            || $resource === null || ! GrantPolicy::allows($client, 'urn:openid:params:grant-type:ciba')
+            || GrantedScopes::for($client, $scopes) !== $scopes
+            || ! app(CibaOrganizationPolicy::class)->allows($client, $organizationId, $resource)
+            || app(Organizations::class)->find($organizationId)?->status !== OrganizationStatus::Active
+            || app(Memberships::class)->activeRole($organizationId, $subjectId) === null
+            || ! $this->subjects->isActive($subjectId)) {
+            return false;
+        }
+
+        try {
+            app(AudienceResolver::class)->resolve($client, $scopes, $resource);
+        } catch (InvalidAudience) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

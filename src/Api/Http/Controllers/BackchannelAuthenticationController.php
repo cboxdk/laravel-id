@@ -8,8 +8,10 @@ use Cbox\Id\Api\Support\ClientAuthenticator;
 use Cbox\Id\OAuthServer\Contracts\AudienceResolver;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\CibaClientNotifications;
+use Cbox\Id\OAuthServer\Contracts\OrganizationBoundBackchannelAuthentication;
 use Cbox\Id\OAuthServer\Enums\BackchannelTokenDeliveryMode;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\CibaRateLimited;
 use Cbox\Id\OAuthServer\Exceptions\InvalidAudience;
 use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
@@ -175,16 +177,32 @@ class BackchannelAuthenticationController
         // dropping it. A blank/whitespace-only value is treated as absent.
         $nonce = trim($request->string('nonce')->toString());
 
+        $organizationId = $request->input('organization_id');
+
+        if ($request->exists('organization_id') && (! is_string($organizationId) || $organizationId === '')) {
+            return new JsonResponse(['error' => 'invalid_request'], 400);
+        }
+
         try {
-            $result = $this->ciba->request(
-                $client,
-                $scopes,
-                $loginHint,
-                $bindingMessage !== '' ? $bindingMessage : null,
-                $nonce !== '' ? $nonce : null,
-                $requestedExpiry,
-                $resource,
-            );
+            if (is_string($organizationId)) {
+                if (! $this->ciba instanceof OrganizationBoundBackchannelAuthentication) {
+                    throw new CibaAccessDenied;
+                }
+
+                $result = $this->ciba->requestForOrganization(
+                    $client, $scopes, $loginHint, $organizationId,
+                    $bindingMessage !== '' ? $bindingMessage : null,
+                    $nonce !== '' ? $nonce : null, $requestedExpiry, $resource,
+                );
+            } else {
+                $result = $this->ciba->request(
+                    $client, $scopes, $loginHint,
+                    $bindingMessage !== '' ? $bindingMessage : null,
+                    $nonce !== '' ? $nonce : null, $requestedExpiry, $resource,
+                );
+            }
+        } catch (CibaAccessDenied) {
+            return new JsonResponse(['error' => 'access_denied', 'error_description' => 'Organization binding is not available for this request.'], 400);
         } catch (ScopeNotGranted $e) {
             // invalid_scope rather than a quietly narrower grant — see
             // CibaAuthenticationService::request().
@@ -211,6 +229,7 @@ class BackchannelAuthenticationController
             'auth_req_id' => $result->authReqId,
             'expires_in' => $result->expiresIn,
             'interval' => $result->interval,
+            ...($result->organizationId === null ? [] : ['organization_id' => $result->organizationId]),
         ]);
     }
 

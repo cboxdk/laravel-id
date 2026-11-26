@@ -27,6 +27,7 @@ hardening.
 | Bound approval | a CIBA token carries `auth_req_id` (the client's own, raw: spent at that point) and `binding_message` (exactly what the person saw), on the access token and the ID Token; read from the locked row; reserved, so no `TokenMinting` hook can forge them; never on a refresh | `BackchannelBinding`, `CibaAuthenticationService::redeem()`, `JwtTokenIssuer` |
 | Ping delivery | operator-registered https endpoint only; `client_notification_token` required (≤ 1024 chars); token and raw `auth_req_id` encrypted at rest and cleared once delivered or redeemed; SSRF guard with pinned DNS, no redirects; queued with short timeouts and retries | `QueuedCibaClientNotifications`, `Jobs\NotifyCibaClient`, config `oauth.ciba.ping.*` |
 | Environment scope | `BelongsToEnvironment` — cross-env invisible | `Models\BackchannelAuthRequest` |
+| Requested organization | Optional immutable requested organization; deny-by-default host policy plus current client/resource, active organization and membership checked before notification, at approval and at redemption; no ambient override | `OrganizationBoundBackchannelAuthentication`, `CibaOrganizationPolicy`, `ciba_requests.requested_organization_id` |
 
 ## Self-registered agents and CLIs
 

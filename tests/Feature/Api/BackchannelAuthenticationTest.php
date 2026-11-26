@@ -5,11 +5,19 @@ declare(strict_types=1);
 use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
 use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
 use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
+use Cbox\Id\OAuthServer\Contracts\CibaOrganizationPolicy;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\DenyOrganizationBoundCiba;
 use Cbox\Id\OAuthServer\Enums\ClientType;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
+use Cbox\Id\OAuthServer\Exceptions\CibaAccessDenied;
 use Cbox\Id\OAuthServer\Models\BackchannelAuthRequest;
+use Cbox\Id\OAuthServer\Models\Client;
+use Cbox\Id\Organization\Contracts\Memberships;
+use Cbox\Id\Organization\Enums\MembershipRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -353,4 +361,151 @@ it('refuses a binding message too long to show as invalid_binding_message', func
         'login_hint' => $user->id,
         'binding_message' => str_repeat('x', 256),
     ])->assertStatus(400)->assertJsonPath('error', 'invalid_binding_message');
+});
+
+function allowBoundCiba(Client $client): void
+{
+    app()->instance(CibaOrganizationPolicy::class, new class($client->client_id) implements CibaOrganizationPolicy
+    {
+        public function __construct(private string $clientId) {}
+
+        public function allows(Client $client, string $organizationId, string $resource): bool
+        {
+            return $client->client_id === $this->clientId && $resource === 'https://infra.test/approval';
+        }
+    });
+}
+
+it('pins the requested organization before notification and signs it after approval', function (bool $defaultScopes): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT]);
+    $user = $this->makeUser();
+    $a = $this->makeOrganization('A');
+    $b = $this->makeOrganization('B');
+    foreach ([$a, $b] as $org) {
+        app(Memberships::class)->add($org->id, $user->id, MembershipRole::Member);
+    }
+    $this->actingAsTenant($a);
+    allowBoundCiba($registered->client);
+
+    $start = $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id, 'client_secret' => $registered->secret,
+        ...($defaultScopes ? [] : ['scope' => 'openid']),
+        'login_hint' => $user->id, 'organization_id' => 'org_'.strtoupper($b->id),
+        'resource' => 'https://infra.test/approval', 'binding_message' => 'Delete sandbox B', 'nonce' => 'bound-nonce',
+    ])->assertOk()->assertJsonPath('organization_id', $b->id);
+    $request = BackchannelAuthRequest::query()->sole();
+    expect($request->requested_organization_id)->toBe($b->id)->and($request->organization_id)->toBeNull();
+    $ciba = app(BackchannelAuthentication::class);
+    expect($ciba->approve($request->id, $user->id, $a->id))->toBeFalse()
+        ->and($ciba->approve($request->id, $user->id))->toBeTrue();
+
+    $token = $this->postJson('/oauth/token', [
+        'grant_type' => CIBA_GRANT, 'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret, 'auth_req_id' => $start->json('auth_req_id'),
+    ])->assertOk();
+    foreach (['access_token', 'id_token'] as $field) {
+        $claims = app(TokenSigner::class)->verify($token->json($field), [SigningAlg::RS256]);
+        expect($claims->get('org'))->toBe($b->id)
+            ->and($claims->get('sub'))->toBe($user->id)
+            ->and($claims->get('auth_req_id'))->toBe($start->json('auth_req_id'))
+            ->and($claims->get('binding_message'))->toBe('Delete sandbox B');
+        if ($field === 'id_token') {
+            expect($claims->get('nonce'))->toBe('bound-nonce');
+        } else {
+            expect($claims->get('aud'))->toContain('https://infra.test/approval');
+        }
+    }
+})->with([false, true]);
+
+it('refuses ineligible bound starts without creating a prompt', function (string $reason): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT]);
+    $user = $this->makeUser();
+    $org = $this->makeOrganization();
+    $memberships = app(Memberships::class);
+    $memberships->add($org->id, $user->id, MembershipRole::Member);
+    if ($reason !== 'default policy') {
+        allowBoundCiba($registered->client);
+    }
+    match ($reason) {
+        'membership' => $memberships->remove($org->id, $user->id),
+        'inactive org' => $org->update(['status' => 'suspended']),
+        'other environment' => DB::table('organizations')->where('id', $org->id)->update(['environment_id' => 'another-env']),
+        'client' => allowBoundCiba($this->makeClient(['openid'], grantTypes: [CIBA_GRANT])->client),
+        default => null,
+    };
+    $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id, 'client_secret' => $registered->secret,
+        'scope' => 'openid', 'login_hint' => $user->id,
+        'organization_id' => $reason === 'unknown org' ? strtolower((string) Str::ulid()) : $org->id,
+        'resource' => $reason === 'resource' ? 'https://other.test/approval' : 'https://infra.test/approval',
+    ])->assertStatus(400)->assertJsonPath('error', 'access_denied');
+    expect(BackchannelAuthRequest::query()->count())->toBe(0);
+})->with(['default policy', 'client', 'resource', 'membership', 'inactive org', 'unknown org', 'other environment']);
+
+it('rechecks bound eligibility at approval and redemption', function (string $stage, string $reason): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT]);
+    $user = $this->makeUser();
+    $org = $this->makeOrganization();
+    $memberships = app(Memberships::class);
+    $memberships->add($org->id, $user->id, MembershipRole::Member);
+    allowBoundCiba($registered->client);
+    $ciba = app(BackchannelAuthentication::class);
+    $started = $ciba->requestForOrganization($registered->client, ['openid'], $user->id, $org->id, resource: 'https://infra.test/approval');
+    if ($stage === 'redemption') {
+        expect($ciba->approve($started->requestId, $user->id))->toBeTrue();
+    }
+    match ($reason) {
+        'membership' => $memberships->remove($org->id, $user->id),
+        'org' => $org->update(['status' => 'suspended']),
+        'policy' => app()->instance(CibaOrganizationPolicy::class, new DenyOrganizationBoundCiba),
+        'client removed' => $registered->client->delete(),
+        'grant removed' => $registered->client->update(['grant_types' => ['authorization_code']]),
+        'scope removed' => $registered->client->update(['scopes' => []]),
+    };
+    if ($stage === 'approval') {
+        expect($ciba->approve($started->requestId, $user->id))->toBeFalse();
+    } else {
+        expect(fn () => $ciba->redeem($registered->client->client_id, $started->authReqId))->toThrow(CibaAccessDenied::class);
+    }
+})->with(['approval', 'redemption'])->with(['membership', 'org', 'policy', 'client removed', 'grant removed', 'scope removed']);
+
+it('does not silently drop a requested organization through a legacy implementation', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT]);
+    $legacy = Mockery::mock(BackchannelAuthentication::class);
+    $legacy->shouldNotReceive('request');
+    app()->instance(BackchannelAuthentication::class, $legacy);
+    $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id, 'client_secret' => $registered->secret,
+        'login_hint' => 'person@example.test', 'organization_id' => strtolower((string) Str::ulid()),
+    ])->assertStatus(400)->assertJsonPath('error', 'access_denied');
+});
+
+it('rejects malformed organization input rather than starting an unbound request', function (mixed $organization): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT]);
+    $user = $this->makeUser();
+    $this->postJson('/oauth/backchannel_authentication', [
+        'client_id' => $registered->client->client_id, 'client_secret' => $registered->secret,
+        'login_hint' => $user->id, 'organization_id' => $organization,
+    ])->assertStatus(400);
+    expect(BackchannelAuthRequest::query()->count())->toBe(0);
+})->with([null, '', '   ', 'usr_01j9zq3k4m5n6p7q8r9s0t1v2w', [['org']], 42]);
+
+it('keeps outstanding unbound requests through the additive migration and guards a new binding', function (): void {
+    $registered = $this->makeClient(['openid'], grantTypes: [CIBA_GRANT]);
+    $user = $this->makeUser();
+    $org = $this->makeOrganization();
+    app(Memberships::class)->add($org->id, $user->id, MembershipRole::Member);
+    $ciba = app(BackchannelAuthentication::class);
+    $legacy = $ciba->request($registered->client, ['openid'], $user->id);
+    $migration = require __DIR__.'/../../../database/migrations/2026_11_26_180000_add_requested_organization_to_ciba_requests.php';
+    $migration->down();
+    $migration->up();
+    expect(BackchannelAuthRequest::query()->findOrFail($legacy->requestId)->requested_organization_id)->toBeNull()
+        ->and($ciba->approve($legacy->requestId, $user->id, $org->id))->toBeTrue()
+        ->and($ciba->redeem($registered->client->client_id, $legacy->authReqId)->organizationId)->toBe($org->id);
+    allowBoundCiba($registered->client);
+    $bound = $ciba->requestForOrganization($registered->client, ['openid'], $user->id, $org->id, resource: 'https://infra.test/approval');
+    $request = BackchannelAuthRequest::query()->findOrFail($bound->requestId);
+    expect(fn () => $request->update(['requested_organization_id' => null]))->toThrow(LogicException::class);
+    expect($request->fresh()->requested_organization_id)->toBe($org->id);
 });

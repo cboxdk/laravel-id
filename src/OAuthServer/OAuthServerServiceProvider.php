@@ -20,6 +20,7 @@ use Cbox\Id\OAuthServer\Contracts\BackchannelAuthentication;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogout;
 use Cbox\Id\OAuthServer\Contracts\BackchannelLogoutDelivery;
 use Cbox\Id\OAuthServer\Contracts\CibaClientNotifications;
+use Cbox\Id\OAuthServer\Contracts\CibaOrganizationPolicy;
 use Cbox\Id\OAuthServer\Contracts\ClientAssertion;
 use Cbox\Id\OAuthServer\Contracts\ClientIdMetadataDocuments;
 use Cbox\Id\OAuthServer\Contracts\ClientRegistry;
@@ -100,6 +101,7 @@ class OAuthServerServiceProvider extends ServiceProvider
         $this->app->singleton(PushedAuthorizationRequests::class, PushedAuthorizationService::class);
         $this->app->singleton(DeviceAuthorization::class, DeviceAuthorizationService::class);
         $this->app->singleton(BackchannelAuthentication::class, CibaAuthenticationService::class);
+        $this->app->singleton(CibaOrganizationPolicy::class, DenyOrganizationBoundCiba::class);
         $this->app->singleton(CibaClientNotifications::class, QueuedCibaClientNotifications::class);
         // A person approving ONE action, on the same request store and approval surfaces.
         $this->app->singleton(ActionApprovals::class, CibaActionApprovals::class);
