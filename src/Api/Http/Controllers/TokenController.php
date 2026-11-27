@@ -349,8 +349,9 @@ class TokenController
         // only request the device itself makes after the person approved. It was read for
         // every other grant and dropped here, so a CLI asking for an MCP server's audience
         // got a token for the issuer. The audience resolver still decides what it may be.
-        $access = $this->issuer->issueForUser(
+        $access = $this->issueForUser(
             $client, $grant->userId, $grant->organizationId, $grant->scopes, $resource, $dpopJkt,
+            new AuthenticationEvent($grant->authTime, $grant->amr),
         );
 
         // A refresh token when the client asked for offline access — the same rule,
@@ -364,12 +365,12 @@ class TokenController
         // later with no way back but a fresh user_code. Found by a CLI reporting
         // "no refresh token" against a client that had been granted the scope.
         //
-        // No `authTime`/`amr`: a device grant does not record them, so a refreshed
-        // ID Token describes the login without asserting an assurance level nobody
-        // captured. Better absent than invented.
+        // Preserve the approving session, not the approval or refresh time. Legacy
+        // grants have no evidence and remain contextless throughout their refresh family.
         $refresh = $this->mayHoldRefreshToken($client, $grant->scopes)
             ? $this->refreshTokens->issue(
                 $client, $grant->userId, $grant->organizationId, $access->scopes, $access->audience, $dpopJkt,
+                $grant->authTime, $grant->amr,
             )
             : null;
 
@@ -382,6 +383,8 @@ class TokenController
                 userId: $grant->userId,
                 organizationId: $grant->organizationId,
                 scopes: $grant->scopes,
+                authTime: $grant->authTime,
+                amr: $grant->amr,
             ), $access),
             $refresh,
             requestedScopes: $grant->scopes,
@@ -524,7 +527,7 @@ class TokenController
      * {@see TokenIssuer} written before the contract existed — is called exactly as before;
      * its tokens carry no `acr`/`auth_time`, and a resource server requiring them refuses
      * the token rather than assuming the login was good enough. A grant with no recorded
-     * authentication (a device code, a legacy refresh family) goes the same way, by the
+     * authentication (a legacy device code or refresh family) goes the same way, by the
      * same rule: nothing is invented.
      *
      * @param  list<string>  $scopes

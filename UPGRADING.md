@@ -18,6 +18,21 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 2.9.1 — device authentication evidence
+
+Run `2026_11_27_000100_remember_device_grant_authentication` before serving the new
+package. The nullable `device_codes.auth_time` and `amr` columns are additive and work
+with the old version; no existing grant is backfilled. Keep the columns if rolling
+application code back, and only roll the migration back once no new workers use them.
+
+The built-in `DeviceAuthorization` service now also implements
+`AuthenticationAwareDeviceAuthorization`. Hosts should pass the approving user's
+verified session through `approveAuthenticated()` as shown in the
+[device-grant recipe](docs/cookbook/sign-a-cli-in-with-the-device-grant.md).
+The original `approve()` contract is unchanged and still records no assurance.
+Existing contextless access tokens and refresh families stay contextless. A fresh
+device flow after genuine strong authentication is required for an AAL2-protected API.
+
 ## 2.5.0 — v3 standard: secret prefixes, `id.*` event names, scope aliases
 
 - **New secrets carry `cbid_<kind>_`** (`Cbox\Id\Kernel\Crypto\SecretPrefix`): client

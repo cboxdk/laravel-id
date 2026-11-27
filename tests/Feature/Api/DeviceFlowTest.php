@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 use Cbox\Id\Identity\Enums\UserStatus;
 use Cbox\Id\Identity\Models\User;
+use Cbox\Id\Kernel\Crypto\Contracts\TokenSigner;
+use Cbox\Id\Kernel\Crypto\Enums\SigningAlg;
+use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareDeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
 use Cbox\Id\OAuthServer\Contracts\TokenIntrospector;
+use Cbox\Id\OAuthServer\Enums\AuthenticationContextClass;
 use Cbox\Id\OAuthServer\Enums\ClientType;
+use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
 use Cbox\Id\OAuthServer\Models\RefreshToken;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationRequirement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -282,3 +290,82 @@ it('issues no refresh token to a device client that may not redeem one', functio
     expect($body)->not->toHaveKey('refresh_token')
         ->and(RefreshToken::query()->count())->toBe(0);
 })->group('security');
+
+it('preserves only the recorded device authentication through issuance and refresh', function (?array $amr, ?string $acr, bool $satisfiesAal2): void {
+    $registered = $this->makeClient(['openid', 'offline_access'], grantTypes: [DEVICE_GRANT, 'refresh_token']);
+    $device = app(DeviceAuthorization::class);
+    expect($device)->toBeInstanceOf(AuthenticationAwareDeviceAuthorization::class);
+    $result = $device->request($registered->client, ['openid', 'offline_access']);
+    $authTime = $amr === null ? null : now()->subHour()->getTimestamp();
+
+    // The three-argument contract still works, but cannot establish authentication.
+    $approved = $amr === null
+        ? $device->approve($result->userCode, 'user-1', null)
+        : $device->approveAuthenticated($result->userCode, 'user-1', null, new AuthenticationEvent($authTime, $amr));
+    expect($approved)->toBeTrue();
+
+    // Re-approval must not replace the evidence, including upgrading a weak grant.
+    expect($device->approveAuthenticated($result->userCode, 'user-1', null, new AuthenticationEvent(time(), ['passkey', 'mfa'])))->toBeFalse();
+
+    $poll = [
+        'grant_type' => DEVICE_GRANT,
+        'client_id' => $registered->client->client_id,
+        'client_secret' => $registered->secret,
+        'device_code' => $result->deviceCode,
+        // Client-supplied claims are not authentication evidence.
+        'acr' => 'urn:cbox-id:aal2', 'amr' => ['mfa'], 'auth_time' => time(),
+    ];
+    $response = $this->postJson('/oauth/token', $poll)->assertOk();
+
+    for ($generation = 0; $generation < 3; $generation++) {
+        $access = app(TokenIntrospector::class)->introspect($response->json('access_token'));
+        $identity = app(TokenSigner::class)->verify($response->json('id_token'), [SigningAlg::RS256]);
+
+        expect($access->active)->toBeTrue()
+            ->and($access->claims['auth_time'] ?? null)->toBe($authTime)
+            ->and($access->claims['acr'] ?? null)->toBe($acr)
+            ->and($access->claims)->not->toHaveKey('amr')
+            ->and($identity->get('auth_time'))->toBe($authTime)
+            ->and($identity->get('acr'))->toBe($acr)
+            ->and($identity->get('amr'))->toBe($amr === null || $amr === [] ? null : $amr)
+            ->and(AuthenticationRequirement::of(AuthenticationContextClass::Aal2)->assessToken($access)->isSatisfied())->toBe($satisfiesAal2);
+
+        if ($generation < 2) {
+            $this->travel(1)->minutes();
+            $response = $this->postJson('/oauth/token', [
+                'grant_type' => 'refresh_token',
+                'client_id' => $registered->client->client_id,
+                'client_secret' => $registered->secret,
+                'refresh_token' => $response->json('refresh_token'),
+                'acr' => 'urn:cbox-id:aal2', 'amr' => ['mfa'], 'auth_time' => time(),
+            ])->assertOk();
+        }
+    }
+
+    $this->postJson('/oauth/token', $poll)->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+})->with([
+    'MFA' => [['pwd', 'otp'], 'urn:cbox-id:aal2', true],
+    'password only' => [['pwd'], 'urn:cbox-id:aal1', false],
+    'unknown methods' => [[], null, false],
+    'legacy approval' => [null, null, false],
+])->group('security');
+
+it('adds nullable device evidence without upgrading an existing approval, and rolls back', function (): void {
+    $migration = require __DIR__.'/../../../database/migrations/2026_11_27_000100_remember_device_grant_authentication.php';
+    $migration->down();
+    expect(Schema::hasColumn('device_codes', 'auth_time'))->toBeFalse()
+        ->and(Schema::hasColumn('device_codes', 'amr'))->toBeFalse();
+
+    $client = $this->makeClient(['openid'], grantTypes: [DEVICE_GRANT])->client;
+    $device = app(DeviceAuthorization::class);
+    $result = $device->request($client, ['openid']);
+    DeviceCode::query()->where('user_code', $result->userCode)->update([
+        'status' => GrantPollStatus::Approved, 'user_id' => 'user-1',
+    ]);
+
+    $migration->up();
+    $grant = $device->redeem($client->client_id, $result->deviceCode);
+    expect($grant->userId)->toBe('user-1')
+        ->and($grant->authTime)->toBeNull()
+        ->and($grant->amr)->toBe([]);
+});

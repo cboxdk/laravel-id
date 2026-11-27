@@ -4,6 +4,22 @@ Living record of what is implemented, verified, and pending — built in depende
 "Verified" means: real tests green + PHPStan max clean + Pint clean. Nothing is marked done
 on inspection alone. This file exists so the build is auditable: no hidden gaps.
 
+## Device authentication evidence — 2.9.1
+
+Device approval can retain the verified session's authentication time and methods through
+access tokens, ID tokens and refresh rotation. The original three-argument approval contract
+stays compatible and contextless. Neither approval nor a later stronger session upgrades an
+old grant. The additive migration leaves existing rows without evidence; deploy it before
+new code and retain its columns during a code rollback.
+
+Verified locally on PHP 8.5: the device-flow suite passes on SQLite and PostgreSQL
+(20 tests / 188 assertions), including two refresh rotations, forged request claims,
+re-approval, redemption replay and migration rollback. The API/OAuthServer suite passes
+(1,353 tests / 5,036 assertions), and the full SQLite suite passes with 3,595 tests /
+60,252 assertions and 11 skips for server-database checks. Pint, PHPStan, security audit,
+license compliance and the SBOM dependency-set check pass. These are local results, not
+a production rollout receipt.
+
 ## Named authenticator apps — 1.28.0
 
 Independent TOTP enrolment, confirmation, metadata listing, renaming and removal are

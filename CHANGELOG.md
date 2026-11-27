@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-11-27
+
+### Fixed
+
+- Device grants can preserve the approving session's authentication through access tokens, ID tokens and refreshes. Hosts opt in through `AuthenticationAwareDeviceAuthorization::approveAuthenticated()`; `DeviceAuthorization` stays compatible. A new nullable-column migration leaves old approvals without authentication evidence. No assurance is inferred from approval, and re-approval cannot replace recorded evidence.
+
 ## [2.9.0] - 2026-11-13
 
 ### Security

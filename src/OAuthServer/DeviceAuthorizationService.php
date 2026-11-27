@@ -6,7 +6,7 @@ namespace Cbox\Id\OAuthServer;
 
 use Cbox\Id\Kernel\Crypto\SecretPrefix;
 use Cbox\Id\Kernel\Tenancy\Contracts\IssuerResolver;
-use Cbox\Id\OAuthServer\Contracts\DeviceAuthorization;
+use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareDeviceAuthorization;
 use Cbox\Id\OAuthServer\Enums\GrantPollStatus;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAccessDenied;
 use Cbox\Id\OAuthServer\Exceptions\DeviceAuthorizationPending;
@@ -17,12 +17,13 @@ use Cbox\Id\OAuthServer\Exceptions\ScopeNotGranted;
 use Cbox\Id\OAuthServer\Models\Client;
 use Cbox\Id\OAuthServer\Models\DeviceCode;
 use Cbox\Id\OAuthServer\Support\GrantedScopes;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceAuthorizationResult;
 use Cbox\Id\OAuthServer\ValueObjects\DeviceGrant;
 use Cbox\Id\OAuthServer\ValueObjects\PendingDeviceAuthorization;
 use Illuminate\Support\Facades\DB;
 
-class DeviceAuthorizationService implements DeviceAuthorization
+class DeviceAuthorizationService implements AuthenticationAwareDeviceAuthorization
 {
     private const TTL_SECONDS = 600;      // the user has 10 minutes to approve
 
@@ -99,10 +100,19 @@ class DeviceAuthorizationService implements DeviceAuthorization
 
     public function approve(string $userCode, string $userId, ?string $organizationId): bool
     {
+        return $this->approveAuthenticated($userCode, $userId, $organizationId, new AuthenticationEvent);
+    }
+
+    public function approveAuthenticated(string $userCode, string $userId, ?string $organizationId, AuthenticationEvent $authentication): bool
+    {
         return $this->transitionPending($userCode, [
             'status' => GrantPollStatus::Approved,
             'user_id' => $userId,
             'organization_id' => $organizationId,
+            'auth_time' => $authentication->authTime,
+            // Query updates do not apply model casts. Store only the session evidence,
+            // not a CIBA binding that might be present on another kind of event.
+            'amr' => json_encode($authentication->amr, JSON_THROW_ON_ERROR),
         ]);
     }
 
@@ -165,6 +175,8 @@ class DeviceAuthorizationService implements DeviceAuthorization
                 (string) $locked->user_id,
                 $locked->organization_id,
                 array_values($locked->scopes),
+                $locked->auth_time,
+                array_values($locked->amr ?? []),
             );
 
             $locked->forceFill(['status' => GrantPollStatus::Redeemed, 'last_polled_at' => now()])->save();

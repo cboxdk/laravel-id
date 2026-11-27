@@ -83,6 +83,42 @@ person types it. Without a limit, one authenticated session can enumerate the sp
 **Re-check on approve.** A code can expire between the lookup and the click, so
 `approve()` returning false is an ordinary outcome to render, not an exception.
 
+## Preserve the approving session's authentication
+
+The built-in service also implements `AuthenticationAwareDeviceAuthorization`. Resolve
+`DeviceAuthorization` as above and, when the bound service supports that contract, use
+`approveAuthenticated()` instead of `approve()`:
+
+```php
+use Cbox\Id\OAuthServer\Contracts\AuthenticationAwareDeviceAuthorization;
+use Cbox\Id\OAuthServer\ValueObjects\AuthenticationEvent;
+
+if ($devices instanceof AuthenticationAwareDeviceAuthorization) {
+    $approved = $devices->approveAuthenticated(
+        $userCode,
+        $user->id,
+        $organizationId,
+        new AuthenticationEvent(
+            $session->created_at?->getTimestamp(),
+            array_values($session->amr),
+        ),
+    );
+} else {
+    $approved = $devices->approve($userCode, $user->id, $organizationId);
+}
+```
+
+`$session` must be the host's verified session for **that user at approval**, not values
+submitted by the CLI or browser. An approval click or an email risk challenge does not
+establish MFA. The access token carries `auth_time` and derived `acr`; the ID token also
+carries `amr`. Refreshes preserve the original values, not the refresh time.
+
+Run `2026_11_27_000100_remember_device_grant_authentication` before serving the new package.
+It adds nullable columns without backfilling evidence. Existing approvals and calls to
+the original `approve()` remain contextless; an API requiring AAL2 must continue refusing
+them. Start a new device flow after genuine strong authentication to obtain that evidence.
+The original contract remains unchanged for host implementations and decorators.
+
 ## Polling, from the CLI's side
 
 ```http
