@@ -46,6 +46,40 @@ the package emits a domain event the host listens for.
    `authorization_pending` (and `slow_down` if it polls too fast) until approval,
    then an `access_token` **and an `id_token`** bound to the approving user.
 
+## Organization binding (opt-in Cbox extension)
+
+`POST /oauth/backchannel_authentication` accepts an optional `organization_id`: a bare
+ULID or `org_<ULID>`, normalized to lower-case. A successful bound response echoes the
+normalized `organization_id` beside `auth_req_id`, `expires_in` and `interval`. Missing,
+null, or different echoes must not be treated by clients as confirmation of binding.
+Omitting the input retains the existing unbound flow; explicitly null or empty input is
+`400 invalid_request`. An unavailable binding is `400 access_denied`.
+
+The host must implement `CibaOrganizationPolicy`; its default refuses every bound request.
+In addition to that policy, the engine requires an operator-registered confidential
+client with the CIBA grant and scopes, an explicit allowed resource, an active subject,
+an active organization and active membership in the issuer environment. These checks run
+before notification and again at approval and redemption. The organization is not inferred
+from the client owner, browser session, or phone token.
+
+PHP callers opt in through `OrganizationBoundBackchannelAuthentication::requestForOrganization()`.
+The original `BackchannelAuthentication` interface is unchanged; an older implementation
+can still serve unbound requests but refuses the bound HTTP operation. Decorators must
+forward the capability or refuse it, never call the unbound method instead.
+
+The additive migration stores nullable `ciba_requests.requested_organization_id`; existing
+rows stay null. That binding cannot be changed through model saves. `approve()` selects
+the pinned organization when its third argument is null, and refuses a contradictory
+argument. `organization_id` remains the granted context. Hosts must display the requested
+organization's name and id before approval and pass it instead of ambient organization
+state. Deploy every approval host before enabling a policy; do not roll back to an old
+engine while bound requests remain actionable.
+
+The receiver still verifies the signed `org`, issuer, audience, subject, client,
+`auth_req_id`, binding message and expiry against its saved operation, and rechecks its
+own domain authority. The echoed organization is a compatibility check, not a token or
+permission to execute. There is no new consume endpoint or execution guarantee.
+
 ## Security properties
 
 Mirrors the device grant's hardening:

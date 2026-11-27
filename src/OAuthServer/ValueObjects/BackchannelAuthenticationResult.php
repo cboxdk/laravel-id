@@ -25,5 +25,6 @@ readonly class BackchannelAuthenticationResult
         public int $expiresIn,
         public int $interval,
         public ?string $bindingMessage = null,
+        public ?string $organizationId = null,
     ) {}
 }

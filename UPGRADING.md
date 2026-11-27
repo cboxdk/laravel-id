@@ -18,6 +18,21 @@ A version with no section below needed no action. Where a run of versions is gen
 uneventful it is named as such rather than left out, so a gap in the headings is never
 ambiguous between "nothing to do" and "nobody wrote it down".
 
+## 2.10.0 — opt-in organization-bound CIBA
+
+Run `2026_11_26_180000_add_requested_organization_to_ciba_requests` before new workers
+serve requests. The nullable column preserves outstanding unbound requests and is
+compatible with old code. Keep it during a code rollback.
+
+The default `CibaOrganizationPolicy` refuses bound requests. Before opting in a client
+and resource, update every approval host to display and preserve the requested
+organization, including mobile, email and push paths. A stronger login does not change
+the requested organization. See [CIBA](docs/core-concepts/ciba.md).
+
+Existing `BackchannelAuthentication::request()` callers remain unbound. Clients using
+the new capability must require the server's matching organization echo; the PHP SDK
+provides this through `startForOrganization()` in `laravel-id-client` 0.19.11.
+
 ## 2.9.1 — device authentication evidence
 
 Run `2026_11_27_000100_remember_device_grant_authentication` before serving the new
