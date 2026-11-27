@@ -17,6 +17,12 @@ more trust than the wording it removes.
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-27
+
+### Added
+
+- Opt-in organization-bound CIBA through `OrganizationBoundBackchannelAuthentication`. A refusing host policy is the default. Eligible confidential clients can request an explicit organization; initiation, approval and redemption verify current membership, organization standing, client grants and resource eligibility. The binding is returned to clients and notification hosts and cannot be replaced by the approving session's organization. Existing unbound requests retain their behavior.
+
 ## [2.9.1] - 2026-11-27
 
 ### Fixed

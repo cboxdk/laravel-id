@@ -4,6 +4,21 @@ Living record of what is implemented, verified, and pending — built in depende
 "Verified" means: real tests green + PHPStan max clean + Pint clean. Nothing is marked done
 on inspection alone. This file exists so the build is auditable: no hidden gaps.
 
+## Organization-bound CIBA — 2.10.0
+
+The optional organization-bound contract preserves the requested organization through
+initiation, approval and redemption. Each step checks current membership, organization
+standing, client grants and resource eligibility. The default host policy refuses bound
+requests; existing callers and outstanding unbound requests keep their behavior.
+The nullable migration must precede the new code, and every approval host must display
+the binding before a deployment opts in a client/resource.
+
+Verified locally on PHP 8.5: the full SQLite suite passes with 3,624 tests / 60,345
+assertions and 11 server-database skips. The CIBA HTTP suite passes on PostgreSQL
+(45 tests / 149 assertions). Pint, PHPStan, audit, license and SBOM dependency-set checks
+pass. This candidate includes the separate 2.9.1 device fix; no CIBA production migration
+or activation has run.
+
 ## Device authentication evidence — 2.9.1
 
 Device approval can retain the verified session's authentication time and methods through
