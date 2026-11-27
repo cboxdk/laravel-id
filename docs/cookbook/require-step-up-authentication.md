@@ -82,7 +82,7 @@ WWW-Authenticate: Bearer resource_metadata="https://acme.example/.well-known/oau
 
 - With `max_age`, a token without `auth_time` counts as **too old**.
 - With an `acr` requirement, a token without `acr` (a `client_credentials` token, a
-  device-grant token) counts as **not met**.
+  device-grant token whose host recorded no authentication) counts as **not met**.
 
 The challenge always names the **whole** requirement, even when only one half failed. The
 client turns the challenge into its next authorization request, so it has to ask for

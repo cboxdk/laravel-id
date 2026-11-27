@@ -22,6 +22,8 @@ use Illuminate\Support\Carbon;
  * @property GrantPollStatus $status
  * @property string|null $user_id
  * @property string|null $organization_id
+ * @property int|null $auth_time
+ * @property array<int, string>|null $amr
  * @property int $interval
  * @property Carbon|null $last_polled_at
  * @property Carbon $expires_at
@@ -43,6 +45,8 @@ class DeviceCode extends Model implements EnvironmentOwned
         return [
             'scopes' => 'array',
             'status' => GrantPollStatus::class,
+            'auth_time' => 'integer',
+            'amr' => 'array',
             'last_polled_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
